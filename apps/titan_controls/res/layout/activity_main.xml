@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+<LinearLayout
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Titan 2 hardware controls"
+        android:textSize="22sp" android:textStyle="bold"
+        android:paddingBottom="8dp"/>
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Side keys, keyboard scroll/cursor and backlight. Some OEM apps need a reboot after first install."
+        android:textSize="14sp" android:paddingBottom="16dp"/>
+
+    <Button android:id="@+id/btn_side" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Side buttons (Func1 / Func2)"/>
+    <Button android:id="@+id/btn_scroll" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Keyboard scroll / space bar"/>
+    <Button android:id="@+id/btn_kb_shortcut" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Keyboard shortcuts map"/>
+    <Button android:id="@+id/btn_toolbox" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Toolbox"/>
+    <Button android:id="@+id/btn_rotation" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Rotation control"/>
+
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Keyboard backlight"
+        android:textSize="18sp" android:textStyle="bold"
+        android:paddingTop="20dp" android:paddingBottom="8dp"/>
+    <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="wrap_content">
+        <Button android:id="@+id/btn_bl_off" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Off"/>
+        <Button android:id="@+id/btn_bl_low" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Low"/>
+        <Button android:id="@+id/btn_bl_mid" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Mid"/>
+        <Button android:id="@+id/btn_bl_hi" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="High"/>
+    </LinearLayout>
+    <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:paddingTop="16dp" android:textSize="13sp" android:text=""/>
+</LinearLayout>
+</ScrollView>

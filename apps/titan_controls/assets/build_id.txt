@@ -1,0 +1,4 @@
+versionName=15.80-home-restore
+versionCode=580
+built_utc=2026-08-13T21:44Z
+allow_root=0

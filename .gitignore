@@ -1,0 +1,23 @@
+# Local trees and cook output — cubechain: never upload
+/.links/
+/out/
+/gsi/*.img
+/gsi/*.img.gz
+/artifacts/
+*.local.env
+config/misterztr.local.env
+
+# Build / signing leftovers
+*.apk
+*.idsig
+debug.keystore
+*.keystore
+*.tar.gz
+debian-*-rootfs.tar.gz
+
+# Editor / OS
+.DS_Store
+*.swp
+__pycache__/
+*.pyc
+/build/

@@ -1,0 +1,9 @@
+# Keylayout for dedicated side / PTT node (mtk-kpd).
+# Volume + Power stay. Scans 249/250 are Titan side buttons — MUST NOT map
+# to CAMERA (or APP_SWITCH/HOME). Unmapped → InputReader drops; pad-agent
+# owns short/long via getevent / titan2-side-watch (B1).
+key 115   VOLUME_UP
+key 114   VOLUME_DOWN
+key 116   POWER
+# key 249 intentionally omitted (side · top)
+# key 250 intentionally omitted (side · bottom)

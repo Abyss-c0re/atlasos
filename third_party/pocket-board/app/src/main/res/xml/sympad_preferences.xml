@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:key="ime_sympad_prefs"
+    android:title="@string/ime_sympad_prefs"
+    android:layout_height="match_parent"
+    android:layout_width="match_parent">
+
+    <SwitchPreference
+        android:key="@string/ime_lock_sympad_prefs_key"
+        android:defaultValue="true"
+        android:title="@string/ime_lock_sympad"
+        android:summary="@string/ime_lock_sympad_summary" />
+
+    <Preference
+        app:key="@string/ime_sympad_json_import_key"
+        app:title="@string/ime_sympad_json_import" />
+
+    <Preference
+        app:key="@string/ime_sympad_json_export_key"
+        app:title="@string/ime_sympad_json_export" />
+
+    <Preference
+        app:key="@string/ime_sympad_defaults_key"
+        app:title="@string/ime_sympad_defaults" />
+
+    <Preference
+        android:key="layout_editor"
+        android:title="@string/ime_sympad_mapping_editor">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.sinux.pocketboard"
+            android:targetClass="com.sinux.pocketboard.preferences.SympadEditorActivity" />
+    </Preference>
+
+</PreferenceScreen>

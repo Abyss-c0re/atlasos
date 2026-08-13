@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.titanus2.cubecontact"
+    android:versionCode="110"
+    android:versionName="2.01b-sub-truth-eyes">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"/>
+    <uses-permission android:name="android.permission.SET_WALLPAPER"/>
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
+    <!-- 1.60–1.62: exact + backup dim chain after process death / force-stop -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-feature android:name="android.hardware.vr.headtracking" android:required="false"/>
+    <uses-feature android:glEsVersion="0x00020000" android:required="true"/>
+
+    <application
+        android:name=".CubeContactApplication"
+        android:label="@string/app_name"
+        android:allowBackup="false"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.CubeContact.Opaque">
+
+        <activity
+            android:name=".CubeContactActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|keyboard"
+            android:windowSoftInputMode="adjustNothing|stateAlwaysHidden"
+            android:theme="@style/Theme.CubeContact.Opaque"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.titanus2.cubecontact.OPEN"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".PrivilegeActivity"
+            android:exported="false"
+            android:label="Access"
+            android:windowSoftInputMode="adjustNothing|stateAlwaysHidden"
+            android:theme="@style/Theme.CubeContact.Opaque"/>
+        <activity
+            android:name=".SensorsActivity"
+            android:exported="false"
+            android:label="Lattice sensors"
+            android:windowSoftInputMode="adjustNothing|stateAlwaysHidden"
+            android:theme="@style/Theme.CubeContact.Opaque"/>
+        <activity
+            android:name=".CubeSettingsActivity"
+            android:exported="true"
+            android:label="Cube settings"
+            android:windowSoftInputMode="adjustNothing|stateAlwaysHidden"
+            android:theme="@style/Theme.CubeContact.Opaque">
+            <intent-filter>
+                <action android:name="com.titanus2.cubecontact.SETTINGS"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".RearCubeActivity"
+            android:exported="true"
+            android:directBootAware="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:taskAffinity="com.titanus2.cubecontact.rear"
+            android:theme="@style/Theme.CubeContact.Opaque"
+            android:windowSoftInputMode="adjustNothing|stateAlwaysHidden"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|keyboard"
+            android:showWhenLocked="true"
+            android:turnScreenOn="false">
+            <!-- Explicit action so PackageManager indexes the component -->
+            <intent-filter>
+                <action android:name="com.titanus2.cubecontact.REAR_CUBE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".CubeContactA11yService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/cube_a11y"/>
+        </service>
+
+        <service
+            android:name=".SubdisplayCubeService"
+            android:exported="false"
+            android:directBootAware="true"
+            android:enabled="true"/>
+
+        <!-- 1.20–1.51: hold process through LAW retry+tail; sticky + loop rearm + present + power + wake + edge + UI + front + rear + subdisp + app promote + pull backoff + rearm/wave/edge multi-pull stretch + Sensors Sync multi-pull + honest Sync belt + cumulative wave-cover + belt-stop + promote-watch + open-forever watch + open-pull + front/rear/subdisp open-pull + wake open-forever dense + UI dense open-pull while seed -->
+        <service
+            android:name=".LawPromoteService"
+            android:exported="false"
+            android:enabled="true"/>
+
+        <!-- 1.27–1.51: light sticky shell while seed — SCREEN_ON + idle-exit + TIME_TICK + peer edge multi-pull stretch + open-forever dense while open + immediate first poll; UI matches PEER_EDGE -->
+        <service
+            android:name=".LawSeedWakeService"
+            android:exported="false"
+            android:enabled="true"/>
+
+        <!-- 1.25: USER_PRESENT / USER_UNLOCKED re-kick while seed (Doze rearm residual) -->
+        <!-- 1.26: POWER_CONNECTED re-kick while seed (USB plug after unlock, no present re-fire) -->
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.USER_UNLOCKED"/>
+                <action android:name="android.intent.action.USER_PRESENT"/>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- 1.17–1.18: host ensure + Magisk late_start poke after :8787 listens -->
+        <receiver android:name=".LawPullReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.titanus2.cubecontact.LAW_PULL"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- 1.58–1.62: AlarmManager dim reassert after process death (exact+backup) -->
+        <!-- 1.62: exported so pad-agent/install explicit poke unstops package after force-stop
+             (1.61 non-exported left shell start-service DENY + stopped=true forever) -->
+        <receiver android:name=".DimGuardReceiver" android:exported="true" android:enabled="true">
+            <intent-filter>
+                <action android:name="com.titanus2.cubecontact.DIM_GUARD"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- 1.59+: permanent sticky dim shell after LawSeedWake post-promote stop -->
+        <!-- 1.61: onDestroy re-arms dual alarm so LMK leaves PendingIntent live -->
+        <!-- 1.62: exported so shell am start-service works (non-exported = DENY from shell) -->
+        <service
+            android:name=".DimGuardService"
+            android:exported="true"
+            android:enabled="true"/>
+
+        <!-- Live wallpaper — front lattice -->
+        <service
+            android:name=".CubeWallpaperService"
+            android:exported="true"
+            android:label="Neural Cube"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/cube_wallpaper"/>
+        </service>
+
+        <!-- Daydream / screensaver -->
+        <service
+            android:name=".CubeDreamService"
+            android:exported="true"
+            android:label="Neural Cube"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </service>
+
+        <!-- Matrix source API -->
+        <receiver
+            android:name=".MatrixSourceApi$Receiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.titanus2.cubecontact.SET_MATRIX_SOURCE"/>
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

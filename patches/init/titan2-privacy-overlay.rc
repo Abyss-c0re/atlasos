@@ -1,0 +1,14 @@
+# Cube: bind privacy-fixed MTK FrameworkResOverlay over EROFS vendor early.
+service titan2-privacy-overlay /system/bin/titan2-bind-mtk-privacy-overlay.sh
+    class main
+    user root
+    group root
+    oneshot
+    disabled
+
+on post-fs-data
+    start titan2-privacy-overlay
+
+on property:sys.boot_completed=1
+    # Re-assert if something unmounted; cheap if already bound
+    start titan2-privacy-overlay

@@ -1,0 +1,47 @@
+// USB HID gadget stack for MisterZtr systemimage (product SoT).
+// App: TitanUsbHid (Phase 2 priv-app). Stack is independent of APK hybrid inject.
+// SoT: packages/titan_usb_hid_system/ + packages/magisk_titan2_usb_hid/hid_bridge
+// Stage: ./scripts/misterztr/stage_gsi_product.sh → vendor/titanus2/prebuilts/usb_hid
+// Hybrid residual: WITH_USB_HID_STACK=1 (default) in build_minimal_bootable.sh
+//
+// Layout (GSI):
+//   /system/bin/titan2-hid-bridge
+//   /system/bin/titan2-usb-hid-service.sh
+//   /system/etc/titan2_usb_hid/{enable_hid.sh,service.sh}
+//   /system/etc/init/titan2-usb-hid.rc
+// service.sh prefers /system/etc/titan2_usb_hid/hid_bridge then /system/bin/titan2-hid-bridge.
+
+cc_prebuilt_binary {
+    name: "titan2-hid-bridge",
+    srcs: ["hid_bridge"],
+    compile_multilib: "64",
+    check_elf_files: false,
+    system_shared_libs: [],
+    stem: "titan2-hid-bridge",
+}
+
+sh_binary {
+    name: "titan2-usb-hid-service.sh",
+    src: "titan2-usb-hid-service.sh",
+}
+
+prebuilt_etc {
+    name: "titan2_usb_hid_enable_hid.sh",
+    src: "enable_hid.sh",
+    sub_dir: "titan2_usb_hid",
+    filename: "enable_hid.sh",
+}
+
+prebuilt_etc {
+    name: "titan2_usb_hid_service.sh",
+    src: "service.sh",
+    sub_dir: "titan2_usb_hid",
+    filename: "service.sh",
+}
+
+prebuilt_etc {
+    name: "titan2-usb-hid.rc",
+    src: "titan2-usb-hid.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}

@@ -1,0 +1,92 @@
+// Phase 2 — product apps as prebuilt priv-apps in MisterZtr GSI.
+// SoT APKs: apps/titan_controls/, apps/titan_usb_hid/, apps/cube_contact/
+// Stage: ./scripts/misterztr/stage_gsi_product.sh → vendor/titanus2/prebuilts/apps
+// Program: docs/project/OPTIMIZE_SOURCE_PRODUCT.md
+//
+// Use certificate:platform (not presigned): hybrid APKs have compressed
+// classes.dex; privileged+presigned Soong check rejects compressed dex, and
+// debug-keystore bytes are not product SoT. Platform re-sign uncompresses
+// priv dex and matches GSI system keys. After KEEP_DATA boot-prove, set hybrid
+// WITH_CONTROLS=0 WITH_USB_HID=0 WITH_CUBE_CONTACT=0 to drop dual inject.
+
+android_app_import {
+    name: "TitanControls",
+    apk: "TitanControls.apk",
+    certificate: "platform",
+    privileged: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+android_app_import {
+    name: "TitanUsbHid",
+    apk: "TitanUsbHid.apk",
+    certificate: "platform",
+    privileged: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+android_app_import {
+    name: "CubeContact",
+    apk: "CubeContact.apk",
+    certificate: "platform",
+    privileged: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+// Default QWERTY IME (EN+RU Titan maps) — SinuXVR PocketBoard.
+// Source: third_party/pocket-board · tip SoT APK until PRODUCT_PACKAGES build-from-source.
+// Presigned: upstream release key; product may re-sign later.
+android_app_import {
+    name: "PocketBoard",
+    apk: "PocketBoard.apk",
+    // targetSdk>=30 presigned: Soong must not re-align/re-sign (wrecks v2 sig).
+    presigned: true,
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+// System HW keyboard layout pack (Russian .kcm for layout picker).
+android_app_import {
+    name: "HwKeyboardLayouts",
+    apk: "HwKeyboardLayouts.apk",
+    certificate: "platform",
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-com.titanus2.controls.xml",
+    src: "privapp-permissions-com.titanus2.controls.xml",
+    sub_dir: "permissions",
+    filename_from_src: true,
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-com.titanus2.usbhid.xml",
+    src: "privapp-permissions-com.titanus2.usbhid.xml",
+    sub_dir: "permissions",
+    filename_from_src: true,
+}
+
+prebuilt_etc {
+    name: "default-permissions-com.titanus2.usbhid.xml",
+    src: "default-permissions-com.titanus2.usbhid.xml",
+    sub_dir: "default-permissions",
+    filename_from_src: true,
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-com.titanus2.cubecontact.xml",
+    src: "privapp-permissions-com.titanus2.cubecontact.xml",
+    sub_dir: "permissions",
+    filename_from_src: true,
+}

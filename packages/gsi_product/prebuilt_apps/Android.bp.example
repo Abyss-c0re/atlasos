@@ -1,0 +1,29 @@
+// EXAMPLE — Phase 2 product apps as prebuilt priv-apps in MisterZtr GSI.
+// Do not enable until each APK is boot-proven on KEEP_DATA hybrid path first.
+// SoT APKs: apps/titan_controls/, apps/titan_usb_hid/, apps/cube_contact/
+// Stage: extend scripts/misterztr/stage_gsi_product.sh + PRODUCT_PACKAGES in titanus2.mk
+//
+// android_app_import {
+//     name: "TitanControls",
+//     apk: "TitanControls.apk",
+//     certificate: "platform",
+//     privileged: true,
+//     system_ext_specific: false,
+//     dex_preopt: { enabled: false },
+// }
+//
+// android_app_import {
+//     name: "TitanUsbHid",
+//     apk: "TitanUsbHid.apk",
+//     certificate: "platform",
+//     privileged: true,
+//     dex_preopt: { enabled: false },
+// }
+//
+// android_app_import {
+//     name: "CubeContact",
+//     apk: "CubeContact.apk",
+//     certificate: "platform",
+//     privileged: true,
+//     dex_preopt: { enabled: false },
+// }

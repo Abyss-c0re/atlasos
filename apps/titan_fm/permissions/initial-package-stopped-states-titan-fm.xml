@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Do not scan OSS FM as stopped system app (Android 14+ default). -->
+<config>
+    <initial-package-state package="com.android.fmradio" stopped="false"/>
+</config>

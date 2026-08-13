@@ -1,0 +1,13 @@
+diff --git a/product.prop b/product.prop
+index 70f4953..c531eab 100644
+--- a/product.prop
++++ b/product.prop
+@@ -48,3 +48,8 @@ view.scroll_friction=0
+ ro.min_pointer_dur=8
+ debug.egl.hw=1
+ video.accelerate.hw=1
++
++# Titan 2 product identity (Abyss-c0re) — compiled into GSI
++ro.lineage.maintainer=Abyss-c0re
++ro.titanus2.maintainer=Abyss-c0re
++ro.titanus2.gsi_source=1

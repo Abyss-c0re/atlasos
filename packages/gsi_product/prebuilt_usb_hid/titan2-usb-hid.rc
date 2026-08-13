@@ -1,0 +1,11 @@
+# In-ROM USB HID gadget + bridge (rootless for app; service is root via init).
+# Direct exec (like titan2-dev-adb) — multi-arg /system/bin/sh form was NOT
+# registered by init on this train (init.svc never appeared).
+service titan2-usb-hid /system/bin/titan2-usb-hid-service.sh
+    class late_start
+    user root
+    group root system
+    disabled
+
+on property:sys.boot_completed=1
+    start titan2-usb-hid

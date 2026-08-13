@@ -1,0 +1,62 @@
+#!/system/bin/sh
+# atlas-heal-home — reclaim $HOME from root leftovers (after free-root sessions).
+# Grok "Permission denied" is almost always root:root auth.json/config.toml.
+#
+# Usage (from Atlas user shell):
+#   atlas-heal-home
+# (runs biometrics once, then chown -R app:app $HOME)
+#
+export PATH="/system/bin:/system/xbin:/vendor/bin:$PATH"
+
+HOME="${HOME:-$ATLAS_HOME}"
+if [ -z "$HOME" ] || [ ! -d "$HOME" ]; then
+  for h in /data/user/0/com.titanus2.atlas/files /data/data/com.titanus2.atlas/files; do
+    [ -d "$h" ] && HOME=$h && break
+  done
+fi
+export HOME ATLAS_HOME="${ATLAS_HOME:-$HOME}"
+
+AUTH=""
+me=$(dirname "$0")
+for c in "$me/atlas-auth" "$ATLAS_BIN/atlas-auth" "$HOME/bin/atlas-auth"; do
+  [ -f "$c" ] && AUTH=$c && break
+done
+
+REAL_SU=""
+for c in /system/bin/su /system/xbin/su /data/adb/ksu/bin/su; do
+  [ -x "$c" ] || continue
+  head -1 "$c" 2>/dev/null | grep -q 'Atlas su' && continue
+  grep -q 'atlas-auth' "$c" 2>/dev/null && continue
+  REAL_SU=$c
+  break
+done
+
+if [ -z "$REAL_SU" ]; then
+  echo "atlas-heal-home: no real su" >&2
+  exit 127
+fi
+
+# Target owner = owner of the package data dir (app uid), not root
+PKG=/data/user/0/com.titanus2.atlas
+[ -d "$PKG" ] || PKG=/data/data/com.titanus2.atlas
+OWNER=$(stat -c %u:%g "$PKG" 2>/dev/null || stat -c %u:%g "$HOME")
+
+echo "atlas-heal-home: chown -R $OWNER $HOME (needs biometrics)"
+if [ -n "$AUTH" ]; then
+  /system/bin/sh "$AUTH" request "heal Atlas home ownership for grok" || {
+    echo "atlas-heal-home: auth denied" >&2
+    exit 1
+  }
+fi
+
+"$REAL_SU" 0 sh -c "
+  chown -R $OWNER '$HOME'
+  chmod -R u+rwX '$HOME'
+  # keep secrets private
+  [ -f '$HOME/.grok/auth.json' ] && chmod 600 '$HOME/.grok/auth.json'
+  [ -f '$HOME/.grok/config.toml' ] && chmod 600 '$HOME/.grok/config.toml'
+  [ -f '$HOME/.grok/downloads/grok-linux-aarch64' ] && chmod 755 '$HOME/.grok/downloads/grok-linux-aarch64'
+  rm -f '$HOME/.atlas-need-heal'
+  echo atlas-heal-home: OK owner=$OWNER
+  ls -la '$HOME/.grok/auth.json' '$HOME/.grok/config.toml' 2>/dev/null | head
+"

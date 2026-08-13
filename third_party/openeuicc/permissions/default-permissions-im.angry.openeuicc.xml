@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Default runtime grants for privileged OpenEUICC (hybrid Titanus2).
+  Privileged permissions are handled by privapp_whitelist_im.angry.openeuicc.xml.
+-->
+<exceptions>
+    <exception package="im.angry.openeuicc">
+        <permission name="android.permission.POST_NOTIFICATIONS" fixed="false"/>
+    </exception>
+</exceptions>

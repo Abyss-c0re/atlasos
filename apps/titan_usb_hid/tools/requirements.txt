@@ -1,0 +1,3 @@
+# Host-side BT HID lab harness (BlueZ + evdev)
+# system: python3-dbus python3-gi (usually preinstalled on Fedora/Arch)
+evdev>=1.6.0

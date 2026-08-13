@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pre-grant mic for FM_TUNER capture (system priv-app). -->
+<exceptions>
+    <exception package="com.android.fmradio">
+        <permission name="android.permission.RECORD_AUDIO" fixed="false"/>
+    </exception>
+</exceptions>

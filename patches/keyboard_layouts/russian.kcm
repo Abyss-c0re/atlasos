@@ -1,0 +1,164 @@
+# Russian physical keyboard layout (ЙЦУКЕН) for Titan 2
+# Mapping adapted from open layout data used by Pastiera IME:
+#   https://github.com/palsoftware/pastiera  (russian_standard.json)
+# Packaged as a plain system keyboard layout (not an app feature).
+# Full multi-tap/IME behavior remains in Pastiera if installed separately.
+
+type OVERLAY
+
+key Q {
+    label:                              'Й'
+    base:                               'й'
+    shift, capslock:                    'Й'
+}
+
+key W {
+    label:                              'Ц'
+    base:                               'ц'
+    shift, capslock:                    'Ц'
+}
+
+key E {
+    label:                              'У'
+    base:                               'у'
+    shift, capslock:                    'У'
+}
+
+key R {
+    label:                              'К'
+    base:                               'к'
+    shift, capslock:                    'К'
+}
+
+key T {
+    label:                              'Е'
+    base:                               'е'
+    shift, capslock:                    'Е'
+}
+
+key Y {
+    label:                              'Н'
+    base:                               'н'
+    shift, capslock:                    'Н'
+}
+
+key U {
+    label:                              'Г'
+    base:                               'г'
+    shift, capslock:                    'Г'
+}
+
+key I {
+    label:                              'Ш'
+    base:                               'ш'
+    shift, capslock:                    'Ш'
+}
+
+key O {
+    label:                              'Щ'
+    base:                               'щ'
+    shift, capslock:                    'Щ'
+}
+
+key P {
+    label:                              'З'
+    base:                               'з'
+    shift, capslock:                    'З'
+}
+
+key A {
+    label:                              'Ф'
+    base:                               'ф'
+    shift, capslock:                    'Ф'
+}
+
+key S {
+    label:                              'Ы'
+    base:                               'ы'
+    shift, capslock:                    'Ы'
+}
+
+key D {
+    label:                              'В'
+    base:                               'в'
+    shift, capslock:                    'В'
+}
+
+key F {
+    label:                              'А'
+    base:                               'а'
+    shift, capslock:                    'А'
+}
+
+key G {
+    label:                              'П'
+    base:                               'п'
+    shift, capslock:                    'П'
+}
+
+key H {
+    label:                              'Р'
+    base:                               'р'
+    shift, capslock:                    'Р'
+}
+
+key J {
+    label:                              'О'
+    base:                               'о'
+    shift, capslock:                    'О'
+}
+
+key K {
+    label:                              'Л'
+    base:                               'л'
+    shift, capslock:                    'Л'
+}
+
+key L {
+    label:                              'Д'
+    base:                               'д'
+    shift, capslock:                    'Д'
+}
+
+key Z {
+    label:                              'Я'
+    base:                               'я'
+    shift, capslock:                    'Я'
+}
+
+key X {
+    label:                              'Ч'
+    base:                               'ч'
+    shift, capslock:                    'Ч'
+}
+
+key C {
+    label:                              'С'
+    base:                               'с'
+    shift, capslock:                    'С'
+}
+
+key V {
+    label:                              'М'
+    base:                               'м'
+    shift, capslock:                    'М'
+}
+
+key B {
+    label:                              'И'
+    base:                               'и'
+    shift, capslock:                    'И'
+}
+
+key N {
+    label:                              'Т'
+    base:                               'т'
+    shift, capslock:                    'Т'
+}
+
+key M {
+    label:                              'Ь'
+    base:                               'ь'
+    shift, capslock:                    'Ь'
+}
+

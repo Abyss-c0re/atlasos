@@ -1,0 +1,17 @@
+# Long-lived pad + keyboard LED agent (titanus2 EEA)
+# Direct exec like titan2-dev-adb (works on this GSI). Do NOT use
+# /system/bin/sh multi-arg form — init never registered those services.
+#
+# REG-K (2026-07-20): agent _boot_pad_safe inhibits touchPad + ignore idc before
+# main loop so first-boot Wi‑Fi password typing never becomes UI taps.
+service titan2-pad-agent /system/bin/titan2-pad-agent.sh
+    class late_start
+    user root
+    group root system
+    disabled
+
+# Single start only. Dual boot_completed + dev.bootcomplete raced and left
+# 2–3 pad-agents thrashing InputReader (load~20, HID dead, reboot→preloader).
+# Missed start recovers via phh-on-boot ctl.start (no second property trigger).
+on property:sys.boot_completed=1
+    start titan2-pad-agent

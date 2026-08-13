@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Neural Cube</string>
+    <string name="a11y_desc">Neural Cube assist. Optional unprivileged automation for device controls.</string>
+    <string name="chat_hint">Message…</string>
+</resources>

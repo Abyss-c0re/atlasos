@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <link rel="stylesheet" href="xterm.css"/>
+  <style>
+    html, body { margin:0; padding:0; height:100%; background:#0a0a0a; overflow:hidden; }
+    #term { height:100%; width:100%; padding:4px; box-sizing:border-box; }
+    .xterm { height:100%; }
+    .xterm-viewport { overflow-y: auto !important; }
+  </style>
+</head>
+<body>
+  <div id="term"></div>
+  <script src="xterm.min.js"></script>
+  <script src="xterm-addon-fit.min.js"></script>
+  <script>
+    const term = new Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: 'monospace',
+      theme: {
+        background: '#0a0a0a',
+        foreground: '#eceff1',
+        cursor: '#80cbc4',
+        selectionBackground: '#37474f'
+      },
+      allowProposedApi: true,
+      convertEol: false,
+      scrollback: 5000
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById('term'));
+    function doFit() {
+      try { fit.fit(); } catch (e) {}
+      try {
+        if (window.AtlasBridge && term.cols && term.rows) {
+          AtlasBridge.onResize(term.cols, term.rows);
+        }
+      } catch (e) {}
+    }
+    window.addEventListener('resize', doFit);
+    setTimeout(doFit, 50);
+    setTimeout(doFit, 300);
+
+    term.onData(function (data) {
+      try { AtlasBridge.onInput(data); } catch (e) {}
+    });
+
+    window.termWriteB64 = function (b64) {
+      try {
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        // Prefer UTF-8 decode
+        let s;
+        try { s = new TextDecoder('utf-8').decode(bytes); }
+        catch (e) { s = bin; }
+        term.write(s);
+      } catch (e) {
+        term.writeln('[term write error]');
+      }
+    };
+    window.termClear = function () {
+      term.clear();
+      term.reset();
+    };
+    window.termFocus = function () { term.focus(); };
+    try { AtlasBridge.onReady(); } catch (e) {}
+    term.focus();
+  </script>
+</body>
+</html>

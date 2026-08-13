@@ -1,0 +1,110 @@
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/policy/FlashlightControllerImpl.java b/packages/SystemUI/src/com/android/systemui/statusbar/policy/FlashlightControllerImpl.java
+index 615cc74ef5e4..126306d491c0 100644
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/policy/FlashlightControllerImpl.java
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/policy/FlashlightControllerImpl.java
+@@ -35,6 +35,8 @@ import com.android.systemui.dagger.qualifiers.Background;
+ import com.android.systemui.dump.DumpManager;
+ import com.android.systemui.util.settings.SecureSettings;
+ 
++import java.io.File;
++import java.io.FileWriter;
+ import java.io.PrintWriter;
+ import java.lang.ref.WeakReference;
+ import java.util.ArrayList;
+@@ -122,25 +124,77 @@ public class FlashlightControllerImpl implements FlashlightController {
+     }
+ 
+     public void setFlashlight(boolean enabled) {
+-        if (!mHasFlashlight) return;
++        // Titan: torch must work when camera privacy revokes /dev/video* (devices=0).
++        // Prefer CameraManager; fall back to MTK flashlight_core sysfs (linux path).
++        if (!mHasFlashlight && !hasSysfsTorch()) return;
+         if (mCameraId.get() == null) {
+             mExecutor.execute(this::tryInitCamera);
+         }
+         mExecutor.execute(() -> {
+-            if (mCameraId.get() == null) return;
+             synchronized (this) {
+-                if (mFlashlightEnabled != enabled) {
+-                    try {
+-                        mCameraManager.setTorchMode(mCameraId.get(), enabled);
+-                    } catch (CameraAccessException e) {
+-                        Log.e(TAG, "Couldn't set torch mode", e);
+-                        dispatchError();
+-                    }
++                if (mFlashlightEnabled == enabled) return;
++            }
++            boolean ok = false;
++            String id = mCameraId.get();
++            if (id != null) {
++                try {
++                    mCameraManager.setTorchMode(id, enabled);
++                    ok = true;
++                } catch (Throwable e) {
++                    Log.w(TAG, "setTorchMode failed, trying sysfs torch", e);
+                 }
+             }
++            if (!ok) {
++                ok = setTorchSysfs(enabled);
++            }
++            if (!ok) {
++                dispatchError();
++                return;
++            }
++            synchronized (this) {
++                mFlashlightEnabled = enabled;
++                mTorchAvailable = true;
++            }
++            dispatchModeChanged(enabled);
++            dispatchAvailabilityChanged(true);
+         });
+     }
+ 
++    /** MTK sysfs torch — independent of CameraService device list / video nodes. */
++    private static boolean hasSysfsTorch() {
++        return new File("/sys/devices/virtual/flashlight_core/flashlight/flashlight_torch")
++                .exists()
++                || new File("/sys/class/flashlight_core/flashlight/flashlight_torch").exists();
++    }
++
++    private static boolean setTorchSysfs(boolean enabled) {
++        String[] paths = {
++                "/sys/devices/virtual/flashlight_core/flashlight/flashlight_torch",
++                "/sys/class/flashlight_core/flashlight/flashlight_torch",
++        };
++        String on = enabled ? "1" : "0";
++        for (String path : paths) {
++            File f = new File(path);
++            if (!f.exists()) continue;
++            try (FileWriter w = new FileWriter(f)) {
++                // type0 ct0 + ct1 (dual color temp)
++                w.write("0 0 0 " + on + "\n");
++                w.flush();
++            } catch (Throwable e) {
++                Log.e(TAG, "sysfs torch write failed " + path, e);
++                continue;
++            }
++            try (FileWriter w = new FileWriter(f)) {
++                w.write("0 1 0 " + on + "\n");
++                w.flush();
++            } catch (Throwable ignored) {
++            }
++            Log.i(TAG, "sysfs torch " + (enabled ? "on" : "off") + " via " + path);
++            return true;
++        }
++        return false;
++    }
++
+     public boolean hasFlashlight() {
+         return mHasFlashlight;
+     }
+@@ -150,7 +204,8 @@ public class FlashlightControllerImpl implements FlashlightController {
+     }
+ 
+     public synchronized boolean isAvailable() {
+-        return mTorchAvailable;
++        // Keep QS flashlight tappable under camera privacy (video nodes 000).
++        return mTorchAvailable || hasSysfsTorch();
+     }
+ 
+     @Override

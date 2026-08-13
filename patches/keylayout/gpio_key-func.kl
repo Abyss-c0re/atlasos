@@ -1,0 +1,7 @@
+# Titan 2 side · bottom (device: gpio_key-func, Linux scan 250).
+# Left edge, lower programmable button.
+#
+# Intentionally NO key mapping. Android InputReader drops unmapped EV_KEY
+# codes — so the system never sees Home/Recents/BUTTON_*. Pad-agent
+# getevent owns this scan exclusively for remaps (layout hold/toggle, etc.).
+# (Was APP_SWITCH / BUTTON_* — KeyGesture still treated those as nav/home.)

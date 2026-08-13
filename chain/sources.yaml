@@ -1,0 +1,69 @@
+# AtlasOS cubechain store.
+# This file is the only thing that names upstreams. Trees stay local.
+# Never upload anything listed with upload: never.
+schema: atlasos.chain.v1
+product: atlasos
+codename: cyberdeck
+device: unihertz-titan2
+
+links:
+  misterztr_gsi:
+    url: https://github.com/MisterZtr/LineageOS_gsi
+    ref: lineage-23.2
+    role: gsi_recipe
+    upload: never
+
+  lineage_tree:
+    env: MISTERZTR_TREE
+    default: ~/Dev/titanus2-artifacts/misterztr_lineage
+    role: android_tree
+    note: repo-synced Lineage + MisterZtr apply-patches. Not in this git.
+    upload: never
+
+  unihertz_stock:
+    role: vendor_train
+    note: >
+      Region-matching stock OEM zip the builder already owns.
+      Unihertz publishes no kernel or device sources. Never commit the zip.
+    upload: never
+
+  workshop:
+    env: TITANUS2_WORKSHOP
+    default: ../titanus2
+    role: kitchen_packer
+    note: Lab meta that still owns hybrid pack / flash. Linked, not vendored.
+    upload: never
+
+  peter_touchpadd:
+    url: https://gitea.angry.im/PeterGSI/titan2-touchpadd
+    role: pad_runtime
+    overlay: third_party/titan2-touchpadd/patches
+    upload: never
+
+  pocket_board:
+    url: https://github.com/SinuXVR/pocket-board
+    license: GPL-3.0
+    role: ime
+    upload: never
+
+  openeuicc:
+    url: https://gitea.angry.im/PeterCxy/OpenEUICC
+    license: GPL-3.0
+    role: esim
+    upload: never
+    note: Fetch APK locally. Do not commit the APK.
+
+  lineageos:
+    url: https://github.com/LineageOS
+    role: platform
+    upload: never
+
+pin:
+  gsi_family: LineageOS-23.2
+  gsi_variant: VANILLA-EXT4
+  # Live matching pin (workshop). Next AtlasOS export gets a new date.
+  live_pin: "20260804"
+  note: >
+    20260804 GSI image does not yet contain titan2-touchpadd.
+    SERIES 0040 + stage lands it on the next pipeline export.
+    Hybrid WITH_TOUCHPADD_INJECT=1 until that new pin is boot-proven.

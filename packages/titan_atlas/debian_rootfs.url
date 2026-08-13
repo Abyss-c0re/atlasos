@@ -1,0 +1,10 @@
+# Host-built only — do not rely on this URL for minbase.
+# Peer: Armbian Radxa NIO 12L (16GB) · Debian 13 trixie
+# Build: ./packages/titan_atlas/scripts/build_debian_rootfs.sh
+# Push:  ./packages/titan_atlas/scripts/build_debian_rootfs.sh --push
+#
+# Armbian board: https://armbian.com/boards/radxa-nio-12l
+# Armbian build: ./compile.sh BOARD=radxa-nio-12l RELEASE=trixie BUILD_DESKTOP=no BUILD_MINIMAL=yes
+#
+# Fallback cloud (fat, last resort):
+https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-arm64.tar.xz

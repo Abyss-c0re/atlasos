@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Privileged permission for Titan2 framework API.
+  Install under /system/etc/permissions/ when packing the hybrid ROM.
+  signature|privileged: only ROM-signed / priv-app clients bind.
+-->
+<permissions>
+    <permission name="com.titanus2.permission.USE_TITAN2_API"
+        protectionLevel="signature|privileged" />
+</permissions>

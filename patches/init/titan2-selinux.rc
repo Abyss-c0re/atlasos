@@ -1,0 +1,7 @@
+# Relabel injected Titan stack before PackageManager opens APKs.
+# Without this, guestfish-uploaded files stay unlabeled → crash ("MainActivity").
+on post-fs
+    exec_background - root root -- /system/bin/titan2-selinux-fix.sh
+
+on post-fs-data
+    exec_background - root root -- /system/bin/titan2-selinux-fix.sh

@@ -1,0 +1,489 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.titanus2.controls"
+    android:versionCode="580"
+    android:versionName="15.80-home-restore">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
+    <!-- Framework API: host declares + holds USE_TITAN2_API -->
+    <permission
+        android:name="com.titanus2.permission.USE_TITAN2_API"
+        android:protectionLevel="signature|privileged"
+        android:label="Titan2 framework API"
+        android:description="@string/app_name"/>
+    <uses-permission android:name="com.titanus2.permission.USE_TITAN2_API"/>
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
+    <uses-permission android:name="android.permission.WRITE_SETTINGS"/>
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"/>
+    <uses-permission android:name="android.permission.CONTROL_DISPLAY_BRIGHTNESS"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.MEDIA_CONTENT_CONTROL"/>
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW"/>
+    <uses-permission android:name="android.permission.FLASHLIGHT"/>
+    <uses-permission android:name="android.permission.INJECT_EVENTS"/>
+    <!-- OEM space-bar / shortcut parity: answer, end, mute (no Agui) -->
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS"/>
+    <uses-permission android:name="android.permission.MODIFY_PHONE_STATE"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <!-- Rear dual-display: display-scoped power + bind sub_touch → display 2 -->
+    <uses-permission android:name="android.permission.DEVICE_POWER"/>
+    <uses-permission android:name="android.permission.ASSOCIATE_INPUT_DEVICE_TO_DISPLAY"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- FB-SEC-1: fail-closed camera/mic (SensorPrivacyEnforcer) -->
+    <uses-permission android:name="android.permission.MANAGE_SENSOR_PRIVACY"/>
+    <uses-permission android:name="android.permission.OBSERVE_SENSOR_PRIVACY"/>
+    <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES"/>
+    <!-- 15.15–15.22: leave-scoped rear discovery + move-to-main + main focus restore/verify/belt/pin/rebind -->
+    <uses-permission android:name="android.permission.REAL_GET_TASKS"/>
+    <uses-permission android:name="android.permission.GET_TASKS"/>
+    <uses-permission android:name="android.permission.REMOVE_TASKS"/>
+    <uses-permission android:name="android.permission.GET_APP_OPS_STATS"/>
+    <uses-permission android:name="android.permission.MANAGE_APP_OPS_MODES"/>
+    <uses-feature android:name="android.hardware.camera.flash" android:required="false"/>
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="true"
+        android:theme="@style/Theme.Titan.DayNight"
+        android:hardwareAccelerated="true"
+        android:requestLegacyExternalStorage="true">
+<!-- Settings only (no home-screen launcher). System → Titan Controls. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:icon="@drawable/ic_settings_titan_controls"
+            android:theme="@style/Theme.Titan.DayNight"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="com.android.settings.action.EXTRA_SETTINGS"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <!-- Long-press pad QS tile → Trackpad hub (not App info) -->
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <!-- Deep link: am start -a com.titanus2.controls.action.OPEN_PAD -->
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.OPEN_PAD"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <meta-data
+                android:name="com.android.settings.category"
+                android:value="com.android.settings.category.ia.system"/>
+            <meta-data
+                android:name="com.android.settings.title"
+                android:resource="@string/app_name"/>
+            <meta-data
+                android:name="com.android.settings.icon"
+                android:resource="@drawable/ic_settings_titan_controls"/>
+            <meta-data
+                android:name="com.android.settings.icon_tintable"
+                android:value="true"/>
+        </activity>
+        <!-- Product changelog (build-stamped assets/changelog.txt) -->
+        <activity
+            android:name=".ChangelogActivity"
+            android:exported="false"
+            android:label="Changelog"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.Titan.DayNight"
+            android:configChanges="orientation|screenSize|keyboardHidden"/>
+        <!-- Lab: am start -n com.titanus2.controls/.SpecialsProbeActivity -->
+        <activity
+            android:name=".SpecialsProbeActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:label="Specials probe">
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.SPECIALS_PROBE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+        <!-- Lab: am start -n com.titanus2.controls/.SideB1ProbeActivity -->
+        <activity
+            android:name=".SideB1ProbeActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:label="B1 side probe">
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.B1_SIDE_PROBE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+        <!-- Preferred agent path when screen off (Global plane write) -->
+        <receiver
+            android:name=".SideB1ProbeReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.B1_SIDE_PROBE"/>
+            </intent-filter>
+        </receiver>
+        <!-- Lab: am start -n com.titanus2.controls/.ExclusiveB2ProbeActivity -->
+        <activity
+            android:name=".ExclusiveB2ProbeActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:label="B2 exclusive probe">
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.B2_EXCLUSIVE_PROBE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+        <!-- Preferred agent path when screen off (Global plane write) -->
+        <receiver
+            android:name=".ExclusiveB2ProbeReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.B2_EXCLUSIVE_PROBE"/>
+            </intent-filter>
+        </receiver>
+        <activity
+            android:name=".KeyMapActivity"
+            android:exported="true"
+            android:label="Key shortcuts">
+            <!-- Lab / adb: am start -n com.titanus2.controls/.KeyMapActivity -->
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.KEY_MAP"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".KeyMapProfileActivity"
+            android:exported="true"
+            android:label="App keys"
+            android:parentActivityName=".KeyMapActivity">
+            <!-- Lab: am start -n com.titanus2.controls/.KeyMapProfileActivity with es package=PKG -->
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.KEY_MAP_PROFILE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".layouts.CustomLayoutsActivity"
+            android:exported="true"
+            android:label="Layouts"
+            android:parentActivityName=".KeyMapActivity">
+            <!-- HID app / lab: am start -n com.titanus2.controls/.layouts.CustomLayoutsActivity -->
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.LAYOUTS"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".layouts.CustomLayoutEditActivity"
+            android:exported="false"
+            android:label="Edit layout"
+            android:parentActivityName=".layouts.CustomLayoutsActivity"/>
+        <activity
+            android:name=".NetworkActivity"
+            android:exported="false"
+            android:label="Tweaks"/>
+        <receiver
+            android:name=".layouts.LayoutNotif$OffReceiver"
+            android:exported="false"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.titanus2.controls.LAYOUT_NOTIF_OFF"/>
+            </intent-filter>
+        </receiver>
+        <!-- Notification LED: primary UI + capture system "notification light" deep links -->
+        <activity
+            android:name=".notifled.NotifLedActivity"
+            android:exported="true"
+            android:label="Notification LED"
+            android:icon="@drawable/ic_settings_titan_controls">
+            <!-- Official / AOSP-ish LED & pulse settings intents -->
+            <intent-filter android:priority="999">
+                <action android:name="android.settings.NOTIFICATION_LED_SETTINGS"/>
+                <action android:name="android.settings.NOTIFICATION_PULSE_SETTINGS"/>
+                <action android:name="android.settings.SHOW_NOTIFICATION_LIGHT"/>
+                <action android:name="com.android.settings.NOTIFICATION_LIGHT"/>
+                <action android:name="com.android.settings.action.NOTIFICATION_LIGHT"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <!-- Appear under Settings → Notifications (IA) -->
+            <intent-filter>
+                <action android:name="com.android.settings.action.IA_SETTINGS"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <meta-data
+                android:name="com.android.settings.category"
+                android:value="com.android.settings.category.ia.notifications"/>
+            <meta-data
+                android:name="com.android.settings.title"
+                android:value="Keyboard notification LED"/>
+            <meta-data
+                android:name="com.android.settings.icon"
+                android:resource="@drawable/ic_settings_titan_controls"/>
+            <meta-data
+                android:name="com.android.settings.icon_tintable"
+                android:value="true"/>
+        </activity>
+        <!-- Alias: some builds resolve LED settings via this action only -->
+        <activity-alias
+            android:name=".notifled.NotificationLightSettings"
+            android:targetActivity=".notifled.NotifLedActivity"
+            android:exported="true"
+            android:label="Notification light">
+            <intent-filter android:priority="1000">
+                <action android:name="android.settings.NOTIFICATION_LED_SETTINGS"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity-alias>
+        <activity
+            android:name=".devtools.DevToolsActivity"
+            android:exported="false"
+            android:label="Dev"/>
+        <!-- AUTO DEV MODE runtime (screenshot analyze + BlackCube peer) -->
+        <service
+            android:name=".devtools.AutoDevService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="AUTO DEV MODE lab nanobot MCP"/>
+        </service>
+        <service
+            android:name=".devtools.AutoDevTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_auto_dev"
+            android:label="@string/qs_auto_dev_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true"/>
+        </service>
+        <!-- Firewall cube: Settings page only — never a separate launcher app -->
+        <activity
+            android:name=".FirewallActivity"
+            android:exported="false"
+            android:label="Firewall"
+            android:parentActivityName=".MainActivity"/>
+        <activity
+            android:name=".ui.ThemeActivity"
+            android:exported="true"
+            android:label="Look"
+            android:parentActivityName=".MainActivity"/>
+        <activity
+            android:name=".subdisplay.SubDisplayActivity"
+            android:exported="true"
+            android:label="Sub display"
+            android:launchMode="singleTop"
+            android:resizeableActivity="true">
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.SUB_DISPLAY"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+        <!-- Apps mode home on rear (SecondaryLauncher parity). Not main launcher.
+             singleTask: re-home CLEAR_TOP (15.7) so Esc/APPLY never leave blank digitizer. -->
+        <activity
+            android:name=".subdisplay.SubDisplayLauncherActivity"
+            android:exported="true"
+            android:label="Rear apps"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:taskAffinity="com.titanus2.controls.rearapps"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
+            <!-- Lab/shell: am start -a com.titanus2.controls.action.REAR_APPS_HOME (use display 2) -->
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.REAR_APPS_HOME"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+        <!-- Custom face on rear (or fallback). Not in launcher / recents. -->
+        <activity
+            android:name=".subdisplay.SubDisplayFaceActivity"
+            android:exported="false"
+            android:label="Rear face"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:taskAffinity="com.titanus2.controls.rearface"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"/>
+        <service
+            android:name=".subdisplay.SubDisplayService"
+            android:exported="true"
+            android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="com.titanus2.controls.subdisplay.START"/>
+                <action android:name="com.titanus2.controls.subdisplay.STOP"/>
+                <action android:name="com.titanus2.controls.subdisplay.TOGGLE"/>
+                <action android:name="com.titanus2.controls.subdisplay.REFRESH"/>
+                <action android:name="com.titanus2.controls.subdisplay.WAKE"/>
+                <action android:name="com.titanus2.controls.subdisplay.APPLY"/>
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="rear sub-display modes"/>
+        </service>
+        <service
+            android:name=".TrackpadAccessService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/trackpad_accessibility"/>
+        </service>
+        <service
+            android:name=".notifled.NotifLedService"
+            android:exported="true"
+            android:label="Titan keyboard notification LED"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
+        <!-- Stamps display rotation for mouse follow-orient (no UI). -->
+        <service
+            android:name=".PadOrientationService"
+            android:exported="false"
+            android:enabled="true"/>
+        <!-- Quick Settings: Off / Trackpad / Mouse -->
+        <service
+            android:name=".PadModeTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_pad_trackpad"
+            android:label="@string/qs_pad_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true"/>
+        </service>
+        <!-- 15.63: DISABLED. Fake product tiles while MTK CamToggle=false were theater.
+             Stock cameratoggle/mictoggle after Cube MTK FrameworkResOverlay bind. -->
+        <service
+            android:name=".CameraPrivacyTileService"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_camera_on"
+            android:label="@string/qs_camera_privacy_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true"/>
+        </service>
+        <service
+            android:name=".MicPrivacyTileService"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_mic_on"
+            android:label="@string/qs_mic_privacy_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true"/>
+        </service>
+        <!-- Flashlight independent of camera privacy (stock QS grays under SPM). -->
+        <service
+            android:name=".TorchTileService"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_torch_off"
+            android:label="@string/qs_torch_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true"/>
+        </service>
+        <receiver
+            android:name=".BootRestoreReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <!-- Optional VPN-over-hotspot heal: re-apply when SoftAP/tether flips -->
+        <receiver
+            android:name=".network.VpnHotspotReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.net.conn.TETHER_STATE_CHANGED"/>
+                <action android:name="android.net.conn.CONNECTIVITY_CHANGE"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- Titan2 framework core (pad / keymap / LED) — Messenger Binder API.
+             No component permission: package-local startService must work from
+             BootRestore / PadModeController. Bind path checks USE_TITAN2_API. -->
+        <service
+            android:name=".Titan2CoreService"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.titanus2.api.BIND"/>
+            </intent-filter>
+        </service>
+        <receiver
+            android:name=".PadModeApiReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.SET_PAD_MODE"/>
+                <action android:name="com.titanus2.controls.action.GET_PAD_MODE"/>
+            </intent-filter>
+        </receiver>
+<receiver
+            android:name=".KeyFireReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.titanus2.controls.KEY_FIRE"/>
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".PublishKmReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.titanus2.controls.action.PUBLISH_KM"/>
+            </intent-filter>
+        </receiver>
+</application>
+</manifest>

@@ -1,0 +1,26 @@
+# Atlas hybrid ROM — prepare Debian plane after data is available (mount/bootstrap).
+# NOT Deb session autostart. Product: system root prepare so app open works rootless
+# on Android plane; Deb enter still uses hybrid when plane is up.
+# SoT: packages/titan_atlas/scripts/atlas-hybrid.sh · atlas-hybrid-boot.sh
+
+# No seclabel u:r:su:s0 — rootless GSI often lacks su domain; service dies with
+# no log (lab post-wipe 2026-08-13: init.svc stopped, atlas-hybrid-service.log missing).
+# Match atlas-enterd: shell/root late_start without su seclabel → phhsu path works.
+service atlas-hybrid-boot /system/bin/sh /system/bin/atlas-hybrid-boot.sh
+    class late_start
+    user root
+    group root system
+    oneshot
+    disabled
+
+on property:sys.boot_completed=1
+    start atlas-hybrid-boot
+
+# App / tip / delayed boot re-request ensure without full reboot
+on property:sys.atlas.hybrid=1
+    start atlas-hybrid-boot
+    setprop sys.atlas.hybrid 0
+
+# After first unlock some GSIs expose mapper late — second kick when user_0 appears
+on property:sys.user.0.ce_available=1
+    start atlas-hybrid-boot

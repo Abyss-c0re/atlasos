@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Priv-app whitelist when TitanAtlas is hybrid-injected under /system/priv-app.
+  Without these, PackageManager strips or leaves runtime denials (FG service,
+  notifications, boot receivers) → black terminal / permission spam.
+
+  Root still via Magisk/KSU su + atlas-auth — not granted here.
+-->
+<permissions>
+    <privapp-permissions package="com.titanus2.atlas">
+        <permission name="android.permission.INTERNET" />
+        <permission name="android.permission.ACCESS_NETWORK_STATE" />
+        <permission name="android.permission.FOREGROUND_SERVICE" />
+        <permission name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+        <permission name="android.permission.POST_NOTIFICATIONS" />
+        <permission name="android.permission.WAKE_LOCK" />
+        <permission name="android.permission.USE_BIOMETRIC" />
+        <permission name="android.permission.USE_FINGERPRINT" />
+        <permission name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    </privapp-permissions>
+</permissions>

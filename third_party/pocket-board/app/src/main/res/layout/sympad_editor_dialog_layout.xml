@@ -1,0 +1,159 @@
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <RadioGroup
+        android:id="@+id/sympadEditorKeyActionGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <RadioButton
+            android:id="@+id/sympadEditorKeyActionNone"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_margin="4dp"
+            android:text="@string/ime_sympad_action_off"
+            android:maxLines="1"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="8sp"
+            app:autoSizeMaxTextSize="16sp"
+            app:autoSizeStepGranularity="1sp"
+            android:button="@null"
+            android:background="@drawable/sympad_action_button_selector"
+            android:textColor="@color/sympad_action_text_selector"
+            android:gravity="center"
+            android:checked="true" />
+
+        <RadioButton
+            android:id="@+id/sympadEditorKeyActionKeys"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_margin="4dp"
+            android:text="@string/ime_sympad_action_keys"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="8sp"
+            app:autoSizeMaxTextSize="16sp"
+            app:autoSizeStepGranularity="1sp"
+            android:maxLines="1"
+            android:button="@null"
+            android:background="@drawable/sympad_action_button_selector"
+            android:textColor="@color/sympad_action_text_selector"
+            android:gravity="center" />
+
+        <RadioButton
+            android:id="@+id/sympadEditorKeyActionText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_margin="4dp"
+            android:text="@string/ime_sympad_action_text"
+            android:maxLines="1"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="8sp"
+            app:autoSizeMaxTextSize="16sp"
+            app:autoSizeStepGranularity="1sp"
+            android:button="@null"
+            android:background="@drawable/sympad_action_button_selector"
+            android:textColor="@color/sympad_action_text_selector"
+            android:gravity="center" />
+
+        <RadioButton
+            android:id="@+id/sympadEditorKeyActionApp"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_margin="4dp"
+            android:text="@string/ime_sympad_action_app"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="8sp"
+            app:autoSizeMaxTextSize="16sp"
+            app:autoSizeStepGranularity="1sp"
+            android:maxLines="1"
+            android:button="@null"
+            android:background="@drawable/sympad_action_button_selector"
+            android:textColor="@color/sympad_action_text_selector"
+            android:gravity="center" />
+
+    </RadioGroup>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+         android:minHeight="100dp"
+        android:layout_marginTop="16dp">
+
+        <TextView
+            android:id="@+id/sympadEditorKeyActionNoneTextView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="@string/ime_sympad_action_off_title"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:visibility="visible"/>
+
+        <LinearLayout
+            android:id="@+id/sympadEditorKeyActionWrapper"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Spinner
+                android:id="@+id/sympadEditorKeyActionKeysSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <ListView
+                android:id="@+id/sympadEditorKeysList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/sympadEditorKeyActionTextEdit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/ime_sympad_text_hint"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/sympadEditorAppActionWrapper"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="100dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Spinner
+                android:id="@+id/sympadEditorKeyActionAppSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                android:id="@+id/sympadEditorKeyActionAppPermissionMsg"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:text="@string/ime_sympad_app_permission_required_msg"
+                android:layout_gravity="center"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:textColor="@color/emoji_remove_color"
+                android:justificationMode="inter_word"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+    </FrameLayout>
+
+</LinearLayout>

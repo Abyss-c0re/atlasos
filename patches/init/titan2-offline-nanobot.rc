@@ -1,0 +1,10 @@
+# Offline Nanobot at boot (Gemma + llama + peer). No Wi‑Fi required.
+service titan2-offline-nanobot /system/bin/titan2-offline-nanobot.sh
+    class late_start
+    user root
+    group root system
+    oneshot
+    disabled
+
+on property:sys.boot_completed=1
+    start titan2-offline-nanobot

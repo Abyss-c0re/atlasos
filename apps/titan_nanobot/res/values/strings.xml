@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Nanobot</string>
+    <string name="hint_message">Message…</string>
+    <string name="a11y_desc">Nanobot device control: taps, app launch, and navigation when you enable it. Off by default. Grant Accessibility + device_control in the app.</string>
+    <string name="a11y_label">Nanobot device control</string>
+</resources>

@@ -1,0 +1,25 @@
+####################################
+# Titan 2 1440x1440 display profile
+# Density: leave to vendor/framework + Settings (no forced DPI).
+####################################
+ro.sf.lcd_width=1440
+ro.sf.lcd_height=1440
+
+# Chrome / insets (stock-like); font scale left to Settings
+ro.agui.custom_status_bar=yes
+ro.agui.compat_display_insets=no
+
+# Navigation / gestures (physical keyboard device)
+ro.agui.default_navigation_bar_mode_gestural=yes
+ro.agui.back_gesture_excluded_region=yes
+ro.agui.touchpad_function=yes
+ro.agui.keymap=VOLUMEUP-VOLUMEDOWN-FUNC1-FUNC2-SYM-FUNCTION
+
+# Windowing — reduce awkward letterboxing on 1:1
+persist.wm.extensions.enabled=true
+# Prefer natural orientation for square panel (apps that force landscape still may rotate)
+ro.surface_flinger.primary_display_orientation=ORIENTATION_0
+
+# MediaTek / Treble display stability
+ro.surface_flinger.force_hwc_copy_for_virtual_displays=true
+ro.surface_flinger.max_frame_buffer_acquired_buffers=3

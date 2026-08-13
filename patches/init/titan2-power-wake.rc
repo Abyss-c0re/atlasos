@@ -1,0 +1,16 @@
+# Cube: POWER wake belt — permanent product service.
+# TOGGLE_POWER can leave Asleep on GSI dual-display; belt forces KEYCODE_WAKEUP.
+# Script contains its own reattach loop; oneshot=false so init keeps it in class.
+service titan2-power-wake /system/bin/titan2-power-wake.sh
+    class main
+    user root
+    group root input
+    oneshot
+    disabled
+
+on property:sys.boot_completed=1
+    start titan2-power-wake
+
+# getevent death or kill → re-arm (script also reattaches internally)
+on property:init.svc.titan2-power-wake=stopped
+    start titan2-power-wake

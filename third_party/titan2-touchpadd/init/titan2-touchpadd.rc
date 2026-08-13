@@ -1,0 +1,10 @@
+# PeterGSI titan2-touchpadd — optional init service (disabled).
+# On titanus2 EEA hybrid we start/stop from phh-on-boot based on pad policy.
+service titan2-touchpadd /system/bin/titan2-touchpadd
+    disabled
+    oneshot
+    setenv LOGCAT_OUTPUT true
+    setenv KEYBOARD_FEATURES false
+    ioprio rt 0
+    user root
+    group input

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto-grant runtime permissions for system TitanAtlas so first boot does not
+  leave POST_NOTIFICATIONS denied (FG auth agent + session notification).
+-->
+<exceptions>
+    <exception package="com.titanus2.atlas">
+        <permission name="android.permission.POST_NOTIFICATIONS" fixed="false" />
+    </exception>
+</exceptions>

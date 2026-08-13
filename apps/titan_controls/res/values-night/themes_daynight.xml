@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 15.28: hard night solids. Translucent DeviceDefault bg → scroll ghosts. -->
+    <color name="titan_night_bg">#FF121212</color>
+    <color name="titan_night_text">#FFF5F5F5</color>
+    <color name="titan_night_muted">#FFB0B0B0</color>
+    <color name="titan_night_accent">#FF26A69A</color>
+    <style name="Theme.Titan.DayNight" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowBackground">@color/titan_night_bg</item>
+        <item name="android:colorBackground">@color/titan_night_bg</item>
+        <item name="android:statusBarColor">@color/titan_night_bg</item>
+        <item name="android:navigationBarColor">@color/titan_night_bg</item>
+        <item name="android:textColorPrimary">@color/titan_night_text</item>
+        <item name="android:textColorSecondary">@color/titan_night_muted</item>
+        <item name="android:colorAccent">@color/titan_night_accent</item>
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+    <style name="Theme.Titan.DayNight.NoActionBar" parent="@style/Theme.Titan.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

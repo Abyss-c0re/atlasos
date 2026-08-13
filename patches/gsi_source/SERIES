@@ -1,0 +1,50 @@
+# Titan product patches on MisterZtr GSI tree (after LineageOS_gsi apply-patches).
+# Format: optional "# project:<relpath>" then patch files (relative to this dir).
+# Capture: ./scripts/misterztr/new_source_patch.sh --name … --project … --paths …
+# SoT: docs/project/SOURCE_PRODUCT.md · program: docs/project/OPTIMIZE_SOURCE_PRODUCT.md
+#
+# Policy 2026-08-06: product apps/binaries → GSI (this SERIES + PRODUCT_PACKAGES).
+# Hybrid inject is residual only (OEM vendor train + temporary dual-run).
+
+# ── Active (landed) ──────────────────────────────────────────
+
+# project:frameworks/base
+# Replaces: packages/systemui_patch SystemUI-noseckeyguard.apk inject
+#           packages/titan_subdisplay_rro static RRO (secondary decors bools)
+0010-systemui-no-secondary-keyguard-and-aod-suppress.patch
+
+# project:device/phh/treble
+# Maintainer + marker so hybrid can detect source GSI (ro.titanus2.gsi_source=1)
+0020-phh-product-maintainer-gsi-source-marker.patch
+
+# ── Planned (do not enable until patch exists + boot-proven) ─
+# Capture order when landing — keep comments for agent SoT.
+
+# project:device/phh/treble
+# PRODUCT_PACKAGES: confirmed Mouse Mode titan2-touchpadd + apps + sysbins
+# ELF/APKs staged by scripts/misterztr/stage_gsi_product.sh (not in this patch)
+# Pad runtime SoT: third_party/titan2-touchpadd — NOT pad-agent shell
+# Apps SoT: apps/titan_controls|titan_usb_hid|cube_contact
+# 0040 mk matches packages/gsi_product/titanus2.mk at capture; stage always
+# re-writes device/phh/treble/titanus2.mk from that file.
+# Live pin 20260804 GSI still lacks the ELF — hybrid WITH_TOUCHPADD_INJECT=1
+# until pipeline.sh --from=patch exports a new pin and that pin is boot-proven.
+# Do not treat 20260806 inject-off prove as applying to 20260804.
+0040-prebuilt-titan2-touchpadd-product-mk.patch
+
+# project:system/sepolicy (or device sepolicy)
+# allow pad/touchpadd + plane files for priv apps
+# # 0050-sepolicy-titan-pad-plane.patch
+
+# project:device/phh/treble or frameworks
+# drop residual phh-on-boot inject once tree-owned
+# # 0060-phh-defaults-from-inject.patch
+
+# project:frameworks/base
+# Cube privacy OS foundation (NO overlays, NO Magisk):
+# 0050: config_supportsCam/MicToggle=true + no camera double-tap power
+# 0060: system_server supportsSensorToggle(SOFTWARE, CAM|MIC)=true always
+#       so vendor MTK FrameworkResOverlay Cam=false cannot fail-open CameraService
+0050-framework-sensor-privacy-toggles-cube.patch
+0060-framework-force-software-sensor-toggles-cube.patch
+0070-systemui-torch-sysfs-under-camera-privacy.patch

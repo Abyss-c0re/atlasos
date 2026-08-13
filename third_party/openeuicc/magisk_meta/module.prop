@@ -1,0 +1,7 @@
+id=im.angry.openeuicc
+name=OpenEUICC
+version=v1.6.2-14-g2a85b8d
+versionCode=1784510572
+author=OpenEUICC authors
+description=(debug build) OpenEUICC is an open-source app that provides system-level eSIM integration.
+updateJson=https://openeuicc.com/magisk/magisk-debug.json

@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.titanus2.nanobot"
+    android:versionCode="95"
+    android:versionName="1.8.3-ssl-ca">
+
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
+
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"/>
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
+    <!-- Gallery pick for vision (GET_CONTENT often works without grant; declare for older) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_DOCUMENTS"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
+    <!-- Quest 3D scan: Camera2 RGB; depth often via OpenXR later. Data-dir only. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera.any" android:required="false"/>
+    <!-- Device ops: compose intents only (no SEND_SMS silent). -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:debuggable="true"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+        android:hardwareAccelerated="true"
+        android:directBootAware="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ShellPolicyActivity"
+            android:exported="false"
+            android:label="Shell policy"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:parentActivityName=".MainActivity"/>
+
+        <activity
+            android:name=".LogViewerActivity"
+            android:exported="false"
+            android:label="Logs"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:parentActivityName=".MainActivity"/>
+
+        <activity
+            android:name=".ShareHubActivity"
+            android:exported="false"
+            android:label="Share API &amp; MCP"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:parentActivityName=".MainActivity"/>
+
+        <activity
+            android:name=".AccessHistoryActivity"
+            android:exported="false"
+            android:label="Access history"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:parentActivityName=".MainActivity"/>
+
+        <activity
+            android:name=".LocalModelsActivity"
+            android:exported="false"
+            android:label="Local models"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:parentActivityName=".MainActivity"/>
+
+        <activity
+            android:name=".ProvidersActivity"
+            android:exported="false"
+            android:label="Providers"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:parentActivityName=".MainActivity"/>
+
+        <activity
+            android:name=".ContextSettingsActivity"
+            android:exported="false"
+            android:label="Context &amp; history"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:parentActivityName=".MainActivity"/>
+
+        <activity
+            android:name=".McpServersActivity"
+            android:exported="false"
+            android:label="MCP servers"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:parentActivityName=".MainActivity"/>
+
+        <activity
+            android:name=".DeviceOpsActivity"
+            android:exported="false"
+            android:label="Device ops"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:parentActivityName=".MainActivity"/>
+
+        <service
+            android:name=".NanobotService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="on_device_agent_peer"/>
+        </service>
+
+        <service
+            android:name=".NanobotA11yService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:label="@string/a11y_label">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/nanobot_accessibility"/>
+        </service>
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".OpsReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.titanus2.nanobot.OPS"/>
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

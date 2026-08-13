@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="titan_day_bg">#FFFAFAFA</color>
+    <color name="titan_day_text">#FF212121</color>
+    <color name="titan_day_muted">#FF616161</color>
+    <color name="titan_day_accent">#FF00897B</color>
+    <style name="Theme.Titan.DayNight" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowBackground">@color/titan_day_bg</item>
+        <item name="android:colorBackground">@color/titan_day_bg</item>
+        <item name="android:statusBarColor">@color/titan_day_bg</item>
+        <item name="android:navigationBarColor">@color/titan_day_bg</item>
+        <item name="android:textColorPrimary">@color/titan_day_text</item>
+        <item name="android:textColorSecondary">@color/titan_day_muted</item>
+        <item name="android:colorAccent">@color/titan_day_accent</item>
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+    <style name="Theme.Titan.DayNight.NoActionBar" parent="@style/Theme.Titan.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

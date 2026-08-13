@@ -1,0 +1,10 @@
+# Keyboard backlight as notification LED (no discrete RGB LED on Titan).
+service titan2-keyled-hw /system/bin/titan2-keyled-hw.sh
+    class late_start
+    user root
+    group root system
+    oneshot
+    disabled
+
+on property:sys.boot_completed=1
+    start titan2-keyled-hw

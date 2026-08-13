@@ -1,0 +1,29 @@
+# AtlasOS product flags (CyberDeck / HybridOS)
+product: atlasos
+codename: cyberdeck
+device: unihertz-titan2
+gsi:
+  family: LineageOS-23.2
+  variant: VANILLA-EXT4
+  recipe: misterztr
+  live_pin: "20260804"
+
+features:
+  touchpadd: true
+  controls: true
+  usb_hid: true
+  atlas: true
+  nanobot: true
+  cube_contact: true          # rear lattice only
+  cube_icons: true            # square mask + cube-ux
+  square_chrome: false        # full zero-radius RROs stay off
+  fm_ir: true
+  openeuicc: true
+  stock_camera: true          # from your stock zip, not this git
+  ims_safe: true
+  clanker: false
+  hive: false
+
+inject:
+  # Live pin 20260804 GSI lacks titan2-touchpadd. Keep ON until new pin proves.
+  touchpadd: true

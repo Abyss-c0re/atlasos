@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Follow system day/night (DeviceDefault). No mixed light chrome on dark OS. -->
+    <style name="Theme.Titan.DayNight" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowBackground">?android:attr/colorBackground</item>
+        <item name="android:colorBackground">?android:attr/colorBackground</item>
+        <item name="android:statusBarColor">?android:attr/colorBackground</item>
+        <item name="android:navigationBarColor">?android:attr/colorBackground</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+    <style name="Theme.Titan.DayNight.NoActionBar" parent="@style/Theme.Titan.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

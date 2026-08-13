@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:key="ime_settings"
+    android:title="@string/ime_settings"
+    android:layout_height="match_parent"
+    android:layout_width="match_parent">
+
+    <Preference
+        android:key="@string/ime_subtypes_prefs_key"
+        android:title="@string/ime_subtypes"/>
+
+    <Preference
+        app:key="@string/ime_sympad_prefs_key"
+        app:title="@string/ime_sympad_prefs"
+        app:fragment="com.sinux.pocketboard.preferences.SympadPreferencesFragment" />
+
+    <PreferenceCategory
+        android:title="@string/ime_input_cat">
+
+        <SwitchPreference
+            android:key="@string/ime_auto_correction_prefs_key"
+            android:defaultValue="true"
+            android:title="@string/ime_auto_correction"
+            android:summary="@string/ime_auto_correction_summary" />
+
+        <SwitchPreference
+            android:key="@string/ime_dict_shortcuts_prefs_key"
+            android:defaultValue="true"
+            android:title="@string/ime_dict_shortcuts"
+            android:summary="@string/ime_dict_shortcuts_summary" />
+
+        <SwitchPreference
+            android:key="@string/ime_auto_capitalization_prefs_key"
+            android:defaultValue="true"
+            android:title="@string/ime_auto_capitalization"
+            android:summary="@string/ime_auto_capitalization_summary" />
+
+        <SwitchPreference
+            android:key="@string/ime_double_space_period_prefs_key"
+            android:defaultValue="true"
+            android:title="@string/ime_double_space_period"
+            android:summary="@string/ime_double_space_period_summary" />
+
+        <SwitchPreference
+            android:key="@string/ime_show_layout_toast_prefs_key"
+            android:defaultValue="@bool/layout_toast_messages_enabled"
+            android:title="@string/ime_show_layout_toast"
+            android:summary="@string/ime_show_layout_toast_summary" />
+
+        <SwitchPreference
+            android:key="@string/ime_voice_input_shortcut_prefs_key"
+            android:defaultValue="true"
+            android:title="@string/ime_voice_input_shortcut"
+            android:summary="@string/ime_voice_input_shortcut_summary" />
+
+        <SwitchPreference
+            android:key="@string/ime_layout_change_shortcut_prefs_key"
+            android:defaultValue="true"
+            android:title="@string/ime_layout_change_shortcut"
+            android:summary="@string/ime_layout_change_shortcut_summary" />
+
+        <SwitchPreference
+            android:key="@string/ime_show_inline_suggestions_prefs_key"
+            android:defaultValue="@bool/inline_autofill_support"
+            android:enabled="@bool/inline_autofill_support"
+            app:isPreferenceVisible="@bool/inline_autofill_support"
+            android:title="@string/ime_show_inline_suggestions" />
+
+        <SwitchPreference
+            android:key="@string/ime_manual_recent_emoji_management_prefs_key"
+            android:defaultValue="false"
+            android:title="@string/ime_manual_recent_emoji_management" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/ime_panel_cat">
+
+        <SwitchPreference
+            android:key="@string/ime_show_panel_prefs_key"
+            android:defaultValue="true"
+            android:title="@string/ime_show_panel" />
+
+        <SwitchPreference
+            android:dependency="@string/ime_show_panel_prefs_key"
+            android:key="@string/ime_show_emoji_prefs_key"
+            android:defaultValue="true"
+            android:title="@string/ime_show_emoji" />
+
+        <SwitchPreference
+            android:dependency="@string/ime_show_panel_prefs_key"
+            android:key="@string/ime_show_suggestions_prefs_key"
+            android:defaultValue="true"
+            android:title="@string/ime_show_suggestions" />
+
+        <SwitchPreference
+            android:dependency="@string/ime_show_panel_prefs_key"
+            android:key="@string/ime_show_meta_layout_prefs_key"
+            android:defaultValue="true"
+            android:title="@string/ime_show_meta_layout" />
+
+        <SwitchPreference
+            android:dependency="@string/ime_show_panel_prefs_key"
+            android:key="@string/ime_show_voice_prefs_key"
+            android:defaultValue="true"
+            android:title="@string/ime_show_voice" />
+
+        <SwitchPreference
+            android:dependency="@string/ime_show_panel_prefs_key"
+            android:key="@string/ime_virtual_touchpad_prefs_key"
+            android:defaultValue="true"
+            android:title="@string/ime_virtual_touchpad"
+            android:summary="@string/ime_virtual_touchpad_summary" />
+
+        <SeekBarPreference
+            android:dependency="@string/ime_virtual_touchpad_prefs_key"
+            android:key="@string/ime_virtual_touchpad_speed_prefs_key"
+            android:title="@string/ime_virtual_touchpad_speed"
+            android:defaultValue="@integer/virtual_touchpad_speed_default_value"
+            app:min="@integer/virtual_touchpad_speed_min_value"
+            android:max="@integer/virtual_touchpad_speed_max_value"
+            app:showSeekBarValue="true"
+            app:updatesContinuously="true" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/ime_extra_cat">
+
+        <SwitchPreference
+            android:key="@string/ime_extra_phone_control_prefs_key"
+            android:defaultValue="false"
+            android:title="@string/ime_extra_phone_control"
+            android:summary="@string/ime_extra_phone_control_summary" />
+
+        <Preference
+            app:key="@string/ime_extra_version_prefs_key"
+            android:title="@string/ime_extra_app_version"
+            android:summary="@string/app_version">
+            <intent android:action="android.intent.action.VIEW"
+                android:data="@string/ime_source_code_link" />
+        </Preference>
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

@@ -1,0 +1,98 @@
+diff --git a/core/res/res/values/config.xml b/core/res/res/values/config.xml
+index fbe4c3280e49..d82825e63ff5 100644
+--- a/core/res/res/values/config.xml
++++ b/core/res/res/values/config.xml
+@@ -3430,7 +3430,7 @@
+ 
+     <!-- When true, local displays that do not contain any of their own content will automatically
+          mirror the content of the default display. -->
+-    <bool name="config_localDisplaysMirrorContent">true</bool>
++    <bool name="config_localDisplaysMirrorContent">false</bool><!-- Titan 2: no primary mirror on rear -->
+ 
+     <!-- When true, the {@link Display#FLAG_PRESENTATION} flag is set to all internal displays.
+          When false, presentations are not allowed on internal displays by default, but vendors can
+@@ -4766,7 +4766,7 @@
+     <bool name="config_noHomeScreen">false</bool>
+ 
+     <!-- True if the device supports system decorations on secondary displays. -->
+-    <bool name="config_supportsSystemDecorsOnSecondaryDisplays">true</bool>
++    <bool name="config_supportsSystemDecorsOnSecondaryDisplays">false</bool><!-- Titan 2: rear LCD no SystemUI decors -->
+ 
+     <!-- True if the device supports insecure lock screen. -->
+     <bool name="config_supportsInsecureLockScreen">true</bool>
+diff --git a/packages/SystemUI/src/com/android/keyguard/KeyguardDisplayManager.java b/packages/SystemUI/src/com/android/keyguard/KeyguardDisplayManager.java
+index 5d01dddcca95..88e37e4faa89 100644
+--- a/packages/SystemUI/src/com/android/keyguard/KeyguardDisplayManager.java
++++ b/packages/SystemUI/src/com/android/keyguard/KeyguardDisplayManager.java
+@@ -148,50 +148,10 @@ public class KeyguardDisplayManager {
+      * Returns `true` if the keyguard can be shown for a given {@code display}. Otherwise, `false`.
+      */
+     public boolean isKeyguardShowable(Display display) {
+-        if (display == null) {
+-            Log.i(TAG, "Cannot show Keyguard on null display");
+-            return false;
+-        }
+-        if (ShadeWindowGoesAround.isEnabled()) {
+-            int shadeDisplayId = mShadePositionRepositoryProvider.get().getDisplayId().getValue();
+-            if (display.getDisplayId() == shadeDisplayId) {
+-                Log.i(
+-                    TAG,
+-                    "Secondary Keyguard presentation not shown on display "
+-                            + display.getDisplayId()
+-                            + " because shade window is on it (with the primary keyguard)");
+-
+-                return false;
+-            }
+-        } else {
+-            if (display.getDisplayId() == mDisplayTracker.getDefaultDisplayId()) {
+-                Log.i(TAG, "Do not show KeyguardPresentation on the default display");
+-                return false;
+-            }
+-        }
+-        display.getDisplayInfo(mTmpDisplayInfo);
+-        if ((mTmpDisplayInfo.flags & Display.FLAG_PRIVATE) != 0) {
+-            Log.i(TAG, "Do not show KeyguardPresentation on a private display");
+-            return false;
+-        }
+-        if ((mTmpDisplayInfo.flags & Display.FLAG_ALWAYS_UNLOCKED) != 0) {
+-            Log.i(TAG, "Do not show KeyguardPresentation on an unlocked display");
+-            return false;
+-        }
+-
+-        final boolean deviceStateOccludesKeyguard =
+-                mDeviceStateHelper.isConcurrentDisplayActive(display)
+-                        || mDeviceStateHelper.isRearDisplayOuterDefaultActive(display);
+-        if (mKeyguardStateController.isOccluded() && deviceStateOccludesKeyguard) {
+-            // When activities with FLAG_SHOW_WHEN_LOCKED are shown on top of Keyguard, the Keyguard
+-            // state becomes "occluded". In this case, we should not show the KeyguardPresentation,
+-            // since the activity is presenting content onto the non-default display.
+-            Log.i(TAG, "Do not show KeyguardPresentation when occluded and concurrent or rear"
+-                    + " display is active");
+-            return false;
+-        }
+-
+-        return true;
++        // Titan 2 (Abyss-c0re / patches/gsi_source): never draw KeyguardPresentation
++        // on secondary displays (rear panel dual-clock with Controls/Cube).
++        // Replaces hybrid SystemUI-noseckeyguard.apk / TitanSubdisplayOverlay RRO.
++        return false;
+     }
+     /**
+      * @param display The display to show the presentation on.
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/phone/DozeParameters.java b/packages/SystemUI/src/com/android/systemui/statusbar/phone/DozeParameters.java
+index 2b5813eca47d..c85db58ea0e1 100644
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/phone/DozeParameters.java
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/phone/DozeParameters.java
+@@ -289,6 +289,12 @@ public class DozeParameters implements
+      * @return {@code true} if enabled and available.
+      */
+     public boolean getAlwaysOn() {
++        // Titan 2: Controls/Cube face owns rear; suppress SystemUI AoD when asked.
++        if (mSecureSettings.getIntForUser(
++                "titan2_sub_suppress_sysui_aod", /* default= */ 0,
++                mUserTracker.getUserId()) == 1) {
++            return false;
++        }
+         return (mDozeAlwaysOn && !mBatteryController.isAodPowerSave()) || isMinModeActive();
+     }
+ 

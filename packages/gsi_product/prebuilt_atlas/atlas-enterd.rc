@@ -1,0 +1,16 @@
+# atlas-enterd — product root Deb enter (rootless app client).
+# Shell launcher (this GSI). Optional init socket + abstract fallback in binary.
+
+service atlas-enterd /system/bin/atlas-enterd.sh
+    class late_start
+    user root
+    group root system
+    socket atlasenter stream 0666 root system
+    disabled
+
+on property:sys.boot_completed=1
+    start atlas-enterd
+
+on property:sys.atlas.enterd=1
+    start atlas-enterd
+    setprop sys.atlas.enterd 0

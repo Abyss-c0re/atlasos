@@ -1,0 +1,10 @@
+# Automatic IMS/MT setup once after boot. No SIM-property thrash (that re-ran setup constantly).
+service titan2_ims_setup /system/bin/titan2-ims-setup.sh
+    class late_start
+    user root
+    group root system radio
+    oneshot
+    disabled
+
+on property:sys.boot_completed=1
+    start titan2_ims_setup

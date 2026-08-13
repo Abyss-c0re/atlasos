@@ -1,0 +1,8 @@
+# Titan 2 mtk-pmic-keys (event1): POWER plus occasional side scan echoes.
+# Map POWER only. WAKE is required: without it InputReader drops POWER while
+# display is off (sleep works, unlock/wake dead — 2026-08-11 lab).
+# Scans 249/250 must stay unmapped so sides never become
+# system Home/Camera via Generic.kl fallback (B1 belt).
+key 116   POWER   WAKE
+# key 249 intentionally omitted (side · top)
+# key 250 intentionally omitted (side · bottom)

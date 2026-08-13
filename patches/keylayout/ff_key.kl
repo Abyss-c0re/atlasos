@@ -1,0 +1,11 @@
+# Titan 2 fingerprint-area / side nav cluster (device: ff_key)
+# Keep nav keys that live on this node. Do NOT map scan 249 (side · top) —
+# unmapped so InputReader ignores it; pad-agent owns remaps (same as bottom).
+key 28    ENTER
+key 103   DPAD_UP
+key 105   DPAD_LEFT
+key 106   DPAD_RIGHT
+key 108   DPAD_DOWN
+key 116   POWER
+key 158   BACK
+# key 249 intentionally omitted (side · top programmable)

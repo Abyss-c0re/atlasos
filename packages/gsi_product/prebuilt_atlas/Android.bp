@@ -1,0 +1,156 @@
+// Atlas — terminal KEY + hybrid Debian plane (MisterZtr GSI product).
+// Scope: APK + hybrid scripts + optional rootfs seed path. No proprietary CLIs.
+// Out of scope: HW keyboard / keylayout / PocketBoard (product keyboard track).
+// Stage: ./scripts/misterztr/stage_gsi_product.sh → vendor/titanus2/prebuilts/atlas
+// SoT: apps/titan_atlas · packages/titan_atlas
+
+android_app_import {
+    name: "TitanAtlas",
+    apk: "TitanAtlas.apk",
+    certificate: "platform",
+    privileged: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-com.titanus2.atlas.xml",
+    src: "privapp-permissions-com.titanus2.atlas.xml",
+    sub_dir: "permissions",
+    filename_from_src: true,
+}
+
+// Hybrid plane scripts (system/bin) — combined OS mount/enter/run
+sh_binary {
+    name: "atlas-hybrid.sh",
+    src: "atlas-hybrid.sh",
+}
+
+sh_binary {
+    name: "atlas-net.sh",
+    src: "atlas-net.sh",
+}
+
+sh_binary {
+    name: "atlas-hybrid-boot.sh",
+    src: "atlas-hybrid-boot.sh",
+}
+
+// ROM base ELFs — priv-app is UI only. Execute from system_file, never app data.
+// Staged by stage_gsi_product.sh from packages/titan_atlas/out or assets/bin.
+cc_prebuilt_binary {
+    name: "atlas-auth",
+    srcs: ["atlas-auth"],
+    stem: "atlas-auth",
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+cc_prebuilt_binary {
+    name: "atlas-sudo",
+    srcs: ["atlas-sudo"],
+    stem: "atlas-sudo",
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+cc_prebuilt_binary {
+    name: "atlas-auth-askpass",
+    srcs: ["atlas-auth-askpass"],
+    stem: "atlas-auth-askpass",
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+cc_prebuilt_binary {
+    name: "atlas",
+    srcs: ["atlas"],
+    stem: "atlas",
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// Product rootless Deb enter — client + init-root daemon (no setuid/Magisk)
+cc_prebuilt_binary {
+    name: "atlas-enter",
+    srcs: ["atlas-enter"],
+    stem: "atlas-enter",
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+cc_prebuilt_binary {
+    name: "atlas-enterd",
+    srcs: ["atlas-enterd"],
+    stem: "atlas-enterd",
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// Super LP: mount atlas_linux_a (Debian root). Home stays on /data.
+cc_prebuilt_binary {
+    name: "atlas-lpctl",
+    srcs: ["atlas-lpctl"],
+    stem: "atlas-lpctl",
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+sh_binary {
+    name: "atlas-hybrid-ctl.sh",
+    src: "atlas-hybrid-ctl.sh",
+}
+
+sh_binary {
+    name: "atlas-hybrid-watch.sh",
+    src: "atlas-hybrid-watch.sh",
+}
+
+// Late start: mount hybrid if already bootstrapped (never reformat)
+prebuilt_etc {
+    name: "atlas-hybrid.rc",
+    src: "atlas-hybrid.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}
+
+// Optional large seed — only present after build_debian_rootfs + stage copy.
+// File may be absent in git; stage_gsi_product.sh copies when out/atlas_rootfs exists.
+// prebuilt_etc {
+//     name: "atlas-debian-trixie-rootfs",
+//     src: "debian-trixie-arm64-rootfs.tar.gz",
+//     sub_dir: "atlas",
+//     filename: "debian-trixie-arm64-rootfs.tar.gz",
+// }
+
+sh_binary {
+    name: "atlas-agent-status",
+    src: "atlas-agent-status.sh",
+}
+
+sh_binary {
+    name: "atlas-screencap",
+    src: "atlas-screencap.sh",
+}

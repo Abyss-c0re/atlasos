@@ -1,0 +1,161 @@
+// Product system bins + init for MisterZtr GSI (not hybrid inject).
+// Stage: ./scripts/misterztr/stage_gsi_product.sh → vendor/titanus2/prebuilts/sysbin
+// SoT: patches/bin/* · packages/titan_ims/bin/titan2-ims-setup.sh
+//
+// Privacy: titan2-ims-setup.sh must NOT force location_mode (clears sticky flag only).
+// Phase 3 peels (2.166–2.191): keep PRODUCT_PACKAGES in sync with hybrid WITH_INPUT.
+
+sh_binary {
+    name: "titan2-pad-agent.sh",
+    src: "titan2-pad-agent.sh",
+}
+
+sh_binary {
+    name: "titan2-typing-watch.sh",
+    src: "titan2-typing-watch.sh",
+}
+
+sh_binary {
+    name: "titan2-ims-heal.sh",
+    src: "titan2-ims-heal.sh",
+}
+
+sh_binary {
+    name: "titan2-keyled-write.sh",
+    src: "titan2-keyled-write.sh",
+}
+
+sh_binary {
+    name: "titan2-key-fire.sh",
+    src: "titan2-key-fire.sh",
+}
+
+sh_binary {
+    name: "titan2-dev-action.sh",
+    src: "titan2-dev-action.sh",
+}
+
+sh_binary {
+    name: "titan2-side-key.sh",
+    src: "titan2-side-key.sh",
+}
+
+sh_binary {
+    name: "titan2-subdisplay.sh",
+    src: "titan2-subdisplay.sh",
+}
+
+sh_binary {
+    name: "titan2-key-watch.sh",
+    src: "titan2-key-watch.sh",
+}
+
+sh_binary {
+    name: "titan2-b1-kl.sh",
+    src: "titan2-b1-kl.sh",
+}
+
+sh_binary {
+    name: "titan2-keylayout.sh",
+    src: "titan2-keylayout.sh",
+}
+
+sh_binary {
+    name: "titan2-keycode-inject.sh",
+    src: "titan2-keycode-inject.sh",
+}
+
+sh_binary {
+    name: "titan2-dt2w.sh",
+    src: "titan2-dt2w.sh",
+}
+
+sh_binary {
+    name: "titan2-pad-idc.sh",
+    src: "titan2-pad-idc.sh",
+}
+
+sh_binary {
+    name: "titan2-plane-heal.sh",
+    src: "titan2-plane-heal.sh",
+}
+
+sh_binary {
+    name: "titan2-cube-load-land.sh",
+    src: "titan2-cube-load-land.sh",
+}
+
+sh_binary {
+    name: "titan2-cool-park.sh",
+    src: "titan2-cool-park.sh",
+}
+
+sh_binary {
+    name: "titan2-ui-plane.sh",
+    src: "titan2-ui-plane.sh",
+}
+
+sh_binary {
+    name: "titan2-pad-apply.sh",
+    src: "titan2-pad-apply.sh",
+}
+
+sh_binary {
+    name: "titan2-ctrl-seed.sh",
+    src: "titan2-ctrl-seed.sh",
+}
+
+sh_binary {
+    name: "titan2-ims-setup.sh",
+    src: "titan2-ims-setup.sh",
+}
+
+// Sensor privacy fail-closed (v13+): real mic Capture_* only; never Hostless_Spk_Init/FM.
+// SoT: patches/bin/titan2-sensor-privacy.sh · docs/project/SENSOR_PRIVACY_SYSTEM.md
+sh_binary {
+    name: "titan2-sensor-privacy.sh",
+    src: "titan2-sensor-privacy.sh",
+}
+
+// Firewall cube CLI — netfilter owner-uid (not UFW theater). Twin: magisk_titan2_fw.
+sh_binary {
+    name: "titan2-fw",
+    src: "titan2-fw",
+}
+
+sh_binary {
+    name: "titan2-fw.sh",
+    src: "titan2-fw.sh",
+}
+
+// Lab / product network helpers (dual-owner patches/bin + magisk pad-agent).
+sh_binary {
+    name: "titan2-remote-adb.sh",
+    src: "titan2-remote-adb.sh",
+}
+
+sh_binary {
+    name: "titan2-vpn-hotspot.sh",
+    src: "titan2-vpn-hotspot.sh",
+}
+
+prebuilt_etc {
+    name: "titan2-pad-agent.rc",
+    src: "titan2-pad-agent.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}
+
+prebuilt_etc {
+    name: "titan2-ims.rc",
+    src: "titan2-ims.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}
+
+prebuilt_etc {
+    name: "titan2-sensor-privacy.rc",
+    src: "titan2-sensor-privacy.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}

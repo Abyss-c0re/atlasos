@@ -1,0 +1,14 @@
+// EXAMPLE — land into MISTERZTR_TREE via gsi_source patch when binary is proven.
+// Product SoT binary: third_party/titan2-touchpadd/bin/titan2-touchpadd
+// Policy: OPTIMIZE_SOURCE_PRODUCT.md Phase 1.5
+
+// cc_prebuilt_binary {
+//     name: "titan2-touchpadd",
+//     srcs: ["titan2-touchpadd"],
+//     stem: "titan2-touchpadd",
+//     compile_multilib: "64",
+//     check_elf_files: false,
+//     system_shared_libs: [],
+//     relative_install_path: "",
+//     // init via titan2-touchpadd.rc → PRODUCT_COPY_FILES or prebuilt_etc
+// }

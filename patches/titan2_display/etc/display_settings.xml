@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<!-- Titan 2: 1440x1440 main + rear sub-display (from stock product) -->
+<display-settings>
+<config identifier="0" />
+<display
+  name="local:4627039422300187651"
+  forcedDensity="200"
+  shouldShowSystemDecors="false"
+  shouldShowWithInsecureKeyguard="false"
+  homeSupport="true"
+  imePolicy="2" />
+</display-settings>

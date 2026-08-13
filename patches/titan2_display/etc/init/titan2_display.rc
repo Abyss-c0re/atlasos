@@ -1,0 +1,13 @@
+# Titan 2 display helpers after boot (cube density + tablet Settings + gestural).
+# Direct exec like titan2-dev-adb / pad-agent. Do NOT use
+# /system/bin/sh multi-arg form — init never registered those services
+# (init.svc.titan2-display never appeared → taskbar stuck in tablet SW).
+service titan2-display /system/bin/titan2-display.sh
+    class late_start
+    user root
+    group root system
+    oneshot
+    disabled
+
+on property:sys.boot_completed=1
+    start titan2-display

@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <integer name="key_long_press_duration">400</integer>
+    <integer name="word_lookup_length">32</integer>
+    <integer name="suggestions_count">3</integer>
+    <integer name="emoji_view_column_count">7</integer>
+    <integer name="recent_emoji_max_count">21</integer>
+    <integer name="sympad_fix_event_repeat_count">3</integer>
+    <integer name="layout_change_shortcut_event_repeat_count">3</integer>
+    <integer name="virtual_touchpad_speed_min_value">1</integer>
+    <integer name="virtual_touchpad_speed_max_value">10</integer>
+    <integer name="virtual_touchpad_speed_default_value">5</integer>
+    <integer name="virtual_touchpad_suggestions_resume_delay_ms">1000</integer>
+
+    <integer-array name="recent_emoji_shortcut_key_codes">
+        <item>45</item><!-- Q -->
+        <item>51</item><!-- W -->
+        <item>33</item><!-- E -->
+        <item>46</item><!-- R -->
+        <item>48</item><!-- T -->
+        <item>53</item><!-- Y -->
+        <item>49</item><!-- U -->
+        <item>29</item><!-- A -->
+        <item>47</item><!-- S -->
+        <item>32</item><!-- D -->
+        <item>34</item><!-- F -->
+        <item>35</item><!-- G -->
+        <item>36</item><!-- H -->
+        <item>38</item><!-- J -->
+        <item>54</item><!-- Z -->
+        <item>52</item><!-- X -->
+        <item>31</item><!-- C -->
+        <item>50</item><!-- V -->
+        <item>62</item><!-- Space -->
+        <item>30</item><!-- B -->
+        <item>42</item><!-- N -->
+    </integer-array>
+
+    <!-- List of basic emojis that can be combined with skin tone modifiers -->
+    <integer-array name="fitzpatrick_aware_emojis">
+        <item>0x1F385</item>
+        <item>0x1F3C2</item>
+        <item>0x1F3C3</item>
+        <item>0x1F3C4</item>
+        <item>0x1F3C7</item>
+        <item>0x1F3CA</item>
+        <item>0x1F3CB</item>
+        <item>0x1F3CC</item>
+        <item>0x1F442</item>
+        <item>0x1F443</item>
+        <item>0x1F446</item>
+        <item>0x1F447</item>
+        <item>0x1F448</item>
+        <item>0x1F449</item>
+        <item>0x1F44A</item>
+        <item>0x1F44B</item>
+        <item>0x1F44C</item>
+        <item>0x1F44D</item>
+        <item>0x1F44E</item>
+        <item>0x1F44F</item>
+        <item>0x1F450</item>
+        <item>0x1F466</item>
+        <item>0x1F467</item>
+        <item>0x1F468</item>
+        <item>0x1F469</item>
+        <item>0x1F46B</item>
+        <item>0x1F46C</item>
+        <item>0x1F46D</item>
+        <item>0x1F46E</item>
+        <item>0x1F470</item>
+        <item>0x1F471</item>
+        <item>0x1F472</item>
+        <item>0x1F473</item>
+        <item>0x1F474</item>
+        <item>0x1F475</item>
+        <item>0x1F476</item>
+        <item>0x1F477</item>
+        <item>0x1F478</item>
+        <item>0x1F47C</item>
+        <item>0x1F481</item>
+        <item>0x1F482</item>
+        <item>0x1F483</item>
+        <item>0x1F485</item>
+        <item>0x1F486</item>
+        <item>0x1F487</item>
+        <item>0x1F48F</item>
+        <item>0x1F491</item>
+        <item>0x1F4AA</item>
+        <item>0x1F574</item>
+        <item>0x1F575</item>
+        <item>0x1F57A</item>
+        <item>0x1F590</item>
+        <item>0x1F595</item>
+        <item>0x1F596</item>
+        <item>0x1F645</item>
+        <item>0x1F646</item>
+        <item>0x1F647</item>
+        <item>0x1F64B</item>
+        <item>0x1F64C</item>
+        <item>0x1F64D</item>
+        <item>0x1F64E</item>
+        <item>0x1F64F</item>
+        <item>0x1F6A3</item>
+        <item>0x1F6B4</item>
+        <item>0x1F6B5</item>
+        <item>0x1F6B6</item>
+        <item>0x1F6C0</item>
+        <item>0x1F6CC</item>
+        <item>0x1F90C</item>
+        <item>0x1F90F</item>
+        <item>0x1F918</item>
+        <item>0x1F919</item>
+        <item>0x1F91A</item>
+        <item>0x1F91B</item>
+        <item>0x1F91C</item>
+        <item>0x1F91D</item>
+        <item>0x1F91E</item>
+        <item>0x1F91F</item>
+        <item>0x1F926</item>
+        <item>0x1F930</item>
+        <item>0x1F931</item>
+        <item>0x1F932</item>
+        <item>0x1F933</item>
+        <item>0x1F934</item>
+        <item>0x1F935</item>
+        <item>0x1F936</item>
+        <item>0x1F937</item>
+        <item>0x1F938</item>
+        <item>0x1F939</item>
+        <item>0x1F93C</item>
+        <item>0x1F93D</item>
+        <item>0x1F93E</item>
+        <item>0x1F977</item>
+        <item>0x1F9B5</item>
+        <item>0x1F9B6</item>
+        <item>0x1F9B8</item>
+        <item>0x1F9B9</item>
+        <item>0x1F9BB</item>
+        <item>0x1F9CD</item>
+        <item>0x1F9CE</item>
+        <item>0x1F9CF</item>
+        <item>0x1F9D1</item>
+        <item>0x1F9D2</item>
+        <item>0x1F9D3</item>
+        <item>0x1F9D4</item>
+        <item>0x1F9D5</item>
+        <item>0x1F9D6</item>
+        <item>0x1F9D7</item>
+        <item>0x1F9D8</item>
+        <item>0x1F9D9</item>
+        <item>0x1F9DA</item>
+        <item>0x1F9DB</item>
+        <item>0x1F9DC</item>
+        <item>0x1F9DD</item>
+        <item>0x1FAC3</item>
+        <item>0x1FAC4</item>
+        <item>0x1FAC5</item>
+        <item>0x1FAF0</item>
+        <item>0x1FAF1</item>
+        <item>0x1FAF2</item>
+        <item>0x1FAF3</item>
+        <item>0x1FAF4</item>
+        <item>0x1FAF5</item>
+        <item>0x1FAF6</item>
+        <item>0x1FAF7</item>
+        <item>0x1FAF8</item>
+        <item>0x261D</item>
+        <item>0x26F7</item>
+        <item>0x26F9</item>
+        <item>0x270A</item>
+        <item>0x270B</item>
+        <item>0x270C</item>
+        <item>0x270D</item>
+    </integer-array>
+</resources>

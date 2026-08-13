@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="notif_cyan">#FF4DD0E1</color>
+    <color name="notif_text">#FFE8EEF0</color>
+    <color name="notif_sub">#FF9AADB4</color>
+    <color name="notif_bg">#FF12181A</color>
+</resources>

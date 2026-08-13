@@ -1,0 +1,25 @@
+--- a/services/core/java/com/android/server/sensorprivacy/SensorPrivacyService.java
++++ b/services/core/java/com/android/server/sensorprivacy/SensorPrivacyService.java
+@@ -1301,14 +1301,15 @@
+ 
+         @Override
+         public boolean supportsSensorToggle(int toggleType, int sensor) {
++            // Titan Cube: software cam/mic toggles are product foundation (PRIVACY §2).
++            // Do NOT gate on config_supports* — Unihertz/MTK vendor FrameworkResOverlay
++            // forces CamToggle=false and then CameraService.hasCameraPrivacyFeature()
++            // returns false → privacy ON becomes fail-open (preview while "blocked").
++            // OS path only — no RRO/overlay thrash.
+             if (toggleType == TOGGLE_TYPE_SOFTWARE) {
+-                if (sensor == MICROPHONE) {
+-                    return mContext.getResources()
+-                            .getBoolean(R.bool.config_supportsMicToggle);
+-                } else if (sensor == CAMERA) {
+-                    return mContext.getResources()
+-                            .getBoolean(R.bool.config_supportsCamToggle);
++                if (sensor == MICROPHONE || sensor == CAMERA) {
++                    return true;
+                 }
+             } else if (toggleType == TOGGLE_TYPE_HARDWARE) {
+                 if (sensor == MICROPHONE) {
+                     return mContext.getResources()
+                             .getBoolean(R.bool.config_supportsHardwareMicToggle);

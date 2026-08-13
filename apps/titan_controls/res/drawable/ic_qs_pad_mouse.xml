@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <!-- classic mouse silhouette -->
+    <path android:fillColor="#FF000000"
+        android:pathData="M12,2C8.13,2 5,5.13 5,9v6c0,3.87 3.13,7 7,7s7,-3.13 7,-7V9c0,-3.87 -3.13,-7 -7,-7zM11,4.07c2.39,0.49 4.24,2.34 4.73,4.73H11V4.07zM6.26,10C6.7,7.5 8.71,5.5 11.2,5.07V10H6.26zM6,15v-3h5v8.07C8.16,19.65 6,17.55 6,15zM13,20.07V12h5v3c0,2.55 -2.16,4.65 -5,5.07z"/>
+</vector>

@@ -1,0 +1,23 @@
+--- a/core/res/res/values/config.xml
++++ b/core/res/res/values/config.xml
+@@ -4526,7 +4526,7 @@
+ 
+     <!-- Allow the gesture to double tap the power button twice to start the camera while the device
+          is non-interactive. -->
+-    <bool name="config_cameraDoubleTapPowerGestureEnabled">true</bool>
++    <bool name="config_cameraDoubleTapPowerGestureEnabled">false</bool><!-- Titan: power = sleep/wake -->
+ 
+     <!-- Controls the double tap power button gesture to trigger a target action.
+          0: Gesture is disabled
+@@ -6921,9 +6921,9 @@
+     <string name="config_systemCompanionDeviceProvider" translatable="false"></string>
+ 
+     <!-- Whether this device is supporting the software microphone toggle -->
+-    <bool name="config_supportsMicToggle">false</bool>
++    <bool name="config_supportsMicToggle">true</bool><!-- Titan Cube privacy §2.2 -->
+     <!-- Whether this device is supporting the camera toggle -->
+-    <bool name="config_supportsCamToggle">false</bool>
++    <bool name="config_supportsCamToggle">true</bool><!-- Titan Cube privacy §2.2; 0060 forces in system_server -->
+     <!-- Whether this device is supporting the hardware microphone toggle -->
+     <bool name="config_supportsHardwareMicToggle">false</bool>
+     <!-- Whether this device is supporting the hardware camera toggle -->

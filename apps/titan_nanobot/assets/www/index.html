@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>nanobot-wrapper</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0a0e12; --panel:#11181e; --fg:#e8eef2; --mut:#7a8a94;
+  --acc:#00e5ff; --ok:#3ddc97; --warn:#ffb020; --bad:#ff6b6b;
+  --line:#1c262c; --tab:#151c22;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+  font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}
+#app{display:flex;flex-direction:column;height:100%;max-width:42rem;margin:0 auto}
+header{display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+  padding:.55rem .75rem;border-bottom:1px solid var(--line);background:var(--panel)}
+header .brand{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;color:var(--mut)}
+header .brand b{color:var(--acc);font-weight:700}
+#status{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--mut);
+  max-width:55%;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#status .ok{color:var(--ok)} #status .warn{color:var(--warn)}
+nav.tabs{display:flex;gap:0;border-bottom:1px solid var(--line);background:var(--tab)}
+nav.tabs button{flex:1;border:0;background:transparent;color:var(--mut);font:inherit;font-weight:600;
+  padding:.65rem .5rem;cursor:pointer;border-bottom:2px solid transparent}
+nav.tabs button.on{color:var(--acc);border-bottom-color:var(--acc)}
+main{flex:1;min-height:0;display:flex;flex-direction:column}
+.page{display:none;flex-direction:column;flex:1;min-height:0;padding:.65rem .75rem}
+.page.on{display:flex}
+/* chat */
+#log{flex:1;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;
+  white-space:pre-wrap;word-break:break-word;padding:.25rem 0 .5rem}
+.u{color:var(--acc)} .a{color:var(--fg)} .s{color:var(--mut)} .err{color:var(--bad)}
+#composer{display:flex;gap:.4rem;border-top:1px solid var(--line);padding-top:.5rem}
+#q{flex:1;min-width:0;background:var(--panel);color:var(--fg);border:1px solid var(--line);
+  border-radius:8px;padding:.7rem .75rem;font:inherit;outline:none}
+#q:focus{border-color:var(--acc)}
+#go{background:var(--acc);color:#00343a;border:0;border-radius:8px;padding:0 1rem;
+  font:inherit;font-weight:700;cursor:pointer;min-width:3.75rem}
+#go:disabled{opacity:.5;cursor:wait}
+#hint{font-size:11px;color:var(--mut);padding:.35rem 0 0;font-family:ui-monospace,Menlo,Consolas,monospace}
+/* settings */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:.85rem;margin:0 0 .65rem}
+.card h2{margin:0 0 .55rem;font-size:.72rem;color:var(--mut);text-transform:uppercase;
+  letter-spacing:.06em;font-weight:700}
+.field{margin:0 0 .55rem}
+.field label{display:block;font-size:12px;color:var(--mut);margin:0 0 .25rem}
+.field input,.field select{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);
+  border-radius:8px;padding:.55rem .65rem;font:inherit}
+.field .note{font-size:11px;color:var(--mut);margin-top:.25rem}
+.row{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.35rem}
+button.btn,a.btn{appearance:none;border:1px solid var(--line);background:#1a2228;color:var(--fg);
+  border-radius:8px;padding:.55rem .85rem;font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
+button.btn.primary,a.btn.primary{background:var(--acc);color:#00343a;border-color:transparent}
+button.btn.ghost{background:transparent;color:var(--acc);border-color:var(--acc)}
+button.btn:disabled{opacity:.5;cursor:wait}
+#auth-box{display:none;margin-top:.55rem;padding:.65rem;border:1px dashed var(--line);border-radius:8px}
+#auth-box.show{display:block}
+#auth-box .code{color:var(--acc);font-family:ui-monospace,Menlo,Consolas,monospace;
+  letter-spacing:.12em;font-size:1.15rem;margin:.3rem 0}
+#auth-box a{color:var(--acc);word-break:break-all;font-size:12px}
+#auth-box .meta{font-size:12px;color:var(--mut);margin-top:.35rem}
+.kv{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--fg)}
+.kv span{color:var(--mut)}
+.foot{font-size:10px;color:var(--mut);margin-top:.5rem;line-height:1.35}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand"><b>nanobot-wrapper</b></div>
+    <div id="status">…</div>
+  </header>
+  <nav class="tabs" role="tablist">
+    <button type="button" class="on" data-tab="chat" role="tab" aria-selected="true">Chat</button>
+    <button type="button" data-tab="settings" role="tab" aria-selected="false">Settings</button>
+  </nav>
+  <main>
+    <!-- CHAT -->
+    <section id="page-chat" class="page on" role="tabpanel">
+      <div id="log" aria-live="polite"></div>
+      <div id="composer">
+        <input id="q" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
+          placeholder="Message · @! shell · help" maxlength="2000" autofocus/>
+        <button id="go" type="button">Go</button>
+      </div>
+      <div id="hint">@! cmd · help · /s · /log · /clear · Settings → backend · voice · Connect Grok</div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="page-settings" class="page" role="tabpanel" hidden>
+      <div class="card">
+        <h2>LLM backend</h2>
+        <div class="field">
+          <label for="be">Mode</label>
+          <select id="be">
+            <option value="grok">Grok (cloud)</option>
+            <option value="local">Local — llama.cpp / OpenAI-compatible</option>
+          </select>
+          <div class="note">Outer host (UI, shell, memory) stays the same; only the model endpoint changes.</div>
+        </div>
+        <div id="local-fields">
+          <div class="field">
+            <label for="base">Base URL</label>
+            <input id="base" type="text" spellcheck="false" placeholder="http://127.0.0.1:8080/v1"/>
+          </div>
+          <div class="field">
+            <label for="model">Model id</label>
+            <input id="model" type="text" spellcheck="false" placeholder="local or model name"/>
+          </div>
+        </div>
+        <div class="row">
+          <button type="button" class="btn primary" id="btn-apply">Apply backend</button>
+          <button type="button" class="btn ghost" id="btn-refresh">Refresh status</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Peer token (LAN security)</h2>
+        <p class="note" style="margin:0 0 .5rem;color:var(--mut);font-size:12px">
+          peer token for :8787. generate via rockctl :8080 or paste.
+        </p>
+        <div class="field">
+          <label for="peerTok">X-Nanobot-Peer-Token</label>
+          <input id="peerTok" type="password" autocomplete="off" spellcheck="false" placeholder="hex token"/>
+        </div>
+        <div class="row">
+          <button type="button" class="btn primary" id="btn-gen-tok">Generate &amp; install (rockctl)</button>
+          <button type="button" class="btn primary" id="btn-save-tok">Save in browser</button>
+          <button type="button" class="btn ghost" id="btn-show-tok">Show</button>
+        </div>
+        <div class="note" id="tok-st" style="margin-top:.4rem;color:var(--mut);font-size:12px"></div>
+      </div>
+
+      <div class="card">
+        <h2>Grok connection</h2>
+        <p class="note" style="margin:0 0 .5rem;color:var(--mut);font-size:12px">
+          Device-code login. nanobot generates a link; you authorize in a normal browser — no API keys stored by you.
+          Unofficial; not affiliated with Grok.
+        </p>
+        <div class="row">
+          <button type="button" class="btn primary" id="btn-connect">Connect Grok</button>
+          <button type="button" class="btn" id="btn-activate">Open /activate</button>
+        </div>
+        <div id="auth-box">
+          <div class="meta">User code</div>
+          <div class="code" id="code">—</div>
+          <div class="meta">Activation link</div>
+          <div><a id="act" href="#" target="_blank" rel="noopener">—</a></div>
+          <div class="meta" id="wait">Waiting for browser approval…</div>
+        </div>
+      </div>
+
+
+      <div class="card">
+        <h2>Voice (optional SAM)</h2>
+        <p class="note" style="margin:0 0 .5rem;color:var(--mut);font-size:12px">
+          Speaks nanobot replies via Software Automatic Mouth. Markdown stripped first.
+          Does not change nanobot. No audio files are kept after play.
+        </p>
+        <div class="field">
+          <label><input type="checkbox" id="spk-en"/> Enable voice for replies</label>
+        </div>
+        <div class="field">
+          <label for="spk-url">Speak API base (rockctl)</label>
+          <input id="spk-url" type="text" spellcheck="false" placeholder="http://HOST:8080"/>
+          <div class="note">Default: same host port 8080 (rockctl plays SAM on robot speaker)</div>
+        </div>
+        <div class="field">
+          <label for="spk-volume">Volume <span id="spk-vol-lbl">35</span>%</label>
+          <input id="spk-volume" type="range" min="0" max="100" value="35"
+            style="width:100%;accent-color:var(--acc)"/>
+          <div class="note">Soft gain on temp audio only (default quiet). Plays on robot speaker.</div>
+        </div>
+        <div class="row">
+          <div class="field" style="flex:1;min-width:5rem;margin:0">
+            <label for="spk-pitch">Pitch</label>
+            <input id="spk-pitch" type="number" min="0" max="255" value="64"/>
+          </div>
+          <div class="field" style="flex:1;min-width:5rem;margin:0">
+            <label for="spk-speed">Speed</label>
+            <input id="spk-speed" type="number" min="0" max="255" value="72"/>
+          </div>
+          <div class="field" style="flex:1;min-width:5rem;margin:0">
+            <label for="spk-throat">Throat</label>
+            <input id="spk-throat" type="number" min="0" max="255" value="128"/>
+          </div>
+          <div class="field" style="flex:1;min-width:5rem;margin:0">
+            <label for="spk-mouth">Mouth</label>
+            <input id="spk-mouth" type="number" min="0" max="255" value="128"/>
+          </div>
+        </div>
+        <div class="field" style="margin-top:.55rem">
+          <label for="spk-test-text">Test phrase</label>
+          <input id="spk-test-text" type="text" maxlength="200"
+            placeholder="Hello. I am Sam. Optional voice for nanobot."/>
+        </div>
+        <div class="row">
+          <button type="button" class="btn primary" id="btn-spk-save">Save voice config</button>
+          <button type="button" class="btn ghost" id="btn-spk-test">Test voice</button>
+          <button type="button" class="btn" id="btn-spk-refresh">Refresh</button>
+        </div>
+        <div class="note" id="spk-st" style="margin-top:.4rem;color:var(--mut);font-size:12px"></div>
+      </div>
+
+      <div class="card">
+        <h2>Status</h2>
+        <div class="kv" id="status-detail">loading…</div>
+        <div class="foot">Session &amp; settings live under NANOBOT_HOME (env file). @! shell works without any model.</div>
+      </div>
+    </section>
+  </main>
+</div>
+<script>
+
+// API base: same-origin (wrapper proxy) or ?api=http://host:8787 or localStorage
+function apiBase(){
+  const q = new URLSearchParams(location.search).get('api');
+  if (q) { try { localStorage.setItem('ng_api', q); } catch(e){} return q.replace(/\/$/,''); }
+  try { const s = localStorage.getItem('ng_api'); if (s) return s.replace(/\/$/,''); } catch(e){}
+  return ''; // same origin → wrapper reverse-proxy
+}
+function apiUrl(path){ return apiBase() + path; }
+function peerToken(){
+  try { return localStorage.getItem('nb_peer_token') || ''; } catch(e){ return ''; }
+}
+function apiHeaders(extra){
+  const h = Object.assign({'Content-Type':'application/json'}, extra||{});
+  const t = peerToken();
+  if (t) h['X-Nanobot-Peer-Token'] = t;
+  return h;
+}
+async function api(path, opts){
+  opts = opts || {};
+  opts.headers = apiHeaders(opts.headers || {});
+  return fetch(apiUrl(path), opts);
+}
+
+const $ = id => document.getElementById(id);
+const logEl = $('log'), q = $('q'), go = $('go'), statusEl = $('status');
+const be = $('be'), base = $('base'), model = $('model'), localFields = $('local-fields');
+const authBox = $('auth-box'), act = $('act'), codeEl = $('code'), waitEl = $('wait');
+const statusDetail = $('status-detail');
+let pollTimer = null;
+let lastAuth = null;
+
+function add(cls, t){
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = t;
+  logEl.appendChild(d);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function showTab(name){
+  document.querySelectorAll('nav.tabs button').forEach(b=>{
+    const on = b.dataset.tab === name;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('.page').forEach(p=>{
+    const on = p.id === 'page-'+name;
+    p.classList.toggle('on', on);
+    p.hidden = !on;
+  });
+  if (name === 'chat') q.focus();
+}
+
+document.querySelectorAll('nav.tabs button').forEach(b=>{
+  b.onclick = () => showTab(b.dataset.tab);
+});
+
+/* peer token UI — generate via rockctl on same host :8080 */
+(function(){
+  const pt=$('peerTok'), save=$('btn-save-tok'), show=$('btn-show-tok'), gen=$('btn-gen-tok'), st=$('tok-st');
+  if(pt){ try{ pt.value = peerToken(); }catch(e){} }
+  if(save) save.onclick=()=>{
+    try{ localStorage.setItem('nb_peer_token', (pt&&pt.value||'').trim()); }catch(e){}
+    if(statusEl) statusEl.innerHTML='<span class="ok">token saved</span>';
+    if(st) st.textContent='saved in this browser';
+  };
+  if(show&&pt) show.onclick=()=>{ pt.type = pt.type==='password'?'text':'password'; };
+  if(gen) gen.onclick=async()=>{
+    try{
+      if(st) st.textContent='calling rockctl…';
+      const host = location.hostname || '127.0.0.1';
+      const rock = 'http://'+host+':8080';
+      const cur = (pt && pt.value || peerToken() || '').trim();
+      const headers = {'Content-Type':'application/json'};
+      if (cur) headers['X-Nanobot-Peer-Token'] = cur;
+      let r;
+      try{
+        r = await fetch(rock+'/api/v1/assist/peer_token', {
+          method:'POST', mode:'cors', headers,
+          body: JSON.stringify({action:'generate', current_token: cur || undefined})
+        });
+      }catch(net){
+        throw new Error('rockctl unreachable '+rock+': '+net.message);
+      }
+      let j={};
+      try{ j = await r.json(); }catch(e){ throw new Error('HTTP '+r.status+' non-JSON'); }
+      if(!j.ok || !j.token){
+        const err = j.error || ('HTTP '+r.status);
+        if(r.status===401)
+          throw new Error(err+' (need current token or admin_reset)');
+        throw new Error(err);
+      }
+      if(pt) pt.value = j.token;
+      try{ localStorage.setItem('nb_peer_token', j.token); }catch(e){}
+      if(st) st.textContent='installed on robot + saved in browser (also seals provider OAuth at rest)';
+      if(statusEl) statusEl.innerHTML='<span class="ok">peer token ready</span>';
+    }catch(e){
+      if(st) st.textContent='generate failed: '+e.message;
+    }
+  };
+})();
+
+
+function syncLocalFields(){
+  localFields.style.display = be.value === 'local' ? 'block' : 'none';
+}
+be.onchange = syncLocalFields;
+
+function paintStatus(j){
+  lastAuth = j;
+  const local = j.needs_browser === false || j.backend === 'openai_compatible';
+  const signed = !!j.signed_in;
+  if (local) {
+    statusEl.innerHTML = '<span class="ok">local</span> · '+(j.model||'');
+  } else if (signed) {
+    statusEl.innerHTML = '<span class="ok">grok✓</span> · '+(j.model||'');
+  } else {
+    statusEl.innerHTML = '<span class="warn">grok · connect</span>';
+  }
+  be.value = local ? 'local' : 'grok';
+  if (j.base_url) base.value = j.base_url;
+  if (j.model) model.value = j.model;
+  syncLocalFields();
+
+  statusDetail.innerHTML =
+    '<div><span>backend</span> '+(j.backend||'?')+'</div>'+
+    '<div><span>base</span> '+(j.base_url||'?')+'</div>'+
+    '<div><span>model</span> '+(j.model||'?')+'</div>'+
+    '<div><span>signed_in</span> '+(j.signed_in?'yes':'no')+'</div>'+
+    '<div><span>auth</span> '+(j.auth||'?')+'</div>'+
+    '<div><span>home</span> '+(j.workdir||'?')+'</div>';
+
+  const u = j.verification_uri_complete || j.verification_uri;
+  if (u && !signed && !local) {
+    act.href = u;
+    act.textContent = u;
+    if (j.user_code) codeEl.textContent = j.user_code;
+    authBox.classList.add('show');
+  } else if (signed || local) {
+    authBox.classList.remove('show');
+  }
+  return signed || local;
+}
+
+async function refreshAuth(){
+  try {
+    const r = await api('/api/auth');
+    const j = await r.json();
+    return paintStatus(j);
+  } catch (e) {
+    statusEl.textContent = 'offline';
+    return false;
+  }
+}
+
+async function applyBackend(){
+  const body = be.value === 'local'
+    ? { backend:'local', base_url: (base.value||'').trim()||'http://127.0.0.1:8080/v1',
+        model: (model.value||'').trim()||'local' }
+    : { backend:'grok', model: (model.value||'').trim()||undefined };
+  const r = await api('/api/settings', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  const j = await r.json();
+  if (!r.ok) { add('err', j.error||'settings failed'); return; }
+  add('s', 'Backend → '+j.backend+(j.base_url?' @ '+j.base_url:''));
+  await refreshAuth();
+}
+
+function startPoll(){
+  if (pollTimer) clearInterval(pollTimer);
+  waitEl.textContent = 'Waiting for browser approval…';
+  pollTimer = setInterval(async ()=>{
+    const ok = await refreshAuth();
+    if (ok && lastAuth && lastAuth.backend === 'grok' && lastAuth.signed_in) {
+      clearInterval(pollTimer); pollTimer = null;
+      waitEl.textContent = 'Connected.';
+      add('s', '✓ Grok session active.');
+    }
+  }, 2500);
+}
+
+async function connectGrok(){
+  add('s', 'Connect Grok: starting device login…');
+  showTab('settings');
+  await api('/api/settings', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ backend:'grok' })
+  });
+  const r = await api('/api/auth/start', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ force:true })
+  });
+  const j = await r.json();
+  if (!r.ok) { add('err', j.error||'connect failed'); return; }
+  if (j.signed_in) {
+    add('s', 'Already connected to Grok.');
+    authBox.classList.remove('show');
+    await refreshAuth();
+    return;
+  }
+  const u = j.verification_uri_complete || j.verification_uri || (apiUrl('/activate'));
+  act.href = u;
+  act.textContent = u;
+  codeEl.textContent = j.user_code || '—';
+  authBox.classList.add('show');
+  be.value = 'grok';
+  syncLocalFields();
+  add('s', 'Open the activation link, approve, return here.');
+  startPoll();
+}
+
+async function send(){
+  let text = q.value.trim(); if (!text) return;
+  if (text === '/clear' || text === 'clear') { logEl.innerHTML=''; q.value=''; return; }
+  if (text === 'help' || text === '/help') {
+    add('s', 'help: Chat for prompts · Settings tab for backend & Connect Grok · @! shell · /s /log /clear');
+    q.value=''; return;
+  }
+  if (text === '/log') {
+    const r = await api('/api/log'); const j = await r.json();
+    add('s', j.log || '(empty)'); q.value=''; return;
+  }
+  if (text === '/s' || text === '/status') {
+    await refreshAuth(); showTab('settings'); q.value=''; return;
+  }
+  if (text === '/settings') { showTab('settings'); q.value=''; return; }
+  go.disabled = true;
+  add('u', '› '+text);
+  q.value = '';
+  try {
+    const r = await api('/api/chat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ prompt:text })
+    });
+    const raw = await r.text();
+    let j = {};
+    try { j = raw ? JSON.parse(raw) : {}; }
+    catch (pe) {
+      add('err', 'Bad JSON from assist (HTTP '+r.status+'): '+(raw||'(empty)').slice(0,200));
+      return;
+    }
+    if (j.need_login || r.status === 401) {
+      add('s', j.error || 'Need Grok connect / offline backend');
+      await connectGrok();
+    } else if (!r.ok) {
+      add('err', j.error || ('HTTP '+r.status));
+    } else {
+      const reply = j.reply || j.error || '(no reply)';
+      add('a', reply);
+      maybeSpeakReply(reply);
+    }
+  } catch (e) {
+    add('err', 'error: '+e);
+  }
+  go.disabled = false;
+  q.focus();
+}
+
+$('btn-apply').onclick = () => applyBackend().catch(e => add('err', ''+e));
+$('btn-refresh').onclick = () => refreshAuth().catch(e => add('err', ''+e));
+$('btn-connect').onclick = () => connectGrok().catch(e => add('err', ''+e));
+$('btn-activate').onclick = () => { window.open(apiUrl('/activate'), '_blank', 'noopener'); };
+go.onclick = send;
+q.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  if (e.key === 'Escape') { q.focus(); q.select(); }
+});
+
+
+/* ---- optional SAM voice via rockctl on robot (:8080) ---- */
+function speakBase(){
+  try {
+    const s = localStorage.getItem('nb_speak_url');
+    if (s) return s.replace(/\/$/,'');
+  } catch(e){}
+  const el = $('spk-url');
+  if (el && el.value.trim()) return el.value.trim().replace(/\/$/,'');
+  const host = location.hostname || '127.0.0.1';
+  return 'http://'+host+':8080';
+}
+function speakLocalEnabled(){
+  try { return localStorage.getItem('nb_speak_en') === '1'; } catch(e){ return false; }
+}
+function loadSpeakUi(){
+  const en = $('spk-en'), url=$('spk-url'), pitch=$('spk-pitch'), speed=$('spk-speed'),
+        throat=$('spk-throat'), mouth=$('spk-mouth'), vol=$('spk-volume'), test=$('spk-test-text');
+  if (!en) return;
+  try {
+    en.checked = localStorage.getItem('nb_speak_en') === '1';
+    const u = localStorage.getItem('nb_speak_url'); if (u && url) url.value = u;
+    const p = localStorage.getItem('nb_speak_pitch'); if (p && pitch) pitch.value = p;
+    const s = localStorage.getItem('nb_speak_speed'); if (s && speed) speed.value = s;
+    const th = localStorage.getItem('nb_speak_throat'); if (th && throat) throat.value = th;
+    const m = localStorage.getItem('nb_speak_mouth'); if (m && mouth) mouth.value = m;
+    const vv = localStorage.getItem('nb_speak_volume'); if (vv && vol) { vol.value = vv; if($('spk-vol-lbl')) $('spk-vol-lbl').textContent=vv; }
+    const tp = localStorage.getItem('nb_speak_test'); if (tp && test) test.value = tp;
+  } catch(e){}
+  if (url && !url.value) url.value = 'http://'+(location.hostname||'127.0.0.1')+':8080';
+}
+async function speakFetch(path, opts){
+  opts = opts || {};
+  opts.mode = 'cors';
+  opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+  // rockctl paths: /api/v1/assist/speak*
+  // legacy speak_server: /speak/v1/*
+  let url = speakBase()+path;
+  if (speakBase().indexOf(':8791') < 0 && path.indexOf('/speak/v1/') === 0) {
+    // map legacy paths → rockctl
+    if (path.indexOf('/speak/v1/test') === 0) path = '/api/v1/assist/speak/test';
+    else if (path.indexOf('/speak/v1/config') === 0) path = '/api/v1/assist/speak';
+    else if (path.indexOf('/speak/v1/speak') === 0) path = '/api/v1/assist/speak';
+    else if (path.indexOf('/speak/v1/health') === 0) path = '/api/v1/assist/speak';
+    url = speakBase()+path;
+  }
+  const r = await fetch(url, opts);
+  let j = {};
+  try { j = await r.json(); } catch(e) { j = {ok:false, error:'non-JSON '+r.status}; }
+  return {r, j};
+}
+async function refreshSpeak(){
+  const st = $('spk-st');
+  try {
+    const {r,j} = await speakFetch('/api/v1/assist/speak');
+    if (!r.ok) throw new Error(j.error||('HTTP '+r.status));
+    if ($('spk-en')) $('spk-en').checked = !!j.enabled || speakLocalEnabled();
+    if ($('spk-pitch') && j.pitch!=null) $('spk-pitch').value = j.pitch;
+    if ($('spk-speed') && j.speed!=null) $('spk-speed').value = j.speed;
+    if ($('spk-throat') && j.throat!=null) $('spk-throat').value = j.throat;
+    if ($('spk-mouth') && j.mouth!=null) $('spk-mouth').value = j.mouth;
+    if ($('spk-volume') && j.volume!=null) { $('spk-volume').value = j.volume; if($('spk-vol-lbl')) $('spk-vol-lbl').textContent=j.volume; }
+    if (st) {
+      const ok = j.sam && j.sam_speak;
+      st.textContent = ok
+        ? ('robot SAM ready · volume '+(j.volume!=null?j.volume:30)+'% · enabled='+(j.enabled?'yes':'no'))
+        : 'rockctl OK but SAM files missing on robot';
+    }
+  } catch(e) {
+    if (st) st.textContent = 'speak offline: '+e.message+' (need rockctl :8080 + SAM on robot)';
+  }
+}
+function voiceBody(){
+  return {
+    enabled: !!( $('spk-en') && $('spk-en').checked ),
+    pitch: parseInt(($('spk-pitch')&&$('spk-pitch').value)||'64',10),
+    speed: parseInt(($('spk-speed')&&$('spk-speed').value)||'72',10),
+    throat: parseInt(($('spk-throat')&&$('spk-throat').value)||'128',10),
+    mouth: parseInt(($('spk-mouth')&&$('spk-mouth').value)||'128',10),
+    volume: parseInt(($('spk-volume')&&$('spk-volume').value)||'30',10),
+    test_phrase: ($('spk-test-text')&&$('spk-test-text').value)||undefined,
+    auto_reply: true
+  };
+}
+async function saveSpeak(){
+  const st=$('spk-st');
+  const body = voiceBody();
+  try {
+    localStorage.setItem('nb_speak_en', body.enabled ? '1' : '0');
+    if ($('spk-url')) localStorage.setItem('nb_speak_url', $('spk-url').value.trim());
+    localStorage.setItem('nb_speak_pitch', String(body.pitch));
+    localStorage.setItem('nb_speak_speed', String(body.speed));
+    localStorage.setItem('nb_speak_throat', String(body.throat));
+    localStorage.setItem('nb_speak_mouth', String(body.mouth));
+    localStorage.setItem('nb_speak_volume', String(body.volume));
+    if (body.test_phrase) localStorage.setItem('nb_speak_test', body.test_phrase);
+  } catch(e){}
+  try {
+    body.action = 'config';
+    const {r,j} = await speakFetch('/api/v1/assist/speak', {method:'PUT', body: JSON.stringify(body)});
+    if (!r.ok || !j.ok) throw new Error(j.error||j.message||('HTTP '+r.status));
+    if (st) st.textContent = 'saved on robot · volume '+j.volume+'% · enabled='+(j.enabled?'yes':'no');
+  } catch(e) {
+    if (st) st.textContent = 'saved in browser only (API: '+e.message+')';
+  }
+}
+async function testSpeak(){
+  const st=$('spk-st');
+  const body = voiceBody();
+  body.text = (body.test_phrase || 'Hello. Soft voice on Clanker.');
+  if (st) st.textContent = 'playing on robot…';
+  try {
+    const {r,j} = await speakFetch('/api/v1/assist/speak/test', {method:'POST', body: JSON.stringify(body)});
+    if (!r.ok || !j.ok) throw new Error(j.message||j.error||('HTTP '+r.status));
+    if (st) st.textContent = 'playing on robot speaker (volume '+body.volume+'%)';
+  } catch(e) {
+    if (st) st.textContent = 'test failed: '+e.message;
+  }
+}
+async function maybeSpeakReply(text){
+  if (!text || !speakLocalEnabled()) return;
+  try {
+    const body = voiceBody();
+    body.text = text;
+    body.force = true;
+    await speakFetch('/api/v1/assist/speak', {method:'POST', body: JSON.stringify(body)});
+  } catch(e) { /* silent — voice is optional */ }
+}
+if ($('btn-spk-save')) $('btn-spk-save').onclick = () => saveSpeak().catch(e=>add('err',''+e));
+if ($('btn-spk-test')) $('btn-spk-test').onclick = () => testSpeak().catch(e=>add('err',''+e));
+if ($('btn-spk-refresh')) $('btn-spk-refresh').onclick = () => refreshSpeak().catch(e=>add('err',''+e));
+loadSpeakUi();
+if ($('spk-volume')) $('spk-volume').oninput = function(){ if($('spk-vol-lbl')) $('spk-vol-lbl').textContent=this.value; };
+// migrate old 8791 default to rockctl 8080
+try {
+  const u = localStorage.getItem('nb_speak_url') || '';
+  if (u.indexOf(':8791') >= 0) {
+    const host = location.hostname || '127.0.0.1';
+    localStorage.setItem('nb_speak_url', 'http://'+host+':8080');
+    if ($('spk-url')) $('spk-url').value = 'http://'+host+':8080';
+  }
+} catch(e){}
+
+
+(async function boot(){
+  const ok = await refreshAuth();
+  refreshSpeak().catch(()=>{});
+  if (ok) add('s', 'Ready. Use Chat, or open Settings for backend / voice / Connect Grok.');
+  else {
+    add('s', 'Not connected. Open Settings → Connect Grok, or set Local for llama.cpp.');
+    showTab('settings');
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+// Prebuilt touchpadd for MisterZtr systemimage (OPTIMIZE Phase 1.5).
+// Confirmed Mouse Mode path (2026-08-13 human): INPROC_PARK + pad-only +
+// titan2-virtual-mouse. Live pin 20260804 still hybrid-injects this ELF.
+// SoT binary: third_party/titan2-touchpadd/bin/titan2-touchpadd
+// Stage: ./scripts/misterztr/stage_gsi_product.sh → vendor/titanus2/prebuilts/…
+
+cc_prebuilt_binary {
+    name: "titan2-touchpadd",
+    srcs: ["titan2-touchpadd"],
+    compile_multilib: "64",
+    check_elf_files: false,
+    system_shared_libs: [],
+    stem: "titan2-touchpadd",
+}
+
+// Disabled late_start oneshot — pad-agent / plane owns start in mouse mode.
+// Binary still lands at /system/bin for tip-free product path.
+prebuilt_etc {
+    name: "titan2-touchpadd.rc",
+    src: "titan2-touchpadd.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}

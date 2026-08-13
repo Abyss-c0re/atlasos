@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.titanus2.overlay.cubemask"
+    android:versionCode="2"
+    android:versionName="1.1-cube-icon-mask-only">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35"/>
+    <!-- Safe Cube: square adaptive icon mask only. No zero-radius framework chrome. -->
+    <overlay
+        android:targetPackage="android"
+        android:priority="1000"
+        android:isStatic="true"/>
+    <application android:hasCode="false" android:label="Titan cube icon mask"/>
+</manifest>
