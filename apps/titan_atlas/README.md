@@ -9,7 +9,8 @@ Keyboard-first terminal for Titan 2 (Termux replacement path):
 - Builtins: `paths`, `install`, `lsbin`, `priv`, `run`, `usbip`, `pkg`, `modules`, `sandbox`, `nanobot`
 - **Install plane:** app `files/bin` only — **do not remount /system** (GSI erofs RO)
 - UI: Copy (selection or all), Clear, Restart, minimal Settings
-- Bundled: `atlas`, `nanobot`, `quest-usbip-host` (aarch64)
+- Bundled (our NDK builds): `atlas`, `atlas-sudo` / `su`  
+- Not in git: GNU bash, `quest-usbip-host` (no corresponding source here)
 
 ## Build
 

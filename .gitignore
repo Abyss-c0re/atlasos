@@ -16,6 +16,12 @@ debug.keystore
 *.tar.gz
 debian-*-rootfs.tar.gz
 
+# Not redistributable / rebuild locally
+apps/titan_atlas/assets/bin/bash
+apps/titan_atlas/assets/bin/quest-usbip-host
+third_party/titan2-touchpadd/bin/titan2-touchpadd
+packages/gsi_product/prebuilt_touchpadd/titan2-touchpadd
+
 # Workshop-only binaries that may sit in a linked dir
 packages/titan_usb_hid_system/hid_bridge
 packages/titan_usb_hid_system/titan2-side-watch

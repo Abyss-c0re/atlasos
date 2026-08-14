@@ -57,4 +57,12 @@ exists, add it to `.gitmodules` (see `.gitmodules.example`) and
 
 ## License
 
-MIT for original work here — `LICENSE`. Upstreams keep their licenses (`CREDITS.md`).
+Original work: MIT (`LICENSE`). Third-party map: [`NOTICE.md`](NOTICE.md).  
+What must not be in git: [`docs/LEGAL.md`](docs/LEGAL.md).
+
+```bash
+./scripts/check_publish.sh    # must pass before a public push
+```
+
+PocketBoard and Termux emulator sources are **GPLv3** (not MIT). microG / OpenEUICC
+APKs are fetched at build time, not committed. Unihertz firmware is never in this repo.

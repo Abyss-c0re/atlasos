@@ -34,9 +34,11 @@ fi
 
 # Secrets / lab identity (exclude this checker — it names the banned tokens)
 if rg -n --hidden -g '!.git' -g '!.links' -g '!scripts/check_clean.sh' \
+    -g '!scripts/check_publish.sh' \
     'TITAN20000021925|BEGIN (RSA|OPENSSH) PRIVATE|sk-[a-zA-Z0-9]{16}' . >/dev/null 2>&1; then
   bad "lab serial or private key / token leaked"
   rg -n --hidden -g '!.git' -g '!.links' -g '!scripts/check_clean.sh' \
+    -g '!scripts/check_publish.sh' \
     'TITAN20000021925|BEGIN (RSA|OPENSSH) PRIVATE|sk-[a-zA-Z0-9]{16}' . || true
 else
   ok "no lab serial / private key / token"
@@ -58,8 +60,9 @@ fi
 [ -f patches/gsi_source/SERIES ] && ok "gsi_source SERIES present" || bad "missing SERIES"
 [ -d apps/titan_controls ] && ok "Titan Controls present" || bad "missing Controls"
 [ -d apps/titan_atlas ] && ok "Atlas present" || bad "missing Atlas"
-[ -x third_party/titan2-touchpadd/bin/titan2-touchpadd ] \
-  && ok "touchpadd ELF present" || bad "missing touchpadd ELF"
+[ -d third_party/titan2-touchpadd/patches ] \
+  && ok "touchpadd patches present" || bad "missing touchpadd patches"
+[ -f NOTICE.md ] && ok "NOTICE.md present" || bad "missing NOTICE.md"
 
 echo "---"
 if [ "$ec" -eq 0 ]; then

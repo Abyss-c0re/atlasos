@@ -30,6 +30,7 @@
 ./scripts/sync-modules.sh --status
 ./scripts/check_dupes.sh
 ./scripts/check_clean.sh
+./scripts/check_publish.sh    # required before a public remote
 ```
 
 Shared app/patch paths must stay symlinks. Layout: [`docs/LAYOUT.md`](docs/LAYOUT.md).
