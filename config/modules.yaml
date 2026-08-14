@@ -21,7 +21,7 @@ modules:
   - name: titan2-touchpadd
     role: pad / mouse daemon
     path: third_party/titan2-touchpadd
-    remote: https://gitea.angry.im/PeterGSI/titan2-touchpadd.git
+    remote: https://gitea.angry.im/Abyss-c0re/titan2-touchpadd.git
     ref: HEAD
     status: overlay
     reusable: true

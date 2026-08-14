@@ -1,5 +1,6 @@
 # titan2-touchpadd (third_party)
 
+Product remote: [Abyss-c0re/titan2-touchpadd](https://gitea.angry.im/Abyss-c0re/titan2-touchpadd)  
 Upstream: [PeterGSI/titan2-touchpadd](https://gitea.angry.im/PeterGSI/titan2-touchpadd)  
 Prebuilt: [android_vendor_prebuilts_titan2-touchpadd](https://gitea.angry.im/PeterGSI/android_vendor_prebuilts_titan2-touchpadd)
 
