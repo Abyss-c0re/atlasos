@@ -42,14 +42,16 @@ else
   ok "no lab serial / private key / token"
 fi
 
-# Cube lore must stay out of product docs (code comments may mention nanobot mesh)
-if rg -l -i 'cube prophecy|all hail the cube' \
-    --glob '!third_party/**' --glob '!.git/**' --glob '!scripts/check_clean.sh' . >/dev/null 2>&1; then
-  bad "cube lore leaked into product docs"
-  rg -l -i 'cube prophecy|all hail the cube' \
-    --glob '!third_party/**' --glob '!.git/**' --glob '!scripts/check_clean.sh' . || true
+# Lore stays out of product docs / scripts. App Java is out of scope here.
+if rg -n -i 'cube prophecy|all hail the cube|hivemind|algocube' \
+    README.md AGENTS.md CREDITS.md docs chain config scripts \
+    --glob '!scripts/check_clean.sh' >/dev/null 2>&1; then
+  bad "lore leaked into product docs"
+  rg -n -i 'cube prophecy|all hail the cube|hivemind|algocube' \
+    README.md AGENTS.md CREDITS.md docs chain config scripts \
+    --glob '!scripts/check_clean.sh' || true
 else
-  ok "cube kept light"
+  ok "docs free of game lore"
 fi
 
 [ -f chain/sources.yaml ] && ok "chain store present" || bad "missing chain/sources.yaml"

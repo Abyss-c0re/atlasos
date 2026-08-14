@@ -1,6 +1,5 @@
-# AtlasOS cubechain store.
-# This file is the only thing that names upstreams. Trees stay local.
-# Never upload anything listed with upload: never.
+# AtlasOS source lockfile.
+# This file names upstreams. Trees stay local. Never upload upload:never.
 schema: atlasos.chain.v1
 product: atlasos
 codename: cyberdeck
@@ -30,8 +29,8 @@ links:
   workshop:
     env: TITANUS2_WORKSHOP
     default: ../titanus2
-    role: kitchen_packer
-    note: Lab meta that still owns hybrid pack / flash. Linked, not vendored.
+    role: optional_lab
+    note: Lab flash / kitchen only. Clone-to-build does not need it.
     upload: never
 
   peter_touchpadd:

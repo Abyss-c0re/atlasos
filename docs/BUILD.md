@@ -1,21 +1,17 @@
 # Build
 
 ```bash
-cp config/misterztr.env.example config/misterztr.local.env
-# set MISTERZTR_TREE and optional TITANUS2_WORKSHOP / STOCK_ZIP
-
-./scripts/link.sh
-./scripts/check_clean.sh
-./scripts/build.sh            # GSI + hybrid pack when workshop + stock exist
-./scripts/build.sh --gsi-only # SERIES + stage + systemimage only
+./scripts/bootstrap.sh                 # pull Lineage + MisterZtr + our SERIES
+./scripts/build.sh --flavor vanilla
+./scripts/build.sh --flavor microg
+./scripts/build.sh --flavor gapps
 ```
 
-`link.sh` does not download the Android tree. Point `MISTERZTR_TREE` at an
-existing MisterZtr checkout (workshop artifacts) or sync it yourself with
-the MisterZtr README.
+Optional `config/misterztr.local.env`:
 
-First cook that must **match the live bench** uses the linked workshop
-kitchen (`lab_rootless` + KEEP_DATA policy owned there). AtlasOS supplies
-the product sources and patches.
+```bash
+MISTERZTR_TREE=$HOME/.cache/atlasos/lineage
+STOCK_ZIP=/path/to/your-unihertz.zip   # hybrid only
+```
 
-This repo never flashes.
+This repo never flashes. Hybrid super needs **your** stock zip.

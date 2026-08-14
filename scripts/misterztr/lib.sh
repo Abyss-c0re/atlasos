@@ -14,8 +14,9 @@ elif [ -f "$ROOT/config/misterztr.env.example" ]; then
   source "$ROOT/config/misterztr.env.example"
 fi
 
-# Tree lives outside the product git (tens of GB). Default under artifacts.
-MISTERZTR_TREE="${MISTERZTR_TREE:-${TITANUS2_LINEAGE_ROOT:-$HOME/Dev/titanus2-artifacts/misterztr_lineage}}"
+# Tree lives outside the product git (tens of GB). Standalone default is
+# next to this clone. Lab machines may override via misterztr.local.env.
+MISTERZTR_TREE="${MISTERZTR_TREE:-${TITANUS2_LINEAGE_ROOT:-$ROOT/.links/lineage}}"
 LINEAGE_BRANCH="${LINEAGE_BRANCH:-lineage-23.2}"
 TREBLE_MANIFEST_BRANCH="${TREBLE_MANIFEST_BRANCH:-lineage-23.2}"
 LINEAGE_GSI_REPO_BRANCH="${LINEAGE_GSI_REPO_BRANCH:-lineage-23.2}"

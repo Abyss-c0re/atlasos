@@ -1,8 +1,7 @@
 # Agent notes — AtlasOS
 
-**Product:** CyberDeck HybridOS for Unihertz Titan 2.  
-**Workshop (lab / flash / serials):** sibling `titanus2`. Do not copy lab
-policy or device serials into this repo.
+**Product:** CyberDeck HybridOS for Unihertz Titan 2. Standalone clone-to-build.  
+**Workshop:** optional sibling `titanus2` (flash / serials only).
 
 ## SoT
 
@@ -26,13 +25,10 @@ policy or device serials into this repo.
 ## Build
 
 ```bash
-./scripts/link.sh
-./scripts/link_workshop.sh    # workshop paths → this tree (one inode)
-./scripts/check_links.sh
-./scripts/check_dupes.sh      # one inode per titan2-/atlas- name
-./scripts/collapse_dupes.py   # repair forked copies
-./scripts/build.sh            # GSI from SERIES + hybrid pack via linked workshop
-./scripts/build.sh --gsi-only
+./scripts/bootstrap.sh
+./scripts/build.sh --flavor vanilla|microg|gapps
+./scripts/sync-modules.sh --status
+./scripts/check_dupes.sh
 ./scripts/check_clean.sh
 ```
 

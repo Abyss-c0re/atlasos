@@ -1,0 +1,104 @@
+# Reusable pieces vs Titan-only. Sync: ./scripts/sync-modules.sh
+# status:
+#   upstream   — public remote; we overlay Titan bits
+#   vendored   — in-tree copy of upstream + our maps (submodule when remote is stable)
+#   unpublished — our code, no public repo yet; lives in this git
+#   in_tree    — Titan-only; not a separate repo
+schema: atlasos.modules.v1
+
+modules:
+  - name: pocket-board
+    role: hardware-keyboard IME
+    path: third_party/pocket-board
+    remote: https://github.com/SinuXVR/pocket-board.git
+    ref: master
+    license: GPL-3.0
+    status: vendored
+    reusable: true
+    overlay: overlays/pocket-board
+    note: In-tree includes Titan XML maps. Sync fetches upstream; does not wipe overlay.
+
+  - name: titan2-touchpadd
+    role: pad / mouse daemon
+    path: third_party/titan2-touchpadd
+    remote: https://gitea.angry.im/PeterGSI/titan2-touchpadd.git
+    ref: HEAD
+    status: overlay
+    reusable: true
+    overlay: third_party/titan2-touchpadd/patches
+    note: ELF + our pause/INPROC patches. Upstream has no product ELF.
+
+  - name: openeuicc
+    role: eSIM LPA
+    path: third_party/openeuicc
+    remote: https://gitea.angry.im/PeterCxy/OpenEUICC.git
+    license: GPL-3.0
+    status: fetch
+    reusable: true
+    note: APK not in git. ./third_party/openeuicc/fetch.sh
+
+  - name: microg
+    role: optional Play-compat
+    path: packages/microg
+    remote: https://github.com/microg/GmsCore.git
+    status: fetch
+    reusable: true
+    note: Flavor microg only. ./packages/microg/fetch.sh
+
+  - name: atlas
+    role: terminal + Debian plane
+    path: apps/titan_atlas
+    remote: null
+    status: unpublished
+    reusable: true
+    note: Split to its own git when published. Until then this tree is SoT.
+
+  - name: nanobot
+    role: Grok + LAN / on-device models
+    path: apps/titan_nanobot
+    remote: null
+    status: unpublished
+    reusable: true
+
+  - name: titan-controls
+    role: Titan pad / keys / Settings hub
+    path: apps/titan_controls
+    remote: null
+    status: in_tree
+    reusable: false
+
+  - name: titan-usb-hid
+    role: USB / BT HID gadget
+    path: apps/titan_usb_hid
+    remote: null
+    status: in_tree
+    reusable: false
+
+  - name: titan-fm
+    role: FM / IR
+    path: apps/titan_fm
+    remote: null
+    status: in_tree
+    reusable: false
+
+  - name: cube-contact
+    role: optional rear lattice
+    path: apps/cube_contact
+    remote: null
+    status: in_tree
+    reusable: false
+    note: Display face only. Not a second OS.
+
+upstreams:
+  - name: lineageos
+    remote: https://github.com/LineageOS/android.git
+    ref: lineage-23.2
+    role: platform
+  - name: misterztr-gsi
+    remote: https://github.com/MisterZtr/LineageOS_gsi.git
+    ref: lineage-23.2
+    role: gsi-recipe
+  - name: misterztr-treble
+    remote: https://github.com/MisterZtr/treble_manifest.git
+    ref: lineage-23.2
+    role: local-manifest

@@ -11,14 +11,14 @@ atlasos/                          PRODUCT SoT (this git)
   packages/gsi_product/           Soong wrappers (Android.bp / mk) — files are links
   third_party/titan2-touchpadd/   pad ELF + patches
 
-titanus2/                         WORKSHOP (lab)
-  product → ../atlasos            alias
-  apps/<name>/src → atlasos       same inode
-  patches/bin → atlasos
-  packages/magisk_*/system/bin → atlasos/patches/bin
-  gsi/ out/ firmware/ kitchen/    lab only — never in AtlasOS
-  .atlasos_local/                 parked extras (APK, rootfs, .bak)
+titanus2/                         optional lab workshop
+  product → ../atlasos
+  apps/<name>/src → atlasos
+  gsi/ out/ firmware/ kitchen/    lab only
 ```
+
+Clone-to-build does **not** need titanus2. Flavors: `config/flavors.yaml`.
+Reusable remotes: `config/modules.yaml` + `scripts/sync-modules.sh`.
 
 Edit **either** path. If you copy a file over a symlink, you fork the product.
 

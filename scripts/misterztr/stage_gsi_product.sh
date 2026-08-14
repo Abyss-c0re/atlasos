@@ -314,22 +314,26 @@ fi
 
 stage_file "$SRC_PROD/titanus2.mk" "$DEST_MK"
 
-# Ensure product lunch inherits titanus2.mk (idempotent).
+# Ensure product lunches inherit titanus2.mk (vanilla bvN4 + GApps bgN4).
 INHERIT='$(call inherit-product, device/phh/treble/titanus2.mk)'
-if grep -qF 'device/phh/treble/titanus2.mk' "$BVN4" 2>/dev/null; then
-  info "lineage_arm64_bvN4.mk already inherits titanus2.mk"
-else
-  if [ "$DRY" = "1" ]; then
-    info "dry-run would append inherit to lineage_arm64_bvN4.mk"
+for lunch_mk in \
+  "$MISTERZTR_TREE/device/phh/treble/lineage_arm64_bvN4.mk" \
+  "$MISTERZTR_TREE/device/phh/treble/lineage_arm64_bgN4.mk"
+do
+  [ -f "$lunch_mk" ] || continue
+  if grep -qF 'device/phh/treble/titanus2.mk' "$lunch_mk" 2>/dev/null; then
+    info "$(basename "$lunch_mk") already inherits titanus2.mk"
+  elif [ "$DRY" = "1" ]; then
+    info "dry-run would append inherit to $(basename "$lunch_mk")"
   else
     {
       echo ""
-      echo "# Titan 2 product packages (gsi_source / stage_gsi_product)"
+      echo "# AtlasOS product packages (gsi_source / stage_gsi_product)"
       echo "$INHERIT"
-    } >>"$BVN4"
-    info "appended inherit-product titanus2.mk → lineage_arm64_bvN4.mk"
+    } >>"$lunch_mk"
+    info "appended inherit-product titanus2.mk → $(basename "$lunch_mk")"
   fi
-fi
+done
 
 # Marker for monitors / pipeline
 if [ "$DRY" != "1" ]; then

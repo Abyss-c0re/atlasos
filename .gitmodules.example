@@ -1,0 +1,12 @@
+# Copy to .gitmodules when a reusable app has a published remote.
+# Until then those apps stay in this git (status: unpublished in config/modules.yaml).
+#
+#   cp .gitmodules.example .gitmodules
+#   git submodule update --init --recursive
+#
+# [submodule "third_party/pocket-board"]
+#     path = third_party/pocket-board
+#     url = https://github.com/SinuXVR/pocket-board.git
+# [submodule "third_party/titan2-touchpadd/upstream"]
+#     path = third_party/titan2-touchpadd/upstream
+#     url = https://gitea.angry.im/PeterGSI/titan2-touchpadd.git

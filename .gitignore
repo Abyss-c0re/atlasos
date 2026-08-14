@@ -1,4 +1,4 @@
-# Local trees and cook output — cubechain: never upload
+# Local trees and cook output — never upload
 /.links/
 /out/
 /gsi/*.img
@@ -6,6 +6,7 @@
 /artifacts/
 *.local.env
 config/misterztr.local.env
+packages/microg/prebuilt/*.apk
 
 # Build / signing leftovers
 *.apk

@@ -1,0 +1,36 @@
+# AtlasOS image flavors. GSI lunch is MisterZtr; extras are ours.
+schema: atlasos.flavors.v1
+
+defaults:
+  gsi_family: LineageOS-23.2
+  gsi_fs: EXT4
+  inherit_mk: device/phh/treble/titanus2.mk
+
+flavors:
+  vanilla:
+    label: Vanilla
+    lunch: lineage_arm64_bvN4-bp4a-userdebug
+    lunch_mk: lineage_arm64_bvN4.mk
+    gapps: false
+    microg: false
+    note: No Play services. Default CyberDeck.
+
+  microg:
+    label: MicroG
+    lunch: lineage_arm64_bvN4-bp4a-userdebug
+    lunch_mk: lineage_arm64_bvN4.mk
+    gapps: false
+    microg: true
+    note: >
+      Same VANILLA GSI. microG priv-apps fetched at build time
+      (packages/microg/fetch.sh). Not committed.
+
+  gapps:
+    label: GApps
+    lunch: lineage_arm64_bgN4-bp4a-userdebug
+    lunch_mk: lineage_arm64_bgN4.mk
+    gapps: true
+    microg: false
+    note: >
+      MisterZtr GApps lunch when that target exists in the tree.
+      Falls back to vanilla lunch + a clear error if bgN4 is missing.
