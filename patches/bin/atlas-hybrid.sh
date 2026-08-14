@@ -59,6 +59,34 @@ ATLAS_LINUX_HOME="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
 ATLAS_AUTH_ON_LP="${ATLAS_AUTH_ON_LP:-$LP_MNT/var/lib/atlas-auth}"
 ATLAS_AUTH_IN_DEB="${ATLAS_AUTH_IN_DEB:-/var/lib/atlas-auth}"
 
+# App AuthWatch polls LP only. $HOME/auth is leftover from the old protocol.
+# Deb chroot does not see /data/local/atlas-linux — only /var/lib/atlas-auth
+# (same inode) plus selected binds. Point $HOME/auth at the Deb path.
+join_home_auth_to_lp() {
+  _lp="${ATLAS_AUTH_ON_LP:-/data/local/atlas-linux/var/lib/atlas-auth}"
+  _deb="${ATLAS_AUTH_IN_DEB:-/var/lib/atlas-auth}"
+  mkdir -p "$_lp" 2>/dev/null || true
+  chmod 0777 "$_lp" 2>/dev/null || true
+  for _h in "$ATLAS_LINUX_HOME" /home/atlas /data/local/atlas-home/atlas; do
+    [ -n "$_h" ] && [ -d "$_h" ] || continue
+    _a="$_h/auth"
+    if [ -L "$_a" ]; then
+      _t=`readlink "$_a" 2>/dev/null || true`
+      case "$_t" in
+        "$_deb") continue ;;
+      esac
+    elif [ -d "$_a" ]; then
+      for _f in "$_a"/req.* "$_a"/ok.* "$_a"/fail.* "$_a"/busy.* "$_a"/ticket "$_a"/wake; do
+        [ -e "$_f" ] || continue
+        mv -f "$_f" "$_lp/" 2>/dev/null || true
+      done
+      rm -rf "$_a" 2>/dev/null || true
+    fi
+    ln -sfn "$_deb" "$_a" 2>/dev/null || true
+  done
+  unset _lp _deb _h _a _t _f
+}
+
 BASE_DISTRO="${ATLAS_DEBIAN_DISTRO:-debian}"
 BASE_CODENAME="${ATLAS_DEBIAN_CODENAME:-trixie}"
 BASE_ARCH="${ATLAS_DEBIAN_ARCH:-arm64}"
@@ -288,6 +316,7 @@ ensure_auth_plane_on_lp() {
   fi
   mkdir -p "$ATLAS_AUTH_ON_LP" 2>/dev/null || true
   chmod 0777 "$ATLAS_AUTH_ON_LP" 2>/dev/null || true
+  join_home_auth_to_lp 2>/dev/null || true
   # Deb chroot sees AUTH_IN_DEB when merge is LP bind (same inode as AUTH_ON_LP).
   # Loop overlay: bind LP auth into merge so Deb can write without CE.
   if [ -d "$MERGE" ] && [ -d "$ATLAS_AUTH_ON_LP" ]; then
@@ -2871,7 +2900,13 @@ export ANDROID_STORAGE="${ANDROID_STORAGE:-/storage}"
 export TMPDIR="${TMPDIR:-/tmp}"
 export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
 export SUDO_ASKPASS="${SUDO_ASKPASS:-${ATLAS_BIN:-}/atlas-auth-askpass}"
-export ATLAS_AUTH_DIR="${ATLAS_AUTH_DIR:-${ATLAS_HOME:-}/auth}"
+if [ -d /var/lib/atlas-auth ]; then
+  export ATLAS_AUTH_DIR="${ATLAS_AUTH_DIR:-/var/lib/atlas-auth}"
+elif [ -d /data/local/atlas-linux/var/lib/atlas-auth ]; then
+  export ATLAS_AUTH_DIR="${ATLAS_AUTH_DIR:-/data/local/atlas-linux/var/lib/atlas-auth}"
+else
+  export ATLAS_AUTH_DIR="${ATLAS_AUTH_DIR:-/var/lib/atlas-auth}"
+fi
 if [ -x /bin/bash ]; then
   export SHELL=/bin/bash
 elif [ -x /usr/bin/bash ]; then
@@ -3536,8 +3571,9 @@ _heal_atlas_home() {
     chown "$uid:$uid" "$home/$f" 2>/dev/null || true
     chmod 644 "$home/$f" 2>/dev/null || true
   done
-  mkdir -p "$home/etc" "$home/bin" "$home/reports" "$home/auth" 2>/dev/null || true
-  chown "$uid:$uid" "$home/etc" "$home/bin" "$home/reports" "$home/auth" 2>/dev/null || true
+  mkdir -p "$home/etc" "$home/bin" "$home/reports" 2>/dev/null || true
+  join_home_auth_to_lp 2>/dev/null || true
+  chown "$uid:$uid" "$home/etc" "$home/bin" "$home/reports" 2>/dev/null || true
   chmod 755 "$home" "$home/etc" "$home/bin" 2>/dev/null || true
   # resolv for musl/static tools — Android VPN-aware (refresh on every home heal)
   if [ -w "$home/etc" ] || [ "$(stat -c %u "$home" 2>/dev/null)" = "$uid" ]; then
@@ -3644,7 +3680,7 @@ _enter_exec() {
   export HOME="$_AH" ATLAS_HOME="$_AH" ATLAS_BIN="$_AB"
   # Pin grok store to app files — never let sessions scatter under cwd=/ or wrong HOME.
   export GROK_HOME="$_AH/.grok"
-  export ATLAS_AUTH_DIR="${ATLAS_AUTH_DIR:-$_AH/auth}"
+  export ATLAS_AUTH_DIR="${ATLAS_AUTH_DIR:-${ATLAS_AUTH_ON_LP:-/data/local/atlas-linux/var/lib/atlas-auth}}"
   export SUDO_ASKPASS="${SUDO_ASKPASS:-$_AB/atlas-auth-askpass}"
   export USER=admin LOGNAME=admin ATLAS_ROLE=admin
   export TERM="${TERM:-xterm-256color}"
@@ -3687,7 +3723,7 @@ _enter_exec() {
       export HOME='$_AH' ATLAS_HOME='$_AH' ATLAS_BIN='$_AB' GROK_HOME='$_AH/.grok'
       export ATLAS_HYBRID=1 ATLAS_COMBINED=1 ATLAS_ROLE=admin USER=admin LOGNAME=admin
       export PATH='$_PATH'
-      export ATLAS_AUTH_DIR='$_AH/auth'
+      export ATLAS_AUTH_DIR='/var/lib/atlas-auth'
       export SUDO_ASKPASS='$_AB/atlas-auth-askpass'
       export TERM='${TERM:-xterm-256color}' LANG='${LANG:-C.UTF-8}' COLORTERM='${COLORTERM:-truecolor}'
       export ANDROID_ROOT=/system ANDROID_DATA=/data TMPDIR=/tmp
