@@ -37,3 +37,7 @@ __pycache__/
 *.pyc
 /build/
 third_party/titan2-touchpadd/patches
+
+# App/package compile scraps — never product
+packages/*/out/
+*.idsig

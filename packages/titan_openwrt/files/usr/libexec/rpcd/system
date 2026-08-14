@@ -1,0 +1,48 @@
+#!/bin/sh
+# Southbound system object. procd is not PID 1 on Android.
+# LuCI Status reads system.board / system.info.
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+json_esc() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+board() {
+	host=$(cat /proc/sys/kernel/hostname 2>/dev/null || echo BlackCube)
+	kern=$(awk '{print $3}' /proc/version 2>/dev/null)
+	model="Unihertz Titan 2"
+	[ -f /etc/board.json ] && {
+		n=$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /etc/board.json | head -1)
+		[ -n "$n" ] && model=$n
+	}
+	cat <<EOF
+{"kernel":"$(json_esc "$kern")","hostname":"$(json_esc "$host")","system":"ARMv8 Processor rev 0 (aarch64)","model":"$(json_esc "$model")","board_name":"unihertz,titan2","rootfs_type":"ext4","release":{"distribution":"OpenWrt","version":"24.10.4","revision":"r28959-29397011cc","target":"armsr/armv8","description":"OpenWrt 24.10.4","builddate":"1760891865"}}
+EOF
+}
+
+kbytes() {
+	awk -v k="$1" '$1==k {print $2*1024; exit}' /proc/meminfo
+}
+
+info() {
+	up=$(awk '{printf "%d",$1}' /proc/uptime)
+	now=$(date +%s)
+	# OpenWrt load[] is loadavg * 65536
+	set -- $(awk '{printf "%d %d %d",$1*65536,$2*65536,$3*65536}' /proc/loadavg)
+	nproc=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo 8)
+	cat <<EOF
+{"localtime":$now,"uptime":$up,"load":[$1,$2,$3],"nproc":$nproc,"memory":{"total":$(kbytes MemTotal:),"free":$(kbytes MemFree:),"shared":$(kbytes Shmem:),"buffered":$(kbytes Buffers:),"available":$(kbytes MemAvailable:),"cached":$(kbytes Cached:)},"swap":{"total":$(kbytes SwapTotal:),"free":$(kbytes SwapFree:)}}
+EOF
+}
+
+case "$1" in
+	list)
+		echo '{ "board": { }, "info": { } }'
+		;;
+	call)
+		case "$2" in
+			board) board ;;
+			info) info ;;
+		esac
+		;;
+esac

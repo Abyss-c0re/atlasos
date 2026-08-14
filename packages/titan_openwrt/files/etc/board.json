@@ -1,0 +1,16 @@
+{
+  "model": {
+    "id": "unihertz,titan2",
+    "name": "Unihertz Titan 2"
+  },
+  "network": {
+    "lan": {
+      "device": "ap_br_ap0",
+      "protocol": "static"
+    },
+    "wan": {
+      "device": "tun0",
+      "protocol": "none"
+    }
+  }
+}

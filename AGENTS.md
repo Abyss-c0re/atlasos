@@ -8,6 +8,7 @@
 1. [`README.md`](README.md) — what this OS is
 2. [`chain/sources.yaml`](chain/sources.yaml) — linked upstreams (never upload)
 3. [`docs/PRODUCT.md`](docs/PRODUCT.md) — image matrix
+3a. [`docs/PRODUCT_LOCK.md`](docs/PRODUCT_LOCK.md) — working product gates (not a certified stamp)
 4. [`docs/UX.md`](docs/UX.md) — UI patches (system-wide only)
 5. [`patches/gsi_source/SERIES`](patches/gsi_source/SERIES)
 

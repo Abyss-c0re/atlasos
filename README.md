@@ -15,7 +15,8 @@ Flavors: **vanilla** / **microg** / **gapps**.
 | Grok + local models | Atlas / Nanobot → Grok or a LAN / on-device model |
 
 Cube is **system chrome only** (icon mask + night/cyan). This is not a game
-or hive product.
+or hive product. Working-product gates: [`docs/PRODUCT_LOCK.md`](docs/PRODUCT_LOCK.md).
+Not Cube-certified until those gates pass on a wiped image.
 
 ## Build (standalone)
 

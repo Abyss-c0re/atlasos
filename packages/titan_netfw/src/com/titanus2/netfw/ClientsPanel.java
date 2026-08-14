@@ -6,7 +6,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.util.List;
 
-/** Live STA / neighbor rows. 2×2 actions fit 1440 square. */
+/** Live OpenWrt clients. Allow / block here; LuCI for the rest. */
 final class ClientsPanel {
     private final Activity ctx;
     private final LinearLayout box;
@@ -34,15 +34,11 @@ final class ClientsPanel {
         row.setOrientation(LinearLayout.VERTICAL);
         row.setPadding(0, NetUi.dp(ctx, 6), 0, NetUi.dp(ctx, 6));
         row.addView(NetUi.fact(ctx, n.label()));
-        row.addView(NetUi.fact(ctx, "policy=" + n.policy));
-        LinearLayout g1 = NetUi.row(ctx);
-        LinearLayout g2 = NetUi.row(ctx);
-        addAct(g1, n, "allow", "Allow");
-        addAct(g1, n, "isolate", "Isolate");
-        addAct(g2, n, "lan-only", "LAN");
-        addAct(g2, n, "block", "Block");
-        row.addView(g1);
-        row.addView(g2);
+        row.addView(NetUi.fact(ctx, n.policy));
+        LinearLayout acts = NetUi.row(ctx);
+        addAct(acts, n, "allow", "Allow");
+        addAct(acts, n, "block", "Block");
+        row.addView(acts);
         box.addView(row);
     }
 
@@ -52,9 +48,10 @@ final class ClientsPanel {
         b.setEnabled(!on);
         if (on) b.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         b.setOnClickListener(v -> {
-            Fw.run("client-" + pol, Fw.colonMac(n.mac), n.ip);
-            if (Fw.enabled()) Fw.run("apply");
-            refresh();
+            new Thread(() -> {
+                OpenWrt.run(pol, Fw.colonMac(n.mac));
+                ctx.runOnUiThread(this::refresh);
+            }, "ow-client").start();
         });
         NetUi.weight(acts, b, 1f);
     }

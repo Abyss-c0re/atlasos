@@ -12,9 +12,12 @@ export PATH="$HOME/.local/jdk-17/bin:/usr/lib/jvm/java-17-openjdk/bin:$PATH"
 OUT="$ROOT/out"
 GEN="$OUT/gen"
 CLS="$OUT/classes"
+rm -rf "$CLS"
 mkdir -p "$GEN" "$CLS"
+AAPT_RES=()
+[ -d "$ROOT/res" ] && AAPT_RES=(-S "$ROOT/res")
 "$BT/aapt" package -f -m -J "$GEN" -M "$ROOT/AndroidManifest.xml" \
-  -I "$PLATFORM/android.jar" -F "$OUT/res.apk"
+  "${AAPT_RES[@]}" -I "$PLATFORM/android.jar" -F "$OUT/res.apk"
 mapfile -t JAVAS < <("$FIND" -H "$ROOT/src" "$GEN" -name '*.java')
 if [ "${#JAVAS[@]}" -lt 8 ]; then
   echo "build.sh: only ${#JAVAS[@]} java files — refusing hollow APK" >&2
@@ -26,7 +29,14 @@ javac --release 17 -cp "$PLATFORM/android.jar" -d "$CLS" "${JAVAS[@]}"
 cp -f "$OUT/res.apk" "$OUT/unsigned.apk"
 (cd "$OUT" && zip -qj unsigned.apk classes.dex)
 cp -f "$OUT/unsigned.apk" "$ROOT/TitanNetFw.apk"
+PK8="${PLATFORM_PK8:-$HOME/Dev/device-workshop/products/titanus2/out/setupwizard_extract/keys/platform.pk8}"
+CERT="${PLATFORM_CERT:-$HOME/Dev/device-workshop/products/titanus2/out/setupwizard_extract/keys/platform.x509.pem}"
+if [ -f "$PK8" ] && [ -f "$CERT" ] && [ -x "$BT/apksigner" ]; then
+  "$BT/apksigner" sign --key "$PK8" --cert "$CERT" --out "$OUT/TitanNetFw-platform.apk" "$ROOT/TitanNetFw.apk"
+  cp -f "$OUT/TitanNetFw-platform.apk" "$ROOT/TitanNetFw.apk"
+fi
 sz=$(stat -c%s "$ROOT/TitanNetFw.apk")
 [ "$sz" -ge 10000 ] || { echo "hollow APK $sz" >&2; exit 1; }
-unzip -l "$ROOT/TitanNetFw.apk" | grep -q classes.dex || { echo "no classes.dex" >&2; exit 1; }
+unzip -Z1 "$ROOT/TitanNetFw.apk" >"$OUT/apk.list"
+grep -qx classes.dex "$OUT/apk.list" || { echo "no classes.dex" >&2; exit 1; }
 echo "OK $ROOT/TitanNetFw.apk ($sz bytes)"

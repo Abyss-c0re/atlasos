@@ -1,14 +1,13 @@
 package com.titanus2.netfw;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
+import java.util.Set;
 
-/** Live neighbors from /proc/net/arp + desire file. */
+/** Neighbors from OpenWrt plane (`titan2-openwrt.sh clients`). */
 public final class Neigh {
     public final String mac;
     public final String ip;
@@ -23,31 +22,45 @@ public final class Neigh {
     }
 
     public static List<Neigh> load() {
-        Map<String, String> desire = Fw.clientDesire();
+        String blob = OpenWrt.run("clients");
+        Set<String> blocked = new LinkedHashSet<String>();
         LinkedHashMap<String, Neigh> byMac = new LinkedHashMap<String, Neigh>();
-        try {
-            BufferedReader r = new BufferedReader(new FileReader("/proc/net/arp"));
-            String line = r.readLine(); // header
-            while ((line = r.readLine()) != null) {
-                String[] p = line.trim().split("\\s+");
-                if (p.length < 6) continue;
-                String ip = p[0];
-                String flags = p[2];
-                String mac = Fw.normMac(p[3]);
-                String dev = p[5];
-                if (mac.length() != 12 || "000000000000".equals(mac)) continue;
-                if ("0x0".equals(flags)) continue;
-                String pol = desire.containsKey(mac) ? desire.get(mac).split("\\s+")[0] : "allow";
-                byMac.put(mac, new Neigh(mac, ip, dev, pol));
+        if (blob == null) return new ArrayList<Neigh>();
+        for (String line : blob.split("\n")) {
+            line = line.trim();
+            if (line.startsWith("blocked ")) {
+                String mac = Fw.normMac(line.substring(8).trim());
+                if (mac.length() == 12) blocked.add(mac);
             }
-            r.close();
-        } catch (Exception ignored) {}
-        for (Map.Entry<String, String> e : desire.entrySet()) {
-            if (byMac.containsKey(e.getKey())) continue;
-            String[] p = e.getValue().split("\\s+");
-            byMac.put(e.getKey(), new Neigh(e.getKey(), p.length > 1 ? p[1] : "", "", p[0]));
+        }
+        for (String line : blob.split("\n")) {
+            line = line.trim();
+            if (!line.startsWith("client ")) continue;
+            Parsed p = parseClient(line.substring(7).trim());
+            if (p == null) continue;
+            String pol = blocked.contains(p.mac) ? "block" : "allow";
+            byMac.put(p.mac, new Neigh(p.mac, p.ip, p.dev, pol));
+        }
+        for (String mac : blocked) {
+            if (byMac.containsKey(mac)) continue;
+            byMac.put(mac, new Neigh(mac, "", "", "block"));
         }
         return new ArrayList<Neigh>(byMac.values());
+    }
+
+    private static Parsed parseClient(String line) {
+        String[] p = line.split("\\s+");
+        if (p.length < 1) return null;
+        String ip = p[0];
+        String dev = "";
+        String macRaw = "";
+        for (int i = 0; i < p.length; i++) {
+            if ("dev".equals(p[i]) && i + 1 < p.length) dev = p[i + 1];
+            if ("lladdr".equals(p[i]) && i + 1 < p.length) macRaw = p[i + 1];
+        }
+        String mac = Fw.normMac(macRaw);
+        if (mac.length() != 12 || "000000000000".equals(mac)) return null;
+        return new Parsed(mac, ip, dev);
     }
 
     public String label() {
@@ -57,5 +70,16 @@ public final class Neigh {
         }
         if (!ip.isEmpty()) return m + "  " + ip;
         return m;
+    }
+
+    private static final class Parsed {
+        final String mac;
+        final String ip;
+        final String dev;
+        Parsed(String mac, String ip, String dev) {
+            this.mac = mac;
+            this.ip = ip;
+            this.dev = dev;
+        }
     }
 }

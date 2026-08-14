@@ -40,6 +40,16 @@ android_app_import {
 }
 
 android_app_import {
+    name: "TitanLuci",
+    apk: "TitanLuci.apk",
+    certificate: "platform",
+    privileged: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+android_app_import {
     name: "CubeContact",
     apk: "CubeContact.apk",
     certificate: "platform",

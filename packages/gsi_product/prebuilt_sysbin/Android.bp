@@ -160,6 +160,32 @@ prebuilt_etc {
     filename_from_src: true,
 }
 
+sh_binary {
+    name: "titan2-openwrt.sh",
+    src: "titan2-openwrt.sh",
+}
+
+sh_binary {
+    name: "titan2-openwrt-boot.sh",
+    src: "titan2-openwrt-boot.sh",
+}
+
+cc_prebuilt_binary {
+    name: "openwrt-lpctl",
+    srcs: ["openwrt-lpctl"],
+    compile_multilib: "64",
+    check_elf_files: false,
+    system_shared_libs: [],
+    stem: "openwrt-lpctl",
+}
+
+prebuilt_etc {
+    name: "titan2-openwrt.rc",
+    src: "titan2-openwrt.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}
+
 prebuilt_etc {
     name: "titan2-pad-agent.rc",
     src: "titan2-pad-agent.rc",

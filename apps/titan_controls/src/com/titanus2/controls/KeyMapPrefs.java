@@ -678,7 +678,7 @@ public final class KeyMapPrefs {
     /**
      * Factory default for a slot.
      * Recents physical key (scan 580): short=Home, long=Recents — owned by
-     * pad-agent (key unmapped in KL so system does not double-fire).
+     * Controls a11y GLOBAL_ACTION (hybrid KL is F24, not APP_SWITCH).
      * Back short → nav Back (Controls inject) — product default Titan keys.
      * Fn stays off the list (layout: Fn as Ctrl).
      */

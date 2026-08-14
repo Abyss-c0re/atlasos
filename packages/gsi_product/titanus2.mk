@@ -97,16 +97,18 @@ PRODUCT_PACKAGES += \
     titan2-vpn-hotspot.sh \
     titan2-netfw.rc \
     TitanNetFw \
+    TitanLuci \
+    titan2-openwrt.sh \
+    titan2-openwrt-boot.sh \
+    titan2-openwrt.rc \
+    openwrt-lpctl \
     titan2-pad-agent.rc \
     titan2-ims.rc \
     titan2-sensor-privacy.rc
 
 # product.prop (0020) is not read on this GSI bind layout — stamp system.
+# tether_ipv4 is the Android DHCP gateway (0090). Must be host .1, never .0.
 PRODUCT_SYSTEM_PROPERTIES += \
     ro.titanus2.gsi_source=1 \
-    ro.titanus2.maintainer=Abyss-c0re
-
-# product.prop (0020) is not read on this GSI bind layout — stamp system.
-PRODUCT_SYSTEM_PROPERTIES += \
-    ro.titanus2.gsi_source=1 \
-    ro.titanus2.maintainer=Abyss-c0re
+    ro.titanus2.maintainer=Abyss-c0re \
+    persist.sys.titan2.tether_ipv4=192.168.6.1/24

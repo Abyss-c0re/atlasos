@@ -25,14 +25,14 @@ public final class StateMatrix {
     private static final String TAG = "StateMatrix";
     public static final int MAX_N = 16;
     public static final int MAX_CELLS = MAX_N * MAX_N * MAX_N;
-    /** On-device local braincube (often empty on Titan hybrid). */
+    /** On-device nanobot. Product peer. Empty lattice if this bus is down. */
     public static final String PEER_LOCAL = "http://127.0.0.1:8787";
     /**
-     * Lab BlackCube BrainCube peer (BUG-42 Atlas 2026-08-11).
-     * Titan rear Neural Cube blanks when stuck on PEER_LOCAL with no bus.
+     * Station BrainCube — not a product default. Only used when the human
+     * writes an override (`peer_url` pref or `/data/local/tmp/cube_peer_url`).
      */
     public static final String PEER_LAB = "http://192.168.8.100:18787";
-    public static String PEER = PEER_LOCAL; // overridable lab
+    public static String PEER = PEER_LOCAL;
 
     /**
      * 1.12 residual: rear GL path had no Application Context, so LAW persist
@@ -65,8 +65,8 @@ public final class StateMatrix {
      * Resolve BrainCube PEER (BUG-42 product land).
      * <ol>
      *   <li>Explicit override: {@code /data/local/tmp/cube_peer_url} then prefs {@code peer_url}</li>
-     *   <li>If unset/default local: health-probe local :8787 (300ms); on fail → {@link #PEER_LAB}</li>
-     *   <li>Never leave rear eyes on a dead local bus when lab LAN peer is up</li>
+     *   <li>If unset: health-probe local :8787. Dead local → stay local (fail closed).</li>
+     *   <li>Do not phone a lab IP. Blank rear is honest. Override is explicit.</li>
      * </ol>
      */
     public static void tryResolvePeer() {
@@ -102,16 +102,11 @@ public final class StateMatrix {
                 return;
             }
             sLastPeerHealthMs = now;
+            PEER = PEER_LOCAL;
             if (peerHealthOk(PEER_LOCAL, 300)) {
-                PEER = PEER_LOCAL;
                 Log.i(TAG, "peer local healthy " + PEER);
-            } else if (peerHealthOk(PEER_LAB, 400)) {
-                PEER = PEER_LAB;
-                Log.i(TAG, "peer failover lab " + PEER + " (local dead)");
             } else {
-                // Prefer lab as default when both unprobed-fail (device on LAN).
-                PEER = PEER_LAB;
-                Log.w(TAG, "peer both unhealthy — default lab " + PEER);
+                Log.w(TAG, "peer local down — fail closed (no lab default)");
             }
         } catch (Exception e) {
             Log.w(TAG, "tryResolvePeer", e);

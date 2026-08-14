@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.81-hub-clean (581) — 2026-08-14T16:27Z
+
+### rebuild 2026-08-14T16:27Z · 15.81-hub-clean (581)
+
+- Rebuild (ALLOW_ROOT=0)
+
+
+- Drop unused network pages from the hub.
+
+---
+
 ## 15.80-home-restore (580) — 2026-08-13T19:50Z
 
 ### rebuild 2026-08-13T21:44Z · 15.80-home-restore (580)

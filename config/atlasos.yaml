@@ -6,15 +6,16 @@ gsi:
   family: LineageOS-23.2
   variant: VANILLA-EXT4
   recipe: misterztr
-  live_pin: "20260804"
+  live_pin: "20260814"
 
 features:
   touchpadd: true
   controls: true
   usb_hid: true
   atlas: true
+  openwrt: true               # atlas_openwrt_a — official userspace, not a stub
   nanobot: true
-  cube_contact: true          # rear lattice only
+  cube_contact: true          # rear lattice only; peer is on-device :8787
   cube_icons: true            # square mask + cube-ux
   square_chrome: false        # full zero-radius RROs stay off
   fm_ir: true

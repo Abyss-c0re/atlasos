@@ -29,9 +29,11 @@ Included classes are **on by default** and remain kitchen/flavor toggles.
 | Mouse Mode / pad | on | GSI `PRODUCT_PACKAGES` `titan2-touchpadd` (INPROC_PARK). Inject off on AtlasOS builds. |
 | Home / Recents | on | Controls `GLOBAL_ACTION_*` only |
 | HID | on | USB gadget + HID app |
-| Atlas | on | Terminal + Debian plane |
-| Nanobot | on | Grok + LAN / on-device; weights not in git |
-| CubeContact | on | Rear lattice only |
+| Atlas | on | Terminal + Debian on super `atlas_linux_a` (wipe-survive) |
+| OpenWrt | on | Official 24.10.4 on super `atlas_openwrt_a` (wipe-survive) |
+| Router | on | Settings wrapper over OpenWrt + LuCI. No Firewall tile. |
+| Nanobot | on | On-device peer `:8787` + MCP; weights not in git |
+| CubeContact | on | Rear lattice from on-device peer; fail closed if dead |
 | UI | on | cube-ux + square icon mask + gsi_source 0010/0050/0060/0070 |
 | FM / IR | on | libs + wrapper; no China IR app |
 | IMS | on | SAFE v2 only |
@@ -41,4 +43,6 @@ Included classes are **on by default** and remain kitchen/flavor toggles.
 ## Not in the product image
 
 Clanker Commander, robot mesh, Cube lore, Magisk-as-UX, Path-B trees,
-stock firmware, kernel sources (none exist).
+stock firmware, kernel sources (none exist), Settings/Controls Firewall pages.
+
+Working-product contract (not a certified stamp): [`PRODUCT_LOCK.md`](PRODUCT_LOCK.md).

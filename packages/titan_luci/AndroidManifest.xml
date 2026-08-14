@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.titanus2.luci"
+    android:versionCode="6"
+    android:versionName="1.2-luci-label">
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="35"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <application
+        android:label="LuCI"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true"
+        android:theme="@android:style/Theme.DeviceDefault">
+        <activity
+            android:name=".LuciActivity"
+            android:exported="true"
+            android:label="LuCI"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|density">
+            <intent-filter>
+                <action android:name="com.titanus2.luci.OPEN"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

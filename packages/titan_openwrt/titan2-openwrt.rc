@@ -1,0 +1,22 @@
+# OpenWrt LP plane. Root is atlas_openwrt_a (survives userdata wipe).
+# No u:r:su:s0 — that domain is missing after wipe on rootless GSI
+# (same lesson as atlas-hybrid.rc, 2026-08-13).
+# Direct exec — /system/bin/sh <script> is never registered on this GSI
+# (pad-agent.rc, REG: init.svc empty while the .rc is on disk).
+# Not oneshot: init reaps the service cgroup when the main pid exits,
+# which kills uhttpd/ubusd (T1915Z: oneshot done, pid 5016 gone, :8080 dead).
+service titan2-openwrt-boot /system/bin/titan2-openwrt-boot.sh
+    class late_start
+    user root
+    group root system
+    disabled
+
+on property:sys.boot_completed=1
+    start titan2-openwrt-boot
+
+on property:sys.user.0.ce_available=1
+    start titan2-openwrt-boot
+
+on property:sys.atlas.openwrt=1
+    start titan2-openwrt-boot
+    setprop sys.atlas.openwrt 0

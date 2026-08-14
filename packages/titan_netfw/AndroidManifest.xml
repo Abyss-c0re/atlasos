@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.netfw"
-    android:versionCode="3"
-    android:versionName="1.2-luci"
+    android:versionCode="10"
+    android:versionName="1.9-system-bin"
     android:sharedUserId="android.uid.system">
     <uses-sdk android:minSdkVersion="34" android:targetSdkVersion="35"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="Network"
+        android:label="Router"
+        android:icon="@drawable/ic_settings_router"
+        android:roundIcon="@drawable/ic_settings_router"
         android:persistent="true"
         android:directBootAware="true"
         android:allowBackup="false"
@@ -38,24 +40,12 @@
             <meta-data android:name="com.android.settings.category"
                 android:value="com.android.settings.category.ia.wireless"/>
             <meta-data android:name="com.android.settings.title" android:value="Router"/>
+            <meta-data android:name="com.android.settings.icon"
+                android:resource="@drawable/ic_settings_router"/>
+            <meta-data android:name="com.android.settings.icon_tintable"
+                android:value="true"/>
+            <meta-data android:name="com.android.settings.order" android:value="15"/>
         </activity>
-        <activity
-            android:name=".FirewallActivity"
-            android:exported="true"
-            android:label="Firewall"
-            android:resizeableActivity="true"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density">
-            <intent-filter>
-                <action android:name="com.android.settings.action.EXTRA_SETTINGS"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-            </intent-filter>
-            <intent-filter>
-                <action android:name="com.titanus2.netfw.FIREWALL"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-            </intent-filter>
-            <meta-data android:name="com.android.settings.category"
-                android:value="com.android.settings.category.ia.wireless"/>
-            <meta-data android:name="com.android.settings.title" android:value="Firewall"/>
-        </activity>
+        <!-- Zone tables live in LuCI. No second Settings tile. -->
     </application>
 </manifest>

@@ -152,6 +152,13 @@ if [ -n "$CTRL_APK" ] && [ -n "$USB_APK" ] && [ -n "$CUBE_APK" ]; then
     [ -f "$c" ] && NETFW_APK="$c" && break
   done
   [ -n "$NETFW_APK" ] && stage_file "$NETFW_APK" "$DEST_APPS/TitanNetFw.apk"
+  LUCI_APK=""
+  for c in \
+    "$ROOT/packages/titan_luci/TitanLuci.apk" \
+    "$SRC_APPS/TitanLuci.apk"; do
+    [ -f "$c" ] && LUCI_APK="$c" && break
+  done
+  [ -n "$LUCI_APK" ] && stage_file "$LUCI_APK" "$DEST_APPS/TitanLuci.apk"
   [ -n "$POCKET_APK" ] && stage_file "$POCKET_APK" "$DEST_APPS/PocketBoard.apk"
   [ -n "$HWKB_APK" ] && stage_file "$HWKB_APK" "$DEST_APPS/HwKeyboardLayouts.apk"
   stage_file "$CTRL_PRIV" "$DEST_APPS/privapp-permissions-com.titanus2.controls.xml"
@@ -238,6 +245,10 @@ refresh_sot "$ROOT/patches/init/titan2-pad-agent.rc" "$SRC_SYS/titan2-pad-agent.
 refresh_sot "$ROOT/packages/titan_ims/init/titan2-ims.rc" "$SRC_SYS/titan2-ims.rc"
 refresh_sot "$ROOT/patches/init/titan2-sensor-privacy.rc" "$SRC_SYS/titan2-sensor-privacy.rc"
 refresh_sot "$ROOT/patches/init/titan2-netfw.rc" "$SRC_SYS/titan2-netfw.rc"
+refresh_sot "$ROOT/packages/titan_openwrt/titan2-openwrt.sh" "$SRC_SYS/titan2-openwrt.sh"
+refresh_sot "$ROOT/packages/titan_openwrt/titan2-openwrt-boot.sh" "$SRC_SYS/titan2-openwrt-boot.sh"
+refresh_sot "$ROOT/packages/titan_openwrt/titan2-openwrt.rc" "$SRC_SYS/titan2-openwrt.rc"
+refresh_sot "$ROOT/packages/titan_openwrt/openwrt-lpctl" "$SRC_SYS/openwrt-lpctl"
 [ -f "$SRC_SYS/titan2-netfw.rc" ] || die "missing titan2-netfw.rc (firewall init)"
 [ -f "$SRC_SYS/titan2-fw-observe" ] || die "missing titan2-fw-observe ELF"
 # Guard: ims-setup must not force location_mode
@@ -250,7 +261,9 @@ if ! grep -q '_is_protected_capture_pcm\|Hostless_Spk' "$SRC_SYS/titan2-sensor-p
 fi
 stage_file "$SRC_SYS/Android.bp" "$DEST_SYS/Android.bp"
 for f in $_SYSBIN_SOT titan2-ims-setup.sh titan2-sensor-privacy.sh \
-  titan2-pad-agent.rc titan2-ims.rc titan2-sensor-privacy.rc titan2-netfw.rc; do
+  titan2-pad-agent.rc titan2-ims.rc titan2-sensor-privacy.rc titan2-netfw.rc \
+  titan2-openwrt.sh titan2-openwrt-boot.sh titan2-openwrt.rc openwrt-lpctl; do
+  [ -f "$SRC_SYS/$f" ] || continue
   stage_file "$SRC_SYS/$f" "$DEST_SYS/$f"
 done
 chmod 755 "$DEST_SYS"/*.sh 2>/dev/null || true

@@ -1,0 +1,20 @@
+config interface 'loopback'
+	option device 'lo'
+	option proto 'static'
+	option ipaddr '127.0.0.1'
+	option netmask '255.0.0.0'
+
+config interface 'lan'
+	option device 'ap_br_ap0'
+	option proto 'static'
+	option ipaddr '192.168.6.1'
+	option netmask '255.255.255.0'
+
+config interface 'wan'
+	option device 'tun0'
+	option proto 'none'
+	option metric '10'
+
+config interface 'wan6'
+	option device 'tun0'
+	option proto 'none'

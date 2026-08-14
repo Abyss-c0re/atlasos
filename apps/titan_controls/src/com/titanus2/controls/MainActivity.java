@@ -174,20 +174,6 @@ public class MainActivity extends Activity {
         UiKit.navRow(root, "Developer",
             "Auto Dev · Remote ADB · USB ADB · debug",
             () -> startActivity(new Intent(this, DevToolsActivity.class)));
-        // Network wall lives in Settings (TitanNetFw). Hub only deep-links.
-        UiKit.navRow(root, "Firewall", "Network · Settings",
-            () -> {
-                try {
-                    startActivity(new Intent("com.titanus2.netfw.FIREWALL")
-                        .setPackage("com.titanus2.netfw"));
-                } catch (Exception e) {
-                    try {
-                        startActivity(new Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS));
-                    } catch (Exception e2) {
-                        startActivity(new Intent(this, FirewallActivity.class));
-                    }
-                }
-            });
         // LAW: every build stamps CHANGELOG → assets; hub must expose it.
         String verLine = "build";
         try {
@@ -202,7 +188,7 @@ public class MainActivity extends Activity {
 
         // Mono fact: HW keyboard map for this hub (not marketing).
         TextView kbHint = UiKit.mono(root);
-        kbHint.setText("K Keys · S Sub · N notif · W Wi‑Fi · T Tweaks · D Dev · F Wall · G log · "
+        kbHint.setText("K Keys · S Sub · N notif · W Wi‑Fi · T Tweaks · D Dev · G log · "
             + "0/1/2 pad · C tap · L light · O idle");
         setContentView(scroll);
         // Inherit OS DeviceDefault theme (Cube is system-wide via cube-ux / RROs, not app paint)
@@ -267,14 +253,6 @@ public class MainActivity extends Activity {
                 case KeyEvent.KEYCODE_D:
                     startActivity(new Intent(this, DevToolsActivity.class));
                     return true;
-                case KeyEvent.KEYCODE_F:
-                    try {
-                        startActivity(new Intent("com.titanus2.netfw.FIREWALL")
-                            .setPackage("com.titanus2.netfw"));
-                    } catch (Exception e) {
-                        startActivity(new Intent(this, FirewallActivity.class));
-                    }
-                    return true;
                 case KeyEvent.KEYCODE_G:
                     startActivity(new Intent(this, ChangelogActivity.class));
                     return true;
@@ -293,7 +271,6 @@ public class MainActivity extends Activity {
                 case KeyEvent.KEYCODE_C:
                     toggleTap();
                     return true;
-                // Follow screen: hub button only (F = Firewall above)
                 case KeyEvent.KEYCODE_L:
                     cycleLedLevel();
                     return true;

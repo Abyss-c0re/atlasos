@@ -7,7 +7,6 @@ import java.util.Map;
 public final class OpenWrt {
     private static final String[] BINS = {
         "/system/bin/titan2-openwrt.sh",
-        "/data/local/tmp/titan2-openwrt.sh",
     };
 
     private OpenWrt() {}
@@ -55,13 +54,39 @@ public final class OpenWrt {
         }
     }
 
+    /** IPv4 /24: delete network-id .0 everywhere. Gateway is only .1. */
+    public static String banNetaddr() {
+        return run("ban");
+    }
+
+    /** atlas-auth then set OpenWrt root password (chpasswd in the LP). */
+    public static String setRoot(String password) {
+        ensureAuth();
+        if (password == null || password.isEmpty()) return "error: empty password";
+        String b = bin();
+        if (b == null) return "error: titan2-openwrt.sh missing";
+        return Fw.exec(true, "/system/bin/sh", "-c",
+            "printf 'root:%s\\n' " + quote(password)
+                + " | chroot /data/local/atlas-openwrt /usr/sbin/chpasswd 2>/dev/null"
+                + " || printf 'root:%s\\n' " + quote(password)
+                + " | chroot /data/local/atlas-openwrt /bin/busybox chpasswd;"
+                + " echo root_set=1");
+    }
+
+    private static String quote(String a) {
+        if (a == null) return "''";
+        return "'" + a.replace("'", "'\\''") + "'";
+    }
+
     public static String bar() {
         Map<String, String> st = status();
         String wan = nz(st.get("wan"), "under");
         String ap = nz(st.get("ap"), "none");
         String luci = nz(st.get("uhttpd"), "down");
         String lp = nz(st.get("lp"), "?");
-        return "gw=192.168.6.1  wan=" + wan + "  ap=" + ap + "  luci=" + luci + "  lp=" + lp;
+        String ds = nz(st.get("downstreams"), ap);
+        String lan = nz(st.get("lan"), "192.168.6.1");
+        return "gw=" + lan + "  wan=" + wan + "  if=" + ds + "  luci=" + luci + "  lp=" + lp;
     }
 
     private static String nz(String s, String d) {

@@ -264,4 +264,11 @@ if [ ! -f /data/local/tmp/atlas_hybrid.ready ] \
   fi
 fi
 
+# OpenWrt sibling plane. Init oneshot may never leave a svc prop; belt after /data.
+if [ -f /system/bin/titan2-openwrt-boot.sh ]; then
+  /system/bin/sh /system/bin/titan2-openwrt-boot.sh >>"$LOG" 2>&1 || true
+elif [ -f /system/bin/titan2-openwrt.sh ]; then
+  /system/bin/sh /system/bin/titan2-openwrt.sh start >>"$LOG" 2>&1 || true
+fi
+
 exit 0

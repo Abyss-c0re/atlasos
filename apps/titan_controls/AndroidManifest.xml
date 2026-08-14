@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.controls"
-    android:versionCode="580"
-    android:versionName="15.80-home-restore">
+    android:versionCode="581"
+    android:versionName="15.81-hub-clean">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
     <!-- Framework API: host declares + holds USE_TITAN2_API -->
     <permission
@@ -272,12 +272,6 @@
                 android:name="android.service.quicksettings.TOGGLEABLE_TILE"
                 android:value="true"/>
         </service>
-        <!-- Firewall cube: Settings page only — never a separate launcher app -->
-        <activity
-            android:name=".FirewallActivity"
-            android:exported="false"
-            android:label="Firewall"
-            android:parentActivityName=".MainActivity"/>
         <activity
             android:name=".ui.ThemeActivity"
             android:exported="true"

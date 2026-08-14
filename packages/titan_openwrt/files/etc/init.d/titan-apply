@@ -1,0 +1,17 @@
+#!/bin/sh
+# LuCI Save & Apply lands here (no procd). Host applyd sees /tmp/need-apply.
+case "$1" in
+	start|restart|reload|boot|restart)
+		if [ -x /sbin/netifd ]; then
+			if ! pidof netifd >/dev/null 2>&1; then
+				/sbin/netifd >/tmp/netifd.log 2>&1 &
+				sleep 0.3
+			else
+				ubus call network reload >/dev/null 2>&1 || true
+			fi
+		fi
+		touch /tmp/need-apply
+		;;
+	stop) ;;
+esac
+exit 0
