@@ -20,6 +20,8 @@ debian-*-rootfs.tar.gz
 apps/titan_atlas/assets/bin/bash
 apps/titan_atlas/assets/bin/quest-usbip-host
 third_party/titan2-touchpadd/bin/titan2-touchpadd
+third_party/titan2-touchpadd/checkout
+third_party/titan2-touchpadd/src
 packages/gsi_product/prebuilt_touchpadd/titan2-touchpadd
 
 # Workshop-only binaries that may sit in a linked dir
@@ -34,3 +36,4 @@ packages/titan_icon_mask_only/build/
 __pycache__/
 *.pyc
 /build/
+third_party/titan2-touchpadd/patches

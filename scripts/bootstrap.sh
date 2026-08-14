@@ -39,6 +39,8 @@ mkdir -p "$ROOT/.links"
 
 info "modules (upstream fetch, overlays kept)"
 "$ROOT/scripts/sync-modules.sh" || info "module fetch had warnings (offline remotes are OK)"
+info "titan2-touchpadd (Abyss-c0re fork, musl)"
+"$ROOT/scripts/build_touchpadd.sh" || info "touchpadd build skipped (install rustc + musl target)"
 
 info "Lineage + MisterZtr tree → $MISTERZTR_TREE"
 if [ ! -d "$MISTERZTR_TREE/device/phh/treble" ]; then

@@ -87,6 +87,10 @@ fi
 
 # --- touchpadd ---
 TP="${ROOT}/third_party/titan2-touchpadd/bin/titan2-touchpadd"
+if [ ! -x "$TP" ] && [ -x "$ROOT/scripts/build_touchpadd.sh" ]; then
+  echo "==> touchpadd ELF missing — AtlasOS musl build"
+  "$ROOT/scripts/build_touchpadd.sh" || true
+fi
 if [ -x "$TP" ]; then
   grep -aF 'INPROC_PARK' "$TP" >/dev/null && ok "touchpadd INPROC_PARK" \
     || bad "touchpadd missing INPROC_PARK"

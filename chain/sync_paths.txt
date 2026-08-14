@@ -57,10 +57,6 @@ apps/ui_template
 
 # Source patches + pad
 patches/gsi_source
-third_party/titan2-touchpadd/patches
-third_party/titan2-touchpadd/idc
-third_party/titan2-touchpadd/init
-third_party/titan2-touchpadd/README.md
-third_party/titan2-touchpadd/fetch.sh
+third_party/titan2-touchpadd
 packages/titan_usb_hid_system
 packages/titan_icon_mask_only

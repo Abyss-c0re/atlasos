@@ -94,6 +94,10 @@ if [ "$WITH_GAPPS" = "1" ]; then
   fi
 fi
 
+if [ ! -x "$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd" ]; then
+  info "building titan2-touchpadd (musl)"
+  "$ROOT/scripts/build_touchpadd.sh"
+fi
 "$ROOT/scripts/check_clean.sh"
 FORCE_TITAN_REPATCH="${FORCE_TITAN_REPATCH:-0}" \
   "$ROOT/scripts/misterztr/apply_titan_source_patches.sh"
