@@ -3,7 +3,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-REMOTE="${TITAN2_TOUCHPADD_REMOTE:-https://gitea.angry.im/Abyss-c0re/titan2-touchpadd.git}"
+REMOTE="${TITAN2_TOUCHPADD_REMOTE:-https://github.com/Abyss-c0re/titan2-touchpadd.git}"
 DEST="${TITAN2_TOUCHPADD_SRC:-$ROOT/.links/upstream/titan2-touchpadd}"
 info() { echo "==> $*"; }
 

@@ -25,7 +25,7 @@ map. It is not legal advice.
 | `apps/titan_atlas/assets/fonts/DejaVuSansMono.ttf` | DejaVu Fonts | Bitstream Vera / Arev — `third_party/LICENSES/DEJAVU.txt` |
 | `apps/titan_atlas/assets/ssl/cacert.pem` | Mozilla CA | MPL-2.0 — `third_party/LICENSES/CACERT-MPL.txt` |
 | `third_party/pocket-board/` | [SinuXVR/pocket-board](https://github.com/SinuXVR/pocket-board) | **GPLv3** — `third_party/pocket-board/LICENSE` |
-| `third_party/titan2-touchpadd/patches/` | [PeterGSI/titan2-touchpadd](https://gitea.angry.im/PeterGSI/titan2-touchpadd) | Upstream license — `third_party/titan2-touchpadd/README.md` |
+| `titan2-touchpadd` (fetched) | [Abyss-c0re/titan2-touchpadd](https://github.com/Abyss-c0re/titan2-touchpadd) (PeterGSI upstream) | Upstream license — fetch, do not commit ELF |
 | `third_party/openeuicc/` | [PeterCxy/OpenEUICC](https://gitea.angry.im/PeterCxy/OpenEUICC) | **GPLv3** (APK not committed) |
 | `apps/titan_fm/` | Apache-2.0 wrapper | `apps/titan_fm/LICENSE` |
 | `apps/titan_nanobot/` | project license | `apps/titan_nanobot/LICENSE` |

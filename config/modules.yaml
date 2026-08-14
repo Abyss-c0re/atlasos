@@ -21,12 +21,14 @@ modules:
   - name: titan2-touchpadd
     role: pad / mouse daemon
     path: third_party/titan2-touchpadd
-    remote: https://gitea.angry.im/Abyss-c0re/titan2-touchpadd.git
-    ref: HEAD
+    remote: https://github.com/Abyss-c0re/titan2-touchpadd.git
+    mirror: https://gitea.angry.im/Abyss-c0re/titan2-touchpadd.git
+    upstream: https://gitea.angry.im/PeterGSI/titan2-touchpadd.git
+    ref: main
     status: overlay
     reusable: true
-    overlay: third_party/titan2-touchpadd/patches
-    note: ELF + our pause/INPROC patches. Upstream has no product ELF.
+    overlay: third_party/titan2-touchpadd/idc
+    note: Public GitHub remote. Gitea is the lab mirror. ELF built locally (not in git).
 
   - name: openeuicc
     role: eSIM LPA

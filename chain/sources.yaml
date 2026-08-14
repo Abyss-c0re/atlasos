@@ -33,10 +33,11 @@ links:
     note: Lab flash / kitchen only. Clone-to-build does not need it.
     upload: never
 
-  peter_touchpadd:
-    url: https://gitea.angry.im/PeterGSI/titan2-touchpadd
+  titan2_touchpadd:
+    url: https://github.com/Abyss-c0re/titan2-touchpadd
+    mirror: https://gitea.angry.im/Abyss-c0re/titan2-touchpadd
+    upstream: https://gitea.angry.im/PeterGSI/titan2-touchpadd
     role: pad_runtime
-    overlay: third_party/titan2-touchpadd/patches
     upload: never
 
   pocket_board:
