@@ -186,6 +186,7 @@ bring_up_from_lp() {
   export ATLAS_LINUX_HOME_HOST="$ATLAS_LINUX_HOME"
   export ATLAS_AUTH_DIR="$ATLAS_AUTH_ON_LP"
   plane_write titan2_atlas_mode debian 2>/dev/null || true
+  atlas_sandbox_reapply
   log "super LP debian up merge=$MERGE from $LP_MNT HOME=$ATLAS_LINUX_HOME AUTH=$ATLAS_AUTH_DIR"
   return 0
 }
@@ -937,9 +938,33 @@ _bio_android_want() {
   return 1
 }
 
+# Light-image sandbox: no Android host (am/pm/screencap/nsenter) regardless of USER.
+_sb=`_plane_val \
+  /data/local/tmp/titan2_atlas_seat_sandbox \
+  /data/misc/titan2/titan2_atlas_seat_sandbox \
+  /var/lib/atlas-auth/titan2_atlas_seat_sandbox`
+case "$_sb" in
+  1|true|on|yes|ON)
+    echo "atlas-android-exec: privilege denied (sandbox)" >&2
+    exit 1 ;;
+esac
+
 if ! _priv_android_ok; then
   echo "atlas-android-exec: privilege denied (Android access off in Atlas Settings)" >&2
   exit 1
+fi
+
+# Per-identity gate: shared Atlas user may be denied Android even if global on.
+_who="${ATLAS_LOGIN:-${USER:-${LOGNAME:-}}}"
+_uperm="/var/lib/atlas-auth/users/${_who}/android"
+[ -f "$_uperm" ] || _uperm="/data/local/atlas-linux/var/lib/atlas-auth/users/${_who}/android"
+if [ -n "$_who" ] && [ -f "$_uperm" ]; then
+  _uv=`cat "$_uperm" 2>/dev/null | tr -d '\r\n \t' | head -c 8`
+  case "$_uv" in
+    0|false|off|no)
+      echo "atlas-android-exec: privilege denied (user $_who Android off)" >&2
+      exit 1 ;;
+  esac
 fi
 
 if _bio_android_want; then
@@ -1676,41 +1701,70 @@ unbind_android() {
   done
 }
 
-# Map Android app UID → Debian "admin" with passwordless sudo *after* agent grant.
-# (Agent client runs biometrics, then /usr/bin/sudo -n — no KernelSU.)
+# Map Android app UID → Debian user so ssh/sudo/apt resolve the live PTY uid.
+# Live proof 2026-08-14: session uid 10101 with only admin@10198 →
+#   "No user exists for uid 10101" / sudo hang / apt wrapper fail.
+# Always ensure a passwd row for the *current* app uid (name: atlas),
+# not only "add admin if that name is missing".
 ensure_admin_user() {
   uid="${ATLAS_DROP_UID:-}"
   [ -z "$uid" ] || [ "$uid" = "0" ] && \
     uid=`stat -c %u /data/data/com.titanus2.atlas 2>/dev/null \
       || stat -c %u /data/user/0/com.titanus2.atlas 2>/dev/null || echo 10198`
-  home="${ATLAS_HOME:-/data/data/com.titanus2.atlas/files}"
-  for root in "$MERGE" "$LOWER"; do
+  home="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
+  [ -d "$home" ] || home="${ATLAS_HOME:-/data/data/com.titanus2.atlas/files}"
+  roots="$MERGE $LOWER"
+  [ -d /data/local/atlas-linux/etc ] && roots="$roots /data/local/atlas-linux"
+  for root in $roots; do
     [ -d "$root/etc" ] || continue
-    # passwd / group / shadow
-    if [ -f "$root/etc/passwd" ] && ! grep -q "^admin:" "$root/etc/passwd" 2>/dev/null; then
-      echo "admin:x:${uid}:${uid}:Atlas Admin:${home}:/bin/bash" >>"$root/etc/passwd"
+    pw="$root/etc/passwd"
+    gr="$root/etc/group"
+    sh="$root/etc/shadow"
+    # Live uid must exist (ssh/sudo/nss). Prefer name atlas.
+    if [ -f "$pw" ] && ! grep -q ":x:${uid}:${uid}:" "$pw" 2>/dev/null; then
+      if grep -q "^atlas:" "$pw" 2>/dev/null; then
+        # Name taken at another uid — still add this uid (atlas<uid>).
+        echo "atlas${uid}:x:${uid}:${uid}:Atlas:${home}:/bin/bash" >>"$pw"
+      else
+        echo "atlas:x:${uid}:${uid}:Atlas:${home}:/bin/bash" >>"$pw"
+      fi
     fi
-    if [ -f "$root/etc/group" ] && ! grep -q "^admin:" "$root/etc/group" 2>/dev/null; then
-      echo "admin:x:${uid}:" >>"$root/etc/group"
+    if [ -f "$gr" ] && ! grep -q ":x:${uid}:" "$gr" 2>/dev/null \
+        && ! grep -q "^atlas:" "$gr" 2>/dev/null; then
+      echo "atlas:x:${uid}:" >>"$gr"
     fi
-    if [ -f "$root/etc/shadow" ] && ! grep -q "^admin:" "$root/etc/shadow" 2>/dev/null; then
-      echo "admin:*:19600:0:99999:7:::" >>"$root/etc/shadow"
+    if [ -f "$sh" ] && ! grep -q "^atlas:" "$sh" 2>/dev/null \
+        && ! grep -q "^atlas${uid}:" "$sh" 2>/dev/null; then
+      echo "atlas:!:19600:0:99999:7:::" >>"$sh"
+    fi
+    # Legacy admin row (keep if present; add only if missing — do not steal live uid)
+    if [ -f "$pw" ] && ! grep -q "^admin:" "$pw" 2>/dev/null; then
+      echo "admin:x:${uid}:${uid}:Atlas Admin:${home}:/bin/bash" >>"$pw"
+    fi
+    if [ -f "$gr" ] && ! grep -q "^admin:" "$gr" 2>/dev/null; then
+      echo "admin:x:${uid}:" >>"$gr"
+    fi
+    if [ -f "$sh" ] && ! grep -q "^admin:" "$sh" 2>/dev/null; then
+      echo "admin:*:19600:0:99999:7:::" >>"$sh"
+    fi
+    # sudo group membership for atlas (optional; sudoers names uid too)
+    if [ -f "$gr" ] && grep -q "^sudo:" "$gr" 2>/dev/null; then
+      if ! grep -q "^sudo:.*atlas" "$gr" 2>/dev/null; then
+        sed -i "s/^sudo:\\([^:]*\\):\\([^:]*\\):\\(.*\\)/sudo:\\1:\\2:\\3,atlas/" "$gr" 2>/dev/null \
+          || true
+      fi
     fi
     mkdir -p "$root/etc/sudoers.d" 2>/dev/null || true
-    # NOPASSWD: agent already authorized on the Android host
-    printf 'admin ALL=(ALL) NOPASSWD:ALL\n# uid %s same rights when listed by number\nDefaults:%s !authenticate\n' \
-      "$uid" "$uid" >"$root/etc/sudoers.d/atlas-admin" 2>/dev/null || true
-    # Also allow numeric user (app uid without name match)
-    printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$uid" >>"$root/etc/sudoers.d/atlas-admin" 2>/dev/null || true
-    # LAW: every sudoers.d drop-in must be uid 0 or sudo refuses entire config
-    chown 0:0 "$root/etc/sudoers.d" "$root/etc/sudoers.d/atlas-admin" 2>/dev/null || true
+    printf 'atlas ALL=(ALL) NOPASSWD:ALL\n# uid %s same rights when listed by number\nDefaults:%s !authenticate\n%s ALL=(ALL) NOPASSWD:ALL\n' \
+      "$uid" "$uid" "$uid" >"$root/etc/sudoers.d/atlas" 2>/dev/null || true
+    printf 'admin ALL=(ALL) NOPASSWD:ALL\n# uid %s same rights when listed by number\nDefaults:%s !authenticate\n%s ALL=(ALL) NOPASSWD:ALL\n' \
+      "$uid" "$uid" "$uid" >"$root/etc/sudoers.d/atlas-admin" 2>/dev/null || true
+    chown 0:0 "$root/etc/sudoers.d" "$root/etc/sudoers.d/atlas" \
+      "$root/etc/sudoers.d/atlas-admin" 2>/dev/null || true
     chmod 0750 "$root/etc/sudoers.d" 2>/dev/null || true
-    chmod 0440 "$root/etc/sudoers.d/atlas-admin" 2>/dev/null || true
-    # Real setuid target (agent calls this after biometrics). Must re-apply every
-    # bind — package install / overlay often leaves mode 755 and sudo refuses.
+    chmod 0440 "$root/etc/sudoers.d/atlas" "$root/etc/sudoers.d/atlas-admin" 2>/dev/null || true
     for sbin in "$root/usr/bin/sudo.real" "$root/usr/bin/sudo"; do
       [ -f "$sbin" ] || continue
-      # Never setuid a shell shim
       if head -1 "$sbin" 2>/dev/null | grep -q '^#!'; then
         continue
       fi
@@ -1721,6 +1775,1056 @@ ensure_admin_user() {
     done
   done
   heal_sudo_root_ownership 2>/dev/null || true
+}
+
+cmd_ensure_user() {
+  need_root || return 1
+  ensure_admin_user
+  uid="${ATLAS_DROP_UID:-}"
+  [ -z "$uid" ] || [ "$uid" = "0" ] && \
+    uid=`stat -c %u /data/data/com.titanus2.atlas 2>/dev/null || echo 0`
+  echo "ensure-user uid=$uid"
+  for root in /data/local/atlas-linux "$MERGE" "$LOWER"; do
+    [ -f "$root/etc/passwd" ] || continue
+    grep ":x:${uid}:${uid}:" "$root/etc/passwd" 2>/dev/null && break
+  done
+}
+
+# Create/update a Debian login: any name, optional password, atlas-auth sudo.
+# Env: ATLAS_NEWUSER_PASS_B64 (optional) · ATLAS_USER_SUDO=1 (default)
+cmd_add_user() {
+  need_root || return 1
+  name="${1:-}"
+  echo "$name" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$' || {
+    echo "error=bad-name"
+    return 2
+  }
+  case "$name" in
+    root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|www-data|\
+    backup|list|irc|gnats|nobody|systemd-network|messagebus|sshd|_apt)
+      echo "error=reserved"
+      return 2 ;;
+  esac
+  app_uid=`stat -c %u /data/data/com.titanus2.atlas 2>/dev/null || echo 10101`
+  pwfile=/data/local/atlas-linux/etc/passwd
+  [ -f "$pwfile" ] || pwfile=/data/local/atlas-hybrid/merge/etc/passwd
+  if [ "$name" = "atlas" ]; then
+    uid="$app_uid"
+  elif grep -q "^${name}:" "$pwfile" 2>/dev/null; then
+    uid=`awk -F: -v n="$name" '$1==n {print $3; exit}' "$pwfile"`
+  else
+    uid=10102
+    while grep -q ":x:${uid}:" "$pwfile" 2>/dev/null; do
+      uid=$((uid + 1))
+    done
+  fi
+  home="/data/local/atlas-home/$name"
+  mkdir -p "$home"
+  chmod 0755 "$home" 2>/dev/null || true
+  sudo_on="${ATLAS_USER_SUDO:-1}"
+  roots="/data/local/atlas-linux"
+  [ -d /data/local/atlas-hybrid/merge/etc ] && roots="$roots /data/local/atlas-hybrid/merge"
+  for root in $roots; do
+    [ -d "$root/etc" ] || continue
+    if [ -f "$root/etc/passwd" ] && ! grep -q "^${name}:" "$root/etc/passwd"; then
+      echo "${name}:x:${uid}:${uid}:Atlas ${name}:${home}:/bin/bash" >>"$root/etc/passwd"
+    fi
+    if [ -f "$root/etc/group" ] && ! grep -q "^${name}:" "$root/etc/group"; then
+      echo "${name}:x:${uid}:" >>"$root/etc/group"
+    fi
+    if [ -f "$root/etc/shadow" ] && ! grep -q "^${name}:" "$root/etc/shadow"; then
+      echo "${name}:!:19600:0:99999:7:::" >>"$root/etc/shadow"
+    fi
+    if [ "$sudo_on" = "1" ]; then
+      if [ -f "$root/etc/group" ] && grep -q "^sudo:" "$root/etc/group"; then
+        if ! grep -q "^sudo:.*${name}" "$root/etc/group"; then
+          sed -i "s/^sudo:\\([^:]*\\):\\([^:]*\\):\\(.*\\)/sudo:\\1:\\2:\\3,${name}/" \
+            "$root/etc/group" 2>/dev/null || true
+        fi
+      fi
+      mkdir -p "$root/etc/sudoers.d"
+      printf '%s ALL=(ALL) NOPASSWD:ALL\nDefaults:%s !authenticate\n%s ALL=(ALL) NOPASSWD:ALL\n' \
+        "$name" "$uid" "$uid" >"$root/etc/sudoers.d/atlas-${name}"
+      chown 0:0 "$root/etc/sudoers.d/atlas-${name}" 2>/dev/null || true
+      chmod 0440 "$root/etc/sudoers.d/atlas-${name}"
+    fi
+    mkdir -p "$root/home/$name" 2>/dev/null || true
+    if [ -d "$root/home/$name" ] && ! grep -q " $root/home/$name " /proc/mounts; then
+      mount --bind "$home" "$root/home/$name" 2>/dev/null \
+        || mount -o bind "$home" "$root/home/$name" 2>/dev/null || true
+    fi
+  done
+  # Login password optional. Empty/lock → atlas-auth only (no unix secret).
+  pass=""
+  pass_state=lock
+  if [ -n "${ATLAS_NEWUSER_PASS_B64:-}" ]; then
+    pass=`printf '%s' "$ATLAS_NEWUSER_PASS_B64" | base64 -d 2>/dev/null` || pass=""
+  fi
+  if [ -n "$pass" ]; then
+    if [ -x /data/local/atlas-linux/usr/sbin/chpasswd ]; then
+      printf '%s:%s\n' "$name" "$pass" | chroot /data/local/atlas-linux /usr/sbin/chpasswd
+    elif [ -x /data/local/atlas-hybrid/merge/usr/sbin/chpasswd ]; then
+      printf '%s:%s\n' "$name" "$pass" | chroot /data/local/atlas-hybrid/merge /usr/sbin/chpasswd
+    fi
+    pass_state=set
+    pass=""
+    unset pass
+  fi
+  unset ATLAS_NEWUSER_PASS_B64
+  # atlas-auth in this user's login (sudo askpass + LP ticket dir)
+  for prof in "$home/.profile" "$home/.bashrc"; do
+    if [ ! -f "$prof" ] || ! grep -q ATLAS_AUTH_DIR "$prof" 2>/dev/null; then
+      {
+        echo "# Atlas auth — regenerated"
+        echo "export ATLAS_AUTH_DIR=/var/lib/atlas-auth"
+        echo "export ATLAS_AUTH_ON_LP=/data/local/atlas-linux/var/lib/atlas-auth"
+        echo "export SUDO_ASKPASS=\"\${ATLAS_BIN:-/data/data/com.titanus2.atlas/files/bin}/atlas-auth-askpass\""
+        echo "export PATH=\"\$HOME/bin:\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:\$PATH\""
+      } >>"$prof"
+    fi
+  done
+  chown -R "${uid}:${uid}" "$home" 2>/dev/null || true
+  chmod 0755 "$home" 2>/dev/null || true
+  android_on="${ATLAS_USER_ANDROID:-1}"
+  debian_on="${ATLAS_USER_DEBIAN:-1}"
+  atlas_user_write_perm "$name" android "$android_on"
+  atlas_user_write_perm "$name" debian "$debian_on"
+  atlas_user_write_perm "$name" sudo "$sudo_on"
+  echo "user=$name uid=$uid home=$home sudo=$sudo_on android=$android_on debian=$debian_on pass=$pass_state"
+  echo "auth=atlas-auth shared=1"
+}
+
+atlas_user_roots() {
+  roots="/data/local/atlas-linux"
+  [ -d /data/local/atlas-hybrid/merge/etc ] && roots="$roots /data/local/atlas-hybrid/merge"
+  echo "$roots"
+}
+
+atlas_user_pwfile() {
+  if [ -f /data/local/atlas-linux/etc/passwd ]; then
+    echo /data/local/atlas-linux/etc/passwd
+  else
+    echo /data/local/atlas-hybrid/merge/etc/passwd
+  fi
+}
+
+atlas_user_valid() {
+  name="${1:-}"
+  echo "$name" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$' || return 2
+  case "$name" in
+    root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|www-data|\
+    backup|list|irc|gnats|nobody|systemd-network|messagebus|sshd|_apt)
+      return 3 ;;
+  esac
+  return 0
+}
+
+atlas_user_app_uid() {
+  stat -c %u /data/data/com.titanus2.atlas 2>/dev/null || echo 10101
+}
+
+cmd_list_users() {
+  pw=`atlas_user_pwfile`
+  [ -f "$pw" ] || { echo "users="; return 1; }
+  shad=`dirname "$pw"`/shadow
+  app_uid=`atlas_user_app_uid`
+  awk -F: -v shad="$shad" -v app="$app_uid" '
+    $3>=1000 && $3<65000 {
+      name=$1; uid=$3; home=$6
+      pass="lock"
+      if (shad != "") {
+        cmd="awk -F: -v n=\"" name "\" '\''$1==n {print $2}'\'' " shad
+        cmd | getline hash
+        close(cmd)
+        if (hash ~ /^\$/) pass="set"
+        else if (hash == "" || hash == "!" || hash == "*" || hash ~ /^!/) pass="lock"
+      }
+      sudo=0
+      session=(uid==app)?1:0
+      printf "name=%s uid=%s home=%s pass=%s sudo=%s session=%s\n", name, uid, home, pass, sudo, session
+    }' "$pw" | while read -r line; do
+      name=`echo "$line" | sed -n 's/.*name=\([^ ]*\).*/\1/p'`
+      sudo=0
+      for root in `atlas_user_roots`; do
+        [ -f "$root/etc/sudoers.d/atlas-${name}" ] && sudo=1
+        grep -q "^sudo:.*${name}" "$root/etc/group" 2>/dev/null && sudo=1
+      done
+      android=`atlas_user_read_perm "$name" android 1`
+      debian=`atlas_user_read_perm "$name" debian 1`
+      echo "$line" | sed "s/sudo=[01]/sudo=$sudo/" | tr -d '\n'
+      echo " android=$android debian=$debian"
+    done
+}
+
+cmd_set_pass() {
+  need_root || return 1
+  name="${1:-}"
+  atlas_user_valid "$name" || { echo "error=bad-name"; return 2; }
+  pw=`atlas_user_pwfile`
+  grep -q "^${name}:" "$pw" 2>/dev/null || { echo "error=no-user"; return 2; }
+  pass=""
+  if [ -n "${ATLAS_NEWUSER_PASS_B64:-}" ]; then
+    pass=`printf '%s' "$ATLAS_NEWUSER_PASS_B64" | base64 -d 2>/dev/null` || pass=""
+  fi
+  [ -n "$pass" ] || { echo "error=empty-pass"; return 2; }
+  if [ -x /data/local/atlas-linux/usr/sbin/chpasswd ]; then
+    printf '%s:%s\n' "$name" "$pass" | chroot /data/local/atlas-linux /usr/sbin/chpasswd
+  elif [ -x /data/local/atlas-hybrid/merge/usr/sbin/chpasswd ]; then
+    printf '%s:%s\n' "$name" "$pass" | chroot /data/local/atlas-hybrid/merge /usr/sbin/chpasswd
+  else
+    echo "error=no-chpasswd"
+    unset pass ATLAS_NEWUSER_PASS_B64
+    return 1
+  fi
+  unset pass ATLAS_NEWUSER_PASS_B64
+  echo "user=$name pass=set auth=atlas-auth"
+}
+
+cmd_lock_pass() {
+  need_root || return 1
+  name="${1:-}"
+  atlas_user_valid "$name" || { echo "error=bad-name"; return 2; }
+  for root in `atlas_user_roots`; do
+    [ -f "$root/etc/shadow" ] || continue
+    if grep -q "^${name}:" "$root/etc/shadow"; then
+      sed -i "s/^${name}:[^:]*:/${name}:!:/" "$root/etc/shadow"
+    fi
+  done
+  echo "user=$name pass=lock"
+}
+
+cmd_set_sudo() {
+  need_root || return 1
+  name="${1:-}"
+  on="${2:-1}"
+  atlas_user_valid "$name" || { echo "error=bad-name"; return 2; }
+  pw=`atlas_user_pwfile`
+  grep -q "^${name}:" "$pw" 2>/dev/null || { echo "error=no-user"; return 2; }
+  uid=`awk -F: -v n="$name" '$1==n {print $3; exit}' "$pw"`
+  for root in `atlas_user_roots`; do
+    [ -d "$root/etc" ] || continue
+    if [ "$on" = "1" ]; then
+      if [ -f "$root/etc/group" ] && grep -q "^sudo:" "$root/etc/group"; then
+        if ! grep -q "^sudo:.*${name}" "$root/etc/group"; then
+          sed -i "s/^sudo:\\([^:]*\\):\\([^:]*\\):\\(.*\\)/sudo:\\1:\\2:\\3,${name}/" \
+            "$root/etc/group" 2>/dev/null || true
+        fi
+      fi
+      mkdir -p "$root/etc/sudoers.d"
+      printf '%s ALL=(ALL) NOPASSWD:ALL\nDefaults:%s !authenticate\n%s ALL=(ALL) NOPASSWD:ALL\n' \
+        "$name" "$uid" "$uid" >"$root/etc/sudoers.d/atlas-${name}"
+      chown 0:0 "$root/etc/sudoers.d/atlas-${name}" 2>/dev/null || true
+      chmod 0440 "$root/etc/sudoers.d/atlas-${name}"
+    else
+      rm -f "$root/etc/sudoers.d/atlas-${name}"
+      if [ -f "$root/etc/group" ]; then
+        sed -i "s/,${name}//g; s/:${name},/:/; s/:${name}$/:/" "$root/etc/group" 2>/dev/null || true
+      fi
+    fi
+  done
+  echo "user=$name sudo=$on auth=atlas-auth"
+}
+
+cmd_del_user() {
+  need_root || return 1
+  name="${1:-}"
+  atlas_user_valid "$name" || { echo "error=bad-name"; return 2; }
+  pw=`atlas_user_pwfile`
+  grep -q "^${name}:" "$pw" 2>/dev/null || { echo "error=no-user"; return 2; }
+  uid=`awk -F: -v n="$name" '$1==n {print $3; exit}' "$pw"`
+  app_uid=`atlas_user_app_uid`
+  if [ "$uid" = "$app_uid" ]; then
+    echo "error=session-user"
+    return 2
+  fi
+  for root in `atlas_user_roots`; do
+    umount "$root/home/$name" 2>/dev/null || umount -l "$root/home/$name" 2>/dev/null || true
+    [ -f "$root/etc/passwd" ] && sed -i "/^${name}:/d" "$root/etc/passwd"
+    [ -f "$root/etc/shadow" ] && sed -i "/^${name}:/d" "$root/etc/shadow"
+    [ -f "$root/etc/group" ] && sed -i "/^${name}:/d" "$root/etc/group"
+    [ -f "$root/etc/group" ] && sed -i "s/,${name}//g; s/:${name},/:/; s/:${name}$/:/" "$root/etc/group"
+    rm -f "$root/etc/sudoers.d/atlas-${name}"
+  done
+  if [ "${ATLAS_DEL_HOME:-0}" = "1" ]; then
+    rm -rf "/data/local/atlas-home/$name"
+  fi
+  rm -rf "/data/local/atlas-linux/var/lib/atlas-auth/users/$name"
+  echo "deleted=$name uid=$uid"
+}
+
+atlas_user_auth_dir() {
+  echo "/data/local/atlas-linux/var/lib/atlas-auth/users/${1}"
+}
+
+atlas_user_write_perm() {
+  name="$1"
+  key="$2"
+  val="$3"
+  d=`atlas_user_auth_dir "$name"`
+  mkdir -p "$d"
+  printf '%s\n' "$val" >"$d/$key"
+  chmod 0644 "$d/$key" 2>/dev/null || true
+}
+
+atlas_user_read_perm() {
+  name="$1"
+  key="$2"
+  def="${3:-1}"
+  f=`atlas_user_auth_dir "$name"`/"$key"
+  if [ -f "$f" ]; then
+    tr -d '\r\n \t' <"$f" | head -c 8
+  else
+    echo "$def"
+  fi
+}
+
+cmd_set_perm() {
+  need_root || return 1
+  name="${1:-}"
+  key="${2:-}"
+  val="${3:-1}"
+  atlas_user_valid "$name" || { echo "error=bad-name"; return 2; }
+  case "$key" in
+    android|debian|sudo) ;;
+    *) echo "error=bad-perm"; return 2 ;;
+  esac
+  case "$val" in 0|1) ;; *) echo "error=bad-val"; return 2 ;; esac
+  atlas_user_write_perm "$name" "$key" "$val"
+  if [ "$key" = "sudo" ]; then
+    cmd_set_sudo "$name" "$val" >/dev/null
+  fi
+  echo "user=$name $key=$val"
+}
+
+SEAT_ROOT=/data/local/atlas-seats
+# Reboot-persistent backups (userdata, not tmp). LP mirror survives extra /data/local cleanups.
+BACKUP_ROOT=/data/local/atlas-backups
+BACKUP_LP=/data/local/atlas-linux/var/lib/atlas-backups
+
+atlas_seat_dir() {
+  echo "$SEAT_ROOT/${1}"
+}
+
+atlas_seat_read() {
+  name="$1"
+  key="$2"
+  def="${3:-0}"
+  f=`atlas_seat_dir "$name"`/seat.prop
+  [ -f "$f" ] || { echo "$def"; return; }
+  awk -F= -v k="$key" '$1==k {print $2; found=1; exit} END{if(!found) print d}' d="$def" "$f"
+}
+
+atlas_seat_write() {
+  name="$1"
+  key="$2"
+  val="$3"
+  d=`atlas_seat_dir "$name"`
+  mkdir -p "$d/snaps"
+  f="$d/seat.prop"
+  touch "$f"
+  if grep -q "^${key}=" "$f" 2>/dev/null; then
+    sed -i "s/^${key}=.*/${key}=${val}/" "$f"
+  else
+    echo "${key}=${val}" >>"$f"
+  fi
+}
+
+cmd_seat_status() {
+  name="${1:-}"
+  atlas_user_valid "$name" || { echo "error=bad-name"; return 2; }
+  pw=`atlas_user_pwfile`
+  grep -q "^${name}:" "$pw" 2>/dev/null || { echo "error=no-user"; return 2; }
+  uid=`awk -F: -v n="$name" '$1==n {print $3; exit}' "$pw"`
+  shell=`awk -F: -v n="$name" '$1==n {print $7; exit}' "$pw"`
+  sb=`atlas_seat_read "$name" sandbox 0`
+  fr=`atlas_seat_read "$name" frozen 0`
+  ls=`atlas_seat_read "$name" last_save none`
+  android=`atlas_user_read_perm "$name" android 1`
+  debian=`atlas_user_read_perm "$name" debian 1`
+  sudo=0
+  [ -f /data/local/atlas-linux/etc/sudoers.d/atlas-${name} ] && sudo=1
+  nsnap=0
+  _sd=`atlas_seat_dir "$name"`/snaps
+  if [ -d "$_sd" ]; then
+    nsnap=`ls -1 "$_sd" 2>/dev/null | wc -l`
+  fi
+  layer=down
+  if grep -q " $MERGE overlay " /proc/mounts 2>/dev/null \
+      || grep -q "overlay $MERGE " /proc/mounts 2>/dev/null; then
+    layer=up
+  fi
+  echo "name=$name uid=$uid sandbox=$sb frozen=$fr snaps=$nsnap last_save=$ls android=$android debian=$debian sudo=$sudo shell=$shell layer=$layer home=/data/local/atlas-home/$name"
+}
+
+# Light image (LXC-class): shared kernel + shared LP lower + private ext4 upper.
+# f2fs /data cannot host overlay upper — per-seat loop file is the writable image.
+SANDBOX_LAYER_G="${ATLAS_SANDBOX_LAYER_G:-2}"
+
+atlas_sandbox_layer_dir() {
+  echo "$SEAT_ROOT/${1}/layer"
+}
+
+atlas_sandbox_home() {
+  echo "$SEAT_ROOT/${1}/home"
+}
+
+atlas_sandbox_active_name() {
+  for d in "$SEAT_ROOT"/*/seat.prop; do
+    [ -f "$d" ] || continue
+    n=$(basename "$(dirname "$d")")
+    [ "$(atlas_seat_read "$n" sandbox 0)" = "1" ] && { echo "$n"; return 0; }
+  done
+  return 1
+}
+
+atlas_sandbox_merge_is_overlay() {
+  grep -q " $MERGE overlay " /proc/mounts 2>/dev/null \
+    || grep -q "overlay $MERGE " /proc/mounts 2>/dev/null
+}
+
+atlas_sandbox_layer_ensure() {
+  name="$1"
+  img="$SEAT_ROOT/$name/layer.img"
+  mnt=$(atlas_sandbox_layer_dir "$name")
+  mkdir -p "$SEAT_ROOT/$name" "$mnt"
+  if [ ! -f "$img" ]; then
+    if command -v truncate >/dev/null 2>&1; then
+      truncate -s "${SANDBOX_LAYER_G}G" "$img" || return 1
+    else
+      dd if=/dev/zero of="$img" bs=1M count=0 seek=$((SANDBOX_LAYER_G * 1024)) 2>/dev/null || return 1
+    fi
+    mk=0
+    for t in /system/bin/mkfs.ext4 /system/bin/mke2fs /sbin/mkfs.ext4; do
+      if [ -x "$t" ]; then
+        if [ "$(basename "$t")" = "mke2fs" ]; then
+          "$t" -t ext4 -F -q "$img" && mk=1 && break
+        else
+          "$t" -F -q "$img" && mk=1 && break
+        fi
+      fi
+    done
+    [ "$mk" = "1" ] || { rm -f "$img"; echo "error=mkfs"; return 1; }
+  fi
+  if ! grep -q " $mnt " /proc/mounts 2>/dev/null; then
+    mount -o loop "$img" "$mnt" 2>/dev/null \
+      || mount -t ext4 -o loop "$img" "$mnt" 2>/dev/null || {
+      echo "error=loop"
+      return 1
+    }
+  fi
+  mkdir -p "$mnt/upper" "$mnt/work"
+  return 0
+}
+
+atlas_sandbox_bind_home() {
+  name="$1"
+  shome=$(atlas_sandbox_home "$name")
+  alias="$SEAT_ROOT/$name/alias"
+  mkdir -p "$shome" "$alias/atlas"
+  if [ -z "$(ls -A "$shome" 2>/dev/null)" ] && [ -d "/data/local/atlas-home/$name" ]; then
+    cp -a "/data/local/atlas-home/$name/." "$shome/" 2>/dev/null || true
+  fi
+  uid=$(awk -F: -v n="$name" '$1==n {print $3; exit}' "$(atlas_user_pwfile)")
+  [ -n "$uid" ] && chown -R "${uid}:${uid}" "$shome" 2>/dev/null || true
+  if ! is_mounted "$alias/atlas"; then
+    mount --bind "$shome" "$alias/atlas" 2>/dev/null || true
+  fi
+  for tgt in "$MERGE/home/$name" "$MERGE/home/atlas"; do
+    mkdir -p "$tgt" 2>/dev/null || true
+    if is_mounted "$tgt"; then
+      umount "$tgt" 2>/dev/null || umount -l "$tgt" 2>/dev/null || true
+    fi
+    mount --bind "$shome" "$tgt" 2>/dev/null || true
+  done
+  mkdir -p "$MERGE/data/local/atlas-home" 2>/dev/null || true
+  if is_mounted "$MERGE/data/local/atlas-home"; then
+    umount "$MERGE/data/local/atlas-home" 2>/dev/null \
+      || umount -l "$MERGE/data/local/atlas-home" 2>/dev/null || true
+  fi
+  mount --bind "$alias" "$MERGE/data/local/atlas-home" 2>/dev/null || true
+}
+
+atlas_sandbox_up() {
+  name="$1"
+  [ -d "$LP_MNT" ] || { echo "error=no-lp"; return 1; }
+  atlas_sandbox_layer_ensure "$name" || return 1
+  mnt=$(atlas_sandbox_layer_dir "$name")
+  if atlas_sandbox_merge_is_overlay; then
+    atlas_sandbox_bind_home "$name"
+    plane_write titan2_atlas_seat_sandbox 1
+    return 0
+  fi
+  unbind_android 2>/dev/null || true
+  if is_mounted "$MERGE"; then
+    umount "$MERGE" 2>/dev/null || umount -l "$MERGE" 2>/dev/null || true
+  fi
+  mkdir -p "$MERGE" "$mnt/upper" "$mnt/work"
+  mount -t overlay overlay \
+    -o "lowerdir=$LP_MNT,upperdir=$mnt/upper,workdir=$mnt/work" \
+    "$MERGE" || {
+    echo "error=overlay"
+    mount --bind "$LP_MNT" "$MERGE" 2>/dev/null || true
+    bind_android 2>/dev/null || true
+    return 1
+  }
+  bind_android 2>/dev/null || true
+  write_android_exec_helpers 2>/dev/null || true
+  atlas_sandbox_bind_home "$name"
+  plane_write titan2_atlas_seat_sandbox 1
+  return 0
+}
+
+atlas_sandbox_down() {
+  name="$1"
+  unbind_android 2>/dev/null || true
+  for tgt in "$MERGE/home/$name" "$MERGE/home/atlas" "$MERGE/data/local/atlas-home"; do
+    if is_mounted "$tgt"; then
+      umount "$tgt" 2>/dev/null || umount -l "$tgt" 2>/dev/null || true
+    fi
+  done
+  alias="$SEAT_ROOT/$name/alias/atlas"
+  if is_mounted "$alias"; then
+    umount "$alias" 2>/dev/null || umount -l "$alias" 2>/dev/null || true
+  fi
+  if atlas_sandbox_merge_is_overlay; then
+    umount "$MERGE" 2>/dev/null || umount -l "$MERGE" 2>/dev/null || true
+  fi
+  mkdir -p "$MERGE"
+  if ! is_mounted "$MERGE"; then
+    mount --bind "$LP_MNT" "$MERGE" 2>/dev/null \
+      || mount -o bind "$LP_MNT" "$MERGE" 2>/dev/null || true
+  fi
+  bind_android 2>/dev/null || true
+  bind_linux_home 2>/dev/null || true
+  plane_write titan2_atlas_seat_sandbox 0
+}
+
+atlas_sandbox_reapply() {
+  n=$(atlas_sandbox_active_name) || return 0
+  [ -n "$n" ] || return 0
+  atlas_sandbox_up "$n" >/dev/null 2>&1 || true
+}
+
+cmd_seat_sandbox() {
+  need_root || return 1
+  _sb_user="${1:-}"
+  on="${2:-1}"
+  atlas_user_valid "$_sb_user" || { echo "error=bad-name"; return 2; }
+  case "$on" in 0|1) ;; *) echo "error=bad-val"; return 2 ;; esac
+  atlas_seat_write "$_sb_user" sandbox "$on"
+  if [ "$on" = "1" ]; then
+    atlas_user_write_perm "$_sb_user" android 0
+    atlas_sandbox_up "$_sb_user" || {
+      atlas_seat_write "$_sb_user" sandbox 0
+      atlas_user_write_perm "$_sb_user" android 1
+      echo "name=$_sb_user sandbox=0 error=layer"
+      return 1
+    }
+    layer=up
+  else
+    atlas_user_write_perm "$_sb_user" android 1
+    atlas_sandbox_down "$_sb_user"
+    layer=down
+  fi
+  echo "name=$_sb_user sandbox=$on android=$([ "$on" = 1 ] && echo 0 || echo 1) layer=$layer kernel=shared"
+}
+
+cmd_seat_freeze() {
+  need_root || return 1
+  name="${1:-}"
+  atlas_user_valid "$name" || { echo "error=bad-name"; return 2; }
+  app_uid=`atlas_user_app_uid`
+  uid=`awk -F: -v n="$name" '$1==n {print $3; exit}' "$(atlas_user_pwfile)"`
+  for root in `atlas_user_roots`; do
+    umount "$root/home/$name" 2>/dev/null || umount -l "$root/home/$name" 2>/dev/null || true
+    if [ "$uid" != "$app_uid" ] && [ -f "$root/etc/passwd" ]; then
+      sed -i "s#^${name}:\\([^:]*\\):\\([^:]*\\):\\([^:]*\\):\\([^:]*\\):\\([^:]*\\):.*#${name}:\\1:\\2:\\3:\\4:\\5:/usr/sbin/nologin#" \
+        "$root/etc/passwd"
+    fi
+  done
+  cmd_lock_pass "$name" >/dev/null
+  atlas_seat_write "$name" frozen 1
+  echo "name=$name frozen=1"
+}
+
+cmd_seat_thaw() {
+  need_root || return 1
+  name="${1:-}"
+  atlas_user_valid "$name" || { echo "error=bad-name"; return 2; }
+  home="/data/local/atlas-home/$name"
+  mkdir -p "$home"
+  for root in `atlas_user_roots`; do
+    if [ -f "$root/etc/passwd" ]; then
+      sed -i "s#^${name}:\\([^:]*\\):\\([^:]*\\):\\([^:]*\\):\\([^:]*\\):\\([^:]*\\):.*#${name}:\\1:\\2:\\3:\\4:\\5:/bin/bash#" \
+        "$root/etc/passwd"
+    fi
+    mkdir -p "$root/home/$name"
+    if [ -d "$root/home/$name" ] && ! grep -q " $root/home/$name " /proc/mounts; then
+      mount --bind "$home" "$root/home/$name" 2>/dev/null || true
+    fi
+  done
+  atlas_seat_write "$name" frozen 0
+  echo "name=$name frozen=0"
+}
+
+cmd_seat_save() {
+  # Seats save into the Backups category (reboot-persistent, full moment).
+  cmd_backup_save "$@"
+}
+
+cmd_seat_load() {
+  cmd_backup_load "$@"
+}
+
+cmd_seat_snaps() {
+  cmd_backup_list "${1:-}"
+}
+
+cmd_seat_rm_snap() {
+  # $1 user (ignored if $2 is a backup id), $2 backup id
+  if [ -n "${2:-}" ]; then
+    cmd_backup_rm "$2"
+  else
+    cmd_backup_rm "${1:-}"
+  fi
+}
+
+cmd_seat_clone() {
+  need_root || return 1
+  src="${1:-}"
+  dst="${2:-}"
+  atlas_user_valid "$src" || { echo "error=bad-src"; return 2; }
+  atlas_user_valid "$dst" || { echo "error=bad-dst"; return 2; }
+  pw=`atlas_user_pwfile`
+  grep -q "^${src}:" "$pw" || { echo "error=no-user"; return 2; }
+  grep -q "^${dst}:" "$pw" && { echo "error=exists"; return 2; }
+  ATLAS_USER_SUDO=`atlas_user_read_perm "$src" sudo 1`
+  ATLAS_USER_ANDROID=0
+  ATLAS_USER_DEBIAN=1
+  export ATLAS_USER_SUDO ATLAS_USER_ANDROID ATLAS_USER_DEBIAN
+  cmd_add_user "$dst" || return 1
+  src_home="/data/local/atlas-home/$src"
+  dst_home="/data/local/atlas-home/$dst"
+  if [ -d "$src_home" ]; then
+    cp -a "$src_home/." "$dst_home/" 2>/dev/null || true
+    uid=`awk -F: -v n="$dst" '$1==n {print $3; exit}' "$pw"`
+    chown -R "${uid}:${uid}" "$dst_home" 2>/dev/null || true
+  fi
+  atlas_seat_write "$dst" sandbox 1
+  echo "cloned=$src → $dst sandbox=1"
+}
+
+cmd_seat_export() {
+  cmd_backup_export "$@"
+}
+
+atlas_backup_valid_id() {
+  echo "${1:-}" | grep -q '^[A-Za-z0-9._-]\{1,80\}$'
+}
+
+atlas_backup_dir() {
+  id="$1"
+  if [ -d "$BACKUP_ROOT/$id" ]; then
+    echo "$BACKUP_ROOT/$id"
+  elif [ -d "$BACKUP_LP/$id" ]; then
+    echo "$BACKUP_LP/$id"
+  else
+    echo ""
+  fi
+}
+
+# Newest grok session UUID under one or more .grok trees.
+atlas_backup_latest_grok() {
+  newest=""
+  newest_m=0
+  for base in "$@"; do
+    [ -d "$base" ] || continue
+    for d in "$base"/sessions/* "$base"/sessions/*/*; do
+      [ -d "$d" ] || continue
+      b=$(basename "$d")
+      case "$b" in
+        ????????-????-????-????-????????????) ;;
+        *) continue ;;
+      esac
+      m=$(stat -c %Y "$d" 2>/dev/null || echo 0)
+      case "$m" in *[!0-9]*) m=0 ;; esac
+      if [ "$m" -gt "$newest_m" ] 2>/dev/null; then
+        newest_m=$m
+        newest=$b
+      fi
+    done
+  done
+  echo "$newest"
+}
+
+atlas_backup_ensure_roots() {
+  mkdir -p "$BACKUP_ROOT"
+  if [ -d /data/local/atlas-linux ]; then
+    mkdir -p "$BACKUP_LP"
+  fi
+}
+
+# Import old seat tarballs into the Backups category (once).
+cmd_backup_import_legacy() {
+  atlas_backup_ensure_roots
+  for f in /data/local/atlas-seats/*/snaps/*.tgz; do
+    [ -f "$f" ] || continue
+    base=$(basename "$f" .tgz)
+    atlas_backup_valid_id "$base" || continue
+    dest="$BACKUP_ROOT/$base"
+    [ -d "$dest" ] && continue
+    mkdir -p "$dest"
+    cp -f "$f" "$dest/home.tgz"
+    user=$(echo "$base" | sed 's/-20[0-9][0-9].*//')
+    [ -n "$user" ] || user=atlas
+    {
+      echo "user=$user"
+      echo "ts=$(echo "$base" | sed 's/^.*-20/20/')"
+      echo "imported=1"
+      echo "src=$f"
+    } >"$dest/meta"
+  done
+}
+
+# Capture anything that was there: $HOME + grok conversation + writable overlay.
+cmd_backup_save() {
+  need_root || return 1
+  name="${1:-atlas}"
+  atlas_user_valid "$name" || { echo "error=bad-name"; return 2; }
+  home="/data/local/atlas-home/$name"
+  [ -d "$home" ] || { echo "error=no-home"; return 2; }
+  atlas_backup_ensure_roots
+  ts=$(date +%Y%m%d-%H%M%S)
+  id="${name}-${ts}"
+  dest="$BACKUP_ROOT/$id"
+  mkdir -p "$dest"
+  tar -C "$home" -czf "$dest/home.tgz" . 2>/dev/null || {
+    echo "error=tar-home"
+    rm -rf "$dest"
+    return 1
+  }
+  ce_grok=/data/data/com.titanus2.atlas/files/.grok
+  if [ -d "$ce_grok" ]; then
+    tar -C /data/data/com.titanus2.atlas/files -czf "$dest/ce-grok.tgz" .grok 2>/dev/null || true
+  fi
+  overlay=0
+  if [ -d /data/local/atlas-hybrid/upper ] \
+      && [ -n "$(ls -A /data/local/atlas-hybrid/upper 2>/dev/null)" ]; then
+    tar -C /data/local/atlas-hybrid/upper -czf "$dest/overlay.tgz" . 2>/dev/null && overlay=1
+  fi
+  grok=$(atlas_backup_latest_grok "$home/.grok" "$ce_grok")
+  {
+    echo "user=$name"
+    echo "ts=$ts"
+    echo "grok=$grok"
+    echo "overlay=$overlay"
+    echo "persist=userdata"
+  } >"$dest/meta"
+  if [ -n "$grok" ]; then
+    printf 'ATLAS_RESUME_GROK=%s\n' "$grok" >"$dest/atlas-resume"
+  fi
+  sz=$(stat -c %s "$dest/home.tgz" 2>/dev/null || echo 0)
+  if [ -d /data/local/atlas-linux ]; then
+    mkdir -p "$BACKUP_LP"
+    rm -rf "$BACKUP_LP/$id"
+    cp -a "$dest" "$BACKUP_LP/$id" 2>/dev/null || true
+  fi
+  atlas_seat_write "$name" last_save "$id"
+  echo "backup=$id saved=$dest grok=${grok:-none} overlay=$overlay bytes=$sz"
+}
+
+cmd_backup_list() {
+  cmd_backup_import_legacy >/dev/null 2>&1 || true
+  filter="${1:-}"
+  n=0
+  seen="|"
+  for root in "$BACKUP_ROOT" "$BACKUP_LP"; do
+    [ -d "$root" ] || continue
+    for d in "$root"/*; do
+      [ -d "$d" ] || continue
+      id=$(basename "$d")
+      case "$seen" in *"|$id|"*) continue ;; esac
+      seen="${seen}${id}|"
+      user=""; grok=""; overlay=0; ts=""; label=""; note=""
+      if [ -f "$d/meta" ]; then
+        user=$(awk -F= '$1=="user"{print $2; exit}' "$d/meta")
+        grok=$(awk -F= '$1=="grok"{print $2; exit}' "$d/meta")
+        overlay=$(awk -F= '$1=="overlay"{print $2; exit}' "$d/meta")
+        ts=$(awk -F= '$1=="ts"{print $2; exit}' "$d/meta")
+        label=$(awk -F= '$1=="label"{print $2; exit}' "$d/meta")
+      fi
+      [ -f "$d/label" ] && label=$(cat "$d/label" 2>/dev/null | tr -d '\r' | head -1)
+      [ -f "$d/note" ] && note=$(cat "$d/note" 2>/dev/null)
+      [ -n "$user" ] || user=$(echo "$id" | sed 's/-20[0-9][0-9].*//')
+      [ -n "$ts" ] || ts=$(echo "$id" | sed 's/^.*-20/20/')
+      if [ -n "$filter" ] && [ "$user" != "$filter" ] && [ "$id" != "$filter" ]; then
+        continue
+      fi
+      sz=0
+      [ -f "$d/home.tgz" ] && sz=$(stat -c %s "$d/home.tgz" 2>/dev/null || echo 0)
+      lb64=$(printf '%s' "$label" | base64 | tr -d '\n ')
+      nb64=$(printf '%s' "$note" | base64 | tr -d '\n ')
+      echo "id=$id user=$user ts=$ts grok=${grok:-none} overlay=${overlay:-0} bytes=$sz persist=reboot label_b64=$lb64 note_b64=$nb64"
+      n=$((n + 1))
+    done
+  done
+  echo "backups=$n"
+}
+
+cmd_backup_load() {
+  need_root || return 1
+  a="${1:-}"
+  b="${2:-}"
+  id=""
+  name=""
+  if atlas_backup_valid_id "$a" && [ -n "$(atlas_backup_dir "$a")" ]; then
+    id="$a"
+  elif atlas_backup_valid_id "$b" && [ -n "$(atlas_backup_dir "$b")" ]; then
+    name="$a"
+    id="$b"
+  elif [ -n "$a" ]; then
+    name="$a"
+    id=$(cmd_backup_list "$a" | awk '/^id=/{print $1; exit}' | sed 's/^id=//')
+  fi
+  [ -n "$id" ] || { echo "error=no-backup"; return 1; }
+  dest=$(atlas_backup_dir "$id")
+  [ -n "$dest" ] && [ -d "$dest" ] || { echo "error=no-backup"; return 1; }
+  if [ -z "$name" ] && [ -f "$dest/meta" ]; then
+    name=$(awk -F= '$1=="user"{print $2; exit}' "$dest/meta")
+  fi
+  [ -n "$name" ] || name=atlas
+  home="/data/local/atlas-home/$name"
+  cmd_seat_thaw "$name" >/dev/null 2>&1 || true
+  mkdir -p "$home"
+  if [ -f "$dest/home.tgz" ]; then
+    tar -C "$home" -xzf "$dest/home.tgz" 2>/dev/null || {
+      echo "error=untar-home"
+      return 1
+    }
+  fi
+  if [ -f "$dest/ce-grok.tgz" ]; then
+    mkdir -p /data/data/com.titanus2.atlas/files
+    tar -C /data/data/com.titanus2.atlas/files -xzf "$dest/ce-grok.tgz" 2>/dev/null || true
+  fi
+  grok=""
+  if [ -f "$dest/atlas-resume" ]; then
+    cp -f "$dest/atlas-resume" "$home/.atlas-resume"
+    grok=$(awk -F= '$1=="ATLAS_RESUME_GROK"{print $2; exit}' "$dest/atlas-resume")
+  elif [ -f "$dest/meta" ]; then
+    grok=$(awk -F= '$1=="grok"{print $2; exit}' "$dest/meta")
+    if [ -n "$grok" ] && [ "$grok" != "none" ]; then
+      printf 'ATLAS_RESUME_GROK=%s\n' "$grok" >"$home/.atlas-resume"
+    fi
+  fi
+  atlas_backup_install_resume_hook "$home"
+  uid=$(awk -F: -v n="$name" '$1==n {print $3; exit}' "$(atlas_user_pwfile)")
+  [ -n "$uid" ] && chown -R "${uid}:${uid}" "$home" 2>/dev/null || true
+  _bk_user="$name"
+  _bk_id="$id"
+  atlas_seat_write "$_bk_user" last_load "$_bk_id"
+  echo "backup=$_bk_id loaded=$dest home=$home grok=${grok:-none}"
+}
+
+atlas_backup_install_resume_hook() {
+  home="$1"
+  [ -d "$home" ] || return 0
+  rc="$home/.bashrc"
+  touch "$rc"
+  if grep -q "ATLAS_RESUME_GROK" "$rc" 2>/dev/null; then
+    return 0
+  fi
+  cat >>"$rc" <<'EOF'
+# Atlas backup resume — one-shot grok --resume after Load
+if [ -f "$HOME/.atlas-resume" ]; then
+  . "$HOME/.atlas-resume"
+  rm -f "$HOME/.atlas-resume"
+  if [ -n "${ATLAS_RESUME_GROK:-}" ] && command -v grok >/dev/null 2>&1; then
+    exec grok --resume "$ATLAS_RESUME_GROK"
+  fi
+fi
+EOF
+}
+
+cmd_backup_rm() {
+  need_root || return 1
+  id="${1:-}"
+  atlas_backup_valid_id "$id" || { echo "error=bad-id"; return 2; }
+  dest=$(atlas_backup_dir "$id")
+  [ -n "$dest" ] || { echo "error=no-backup"; return 2; }
+  rm -rf "$BACKUP_ROOT/$id" "$BACKUP_LP/$id"
+  echo "deleted=$id"
+}
+
+atlas_backup_sync_lp() {
+  id="$1"
+  [ -n "$id" ] && [ -d "$BACKUP_ROOT/$id" ] || return 0
+  if [ -d /data/local/atlas-linux ]; then
+    mkdir -p "$BACKUP_LP"
+    rm -rf "$BACKUP_LP/$id"
+    cp -a "$BACKUP_ROOT/$id" "$BACKUP_LP/$id" 2>/dev/null || true
+  fi
+}
+
+atlas_backup_b64d() {
+  printf '%s' "${1:-}" | base64 -d 2>/dev/null || printf '%s' "${1:-}" | toybox base64 -d 2>/dev/null || true
+}
+
+cmd_backup_rename() {
+  need_root || return 1
+  id="${1:-}"
+  atlas_backup_valid_id "$id" || { echo "error=bad-id"; return 2; }
+  dest=$(atlas_backup_dir "$id")
+  [ -n "$dest" ] || { echo "error=no-backup"; return 2; }
+  label=""
+  if [ -n "${ATLAS_BACKUP_LABEL_B64:-}" ]; then
+    label=$(atlas_backup_b64d "$ATLAS_BACKUP_LABEL_B64")
+  else
+    shift
+    label="$*"
+  fi
+  label=$(printf '%s' "$label" | tr -d '\r' | head -1)
+  printf '%s' "$label" >"$dest/label"
+  if [ -f "$dest/meta" ]; then
+    if grep -q '^label=' "$dest/meta" 2>/dev/null; then
+      sed -i '/^label=/d' "$dest/meta"
+    fi
+    printf 'label=%s\n' "$(printf '%s' "$label" | tr ' \t' '__')" >>"$dest/meta"
+  fi
+  atlas_backup_sync_lp "$id"
+  echo "renamed=$id"
+}
+
+cmd_backup_note() {
+  need_root || return 1
+  id="${1:-}"
+  atlas_backup_valid_id "$id" || { echo "error=bad-id"; return 2; }
+  dest=$(atlas_backup_dir "$id")
+  [ -n "$dest" ] || { echo "error=no-backup"; return 2; }
+  note=""
+  if [ -n "${ATLAS_BACKUP_NOTE_B64:-}" ]; then
+    note=$(atlas_backup_b64d "$ATLAS_BACKUP_NOTE_B64")
+  else
+    shift
+    note="$*"
+  fi
+  printf '%s' "$note" >"$dest/note"
+  atlas_backup_sync_lp "$id"
+  echo "noted=$id"
+}
+
+cmd_backup_export() {
+  need_root || return 1
+  a="${1:-}"
+  b="${2:-}"
+  id=""
+  if atlas_backup_valid_id "$a" && [ -n "$(atlas_backup_dir "$a")" ]; then
+    id="$a"
+  elif atlas_backup_valid_id "$b" && [ -n "$(atlas_backup_dir "$b")" ]; then
+    id="$b"
+  elif [ -n "$a" ]; then
+    id=$(cmd_backup_list "$a" | awk '/^id=/{print $1; exit}' | sed 's/^id=//')
+  fi
+  [ -n "$id" ] || { echo "error=no-backup"; return 1; }
+  dest=$(atlas_backup_dir "$id")
+  [ -n "$dest" ] && [ -d "$dest" ] || { echo "error=no-backup"; return 1; }
+  [ -f "$dest/home.tgz" ] || { echo "error=no-home"; return 1; }
+  mkdir -p /sdcard/AtlasBackups /data/local/atlas-home/atlas/exports
+  tag="$id"
+  [ -f "$dest/label" ] && [ -s "$dest/label" ] && tag=$(cat "$dest/label" | tr -cd 'A-Za-z0-9._-' | head -c 40)
+  [ -n "$tag" ] || tag="$id"
+  out=""
+  if [ -d /sdcard/AtlasBackups ] && touch /sdcard/AtlasBackups/.w 2>/dev/null; then
+    rm -f /sdcard/AtlasBackups/.w
+    out="/sdcard/AtlasBackups/${tag}.atlas.tgz"
+  else
+    out="/data/local/atlas-home/atlas/exports/${tag}.atlas.tgz"
+  fi
+  tar -C "$dest" -czf "$out" . 2>/dev/null || {
+    echo "error=tar-export"
+    return 1
+  }
+  chmod 0644 "$out" 2>/dev/null || true
+  echo "export=$out backup=$id"
+}
+
+cmd_backup_exports() {
+  n=0
+  seen="|"
+  for d in /sdcard/AtlasBackups /data/local/atlas-home/atlas/exports; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*.atlas.tgz "$d"/*.tgz; do
+      [ -f "$f" ] || continue
+      real=$(readlink -f "$f" 2>/dev/null || echo "$f")
+      case "$seen" in *"|$real|"*) continue ;; esac
+      seen="${seen}${real}|"
+      echo "path=$f bytes=$(stat -c %s "$f" 2>/dev/null || echo 0)"
+      n=$((n + 1))
+    done
+  done
+  echo "exports=$n"
+}
+
+# Import a full session pack (export) or a bare home tarball.
+cmd_backup_import() {
+  need_root || return 1
+  src="${1:-}"
+  [ -n "$src" ] && [ -f "$src" ] || { echo "error=no-file"; return 2; }
+  atlas_backup_ensure_roots
+  ts=$(date +%Y%m%d-%H%M%S)
+  id="import-${ts}"
+  dest="$BACKUP_ROOT/$id"
+  work="/data/local/tmp/atlas-import-$$"
+  rm -rf "$work"
+  mkdir -p "$work" "$dest"
+  tar -C "$work" -xzf "$src" 2>/dev/null || {
+    echo "error=untar"
+    rm -rf "$work" "$dest"
+    return 1
+  }
+  pack="$work"
+  if [ ! -f "$work/home.tgz" ]; then
+    inner=$(find "$work" -name home.tgz -type f 2>/dev/null | head -1)
+    if [ -n "$inner" ]; then
+      pack=$(dirname "$inner")
+    fi
+  fi
+  if [ -f "$pack/home.tgz" ]; then
+    cp -a "$pack/." "$dest/"
+  elif [ -d "$pack/.grok" ] || [ -f "$pack/.bashrc" ] || [ -d "$pack/." ]; then
+    tar -C "$pack" -czf "$dest/home.tgz" . 2>/dev/null || {
+      echo "error=repack"
+      rm -rf "$work" "$dest"
+      return 1
+    }
+  else
+    echo "error=not-session"
+    rm -rf "$work" "$dest"
+    return 1
+  fi
+  [ -f "$dest/home.tgz" ] || {
+    echo "error=no-home"
+    rm -rf "$work" "$dest"
+    return 1
+  }
+  if [ ! -f "$dest/meta" ]; then
+    {
+      echo "user=atlas"
+      echo "ts=$ts"
+      echo "imported=1"
+      echo "src=$src"
+    } >"$dest/meta"
+  else
+    grep -q '^imported=' "$dest/meta" || echo "imported=1" >>"$dest/meta"
+    echo "src=$src" >>"$dest/meta"
+  fi
+  if [ ! -f "$dest/label" ] || [ ! -s "$dest/label" ]; then
+    base=$(basename "$src")
+    base=$(echo "$base" | sed 's/\.atlas\.tgz$//;s/\.tgz$//')
+    printf '%s' "$base" >"$dest/label"
+  fi
+  rm -rf "$work"
+  atlas_backup_sync_lp "$id"
+  echo "imported=$id src=$src"
 }
 
 write_profile() {
@@ -1785,6 +2889,14 @@ atlas-bins() { ls -1 /atlas-bin 2>/dev/null | wc -l; echo "entries in /atlas-bin
 if [ -n "${BASH_VERSION:-}" ] && [ -n "${ATLAS_BIN:-}" ]; then
   sudo() { "$ATLAS_BIN/sudo" "$@"; }
   su() { "$ATLAS_BIN/su" "$@"; }
+fi
+# Backup Load: one-shot grok --resume (anything that was there)
+if [ -n "${BASH_VERSION:-}" ] && [ -f "${HOME}/.atlas-resume" ]; then
+  . "${HOME}/.atlas-resume"
+  rm -f "${HOME}/.atlas-resume"
+  if [ -n "${ATLAS_RESUME_GROK:-}" ] && command -v grok >/dev/null 2>&1; then
+    exec grok --resume "$ATLAS_RESUME_GROK"
+  fi
 fi
 # Missed Android name → android-exec (no mode switch)
 if [ -n "${BASH_VERSION:-}" ]; then
@@ -2168,6 +3280,17 @@ cmd_ensure() {
       # If merge is overlay (legacy), switch to LP
       if grep -q " $MERGE overlay " /proc/mounts 2>/dev/null \
         || grep -q "overlay $MERGE " /proc/mounts 2>/dev/null; then
+        if [ "$(plane_read titan2_atlas_seat_sandbox 0)" = "1" ] \
+            || atlas_sandbox_active_name >/dev/null 2>&1; then
+          log "ensure: sandbox overlay — heal only"
+          bind_android 2>/dev/null || true
+          atlas_sandbox_reapply
+          heal_merge_essentials 2>/dev/null || true
+          plane_write titan2_atlas_mode debian
+          export ATLAS_LP_MODE=1
+          write_product_status
+          return 0
+        fi
         log "ensure: tearing legacy overlay for super LP"
         if bring_up_from_lp; then
           export ATLAS_LP_MODE=1
@@ -2889,6 +4012,34 @@ case "$cmd" in
   bootstrap|init) cmd_bootstrap ;;
   mount|up) cmd_mount ;;
   ensure|install|boot) cmd_ensure ;;
+  ensure-user|user) cmd_ensure_user ;;
+  add-user|useradd) cmd_add_user "$@" ;;
+  list-users|users) cmd_list_users ;;
+  set-pass) cmd_set_pass "$@" ;;
+  lock-pass) cmd_lock_pass "$@" ;;
+  set-sudo) cmd_set_sudo "$@" ;;
+  set-perm) cmd_set_perm "$@" ;;
+  del-user|userdel) cmd_del_user "$@" ;;
+  seat-status) cmd_seat_status "$@" ;;
+  seat-sandbox) cmd_seat_sandbox "$@" ;;
+  seat-freeze) cmd_seat_freeze "$@" ;;
+  seat-thaw) cmd_seat_thaw "$@" ;;
+  seat-save) cmd_seat_save "$@" ;;
+  seat-clone) cmd_seat_clone "$@" ;;
+  seat-export) cmd_seat_export "$@" ;;
+  seat-snaps) cmd_seat_snaps "$@" ;;
+  seat-load|seat-restore) cmd_seat_load "$@" ;;
+  seat-rm-snap|seat-del-snap) cmd_seat_rm_snap "$@" ;;
+  backup-save) cmd_backup_save "$@" ;;
+  backup-list|backups) cmd_backup_list "$@" ;;
+  backup-load) cmd_backup_load "$@" ;;
+  backup-rm|backup-del) cmd_backup_rm "$@" ;;
+  backup-export) cmd_backup_export "$@" ;;
+  backup-import) cmd_backup_import "$@" ;;
+  backup-import-legacy) cmd_backup_import_legacy ;;
+  backup-rename) cmd_backup_rename "$@" ;;
+  backup-note) cmd_backup_note "$@" ;;
+  backup-exports) cmd_backup_exports ;;
   apply-dns|dns)
     need_root || exit 1
     atlas_apply_android_dns

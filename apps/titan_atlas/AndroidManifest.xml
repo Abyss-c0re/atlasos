@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.atlas"
-    android:versionCode="122"
-    android:versionName="0.9.95-android-exec-priv">
+    android:versionCode="135"
+    android:versionName="1.0.8-sess">
 
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
 
@@ -50,8 +50,33 @@
         <activity
             android:name=".SettingsActivity"
             android:label="Atlas settings"
+            android:theme="@style/Theme.Atlas.Settings"
             android:exported="true"
             android:parentActivityName=".MainActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
+
+        <activity
+            android:name=".UsersActivity"
+            android:label="Users"
+            android:theme="@style/Theme.Atlas.Settings"
+            android:exported="false"
+            android:parentActivityName=".SettingsActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
+
+        <activity
+            android:name=".SessionsActivity"
+            android:label="Sessions"
+            android:theme="@style/Theme.Atlas.Settings"
+            android:exported="false"
+            android:parentActivityName=".SettingsActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
+
+        <activity
+            android:name=".BackupsActivity"
+            android:label="Backups"
+            android:theme="@style/Theme.Atlas.Settings"
+            android:exported="false"
+            android:parentActivityName=".SettingsActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
 
         <!-- exported so su/atlas-auth can `am start` the biometric gate from a root shell.

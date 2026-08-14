@@ -1,14 +1,11 @@
 package com.titanus2.atlas;
 
 import android.app.Activity;
-import android.content.ClipData;
-import android.content.ClipboardManager;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
-import android.graphics.Color;
 import android.graphics.Typeface;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -30,38 +27,20 @@ import com.termux.view.TerminalView;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Atlas — Termux terminal-view + terminal-emulator (reused, simplified host).
  * Session: atlas-net (C pty via Termux JNI libatlaspty) for DNS on GSI.
  * Multi-session like Termux: + / prev / next / close; Exit leaves the app.
- * Auth: Open / Copy / Full device-login bar (no auto browser).
  */
 public class MainActivity extends Activity implements AtlasTermClient.Host {
-    public static final String VERSION = "0.9.94-deb-pty";
+    public static final String VERSION = "1.0.8-sess";
     private static final int MAX_SESSIONS = 8;
 
-    private static final String DEVICE_PAGE = "https://accounts.x.ai/oauth2/device";
-    private static final Pattern FULL_WITH_CODE = Pattern.compile(
-        "https://(?:accounts|auth)\\.x\\.ai/[^\\s\\]\\)>\"']*user_code=[A-Za-z0-9-]+",
-        Pattern.CASE_INSENSITIVE);
-    private static final Pattern ANY_XAI_URL = Pattern.compile(
-        "https://(?:accounts|auth)\\.x\\.ai/[^\\s\\]\\)>\"']+",
-        Pattern.CASE_INSENSITIVE);
-    private static final Pattern CODE_ONLY = Pattern.compile("([A-Z0-9]{4}-[A-Z0-9]{4})");
-    private static final Pattern ANSI = Pattern.compile(
-        "\\u001B\\[[0-9;?]*[A-Za-z]|\\u001B\\].*?\\u0007|\\u001B.");
-
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final StringBuilder scrollLog = new StringBuilder();
-    private static final int MAX_LOG = 200_000;
 
     private LinearLayout root;
-    private LinearLayout authBar;
     private TextView strip;
-    private TextView authCodeTv;
     private TerminalView termView;
     /** Active session (from process-scoped SessionHub). */
     private TerminalSession session;
@@ -69,12 +48,6 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
     private ExtraKeysView extraKeys;
     /** Top-bar shell plane toggle (per-session Android vs Debian). */
     private Button shellModeBtn;
-    private String pendingAuthUri;
-    private String pendingUserCode;
-    /** Codes dismissed or completed u2014 never re-show from scrollback. */
-    private final java.util.HashSet<String> dismissedAuthCodes = new java.util.HashSet<>();
-    /** True only while a live device-auth flow is active. */
-    private boolean authFlowActive;
     private int padL, padT, padR, padB;
     private boolean softImeWanted;
     private Typeface termFont;
@@ -162,41 +135,12 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         bar1.addView(makeCompactBtn("Exit", v -> exitApp()), barWeight());
         bar1.addView(makeCompactBtn("Kbd", v -> toggleSoftKeyboard()), barWeight());
         bar1.addView(makeCompactBtn("Paste", v -> pasteToSession()), barWeight());
+        bar1.addView(makeCompactBtn("Load", v -> loadSeatDialog()), barWeight());
+        bar1.addView(makeCompactBtn("Save", v -> saveCurrentSeat()), barWeight());
         bar1.addView(makeCompactBtn("↻", v -> restartSession()), barWeight());
         bar1.addView(makeCompactBtn("⚙", v ->
             startActivity(new Intent(this, SettingsActivity.class))), barWeight());
         root.addView(bar1, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        authBar = new LinearLayout(this);
-        authBar.setOrientation(LinearLayout.VERTICAL);
-        // Subtle lift over terminal bg — not a private brand panel
-        authBar.setBackgroundColor(0xEE1E1E1E);
-        authBar.setPadding(dp(8), dp(6), dp(8), dp(6));
-        authBar.setVisibility(View.GONE);
-        authCodeTv = new TextView(this);
-        authCodeTv.setTextColor(0xFFECEFF1);
-        authCodeTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        authCodeTv.setTypeface(termFont != null ? termFont : Typeface.MONOSPACE);
-        authCodeTv.setTextIsSelectable(true);
-        authBar.addView(authCodeTv);
-        LinearLayout authBtns = new LinearLayout(this);
-        authBtns.setOrientation(LinearLayout.HORIZONTAL);
-        authBtns.addView(makeBtn("Open", v -> openBrowser(DEVICE_PAGE)));
-        authBtns.addView(makeBtn("Copy", v -> {
-            if (pendingUserCode != null) clip(pendingUserCode, "copied");
-            else toast("no code");
-        }));
-        authBtns.addView(makeBtn("Full", v -> {
-            if (pendingAuthUri != null && pendingAuthUri.contains("user_code=")) {
-                openBrowser(pendingAuthUri);
-            } else if (pendingUserCode != null) {
-                openBrowser(DEVICE_PAGE + "?user_code=" + pendingUserCode);
-            } else toast("no link");
-        }));
-        authBtns.addView(makeBtn("Dismiss", v -> dismissAuthBar()));
-        authBar.addView(authBtns);
-        root.addView(authBar, new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         // PTY JNI MUST load before TerminalView (layout → TerminalSession → JNI.<clinit>).
@@ -419,10 +363,6 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         }
     }
 
-    private Button makeBtn(String label, View.OnClickListener click) {
-        return makeCompactBtn(label, click);
-    }
-
     private Button makeCompactBtn(String label, View.OnClickListener click) {
         Button b = new Button(this, null, android.R.attr.borderlessButtonStyle);
         b.setText(label);
@@ -490,17 +430,107 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         // size updates from onSizeChanged after resize — no forced mode thrash
     }
 
-    private void dismissAuthBar() {
-        if (pendingUserCode != null) dismissedAuthCodes.add(pendingUserCode);
-        authFlowActive = false;
-        authBar.setVisibility(View.GONE);
-        pendingAuthUri = null;
-        pendingUserCode = null;
-        updateStrip(null);
-        if (termView != null) {
-            termView.requestFocus();
-            termView.post(() -> termView.updateSize());
-        }
+    /** Snapshot the current Debian moment into Backups (survives reboot). */
+    private void saveCurrentSeat() {
+        final String name = AtlasPrefs.lastSeat(this);
+        toast("saving backup…");
+        new Thread(() -> {
+            String r = HybridEnsure.backupSave(this, name);
+            boolean ok = r != null && (r.contains("backup=") || r.contains("saved="));
+            if (ok) {
+                AtlasPrefs.setLastSeat(this, name);
+                String id = kvToken(r, "backup");
+                if (id.isEmpty()) {
+                    String path = kvToken(r, "saved");
+                    int sl = path.lastIndexOf('/');
+                    id = sl >= 0 ? path.substring(sl + 1) : path;
+                }
+                if (!id.isEmpty()) AtlasPrefs.setLastSnap(this, id);
+            }
+            final String idShown = AtlasPrefs.lastSnap(this);
+            runOnUiThread(() -> {
+                toast(r != null ? r : "save failed");
+                if (ok) updateStrip("backup " + (idShown.isEmpty() ? name : idShown));
+            });
+        }, "atlas-save").start();
+    }
+
+    /** Pick a reboot-persistent backup and restore home + grok --resume. */
+    private void loadSeatDialog() {
+        new Thread(() -> {
+            List<HybridEnsure.Backup> backups = HybridEnsure.loadBackups(this);
+            List<String> labels = new ArrayList<>();
+            List<String[]> picks = new ArrayList<>();
+            String last = AtlasPrefs.lastSeat(this);
+            String lastSnap = AtlasPrefs.lastSnap(this);
+            if (lastSnap != null && !lastSnap.isEmpty()) {
+                labels.add("Last · " + lastSnap);
+                picks.add(new String[] { last, lastSnap });
+            }
+            int n = 0;
+            for (HybridEnsure.Backup b : backups) {
+                if (n++ >= 12) break;
+                if (b.id.equals(lastSnap) && labels.size() == 1) continue;
+                String lab = b.title();
+                if (b.note != null && !b.note.isEmpty()) {
+                    String one = b.note.replace('\n', ' ').trim();
+                    if (one.length() > 32) one = one.substring(0, 32) + "…";
+                    lab = lab + " · " + one;
+                } else if (!"none".equals(b.grok) && b.grok != null && !b.grok.isEmpty()) {
+                    lab = lab + " · grok";
+                }
+                labels.add(lab);
+                picks.add(new String[] { b.user, b.id });
+            }
+            runOnUiThread(() -> {
+                if (labels.isEmpty()) {
+                    toast("no backups — Save first");
+                    return;
+                }
+                new AlertDialog.Builder(this)
+                    .setTitle("Load backup")
+                    .setItems(labels.toArray(new CharSequence[0]), (d, which) -> {
+                        if (which < 0 || which >= picks.size()) return;
+                        applySeatLoad(picks.get(which)[0], picks.get(which)[1]);
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+            });
+        }, "atlas-load-list").start();
+    }
+
+    private void applySeatLoad(String name, String snap) {
+        toast("loading backup…");
+        new Thread(() -> {
+            String r = HybridEnsure.backupLoad(this, name, snap);
+            boolean ok = r != null && (r.contains("loaded=") || r.contains("backup="));
+            if (ok) {
+                if (name != null && !name.isEmpty()) AtlasPrefs.setLastSeat(this, name);
+                String id = kvToken(r, "backup");
+                if (id.isEmpty()) id = snap;
+                if (id != null && !id.isEmpty()) AtlasPrefs.setLastSnap(this, id);
+            }
+            runOnUiThread(() -> {
+                toast(r != null ? r : "load failed");
+                if (ok) {
+                    int i = SessionHub.index();
+                    if (i >= 0) SessionHub.setModeAt(i, SessionHub.MODE_DEBIAN);
+                    else SessionHub.setCurrentMode(SessionHub.MODE_DEBIAN);
+                    restartSession();
+                    updateStrip("loaded " + (snap != null ? snap : name));
+                }
+            });
+        }, "atlas-load").start();
+    }
+
+    private static String kvToken(String line, String key) {
+        if (line == null) return "";
+        String p = key + "=";
+        int i = line.indexOf(p);
+        if (i < 0) return "";
+        int s = i + p.length();
+        int e = line.indexOf(' ', s);
+        return e < 0 ? line.substring(s).trim() : line.substring(s, e).trim();
     }
 
     /** Create a new PTY session and switch to it (Termux multi-session). */
@@ -1055,94 +1085,11 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         toast("pasted");
     }
 
-    private void openBrowser(String uri) {
-        if (uri == null || uri.isEmpty()) {
-            toast("no link");
-            return;
-        }
-        try {
-            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(uri));
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(i);
-        } catch (Exception e) {
-            clip(uri, "open failed — copied");
-        }
-    }
-
-    private void setPendingAuth(String uri, String code) {
-        String u = uri != null ? uri.trim() : "";
-        String c = code != null ? code.trim().toUpperCase() : "";
-        if (c.length() > 9) c = c.substring(0, 9);
-        if (!c.isEmpty() && !c.matches("[A-Z0-9]{4}-[A-Z0-9]{4}")) {
-            Matcher cm = CODE_ONLY.matcher(c);
-            c = cm.find() ? cm.group(1) : "";
-        }
-        if (c.isEmpty() && u.isEmpty()) return;
-        if (c.isEmpty() && u.contains("user_code=")) {
-            int i = u.indexOf("user_code=");
-            String rest = u.substring(i + 10);
-            int amp = rest.indexOf('&');
-            if (amp >= 0) rest = rest.substring(0, amp);
-            Matcher cm = CODE_ONLY.matcher(rest.toUpperCase());
-            if (cm.find()) c = cm.group(1);
-        }
-        boolean scraped = u.startsWith("https://accounts.x.ai/") || u.startsWith("https://auth.x.ai/");
-        if (!scraped) u = "";
-        if (c.isEmpty()) return;
-        if (dismissedAuthCodes.contains(c)) return;
-        if (authFlowActive && c.equals(pendingUserCode)) {
-            if (!u.isEmpty()) pendingAuthUri = u;
-            return;
-        }
-        if (!u.isEmpty()) pendingAuthUri = u;
-        pendingUserCode = c;
-        authFlowActive = true;
-        authBar.setVisibility(View.VISIBLE);
-        // Mono fact only — no essay
-        authCodeTv.setText(pendingUserCode != null ? pendingUserCode : "…");
-        updateStrip("auth");
-    }
-
-    private void maybeCaptureAuth(String plain) {
-        if (plain == null || plain.isEmpty()) return;
-        String low = plain.toLowerCase();
-        // Auto-dismiss only after real device-login success.
-        if (authFlowActive || authBar.getVisibility() == View.VISIBLE) {
-            if (low.contains("signed in") || low.contains("authentication successful")
-                || low.contains("successfully authenticated")
-                || low.contains("login successful")
-                || low.contains("logged in as")) {
-                if (pendingUserCode != null) dismissedAuthCodes.add(pendingUserCode);
-                main.post(this::dismissAuthBar);
-                return;
-            }
-        }
-        // ONLY show bar on explicit xAI device URL with user_code= (no loose scrapes).
-        Matcher full = FULL_WITH_CODE.matcher(plain);
-        if (full.find()) {
-            setPendingAuth(full.group(), null);
-        }
-    }
-
     // Host helpers for AtlasTermClient
     @Override public boolean preferHardwareKeys() { return hasHardwareKeyboard() && !softImeWanted; }
 
-    private void clip(String text, String msg) {
-        if (text == null || text.isEmpty()) return;
-        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-        if (cm != null) {
-            cm.setPrimaryClip(ClipData.newPlainText("atlas", text));
-            if (msg != null) toast(msg);
-        }
-    }
-
     private void toast(String s) {
         Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
-    }
-
-    private static String stripAnsi(String s) {
-        if (s == null) return "";
-        return ANSI.matcher(s).replaceAll("");
     }
 
     // --- AtlasTermClient.Host ---
@@ -1163,12 +1110,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
 
     @Override
     public void onAuthText(String chunk) {
-        if (chunk == null) return;
-        scrollLog.append(chunk);
-        if (scrollLog.length() > MAX_LOG) {
-            scrollLog.delete(0, scrollLog.length() - MAX_LOG);
-        }
-        maybeCaptureAuth(stripAnsi(chunk));
+        // Login is in-terminal (touch/mouse). No xAI device-code overlay.
     }
 
     @Override

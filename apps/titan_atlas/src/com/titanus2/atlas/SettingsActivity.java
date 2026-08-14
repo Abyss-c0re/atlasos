@@ -3,6 +3,7 @@ package com.titanus2.atlas;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -13,12 +14,12 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
+
+import com.titanus2.atlas.ui.UiKit;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -26,21 +27,22 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Atlas settings — DeviceDefault, short labels, mono facts.
- * PRODUCT_UX: no marketing essays; hybrid size honesty (grow vs wipe-only shrink).
+ * Atlas settings — match OS / Controls Settings (PRODUCT_UX).
  */
 public class SettingsActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
     private ExecutorService io = Executors.newSingleThreadExecutor();
 
-    private TextView preview;
-    private TextView fontValue;
-    private TextView themeValue;
+    private TextView fontLab;
+    private TextView[] themeTiles;
+    private LinearLayout usersNav;
+    private LinearLayout fgNav;
+    private LinearLayout bgNav;
+    private LinearLayout curNav;
     private TextView hybridStatus;
+    private TextView debianUserStatus;
     private TextView sizeLab;
-    private View fgSwatch;
-    private View bgSwatch;
-    private View cursorSwatch;
+    private LinearLayout backupsNav;
 
     private static final String[] THEMES = {
         "dark", "light", "green", "amber", "cyan"
@@ -52,109 +54,65 @@ public class SettingsActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setTheme(android.R.style.Theme_DeviceDefault_Settings);
+        UiKit.applyOpaqueWindow(this);
 
         ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
+        UiKit.prepareScroll(scroll);
         LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(12), dp(16), dp(24));
-        scroll.addView(root);
+        UiKit.screen(root);
+        scroll.addView(root, new ScrollView.LayoutParams(
+            ScrollView.LayoutParams.MATCH_PARENT,
+            ScrollView.LayoutParams.WRAP_CONTENT));
 
-        TextView title = AtlasUi.body(this, "Atlas");
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(title, AtlasUi.match());
-        TextView ver = AtlasUi.monoFact(this, MainActivity.VERSION);
-        ver.setPadding(0, 0, 0, dp(8));
-        root.addView(ver, AtlasUi.match());
+        UiKit.section(root, "Appearance");
+        fontLab = UiKit.sliderLabel(root, AtlasPrefs.fontSp(this) + " sp");
+        UiKit.slider(root, 24, AtlasPrefs.fontSp(this) - 8,
+            new SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
+                    int sp = p + 8;
+                    AtlasPrefs.setFontSp(SettingsActivity.this, sp);
+                    fontLab.setText(sp + " sp");
+                }
+                @Override public void onStartTrackingTouch(SeekBar s) {}
+                @Override public void onStopTrackingTouch(SeekBar s) {}
+            });
 
-        // ——— Appearance ———
-        AtlasUi.section(root, "Appearance");
-
-        FrameLayout previewCard = new FrameLayout(this);
-        previewCard.setPadding(dp(12), dp(12), dp(12), dp(12));
-        GradientDrawable cardBg = new GradientDrawable();
-        cardBg.setCornerRadius(dp(8));
-        cardBg.setColor(AtlasPrefs.bgColor(this));
-        previewCard.setBackground(cardBg);
-        preview = new TextView(this);
-        preview.setTypeface(Typeface.MONOSPACE);
-        preview.setTextSize(TypedValue.COMPLEX_UNIT_SP, AtlasPrefs.fontSp(this));
-        preview.setLineSpacing(0, 1.15f);
-        preview.setText("atlas$ \nAaBbCc 012345");
-        previewCard.addView(preview, new FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        LinearLayout.LayoutParams cardLp = AtlasUi.match();
-        cardLp.bottomMargin = dp(8);
-        root.addView(previewCard, cardLp);
-
-        fontValue = AtlasUi.prefRow(root, "Font size", AtlasPrefs.fontSp(this) + " sp");
-        SeekBar fontSeek = new SeekBar(this);
-        fontSeek.setMax(24);
-        fontSeek.setProgress(AtlasPrefs.fontSp(this) - 8);
-        fontSeek.setPadding(dp(4), dp(4), dp(4), dp(8));
-        fontSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int sp = progress + 8;
-                AtlasPrefs.setFontSp(SettingsActivity.this, sp);
-                fontValue.setText(sp + " sp");
-                refreshPreview();
-            }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
-        root.addView(fontSeek, AtlasUi.match());
-
-        themeValue = AtlasUi.prefRow(root, "Theme", themeLabel(AtlasPrefs.themePreset(this)));
-        LinearLayout chips = new LinearLayout(this);
-        chips.setOrientation(LinearLayout.HORIZONTAL);
-        chips.setPadding(0, 0, 0, dp(8));
+        LinearLayout themeRow = UiKit.row(root);
+        themeTiles = new TextView[THEMES.length];
         for (int i = 0; i < THEMES.length; i++) {
             final String key = THEMES[i];
-            final String label = THEME_LABELS[i];
-            Button chip = themeChip(label, key);
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            clp.setMargins(dp(2), 0, dp(2), 0);
-            chips.addView(chip, clp);
+            themeTiles[i] = UiKit.flexButton(themeRow, THEME_LABELS[i], () -> {
+                AtlasPrefs.applyThemePreset(this, key);
+                paintThemeTiles();
+                refreshColorNav();
+            });
         }
-        root.addView(chips, AtlasUi.match());
+        paintThemeTiles();
 
-        LinearLayout fgRow = colorRow(root, "Text", AtlasPrefs.fgColor(this), c -> {
-            AtlasPrefs.setFgColor(this, c);
-            if (AtlasPrefs.cursorColor(this) == AtlasPrefs.DEFAULT_CURSOR
-                || AtlasPrefs.cursorColor(this) == AtlasPrefs.fgColor(this)) {
+        fgNav = UiKit.navRow(root, "Text", AtlasPrefs.colorHex(AtlasPrefs.fgColor(this)),
+            () -> openColorPicker("Text", AtlasPrefs.fgColor(this), c -> {
+                AtlasPrefs.setFgColor(this, c);
+                refreshColorNav();
+            }));
+        bgNav = UiKit.navRow(root, "Background", AtlasPrefs.colorHex(AtlasPrefs.bgColor(this)),
+            () -> openColorPicker("Background", AtlasPrefs.bgColor(this), c -> {
+                AtlasPrefs.setBgColor(this, c);
+                refreshColorNav();
+            }));
+        curNav = UiKit.navRow(root, "Cursor", AtlasPrefs.colorHex(AtlasPrefs.cursorColor(this)),
+            () -> openColorPicker("Cursor", AtlasPrefs.cursorColor(this), c -> {
                 AtlasPrefs.setCursorColor(this, c);
-            }
-            refreshPreview();
-            refreshSwatches();
-        });
-        fgSwatch = (View) fgRow.getTag();
-
-        LinearLayout bgRow = colorRow(root, "Background", AtlasPrefs.bgColor(this), c -> {
-            AtlasPrefs.setBgColor(this, c);
-            refreshPreview();
-            refreshSwatches();
-        });
-        bgSwatch = (View) bgRow.getTag();
-
-        LinearLayout curRow = colorRow(root, "Cursor", AtlasPrefs.cursorColor(this), c -> {
-            AtlasPrefs.setCursorColor(this, c);
-            refreshPreview();
-            refreshSwatches();
-        });
-        cursorSwatch = (View) curRow.getTag();
-
-        AtlasUi.settingsSwitch(root, "Keep screen on", AtlasPrefs.keepScreenOn(this),
+                refreshColorNav();
+            }));
+        UiKit.toggle(root, "Keep screen on", AtlasPrefs.keepScreenOn(this),
             on -> AtlasPrefs.setKeepScreenOn(this, on));
 
         // ——— Privileges (what is allowed) ———
         // Primary model: manage access. Bio is optional enforcement below.
-        AtlasUi.section(root, "Privileges");
+        UiKit.section(root, "Privileges");
         AtlasPrefs.publishPrivilegePlane(this);
         AtlasPrefs.publishBioPlane(this);
-        AtlasUi.settingsSwitch(root, "Debian hybrid", AtlasPrefs.privilegedHybrid(this), on -> {
+        UiKit.toggle(root, "Debian hybrid", AtlasPrefs.privilegedHybrid(this), on -> {
             if (on) {
                 runIo(() -> {
                     // Bio only if master enforcement on; else grant privilege path.
@@ -173,6 +131,7 @@ public class SettingsActivity extends Activity {
                     main.post(() -> toast("Ensuring…"));
                     String prep = ensureHybridReady();
                     boolean ready = NativeBin.hybridRootfsReady();
+                    String user = ready ? HybridEnsure.createLiveUid(SettingsActivity.this) : null;
                     main.post(() -> {
                         if (prep == null && ready) {
                             AtlasPrefs.setPrivilegedHybrid(this, true);
@@ -181,7 +140,7 @@ public class SettingsActivity extends Activity {
                             } catch (Exception ignored) {
                             }
                             AtlasPrefs.publishPrivilegePlane(this);
-                            toast("DEBIAN up");
+                            toast("DEBIAN up · " + (user != null ? user : HybridEnsure.liveUidStatus()));
                             refreshHybridStatus();
                             finish();
                         } else {
@@ -205,124 +164,83 @@ public class SettingsActivity extends Activity {
                 finish();
             }
         });
-        AtlasUi.settingsSwitch(root, "Android access (Deb→host)",
+        usersNav = UiKit.navRow(root, "Users", HybridEnsure.listDebianUsers(),
+            () -> startActivity(new Intent(this, UsersActivity.class)));
+        UiKit.navRow(root, "Sessions", "Sandbox, freeze, clone",
+            () -> startActivity(new Intent(this, SessionsActivity.class)));
+
+        UiKit.section(root, "Backups");
+        UiKit.note(root, "Sessions · rename · notes · import");
+        backupsNav = UiKit.navRow(root, "Saved", "…",
+            () -> startActivity(new Intent(this, BackupsActivity.class)));
+        debianUserStatus = null;
+        UiKit.toggle(root, "Android access",
             AtlasPrefs.privAndroidAccess(this),
             on -> {
                 AtlasPrefs.setPrivAndroidAccess(this, on);
-                toast(on ? "screencap/am/pm allowed" : "Android access off");
+                toast(on ? "screencap/am/pm on" : "Android access off");
             });
-        AtlasUi.settingsSwitch(root, "Debian sudo",
+        UiKit.toggle(root, "Debian sudo",
             AtlasPrefs.privDebianSudo(this),
             on -> {
                 AtlasPrefs.setPrivDebianSudo(this, on);
-                toast(on ? "Deb elevate allowed" : "Deb sudo off");
+                toast(on ? "Deb elevate on" : "Deb sudo off");
             });
-        AtlasUi.settingsSwitch(root, "Android su",
+        UiKit.toggle(root, "Android su",
             AtlasPrefs.privAndroidSu(this),
             on -> {
                 AtlasPrefs.setPrivAndroidSu(this, on);
-                toast(on ? "host elevate allowed" : "Android su off");
+                toast(on ? "host elevate on" : "Android su off");
             });
-        TextView privFact = AtlasUi.monoFact(this,
-            "Privileges = what Deb/Android may do\n"
-                + "Android access: atlas-screencap / am / pm\n"
-                + "apt: never gated\n"
-                + "Bio below is optional enforcement only");
-        privFact.setPadding(0, 0, 0, dp(8));
-        root.addView(privFact, AtlasUi.match());
 
-        // ——— Biometric enforcement (optional) ———
-        AtlasUi.section(root, "Biometric (optional)");
-        AtlasUi.settingsSwitch(root, "Require biometrics",
+        UiKit.section(root, "Biometric");
+        UiKit.toggle(root, "Require biometrics",
             AtlasPrefs.biometricAuth(this),
             on -> {
                 AtlasPrefs.setBiometricAuth(this, on);
                 if (!on) AtlasAuth.clearTicket(this);
-                toast(on ? "Bio enforcement ON" : "Bio off — privilege-only");
+                toast(on ? "Bio on" : "Bio off");
                 recreate();
             });
         if (AtlasPrefs.biometricAuth(this)) {
-            AtlasUi.settingsSwitch(root, "Bio · Android access",
+            UiKit.toggle(root, "Bio · Android access",
                 AtlasPrefs.bioAndroidAccessPref(this),
-                on -> {
-                    AtlasPrefs.setBioAndroidAccess(this, on);
-                    toast(on ? "Deb→Android: bio ON" : "Deb→Android: bio off");
-                });
-            AtlasUi.settingsSwitch(root, "Bio · Debian sudo",
+                on -> AtlasPrefs.setBioAndroidAccess(this, on));
+            UiKit.toggle(root, "Bio · Debian sudo",
                 AtlasPrefs.bioDebianSudoPref(this),
-                on -> {
-                    AtlasPrefs.setBioDebianSudo(this, on);
-                    toast(on ? "Deb sudo: bio ON" : "Deb sudo: bio off");
-                });
-            AtlasUi.settingsSwitch(root, "Bio · Android su",
+                on -> AtlasPrefs.setBioDebianSudo(this, on));
+            UiKit.toggle(root, "Bio · Android su",
                 AtlasPrefs.bioAndroidSuPref(this),
                 on -> {
                     AtlasPrefs.setBioAndroidSu(this, on);
                     if (!on) AtlasAuth.clearTicket(this);
-                    toast(on ? "Android su: bio ON" : "Android su: bio off");
                 });
         }
-        TextView bioFact = AtlasUi.monoFact(this,
-            "Off by default (agent heal / screencap)\n"
-                + "When ON: finger for the paths toggled above\n"
-                + "ticket ~90s after grant");
-        bioFact.setPadding(0, 0, 0, dp(8));
-        root.addView(bioFact, AtlasUi.match());
 
-        // ——— Architecture (product lock) ———
-        AtlasUi.section(root, "Architecture");
-        TextView archFact = AtlasUi.monoFact(this,
-            "Atlas = terminal + privilege plane\n"
-                + "Deb root = super atlas_linux (survives wipe)\n"
-                + "Auth plane = LP (optional bio)\n"
-                + "HOME = /data/local/atlas-home/atlas\n"
-                + "screencap: atlas-screencap only (binder heal)");
-        archFact.setPadding(0, 0, 0, dp(8));
-        root.addView(archFact, AtlasUi.match());
-
-        // ——— Hybrid disk ———
-        AtlasUi.section(root, "Hybrid disk");
-        hybridStatus = AtlasUi.monoFact(this, "…");
-        hybridStatus.setPadding(0, 0, 0, dp(8));
-        root.addView(hybridStatus, AtlasUi.match());
+        UiKit.section(root, "Hybrid disk");
+        hybridStatus = UiKit.mono(root);
+        hybridStatus.setText("…");
         refreshHybridStatus();
-
-        sizeLab = AtlasUi.prefRow(root, "Target size", sizeTargetLabel());
-        SeekBar sizeSeek = new SeekBar(this);
-        sizeSeek.setMax(15);
-        sizeSeek.setProgress((AtlasPrefs.hybridSizeG(this) - 2) / 2);
-        sizeSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
-                int g = 2 + p * 2;
-                AtlasPrefs.setHybridSizeG(SettingsActivity.this, g);
-                sizeLab.setText(sizeTargetLabel());
-            }
-            @Override public void onStartTrackingTouch(SeekBar s) {}
-            @Override public void onStopTrackingTouch(SeekBar s) {
-                int want = AtlasPrefs.hybridSizeG(SettingsActivity.this);
-                int act = HybridEnsure.actualImageSizeG();
-                if (act > 0 && want != act) {
-                    toast(want > act
-                        ? "target " + want + "G > disk " + act + "G · Apply size"
-                        : "target " + want + "G < disk " + act + "G · Wipe only");
+        sizeLab = UiKit.sliderLabel(root, sizeTargetLabel());
+        UiKit.slider(root, 15, (AtlasPrefs.hybridSizeG(this) - 2) / 2,
+            new SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
+                    AtlasPrefs.setHybridSizeG(SettingsActivity.this, 2 + p * 2);
+                    sizeLab.setText(sizeTargetLabel());
                 }
-            }
-        });
-        root.addView(sizeSeek, AtlasUi.match());
+                @Override public void onStartTrackingTouch(SeekBar s) {}
+                @Override public void onStopTrackingTouch(SeekBar s) {}
+            });
+        LinearLayout diskRow = UiKit.row(root);
+        UiKit.flexButton(diskRow, "Apply size", this::doApplySize);
+        UiKit.flexButton(diskRow, "Remount", this::doRemount);
+        LinearLayout diskRow2 = UiKit.row(root);
+        UiKit.flexButton(diskRow2, "Rebuild", this::confirmRebuild);
+        UiKit.flexButton(diskRow2, "Wipe", this::confirmWipe);
+        UiKit.button(root, "Fix home ownership", this::healHome);
 
-        AtlasUi.actionBtn(root, "Apply size (grow)", this::doApplySize);
-        AtlasUi.actionBtn(root, "Remount", this::doRemount);
-        AtlasUi.actionBtn(root, "Rebuild…", this::confirmRebuild);
-        AtlasUi.actionBtn(root, "Wipe + new image…", this::confirmWipe);
-        AtlasUi.actionBtn(root, "Fix home ownership", this::healHome);
-        TextView hybFact = AtlasUi.monoFact(this,
-            "slider = target only · grow=Apply · shrink=Wipe · remount keeps size");
-        hybFact.setPadding(0, dp(4), 0, dp(8));
-        root.addView(hybFact, AtlasUi.match());
-
-        // ——— Sessions ———
-        AtlasUi.section(root, "Sessions");
-        AtlasUi.settingsSwitch(root, "Keep-alive notification", AtlasPrefs.keepAlive(this), on -> {
+        UiKit.section(root, "Sessions");
+        UiKit.toggle(root, "Keep-alive notification", AtlasPrefs.keepAlive(this), on -> {
             AtlasPrefs.setKeepAlive(this, on);
             if (on) {
                 AtlasSessionService.startOrUpdate(this, AtlasPrefs.liveSessionCount(this), "settings");
@@ -333,37 +251,13 @@ public class SettingsActivity extends Activity {
             }
         });
 
-        // ——— About ———
-        AtlasUi.section(root, "About");
-        TextView about = AtlasUi.monoFact(this, NativeBin.home(this).getAbsolutePath());
-        about.setPadding(0, 0, 0, dp(16));
-        root.addView(about, AtlasUi.match());
-
         setContentView(scroll);
-        refreshPreview();
-        refreshSwatches();
     }
 
-    private Button themeChip(String label, String key) {
-        Button b = new Button(this, null, android.R.attr.borderlessButtonStyle);
-        b.setText(label);
-        b.setAllCaps(false);
-        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        b.setMinHeight(dp(40));
-        b.setOnClickListener(v -> {
-            AtlasPrefs.applyThemePreset(this, key);
-            themeValue.setText(themeLabel(key));
-            refreshPreview();
-            refreshSwatches();
-        });
-        int[] colors = themePreviewColors(key);
-        GradientDrawable gd = new GradientDrawable();
-        gd.setCornerRadius(dp(4));
-        gd.setColor(colors[1]);
-        gd.setStroke(dp(1), colors[0]);
-        b.setBackground(gd);
-        b.setTextColor(colors[0]);
-        return b;
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshHybridStatus();
     }
 
     private static int[] themePreviewColors(String key) {
@@ -439,7 +333,7 @@ public class SettingsActivity extends Activity {
 
         View big = new View(this);
         GradientDrawable bigGd = new GradientDrawable();
-        bigGd.setCornerRadius(dp(8));
+        bigGd.setCornerRadius(0f);
         bigGd.setColor(Color.HSVToColor(hsv));
         big.setBackground(bigGd);
         box.addView(big, new LinearLayout.LayoutParams(
@@ -509,37 +403,24 @@ public class SettingsActivity extends Activity {
         return col;
     }
 
-    private void refreshPreview() {
-        if (preview == null) return;
-        int fg = AtlasPrefs.fgColor(this);
-        int bg = AtlasPrefs.bgColor(this);
-        preview.setTextColor(fg);
-        preview.setTextSize(TypedValue.COMPLEX_UNIT_SP, AtlasPrefs.fontSp(this));
-        if (preview.getParent() instanceof View) {
-            View card = (View) preview.getParent();
-            GradientDrawable gd = new GradientDrawable();
-            gd.setCornerRadius(dp(8));
-            gd.setColor(bg);
-            card.setBackground(gd);
+    private void paintThemeTiles() {
+        if (themeTiles == null) return;
+        String cur = AtlasPrefs.themePreset(this);
+        for (int i = 0; i < THEMES.length && i < themeTiles.length; i++) {
+            UiKit.setSelected(themeTiles[i], THEMES[i].equals(cur));
         }
     }
 
-    private void refreshSwatches() {
-        setSwatch(fgSwatch, AtlasPrefs.fgColor(this));
-        setSwatch(bgSwatch, AtlasPrefs.bgColor(this));
-        setSwatch(cursorSwatch, AtlasPrefs.cursorColor(this));
-        if (themeValue != null) {
-            themeValue.setText(themeLabel(AtlasPrefs.themePreset(this)));
+    private void refreshColorNav() {
+        if (fgNav != null) {
+            UiKit.setNavSummary(fgNav, AtlasPrefs.colorHex(AtlasPrefs.fgColor(this)));
         }
-    }
-
-    private void setSwatch(View swatch, int color) {
-        if (swatch == null) return;
-        GradientDrawable g = new GradientDrawable();
-        g.setShape(GradientDrawable.OVAL);
-        g.setColor(color | 0xFF000000);
-        g.setStroke(dp(1), 0x44000000);
-        swatch.setBackground(g);
+        if (bgNav != null) {
+            UiKit.setNavSummary(bgNav, AtlasPrefs.colorHex(AtlasPrefs.bgColor(this)));
+        }
+        if (curNav != null) {
+            UiKit.setNavSummary(curNav, AtlasPrefs.colorHex(AtlasPrefs.cursorColor(this)));
+        }
     }
 
     private String sizeTargetLabel() {
@@ -735,9 +616,13 @@ public class SettingsActivity extends Activity {
             String text = sizeLine
                 + (st != null && !st.trim().isEmpty() ? "\n" + st.trim() : "")
                 + (lp != null && !lp.trim().isEmpty() ? "\n" + lp.trim() : "");
+            final String user = HybridEnsure.listDebianUsers();
+            final String backs = HybridEnsure.backupSummary(SettingsActivity.this);
             main.post(() -> {
                 if (hybridStatus != null) hybridStatus.setText(text);
                 if (sizeLab != null) sizeLab.setText(sizeTargetLabel());
+                if (usersNav != null) UiKit.setNavSummary(usersNav, user);
+                if (backupsNav != null) UiKit.setNavSummary(backupsNav, backs);
             });
         });
     }

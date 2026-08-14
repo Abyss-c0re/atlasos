@@ -419,4 +419,21 @@ public final class AtlasPrefs {
     public static void setLiveSessionCount(Context c, int n) {
         p(c).edit().putInt("live_sessions", Math.max(0, n)).apply();
     }
+
+    public static String lastSeat(Context c) {
+        return p(c).getString("last_seat", "atlas");
+    }
+
+    public static void setLastSeat(Context c, String name) {
+        if (name == null || name.isEmpty()) return;
+        p(c).edit().putString("last_seat", name).apply();
+    }
+
+    public static String lastSnap(Context c) {
+        return p(c).getString("last_snap", "");
+    }
+
+    public static void setLastSnap(Context c, String snap) {
+        p(c).edit().putString("last_snap", snap != null ? snap : "").apply();
+    }
 }

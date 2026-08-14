@@ -56,6 +56,28 @@ public final class HybridEnsure {
         return null;
     }
 
+    /** Tip script first — ROM copy may lack add-user. */
+    public static String resolveScriptTip(Context c) {
+        String[] paths = new String[0];
+        if (c != null) {
+            paths = new String[] {
+                new File(NativeBin.binDir(c), "atlas-hybrid.sh").getAbsolutePath(),
+                "/data/local/tmp/atlas-hybrid.sh",
+                "/system/bin/atlas-hybrid.sh"
+            };
+        } else {
+            paths = new String[] {
+                "/data/local/tmp/atlas-hybrid.sh",
+                "/system/bin/atlas-hybrid.sh"
+            };
+        }
+        for (String p : paths) {
+            File f = new File(p);
+            if (f.isFile() && f.length() > 100) return p;
+        }
+        return resolveScript(c);
+    }
+
     /** True when privileged hybrid is wanted and overlay is not enterable. */
     public static boolean needsEnsure(Context c) {
         if (c == null) return false;
@@ -212,6 +234,7 @@ public final class HybridEnsure {
                     //noinspection ResultOfMethodCallIgnored
                     new File("/data/local/tmp/atlas-hybrid-ensure-request").delete();
                 }
+                if (ok) ensureLiveUid(app);
                 Log.i(TAG, "boot kick done ok=" + ok
                     + " detail_tail=" + tail(detail, 240));
             } catch (Exception e) {
@@ -319,6 +342,7 @@ public final class HybridEnsure {
                         AtlasPrefs.privilegedHybrid(app), ok);
                 } catch (Exception ignored) {
                 }
+                if (ok) ensureLiveUid(app);
                 Log.i(TAG, "ensure done ok=" + ok + " detail=" + detail);
             } catch (Exception e) {
                 detail = e.getMessage() != null ? e.getMessage() : "err";
@@ -370,6 +394,7 @@ public final class HybridEnsure {
         int sizeG = AtlasPrefs.hybridSizeG(app);
         String mode = preserve ? "--preserve" : "--wipe";
         String cmd = "export HOME='" + homePath + "' ATLAS_HOME='" + homePath + "' "
+            + "ATLAS_DROP_UID=" + android.os.Process.myUid() + " "
             + "ATLAS_AUTO_BOOTSTRAP=1 ATLAS_HYBRID_SIZE_G=" + sizeG + "; "
             + "/system/bin/sh '" + script + "' rebuild " + mode + " 2>&1; "
             + "echo EXIT:$?; "
@@ -529,6 +554,606 @@ public final class HybridEnsure {
         "/sbin/su"
     };
 
+    /**
+     * Ensure Debian passwd has the live Atlas app uid (ssh/sudo/apt).
+     * Runs off the UI thread. Safe if hybrid is down (no-op).
+     */
+    public static void ensureLiveUidAsync(Context c) {
+        if (c == null) return;
+        final Context app = c.getApplicationContext();
+        new Thread(() -> ensureLiveUid(app), "atlas-ensure-uid").start();
+    }
+
+    /** Short Settings fact: {@code atlas uid=10101} or {@code missing uid=10101}. */
+    public static String liveUidStatus() {
+        int uid = android.os.Process.myUid();
+        String row = passwdRowForUid(NativeBin.LP_MNT + "/etc/passwd", uid);
+        if (row == null) {
+            row = passwdRowForUid("/data/local/atlas-hybrid/merge/etc/passwd", uid);
+        }
+        if (row == null) return "missing uid=" + uid;
+        int colon = row.indexOf(':');
+        String name = colon > 0 ? row.substring(0, colon) : "atlas";
+        return name + " uid=" + uid;
+    }
+
+    public static boolean liveUidPresent() {
+        int uid = android.os.Process.myUid();
+        return passwdHasUid(NativeBin.LP_MNT + "/etc/passwd", uid)
+            || passwdHasUid("/data/local/atlas-hybrid/merge/etc/passwd", uid);
+    }
+
+    /**
+     * Create Debian {@code atlas} at the Android app uid. Idempotent.
+     * @return toast-sized fact ({@code atlas uid=N} or error).
+     */
+    public static String createLiveUid(Context c) {
+        boolean ok = ensureLiveUid(c);
+        String st = liveUidStatus();
+        if (ok) return st;
+        return "create failed · " + st;
+    }
+
+    public static boolean validUserName(String name) {
+        if (name == null) return false;
+        return name.matches("^[a-z_][a-z0-9_-]{0,31}$");
+    }
+
+    /** Shared Atlas identity: Debian login + Android/Deb permission flags. */
+    public static final class DebianUser {
+        public String name = "";
+        public int uid;
+        public String home = "";
+        public boolean passSet;
+        public boolean sudo;
+        public boolean android = true;
+        public boolean debian = true;
+        public boolean session;
+        public String fact() {
+            return name + " uid=" + uid
+                + (session ? " session" : "")
+                + " A=" + (android ? "on" : "off")
+                + " D=" + (debian ? "on" : "off")
+                + " sudo=" + (sudo ? "on" : "off")
+                + " pass=" + (passSet ? "set" : "lock");
+        }
+    }
+
+    /** Human logins on the LP (uid ≥ 1000). */
+    public static String listDebianUsers() {
+        java.util.List<DebianUser> all = loadDebianUsers(null);
+        if (all.isEmpty()) return "none";
+        StringBuilder sb = new StringBuilder();
+        for (DebianUser u : all) {
+            if (sb.length() > 0) sb.append(" · ");
+            sb.append(u.name).append(" uid=").append(u.uid);
+        }
+        return sb.toString();
+    }
+
+    public static java.util.List<DebianUser> loadDebianUsers(Context c) {
+        java.util.ArrayList<DebianUser> out = new java.util.ArrayList<>();
+        String raw = runUserTool(c, null, "list-users");
+        if (raw != null) {
+            for (String line : raw.split("\n")) {
+                DebianUser u = parseUserLine(line);
+                if (u != null) out.add(u);
+            }
+        }
+        if (!out.isEmpty()) return out;
+        // Fallback: read passwd without elevate
+        String[] pws = {
+            NativeBin.LP_MNT + "/etc/passwd",
+            "/data/local/atlas-hybrid/merge/etc/passwd"
+        };
+        int app = android.os.Process.myUid();
+        for (String pw : pws) {
+            try {
+                for (String line : java.nio.file.Files.readAllLines(new File(pw).toPath())) {
+                    String[] p = line.split(":");
+                    if (p.length < 6) continue;
+                    int uid;
+                    try { uid = Integer.parseInt(p[2]); } catch (Exception e) { continue; }
+                    if (uid < 1000 || uid >= 65000) continue;
+                    DebianUser u = new DebianUser();
+                    u.name = p[0];
+                    u.uid = uid;
+                    u.home = p[5];
+                    u.session = uid == app;
+                    out.add(u);
+                }
+                if (!out.isEmpty()) return out;
+            } catch (Exception ignored) {
+            }
+        }
+        return out;
+    }
+
+    private static DebianUser parseUserLine(String line) {
+        if (line == null || !line.contains("name=")) return null;
+        DebianUser u = new DebianUser();
+        for (String tok : line.trim().split("\\s+")) {
+            int eq = tok.indexOf('=');
+            if (eq <= 0) continue;
+            String k = tok.substring(0, eq);
+            String v = tok.substring(eq + 1);
+            switch (k) {
+                case "name": u.name = v; break;
+                case "uid":
+                    try { u.uid = Integer.parseInt(v); } catch (Exception ignored) {}
+                    break;
+                case "home": u.home = v; break;
+                case "pass": u.passSet = "set".equals(v); break;
+                case "sudo": u.sudo = "1".equals(v) || "on".equals(v); break;
+                case "android": u.android = !"0".equals(v); break;
+                case "debian": u.debian = !"0".equals(v); break;
+                case "session": u.session = "1".equals(v); break;
+                default: break;
+            }
+        }
+        return u.name.isEmpty() ? null : u;
+    }
+
+    /** Run atlas-hybrid user tool as root. env may be null. */
+    public static String runUserTool(Context c, String[] envkv, String... args) {
+        String script = resolveScriptTip(c);
+        if (script == null) return null;
+        java.util.ArrayList<String> cmd = new java.util.ArrayList<>();
+        cmd.add(resolveRealSu());
+        cmd.add("0");
+        cmd.add("env");
+        if (envkv != null) {
+            for (String e : envkv) {
+                if (e != null && !e.isEmpty()) cmd.add(e);
+            }
+        }
+        cmd.add("/system/bin/sh");
+        cmd.add(script);
+        for (String a : args) cmd.add(a);
+        StringBuilder out = new StringBuilder();
+        try {
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            drain(p.getInputStream(), out);
+            p.waitFor();
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+        return out.toString();
+    }
+
+    public static String setUserPass(Context c, String name, String password) {
+        if (!validUserName(name)) return "bad name";
+        if (password == null || password.isEmpty()) {
+            String r = runUserTool(c, null, "lock-pass", name);
+            return r != null && r.contains("pass=lock") ? "pass=lock" : nz(r);
+        }
+        String b64 = android.util.Base64.encodeToString(
+            password.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+            android.util.Base64.NO_WRAP);
+        String r = runUserTool(c, new String[] { "ATLAS_NEWUSER_PASS_B64=" + b64 },
+            "set-pass", name);
+        return r != null && r.contains("pass=set") ? "pass=set" : nz(r);
+    }
+
+    public static String setUserPerm(Context c, String name, String key, boolean on) {
+        if (!validUserName(name)) return "bad name";
+        String r = runUserTool(c, null, "set-perm", name, key, on ? "1" : "0");
+        return r != null && r.contains(key + "=") ? (key + "=" + (on ? "on" : "off")) : nz(r);
+    }
+
+    public static String deleteDebianUser(Context c, String name, boolean wipeHome) {
+        if (!validUserName(name)) return "bad name";
+        String r = runUserTool(c,
+            new String[] { "ATLAS_DEL_HOME=" + (wipeHome ? "1" : "0") },
+            "del-user", name);
+        if (r != null && r.contains("deleted=")) return r.trim().split("\n")[0];
+        if (r != null && r.contains("error=session-user")) return "session user";
+        return nz(r);
+    }
+
+    public static String seatStatus(Context c, String name) {
+        if (!validUserName(name)) return "bad name";
+        return nz(runUserTool(c, null, "seat-status", name));
+    }
+
+    public static String seatSandbox(Context c, String name, boolean on) {
+        return nz(runUserTool(c, null, "seat-sandbox", name, on ? "1" : "0"));
+    }
+
+    public static String seatFreeze(Context c, String name, boolean freeze) {
+        return nz(runUserTool(c, null, freeze ? "seat-freeze" : "seat-thaw", name));
+    }
+
+    public static String seatSave(Context c, String name) {
+        return backupSave(c, name);
+    }
+
+    public static String seatClone(Context c, String src, String dst) {
+        if (!validUserName(src) || !validUserName(dst)) return "bad name";
+        return nz(runUserTool(c, null, "seat-clone", src, dst));
+    }
+
+    public static String seatExport(Context c, String name) {
+        return seatExport(c, name, null);
+    }
+
+    public static String seatExport(Context c, String name, String snap) {
+        if (snap != null && !snap.isEmpty()) {
+            return backupExport(c, snap);
+        }
+        return backupExportLatest(c, name);
+    }
+
+    public static String seatLoad(Context c, String name, String snap) {
+        if (snap != null && !snap.isEmpty()) {
+            return backupLoad(c, name, snap);
+        }
+        return backupLoadLatest(c, name);
+    }
+
+    public static String seatDeleteSnap(Context c, String name, String snap) {
+        if (snap == null || snap.isEmpty()) return "bad snap";
+        return backupDelete(c, snap);
+    }
+
+    /** Backup ids for a seat (newest first). */
+    public static java.util.List<String> seatSnapNames(Context c, String name) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<>();
+        for (Backup b : loadBackups(c, name)) out.add(b.id);
+        return out;
+    }
+
+    /** One reboot-persistent Debian moment (home + grok + overlay archive). */
+    public static final class Backup {
+        public String id = "";
+        public String user = "";
+        public String ts = "";
+        public String grok = "";
+        public String label = "";
+        public String note = "";
+        public boolean overlay;
+        public long bytes;
+        public String title() {
+            if (label != null && !label.isEmpty()) return label;
+            return id;
+        }
+        public String fact() {
+            return id
+                + (grok.isEmpty() || "none".equals(grok) ? "" : " grok")
+                + (overlay ? " overlay" : "")
+                + (bytes > 0 ? " " + (bytes / 1048576) + "M" : "");
+        }
+        public String shortFact() {
+            String g = (grok == null || grok.isEmpty() || "none".equals(grok))
+                ? "no grok" : "grok";
+            String o = overlay ? " · overlay" : "";
+            String sz = bytes > 0 ? " · " + Math.max(1, bytes / 1048576) + "M" : "";
+            String n = "";
+            if (note != null && !note.isEmpty()) {
+                String one = note.replace('\n', ' ').trim();
+                if (one.length() > 48) one = one.substring(0, 48) + "…";
+                n = " · " + one;
+            }
+            return g + o + sz + n;
+        }
+    }
+
+    public static String backupSave(Context c, String name) {
+        if (!validUserName(name)) return "bad name";
+        return nz(runUserTool(c, null, "backup-save", name));
+    }
+
+    public static String backupLoad(Context c, String name, String id) {
+        if (id == null || id.isEmpty()) return backupLoadLatest(c, name);
+        if (name != null && validUserName(name)) {
+            return nz(runUserTool(c, null, "backup-load", name, id));
+        }
+        return nz(runUserTool(c, null, "backup-load", id));
+    }
+
+    public static String backupLoadLatest(Context c, String name) {
+        if (name != null && validUserName(name)) {
+            return nz(runUserTool(c, null, "backup-load", name));
+        }
+        return nz(runUserTool(c, null, "backup-load"));
+    }
+
+    public static String backupDelete(Context c, String id) {
+        if (id == null || id.isEmpty()) return "bad id";
+        return nz(runUserTool(c, null, "backup-rm", id));
+    }
+
+    public static String backupExport(Context c, String id) {
+        if (id == null || id.isEmpty()) return "bad id";
+        return nz(runUserTool(c, null, "backup-export", id));
+    }
+
+    public static String backupExportLatest(Context c, String name) {
+        if (!validUserName(name)) return "bad name";
+        return nz(runUserTool(c, null, "backup-export", name));
+    }
+
+    public static String backupRename(Context c, String id, String label) {
+        if (id == null || id.isEmpty()) return "bad id";
+        String b64 = android.util.Base64.encodeToString(
+            (label != null ? label : "").getBytes(java.nio.charset.StandardCharsets.UTF_8),
+            android.util.Base64.NO_WRAP);
+        return nz(runUserTool(c, new String[] { "ATLAS_BACKUP_LABEL_B64=" + b64 },
+            "backup-rename", id));
+    }
+
+    public static String backupNote(Context c, String id, String note) {
+        if (id == null || id.isEmpty()) return "bad id";
+        String b64 = android.util.Base64.encodeToString(
+            (note != null ? note : "").getBytes(java.nio.charset.StandardCharsets.UTF_8),
+            android.util.Base64.NO_WRAP);
+        return nz(runUserTool(c, new String[] { "ATLAS_BACKUP_NOTE_B64=" + b64 },
+            "backup-note", id));
+    }
+
+    public static String backupImport(Context c, String path) {
+        if (path == null || path.isEmpty()) return "no file";
+        return nz(runUserTool(c, null, "backup-import", path));
+    }
+
+    public static java.util.List<String> listExportFiles(Context c) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<>();
+        String raw = runUserTool(c, null, "backup-exports");
+        if (raw == null) return out;
+        for (String line : raw.split("\n")) {
+            if (!line.contains("path=")) continue;
+            for (String tok : line.trim().split("\\s+")) {
+                if (tok.startsWith("path=")) out.add(tok.substring(5));
+            }
+        }
+        return out;
+    }
+
+    public static java.util.List<Backup> loadBackups(Context c) {
+        return loadBackups(c, null);
+    }
+
+    public static java.util.List<Backup> loadBackups(Context c, String userFilter) {
+        java.util.ArrayList<Backup> out = new java.util.ArrayList<>();
+        String raw = (userFilter != null && validUserName(userFilter))
+            ? runUserTool(c, null, "backup-list", userFilter)
+            : runUserTool(c, null, "backup-list");
+        if (raw == null) return out;
+        for (String line : raw.split("\n")) {
+            Backup b = parseBackupLine(line);
+            if (b != null) out.add(b);
+        }
+        return out;
+    }
+
+    public static String backupSummary(Context c) {
+        java.util.List<Backup> all = loadBackups(c);
+        if (all.isEmpty()) return "none";
+        return all.size() + " · survive reboot";
+    }
+
+    private static Backup parseBackupLine(String line) {
+        if (line == null || !line.contains("id=")) return null;
+        Backup b = new Backup();
+        for (String tok : line.trim().split("\\s+")) {
+            int eq = tok.indexOf('=');
+            if (eq <= 0) continue;
+            String k = tok.substring(0, eq);
+            String v = tok.substring(eq + 1);
+            switch (k) {
+                case "id": b.id = v; break;
+                case "user": b.user = v; break;
+                case "ts": b.ts = v; break;
+                case "grok": b.grok = v; break;
+                case "overlay": b.overlay = "1".equals(v); break;
+                case "label_b64": b.label = b64d(v); break;
+                case "note_b64": b.note = b64d(v); break;
+                case "bytes":
+                    try { b.bytes = Long.parseLong(v); } catch (Exception ignored) {}
+                    break;
+                default: break;
+            }
+        }
+        return b.id.isEmpty() ? null : b;
+    }
+
+    private static String b64d(String v) {
+        if (v == null || v.isEmpty()) return "";
+        try {
+            return new String(android.util.Base64.decode(v, android.util.Base64.DEFAULT),
+                java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static String nz(String s) {
+        if (s == null || s.trim().isEmpty()) return "failed";
+        String t = s.replace('\n', ' ').trim();
+        return t.length() > 140 ? t.substring(t.length() - 140) : t;
+    }
+
+    /**
+     * Add any Debian login. Password optional (login only). sudo uses atlas-auth.
+     * @return toast fact, never the password.
+     */
+    public static String addDebianUser(Context c, String name, String password,
+                                       boolean sudoAuth) {
+        if (!validUserName(name)) return "bad name";
+        switch (name) {
+            case "root":
+            case "daemon":
+            case "nobody":
+            case "sshd":
+                return "reserved";
+            default:
+                break;
+        }
+        String script = resolveScriptTip(c);
+        if (script == null) return "atlas-hybrid.sh missing";
+        String b64 = "";
+        if (password != null && !password.isEmpty()) {
+            b64 = android.util.Base64.encodeToString(
+                password.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                android.util.Base64.NO_WRAP);
+        }
+        String su = resolveRealSu();
+        StringBuilder out = new StringBuilder();
+        try {
+            ProcessBuilder pb = new ProcessBuilder(
+                su, "0", "env",
+                "ATLAS_NEWUSER_PASS_B64=" + b64,
+                "ATLAS_USER_SUDO=" + (sudoAuth ? "1" : "0"),
+                "ATLAS_USER_ANDROID=1",
+                "ATLAS_USER_DEBIAN=1",
+                "/system/bin/sh", script, "add-user", name);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            drain(p.getInputStream(), out);
+            p.waitFor();
+        } catch (Exception e) {
+            out.append(e.getMessage() != null ? e.getMessage() : "err");
+        }
+        String so = out.toString();
+        if (so.contains("user=") && so.contains("auth=atlas-auth")) {
+            int i = so.indexOf("user=");
+            String line = so.substring(i).replace('\n', ' ');
+            if (line.length() > 120) line = line.substring(0, 120);
+            return line.trim();
+        }
+        if (so.contains("error=")) {
+            int i = so.indexOf("error=");
+            return so.substring(i).split("\\s+")[0];
+        }
+        // enterd fallback — no password (lock); atlas-auth sudo still applied
+        if (elevateViaEnterSock(
+            "export ATLAS_USER_SUDO=" + (sudoAuth ? "1" : "0")
+                + (b64.isEmpty() ? "" : " ATLAS_NEWUSER_PASS_B64=" + b64)
+                + "; /system/bin/sh '" + script + "' add-user " + name)) {
+            return listDebianUsers();
+        }
+        if (so.length() > 160) so = so.substring(so.length() - 160);
+        return so.isEmpty() ? "create failed" : so.replace('\n', ' ');
+    }
+
+    /** Blocking: create {@code atlas} at app uid via enter sock or real su. */
+    public static boolean ensureLiveUid(Context c) {
+        if (c == null) return false;
+        if (!NativeBin.hybridRootfsReady() && !new File(NativeBin.LP_MNT + "/etc/passwd").isFile()) {
+            return false;
+        }
+        int uid = android.os.Process.myUid();
+        if (uid <= 0) return false;
+        String pw = NativeBin.LP_MNT + "/etc/passwd";
+        if (passwdHasUid(pw, uid)
+            || passwdHasUid("/data/local/atlas-hybrid/merge/etc/passwd", uid)) {
+            return true;
+        }
+        String sh =
+            "uid=" + uid + "; "
+                + "home=/data/local/atlas-home/atlas; "
+                + "mkdir -p \"$home\"; "
+                + "for root in /data/local/atlas-linux /data/local/atlas-hybrid/merge; do "
+                + "  [ -f \"$root/etc/passwd\" ] || continue; "
+                + "  if ! grep -q \":x:${uid}:${uid}:\" \"$root/etc/passwd\"; then "
+                + "    if grep -q '^atlas:' \"$root/etc/passwd\"; then "
+                + "      echo \"atlas${uid}:x:${uid}:${uid}:Atlas:${home}:/bin/bash\" >>\"$root/etc/passwd\"; "
+                + "    else "
+                + "      echo \"atlas:x:${uid}:${uid}:Atlas:${home}:/bin/bash\" >>\"$root/etc/passwd\"; "
+                + "    fi; "
+                + "  fi; "
+                + "  if [ -f \"$root/etc/group\" ] && ! grep -q \"^atlas:\" \"$root/etc/group\"; then "
+                + "    echo \"atlas:x:${uid}:\" >>\"$root/etc/group\"; "
+                + "  fi; "
+                + "  if [ -f \"$root/etc/shadow\" ] && ! grep -q \"^atlas:\" \"$root/etc/shadow\"; then "
+                + "    echo \"atlas:!:19600:0:99999:7:::\" >>\"$root/etc/shadow\"; "
+                + "  fi; "
+                + "  mkdir -p \"$root/etc/sudoers.d\"; "
+                + "  printf 'atlas ALL=(ALL) NOPASSWD:ALL\\nDefaults:%s !authenticate\\n%s ALL=(ALL) NOPASSWD:ALL\\n' "
+                + "    \"$uid\" \"$uid\" >\"$root/etc/sudoers.d/atlas\"; "
+                + "  chown 0:0 \"$root/etc/sudoers.d/atlas\" 2>/dev/null || true; "
+                + "  chmod 0440 \"$root/etc/sudoers.d/atlas\"; "
+                + "done; "
+                + "grep \":x:${uid}:${uid}:\" /data/local/atlas-linux/etc/passwd "
+                + "  /data/local/atlas-hybrid/merge/etc/passwd 2>/dev/null | head -1";
+        if (elevateViaEnterSock(sh)) {
+            Log.i(TAG, "ensure-uid via enter sock uid=" + uid);
+            return passwdHasUid(pw, uid)
+                || passwdHasUid("/data/local/atlas-hybrid/merge/etc/passwd", uid);
+        }
+        String su = resolveRealSu();
+        try {
+            ProcessBuilder pb = new ProcessBuilder(su, "0", "sh", "-c", sh);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            drain(p.getInputStream(), new StringBuilder());
+            p.waitFor();
+        } catch (Exception e) {
+            Log.w(TAG, "ensure-uid su: " + e.getMessage());
+            return false;
+        }
+        boolean ok = passwdHasUid(pw, uid)
+            || passwdHasUid("/data/local/atlas-hybrid/merge/etc/passwd", uid);
+        Log.i(TAG, "ensure-uid su uid=" + uid + " ok=" + ok);
+        return ok;
+    }
+
+    private static boolean passwdHasUid(String path, int uid) {
+        return passwdRowForUid(path, uid) != null;
+    }
+
+    private static String passwdRowForUid(String path, int uid) {
+        try {
+            java.util.List<String> lines =
+                java.nio.file.Files.readAllLines(new File(path).toPath());
+            String needle = ":x:" + uid + ":" + uid + ":";
+            for (String line : lines) {
+                if (line.contains(needle)) return line;
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    /** Root via atlas-enter.sock (same path Titan Grok used to create the user). */
+    private static boolean elevateViaEnterSock(String cmd) {
+        File sock = new File("/data/local/tmp/atlas-enter.sock");
+        if (!sock.exists()) return false;
+        android.net.LocalSocket ls = null;
+        try {
+            ls = new android.net.LocalSocket();
+            ls.connect(new android.net.LocalSocketAddress(
+                "/data/local/tmp/atlas-enter.sock",
+                android.net.LocalSocketAddress.Namespace.FILESYSTEM));
+            ls.setSoTimeout(15_000);
+            java.io.OutputStream out = ls.getOutputStream();
+            java.io.InputStream in = ls.getInputStream();
+            String msg = "ELEVATE chroot=0 home=/data/local/atlas-home/atlas\n"
+                + cmd + "\n";
+            out.write(msg.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            out.flush();
+            byte[] buf = new byte[4096];
+            StringBuilder sb = new StringBuilder();
+            int n;
+            long end = System.currentTimeMillis() + 12_000L;
+            while (System.currentTimeMillis() < end && (n = in.read(buf)) > 0) {
+                sb.append(new String(buf, 0, n));
+                if (sb.indexOf("__ATLAS_EXIT__") >= 0) break;
+            }
+            Log.i(TAG, "enter-sock: " + sb.toString().replace('\n', ' '));
+            return sb.indexOf("__ATLAS_EXIT__ 0") >= 0 || sb.indexOf("atlas:x:") >= 0;
+        } catch (Exception e) {
+            Log.w(TAG, "enter-sock: " + e.getMessage());
+            return false;
+        } finally {
+            if (ls != null) {
+                try { ls.close(); } catch (Exception ignored) {}
+            }
+        }
+    }
+
     /** First existing absolute real-su path, or {@code "su"} for PATH last-resort. */
     public static String resolveRealSu() {
         for (String p : REAL_SU_PATHS) {
@@ -572,6 +1197,7 @@ public final class HybridEnsure {
             : "/data/data/com.titanus2.atlas/files";
         int sizeG = AtlasPrefs.hybridSizeG(app);
         String cmd = "export HOME='" + homePath + "' ATLAS_HOME='" + homePath + "' "
+            + "ATLAS_DROP_UID=" + android.os.Process.myUid() + " "
             + "ATLAS_AUTO_BOOTSTRAP=1 ATLAS_HYBRID_SIZE_G=" + sizeG + "; "
             + "export PATH=/system/bin:/system/xbin:/vendor/bin:/data/adb/ksu/bin:$PATH; "
             + "/system/bin/sh '" + script + "' ensure 2>&1; "

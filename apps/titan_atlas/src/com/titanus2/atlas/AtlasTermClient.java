@@ -315,24 +315,7 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
     public void onTextChanged(TerminalSession changedSession) {
         TerminalView v = host.terminalView();
         if (v != null) v.onScreenUpdated();
-        try {
-            if (changedSession != null && changedSession.getEmulator() != null) {
-                String t = changedSession.getEmulator().getScreen().getTranscriptText();
-                if (t == null || t.isEmpty()) return;
-                // Only new tail u2014 full transcript re-scan re-popped stale xAI codes.
-                if (t.length() < authTranscriptLen) {
-                    // Trim/wrap: do NOT rescan old text (re-popped device codes).
-                    authTranscriptLen = t.length();
-                    return;
-                }
-                if (t.length() > authTranscriptLen) {
-                    String delta = t.substring(authTranscriptLen);
-                    authTranscriptLen = t.length();
-                    if (!delta.isEmpty()) host.onAuthText(delta);
-                }
-            }
-        } catch (Exception ignored) {
-        }
+        // Terminal text is the login UI — no host scrape / device-code bar.
     }
 
     public void resetAuthScrape() {

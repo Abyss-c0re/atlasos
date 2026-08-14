@@ -662,6 +662,7 @@ public final class NativeBin {
         }
         File auth = new File(home, ".grok/auth.json");
         File cfg = new File(home, ".grok/config.toml");
+        ensureGrokMcp(c);
         // If still unreadable, root owns them — user needs atlas-heal-home once
         if ((auth.isFile() && !auth.canRead()) || (cfg.isFile() && !cfg.canRead())) {
             File marker = new File(home, ".atlas-need-heal");
@@ -672,6 +673,131 @@ public final class NativeBin {
         } else {
             //noinspection ResultOfMethodCallIgnored
             new File(home, ".atlas-need-heal").delete();
+        }
+    }
+
+    /** LAN MCP: Titan Grok → BlackCube/BrainCube :18790 + NexusCore :8871. */
+    public static final String MCP_BLACKCUBE = "http://<lab-ip>:18790/mcp";
+    public static final String MCP_BRAINCUBE = "http://<lab-ip>:18790/mcp";
+    public static final String MCP_NEXUSCORE = "http://<lab-ip>:8871/mcp";
+    /** Shared on-device nanobot home (Atlas + TitanNanobot peer). */
+    public static final String NANOBOT_HOME = "/data/local/tmp/nanobot_home";
+
+    public static void ensureGrokMcp(Context c) {
+        File[] homes = new File[] {
+            new File(LINUX_HOME),
+            c != null ? home(c) : null
+        };
+        String block =
+            "\n# Atlas LAN MCP — BlackCube + BrainCube + NexusCore (HTTP).\n"
+                + "[mcp_servers.blackcube]\n"
+                + "url = \"" + MCP_BLACKCUBE + "\"\n"
+                + "enabled = true\n"
+                + "startup_timeout_sec = 20\n"
+                + "tool_timeout_sec = 180\n"
+                + "\n"
+                + "[mcp_servers.braincube]\n"
+                + "url = \"" + MCP_BRAINCUBE + "\"\n"
+                + "enabled = true\n"
+                + "startup_timeout_sec = 20\n"
+                + "tool_timeout_sec = 180\n"
+                + "\n"
+                + "[mcp_servers.nexuscore]\n"
+                + "url = \"" + MCP_NEXUSCORE + "\"\n"
+                + "enabled = true\n"
+                + "startup_timeout_sec = 20\n"
+                + "tool_timeout_sec = 90\n";
+        String trust =
+            "[folders.\"/home/atlas\"]\n"
+                + "trusted = true\n"
+                + "decided_at = " + (System.currentTimeMillis() / 1000L) + "\n"
+                + "\n"
+                + "[folders.\"" + LINUX_HOME + "\"]\n"
+                + "trusted = true\n"
+                + "decided_at = " + (System.currentTimeMillis() / 1000L) + "\n";
+        for (File h : homes) {
+            if (h == null) continue;
+            File grok = new File(h, ".grok");
+            //noinspection ResultOfMethodCallIgnored
+            grok.mkdirs();
+            File cfg = new File(grok, "config.toml");
+            String cur = readText(cfg);
+            if (cur == null) cur = "";
+            if (!cur.contains("[mcp_servers.blackcube]")
+                || !cur.contains("[mcp_servers.braincube]")
+                || !cur.contains("[mcp_servers.nexuscore]")) {
+                try (FileWriter w = new FileWriter(cfg, true)) {
+                    if (!cur.contains("[mcp_servers.blackcube]")
+                        && !cur.contains("[mcp_servers.braincube]")
+                        && !cur.contains("[mcp_servers.nexuscore]")) {
+                        w.write(block);
+                    } else {
+                        if (!cur.contains("[mcp_servers.blackcube]")) {
+                            w.write("\n[mcp_servers.blackcube]\nurl = \""
+                                + MCP_BLACKCUBE + "\"\nenabled = true\n");
+                        }
+                        if (!cur.contains("[mcp_servers.braincube]")) {
+                            w.write("\n[mcp_servers.braincube]\nurl = \""
+                                + MCP_BRAINCUBE + "\"\nenabled = true\n");
+                        }
+                        if (!cur.contains("[mcp_servers.nexuscore]")) {
+                            w.write("\n[mcp_servers.nexuscore]\nurl = \""
+                                + MCP_NEXUSCORE + "\"\nenabled = true\n");
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            File tf = new File(grok, "trusted_folders.toml");
+            String tcur = readText(tf);
+            if (tcur == null || !tcur.contains("/home/atlas")) {
+                writeText(tf, trust);
+            }
+        }
+        ensureNanobotMcp(c);
+    }
+
+    /**
+     * Atlas nanobot → BlackCube HTTP MCP (braincube tools live on the same
+     * peer). Writes {@code $NANOBOT_HOME/mcp_servers.json}.
+     */
+    public static void ensureNanobotMcp(Context c) {
+        String json =
+            "{\n"
+                + "  \"servers\": [\n"
+                + "    {\"id\":\"blackcube\",\"name\":\"blackcube\","
+                + "\"url\":\"" + MCP_BLACKCUBE + "\",\"enabled\":true},\n"
+                + "    {\"id\":\"braincube\",\"name\":\"braincube\","
+                + "\"url\":\"" + MCP_BRAINCUBE + "\",\"enabled\":true},\n"
+                + "    {\"id\":\"nexuscore\",\"name\":\"nexuscore\","
+                + "\"url\":\"" + MCP_NEXUSCORE + "\",\"enabled\":true}\n"
+                + "  ]\n"
+                + "}\n";
+        File[] dirs = new File[] {
+            new File(NANOBOT_HOME),
+            new File(LINUX_HOME, ".nanobot"),
+            c != null ? new File(home(c), ".nanobot") : null
+        };
+        for (File d : dirs) {
+            if (d == null) continue;
+            //noinspection ResultOfMethodCallIgnored
+            d.mkdirs();
+            File f = new File(d, "mcp_servers.json");
+            String cur = readText(f);
+            if (cur == null || !cur.contains("\"blackcube\"")
+                || !cur.contains("\"braincube\"")) {
+                writeText(f, json);
+            }
+        }
+    }
+
+    private static String readText(File f) {
+        if (f == null || !f.isFile()) return null;
+        try {
+            byte[] b = java.nio.file.Files.readAllBytes(f.toPath());
+            return new String(b);
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -1078,6 +1204,7 @@ public final class NativeBin {
                 + "export HOME=\"" + homePath + "\"\n"
                 + "export ATLAS_HOME=\"" + homePath + "\"\n"
                 + "export ATLAS_BIN=\"" + bin + "\"\n"
+                + "export NANOBOT_HOME=\"" + NANOBOT_HOME + "\"\n"
                 + "export TERM=\"${TERM:-xterm-256color}\"\n"
                 + "export LANG=\"${LANG:-C.UTF-8}\"\n"
                 + "export COLORTERM=\"${COLORTERM:-truecolor}\"\n"
@@ -1094,6 +1221,7 @@ public final class NativeBin {
                 + "export HOME=\"" + linuxHomePath + "\"\n"
                 + "export ATLAS_HOME=\"" + linuxHomePath + "\"\n"
                 + "export ATLAS_BIN=\"" + bin + "\"\n"
+                + "export NANOBOT_HOME=\"" + NANOBOT_HOME + "\"\n"
                 + pathHelper
                 + "mkdir -p \"$HOME/bin\" \"$HOME/.local/bin\" 2>/dev/null || true\n"
                 + "cd \"$HOME\" 2>/dev/null || true\n";
@@ -1101,7 +1229,17 @@ public final class NativeBin {
         writeText(new File(lh, ".bashrc"),
             "# Atlas Deb interactive — source PATH helper\n"
                 + "[ -f \"$HOME/.profile\" ] && . \"$HOME/.profile\"\n"
-                + "hash -r 2>/dev/null || true\n");
+                + "hash -r 2>/dev/null || true\n"
+                + "if [ -f \"$HOME/.atlas-resume\" ]; then\n"
+                + "  . \"$HOME/.atlas-resume\"\n"
+                + "  rm -f \"$HOME/.atlas-resume\"\n"
+                + "  if [ -n \"${ATLAS_RESUME_GROK:-}\" ]; then\n"
+                + "    _g=\"\"\n"
+                + "    command -v grok >/dev/null 2>&1 && _g=grok\n"
+                + "    [ -z \"$_g\" ] && [ -x \"$HOME/.grok/bin/grok\" ] && _g=\"$HOME/.grok/bin/grok\"\n"
+                + "    [ -n \"$_g\" ] && exec \"$_g\" --resume \"$ATLAS_RESUME_GROK\"\n"
+                + "  fi\n"
+                + "fi\n");
         writeText(new File(home, ".bash_profile"),
             "# Atlas\n[ -f \"$HOME/.profile\" ] && . \"$HOME/.profile\"\n"
                 + "[ -f \"$HOME/.bashrc\" ] && . \"$HOME/.bashrc\"\n");

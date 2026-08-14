@@ -574,25 +574,16 @@ public final class TerminalView extends View {
     }
 
     /**
-     * Mouse → PTY. STABLE: no-op (known_good 0.9.27).
-     * Re-enabling injected CSI into prompts and fueled the doom cycle.
-     * Touch-as-mouse can return only after admin shell + grok paint are proven again.
-     */
-    /**
-     * Mouse u2192 PTY. Clicks/moves stay no-op (known_good 0.9.27 SGR thrash).
-     * Wheel is allowed so alt-screen TUIs (Grok) can scroll with finger drag.
+     * Mouse/touch → PTY. Clicks and wheel when the app armed DECSET mouse
+     * tracking (Grok TUI). Finger tap is left-click via {@code onUp}.
      */
     void sendMouseEventCode(MotionEvent e, int button, boolean pressed) {
         if (mEmulator == null) return;
-        if (button != TerminalEmulator.MOUSE_WHEELUP_BUTTON
-                && button != TerminalEmulator.MOUSE_WHEELDOWN_BUTTON) {
-            return; // no click / drag CSI
-        }
         final float x = (e != null) ? e.getX() : 0f;
         final float y = (e != null) ? e.getY() : 0f;
         int col = 1 + (int) (x / Math.max(1f, mRenderer.mFontWidth));
         int row = 1 + (int) (y / Math.max(1f, mRenderer.mFontLineSpacing));
-        mEmulator.sendMouseEvent(button, col, row, true);
+        mEmulator.sendMouseEvent(button, col, row, pressed);
     }
 
     /** Scroll transcript, or alt-screen TUI via wheel / page keys. */

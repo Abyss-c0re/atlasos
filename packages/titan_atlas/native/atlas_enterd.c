@@ -41,7 +41,7 @@
 #endif
 
 #ifndef ATLAS_VERSION
-#define ATLAS_VERSION "1.2.6-userpath"
+#define ATLAS_VERSION "1.2.7-resume"
 #endif
 
 #define ABS_NAME "atlasenter"
@@ -782,6 +782,40 @@ static void handle_client(int csock, uid_t peer) {
     if (setgid(drop) != 0) _exit(77);
     if (setuid(drop) != 0) _exit(77);
     if (geteuid() == 0) _exit(77);
+    /* Load = exec grok --resume. bash --norc never sources .bashrc hooks. */
+    {
+      char rid[80];
+      FILE *rf = fopen("/home/atlas/.atlas-resume", "r");
+      if (!rf) rf = fopen("/data/local/atlas-home/atlas/.atlas-resume", "r");
+      rid[0] = 0;
+      if (rf) {
+        char line[128];
+        while (fgets(line, sizeof(line), rf)) {
+          if (strncmp(line, "ATLAS_RESUME_GROK=", 18) != 0) continue;
+          size_t n = strcspn(line + 18, "\r\n");
+          if (n >= sizeof(rid)) n = sizeof(rid) - 1;
+          memcpy(rid, line + 18, n);
+          rid[n] = 0;
+          break;
+        }
+        fclose(rf);
+      }
+      if (rid[0] && strcmp(rid, "none") != 0) {
+        unlink("/home/atlas/.atlas-resume");
+        unlink("/data/local/atlas-home/atlas/.atlas-resume");
+        execlp("grok", "grok", "--resume", rid, (char *)NULL);
+        const char *gb[] = {
+          "/home/atlas/.grok/bin/grok",
+          "/data/local/atlas-home/atlas/.grok/bin/grok",
+          NULL
+        };
+        int gi;
+        for (gi = 0; gb[gi]; gi++) {
+          if (access(gb[gi], X_OK) == 0)
+            execl(gb[gi], "grok", "--resume", rid, (char *)NULL);
+        }
+      }
+    }
     /* Interactive non-login, no rc: prompt from PS1; PATH set above */
     execl(shrel, "bash", "--norc", "--noprofile", "-i", (char *)NULL);
     execl(shrel, shrel, "-i", (char *)NULL);
