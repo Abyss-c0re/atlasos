@@ -1,15 +1,1 @@
-# Fail-closed camera / microphone when stock LOS sensor privacy is ON.
-# Root via init (hybrid system image) — no Magisk / no app root.
-# See docs/project/SENSOR_PRIVACY_SYSTEM.md
-
-service titan2-sensor-privacy /system/bin/titan2-sensor-privacy.sh
-    class late_start
-    user root
-    group root system media audio camera
-    disabled
-
-on property:sys.boot_completed=1
-    start titan2-sensor-privacy
-
-on property:dev.bootcomplete=1
-    start titan2-sensor-privacy
+../../../patches/init/titan2-sensor-privacy.rc
