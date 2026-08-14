@@ -11,24 +11,27 @@ linked MisterZtr Lineage tree
     + packages/gsi_product  (PRODUCT_PACKAGES)
         → systemimage (GSI)
 stock Unihertz vendor (your zip, linked)
-    + residual OEM (IMS SAFE, camera, eSIM, keylayout/idc until in GSI)
+    + residual OEM (IMS SAFE, eSIM, keylayout/idc until in GSI)
         → hybrid super.img
 ```
 
+Included classes are **on by default** and remain kitchen/flavor toggles.
+
 ## Match list (current device)
 
-| Class | Owner | Notes |
-|-------|-------|-------|
-| Mouse Mode / pad | `titan2-touchpadd` INPROC_PARK, pad-only | GSI 0040 + stage; inject on pin 20260804 |
-| Home short | Controls `GLOBAL_ACTION_HOME` | TitanKey scan 580 |
-| Recents long | Controls `GLOBAL_ACTION_RECENTS` | Never `am start RecentsActivity` |
-| HID | USB gadget + HID app | Independent of APK inject |
-| Atlas | Terminal + Debian plane | No proprietary CLIs in image |
-| Nanobot | Grok + LAN / on-device models | Model weights not in git |
-| CubeContact | Optional rear lattice | No hive |
-| UI | cube-ux + square icon mask + gsi_source 0010/0050/0060/0070 | System-wide |
-| FM / IR | libs + wrapper | No China IR app |
-| IMS | SAFE v2 only | No native-lib dual inject |
+| Class | Default | Notes |
+|-------|---------|-------|
+| Mouse Mode / pad | on | `titan2-touchpadd` INPROC_PARK; inject on pin 20260804 |
+| Home / Recents | on | Controls `GLOBAL_ACTION_*` only |
+| HID | on | USB gadget + HID app |
+| Atlas | on | Terminal + Debian plane |
+| Nanobot | on | Grok + LAN / on-device; weights not in git |
+| CubeContact | on | Rear lattice only |
+| UI | on | cube-ux + square icon mask + gsi_source 0010/0050/0060/0070 |
+| FM / IR | on | libs + wrapper; no China IR app |
+| IMS | on | SAFE v2 only |
+| OpenEUICC | on | fetched / your build; APK not in git |
+| microG | on | flavor `microg`; APKs fetched |
 
 ## Not in the product image
 

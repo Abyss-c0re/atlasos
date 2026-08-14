@@ -19,7 +19,7 @@ features:
   square_chrome: false        # full zero-radius RROs stay off
   fm_ir: true
   openeuicc: true
-  stock_camera: true          # from your stock zip, not this git
+  microg: true                # flavor default; fetch at build, not in git
   ims_safe: true
   clanker: false
   hive: false
