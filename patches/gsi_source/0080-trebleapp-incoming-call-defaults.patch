@@ -1,0 +1,30 @@
+diff --git a/app/src/main/java/me/phh/treble/app/Misc.kt b/app/src/main/java/me/phh/treble/app/Misc.kt
+@@ -301,7 +301,7 @@
+                 }
+             }
+             MiscSettings.allowBinderThread -> {
+-                val value = sp.getBoolean(key, false)
++                val value = sp.getBoolean(key, true)
+                 SystemProperties.set("persist.sys.phh.allow_binder_thread_on_incoming_calls", if(value) "1" else "0")
+             }
+             MiscSettings.statusbarpaddingtop -> {
+@@ -448,5 +448,9 @@
+         spListener.onSharedPreferenceChanged(sp, MiscSettings.noHwcomposer)
+         spListener.onSharedPreferenceChanged(sp, MiscSettings.storageFUSE)
+         spListener.onSharedPreferenceChanged(sp, MiscSettings.dt2w)
++        // Titan 2: incoming MT requires these ON. Seed prefs once; honor explicit off.
++        if (!sp.contains(MiscSettings.allowBinderThread))
++            sp.edit().putBoolean(MiscSettings.allowBinderThread, true).apply()
++        spListener.onSharedPreferenceChanged(sp, MiscSettings.allowBinderThread)
+     }
+ }
+diff --git a/app/src/main/res/xml/pref_misc.xml b/app/src/main/res/xml/pref_misc.xml
+@@ -223,7 +223,7 @@
+     </PreferenceCategory>
+     <PreferenceCategory android:title="Telephony">
+         <SwitchPreference
+-            android:defaultValue="false"
++            android:defaultValue="true"
+             android:key="key_misc_allow_binder_thread_on_incoming_calls"
+             android:summary="May fix 4G calling\nRequires a reboot"
+             android:title="Allow binder thread on incoming calls" />

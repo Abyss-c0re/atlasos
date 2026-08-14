@@ -11,9 +11,14 @@ linked MisterZtr Lineage tree
     + packages/gsi_product  (PRODUCT_PACKAGES)
         → systemimage (GSI)
 stock Unihertz vendor (your zip, linked)
-    + residual OEM (IMS SAFE, eSIM, keylayout/idc until in GSI)
+    + residual OEM (IMS SAFE, eSIM — not the mouse driver)
         → hybrid super.img
 ```
+
+**Mouse Mode** is compiled into the GSI: musl ELF + `titan2-touchpadd.rc` +
+`/system/usr/idc/touchPad.idc` (ignore). AtlasOS does not inject that ELF
+onto a finished image. `./scripts/build.sh` verifies the tree is staged
+before `m systemimage`.
 
 Included classes are **on by default** and remain kitchen/flavor toggles.
 
@@ -21,7 +26,7 @@ Included classes are **on by default** and remain kitchen/flavor toggles.
 
 | Class | Default | Notes |
 |-------|---------|-------|
-| Mouse Mode / pad | on | `titan2-touchpadd` INPROC_PARK; inject on pin 20260804 |
+| Mouse Mode / pad | on | GSI `PRODUCT_PACKAGES` `titan2-touchpadd` (INPROC_PARK). Inject off on AtlasOS builds. |
 | Home / Recents | on | Controls `GLOBAL_ACTION_*` only |
 | HID | on | USB gadget + HID app |
 | Atlas | on | Terminal + Debian plane |

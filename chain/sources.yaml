@@ -36,6 +36,7 @@ links:
   titan2_touchpadd:
     url: https://github.com/Abyss-c0re/titan2-touchpadd
     mirror: https://gitea.angry.im/Abyss-c0re/titan2-touchpadd
+    ssh: ssh://git@gitea-ssh.angry.im:2222/Abyss-c0re/titan2-touchpadd.git
     upstream: https://gitea.angry.im/PeterGSI/titan2-touchpadd
     role: pad_runtime
     upload: never
@@ -64,6 +65,7 @@ pin:
   # Live matching pin (workshop). Next AtlasOS export gets a new date.
   live_pin: "20260804"
   note: >
-    20260804 GSI image does not yet contain titan2-touchpadd.
-    SERIES 0040 + stage lands it on the next pipeline export.
-    Hybrid WITH_TOUCHPADD_INJECT=1 until that new pin is boot-proven.
+    AtlasOS next export patches MISTERZTR_TREE (0040 + stage) and builds
+    titan2-touchpadd into the GSI. That pack uses WITH_TOUCHPADD_INJECT=0.
+    Already-flashed workshop pin 20260804 still has no ELF — inject stays
+    on for that image only.

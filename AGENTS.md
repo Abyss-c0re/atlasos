@@ -17,8 +17,9 @@
 - Link Lineage / MisterZtr / stock. Never `git add` those trees.
 - Cube = icon mask + `titan2-cube-ux` only. No hive, prophecy, or Clanker.
 - No secrets: `./scripts/check_clean.sh` must pass before commit.
-- Live pin `20260804` still needs hybrid touchpadd inject until a *new* GSI
-  export is boot-proven. Do not flip inject off on that pin.
+- AtlasOS mouse driver: stage `titan2-touchpadd` into `MISTERZTR_TREE` and
+  compile it into the GSI (`PRODUCT_PACKAGES` + IDC). Do **not** hybrid-inject
+  the ELF on an AtlasOS-built image. Workshop pin `20260804` still injects.
 - Product Recents / Home = Titan Controls `GLOBAL_ACTION_*`. Never
   `am start RecentsActivity`. Never `keyevent 187` as Recents.
 

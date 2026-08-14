@@ -116,14 +116,27 @@ ensure_chains() {
   iptables -t nat -N titan2_vhn_POSTROUTING 2>/dev/null || true
   iptables -t nat -C POSTROUTING -j titan2_vhn_POSTROUTING 2>/dev/null \
     || iptables -t nat -I POSTROUTING -j titan2_vhn_POSTROUTING 2>/dev/null || true
+  iptables -t nat -N titan2_vhn_PREROUTING 2>/dev/null || true
+  iptables -t nat -C PREROUTING -j titan2_vhn_PREROUTING 2>/dev/null \
+    || iptables -t nat -I PREROUTING -j titan2_vhn_PREROUTING 2>/dev/null || true
   iptables -t mangle -N titan2_vhn_FORWARD 2>/dev/null || true
   iptables -t mangle -C FORWARD -j titan2_vhn_FORWARD 2>/dev/null \
     || iptables -t mangle -I FORWARD -j titan2_vhn_FORWARD 2>/dev/null || true
+  # Must sit in front of tetherctrl_FORWARD's terminal DROP.
+  iptables -N titan2_vhn_fwd 2>/dev/null || true
+  iptables -C FORWARD -j titan2_vhn_fwd 2>/dev/null \
+    || iptables -I FORWARD -j titan2_vhn_fwd 2>/dev/null || true
+  iptables -N titan2_vhn_INPUT 2>/dev/null || true
+  iptables -C INPUT -j titan2_vhn_INPUT 2>/dev/null \
+    || iptables -I INPUT -j titan2_vhn_INPUT 2>/dev/null || true
 }
 
 flush_chains() {
   iptables -t nat -F titan2_vhn_POSTROUTING 2>/dev/null || true
+  iptables -t nat -F titan2_vhn_PREROUTING 2>/dev/null || true
   iptables -t mangle -F titan2_vhn_FORWARD 2>/dev/null || true
+  iptables -F titan2_vhn_fwd 2>/dev/null || true
+  iptables -F titan2_vhn_INPUT 2>/dev/null || true
 }
 
 stop_dns() {
@@ -157,13 +170,14 @@ start_dns() {
   : >"$LOG" 2>/dev/null || true
   chmod 666 "$LOG" 2>/dev/null || true
   # DNS only — Android still owns DHCP/leases on SoftAP.
-  # Upstream: Tailscale MagicDNS first, then public (via exit node when TUN default).
+  # Do NOT use --bind-interfaces: that sources upstream queries from $gw,
+  # and Android has no default in main for the SoftAP address (VPN is
+  # policy-routed iif lo). Upstream then hits unreachable → silent DNS fail.
   dnsmasq \
     --pid-file="$PIDF" \
     --conf-file=/dev/null \
     --interface="$ifc" \
     --listen-address="$gw" \
-    --bind-interfaces \
     --except-interface=lo \
     --no-dhcp-interface=* \
     --port=53 \
@@ -215,26 +229,78 @@ apply_once() {
     return 0
   fi
 
+  # Android IpServer often assigns the prefix network address (.0). Clients
+  # treat that as broadcast and never install a unicast gateway.
+  case "$gw" in
+    *.0)
+      host=${gw%.*}.1
+      ip addr del "$cidr" dev "$ifc" 2>/dev/null || true
+      ip addr add "$host/24" broadcast "${gw%.*}.255" dev "$ifc" 2>/dev/null || true
+      gw=$host
+      cidr=$host/24
+      log "moved softap $ifc off .0 → $gw"
+      ;;
+  esac
+
   # MTU: SoftAP 1500 + TUN 1280 → blackhole / unreplied SYN without clamp.
   ip link set "$ifc" mtu "$mtu" 2>/dev/null || true
   for leg in ap0 ap1 softap0; do
     [ -d "/sys/class/net/$leg" ] && ip link set "$leg" mtu "$mtu" 2>/dev/null || true
   done
 
+  echo 0 >/proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null || true
+  echo 0 >/proc/sys/net/ipv4/conf/default/rp_filter 2>/dev/null || true
+  echo 0 >/proc/sys/net/ipv4/conf/"$ifc"/rp_filter 2>/dev/null || true
+  echo 1 >/proc/sys/net/ipv4/conf/all/forwarding 2>/dev/null || true
+  echo 1 >/proc/sys/net/ipv4/conf/"$ifc"/forwarding 2>/dev/null || true
+  [ -n "$tun" ] && echo 0 >/proc/sys/net/ipv4/conf/"$tun"/rp_filter 2>/dev/null || true
+  [ -n "$tun" ] && echo 1 >/proc/sys/net/ipv4/conf/"$tun"/forwarding 2>/dev/null || true
+  # Android tether BPF (clsact) eats SoftAP frames before FORWARD. Strip it.
+  tc qdisc del dev "$ifc" clsact 2>/dev/null || true
+  for leg in ap0 ap1 softap0 wlan1 wlan2; do
+    [ -d "/sys/class/net/$leg" ] && tc qdisc del dev "$leg" clsact 2>/dev/null || true
+  done
+  # SoftAP-sourced packets must use TUN. pref 80 beats Android fwmark 0 → ap_br table.
+  # Replies arrive iif tun0 with src=internet; Android rule 12000 (iif tun0 →
+  # local_network) has no LAN route, so they die as unreachable unless we
+  # install a higher-pref return rule + LAN in both tables.
+  if [ -n "$tun" ] && [ -n "$net" ]; then
+    ip route replace "$net" dev "$ifc" table "$tun" 2>/dev/null || true
+    ip route replace default dev "$tun" table "$tun" 2>/dev/null || true
+    ip route replace "$net" dev "$ifc" table local_network 2>/dev/null || true
+    ip rule del pref 70 2>/dev/null || true
+    ip rule add iif "$tun" to "$net" lookup "$tun" pref 70 2>/dev/null || true
+    ip rule del pref 80 2>/dev/null || true
+    ip rule add from "$net" lookup "$tun" pref 80 2>/dev/null || true
+    ip rule del from "$net" lookup "$tun" pref 20900 2>/dev/null || true
+    ip rule add from "$net" lookup "$tun" pref 20900 2>/dev/null || true
+  fi
+
   flush_chains
   if [ -n "$tun" ] && [ -n "$net" ]; then
     iptables -t nat -A titan2_vhn_POSTROUTING -s "$net" -o "$tun" -j MASQUERADE 2>/dev/null || true
+    iptables -A titan2_vhn_fwd -i "$ifc" -o "$tun" -j ACCEPT 2>/dev/null || true
+    iptables -A titan2_vhn_fwd -i "$tun" -o "$ifc" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
   fi
   iptables -t mangle -A titan2_vhn_FORWARD -p tcp --tcp-flags SYN,RST SYN \
     -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+  iptables -A titan2_vhn_INPUT -i "$ifc" -p icmp -j ACCEPT 2>/dev/null || true
+  iptables -A titan2_vhn_INPUT -i "$ifc" -p udp --dport 53 -j ACCEPT 2>/dev/null || true
+  iptables -A titan2_vhn_INPUT -i "$ifc" -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
 
+  # Transparent DNS: rewrite SoftAP :53 to MagicDNS (then public) via TUN.
+  # Local dnsmasq is a bonus; Android policy routing often makes it mute.
+  stop_dns
+  iptables -t nat -A titan2_vhn_PREROUTING -i "$ifc" -p udp --dport 53 \
+    -j DNAT --to-destination 1.1.1.1:53 2>/dev/null || true
+  iptables -t nat -A titan2_vhn_PREROUTING -i "$ifc" -p tcp --dport 53 \
+    -j DNAT --to-destination 1.1.1.1:53 2>/dev/null || true
+  dns=dnat
   if start_dns "$gw" "$ifc"; then
-    printf 'state=active softap=%s gw=%s net=%s tun=%s mtu=%s dns=up\n' \
-      "$ifc" "$gw" "$net" "${tun:-none}" "$mtu" >"$STATUS"
-  else
-    printf 'state=partial softap=%s gw=%s net=%s tun=%s mtu=%s dns=down\n' \
-      "$ifc" "$gw" "$net" "${tun:-none}" "$mtu" >"$STATUS"
+    dns=up
   fi
+  printf 'state=active softap=%s gw=%s net=%s tun=%s mtu=%s dns=%s\n' \
+    "$ifc" "$gw" "$net" "${tun:-none}" "$mtu" "$dns" >"$STATUS"
   chmod 666 "$STATUS" 2>/dev/null || true
   log "apply softap=$ifc gw=$gw tun=${tun:-none} mtu=$mtu"
   return 0
@@ -243,6 +309,7 @@ apply_once() {
 do_stop() {
   stop_dns
   flush_chains
+  ip rule del pref 20900 2>/dev/null || true
   # Leave chains hooked empty so re-apply is cheap; optional full detach:
   # iptables -t nat -D POSTROUTING -j titan2_vhn_POSTROUTING
   printf 'state=stopped\n' >"$STATUS" 2>/dev/null || true

@@ -22,7 +22,7 @@ or hive product.
 ```bash
 git clone <this-repo> AtlasOS && cd AtlasOS
 ./scripts/bootstrap.sh                 # repo init/sync Lineage + MisterZtr + our SERIES
-./scripts/build.sh --flavor vanilla    # default
+./scripts/build.sh --flavor vanilla    # GSI; mouse driver compiled in (not inject)
 ./scripts/build.sh --flavor microg     # + fetched microG (not in git)
 ./scripts/build.sh --flavor gapps      # MisterZtr bgN4 lunch, if the tree has it
 ```

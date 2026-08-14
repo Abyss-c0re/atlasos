@@ -1,7 +1,8 @@
 // Prebuilt touchpadd for MisterZtr systemimage (OPTIMIZE Phase 1.5).
-// Confirmed Mouse Mode path (2026-08-13 human): INPROC_PARK + pad-only +
-// titan2-virtual-mouse. Live pin 20260804 still hybrid-injects this ELF.
+// AtlasOS: stage into the tree, then m systemimage. Not hybrid inject.
+// Confirmed Mouse Mode: INPROC_PARK + pad-only + titan2-virtual-mouse.
 // SoT binary: third_party/titan2-touchpadd/bin/titan2-touchpadd
+// IDC: PRODUCT_COPY_FILES in titanus2.mk → /system/usr/idc
 // Stage: ./scripts/misterztr/stage_gsi_product.sh → vendor/titanus2/prebuilts/…
 
 cc_prebuilt_binary {

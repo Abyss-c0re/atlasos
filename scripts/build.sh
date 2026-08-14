@@ -99,8 +99,19 @@ if [ ! -x "$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd" ]; then
   "$ROOT/scripts/build_touchpadd.sh"
 fi
 "$ROOT/scripts/check_clean.sh"
+
+# Mouse driver: patch/stage the Lineage tree, then compile it into systemimage.
+# AtlasOS does not hybrid-inject titan2-touchpadd.
+info "stage + verify mouse driver in MISTERZTR_TREE (not inject)"
+if [ ! -f "$ROOT/apps/titan_controls/TitanControls-v2.apk" ] \
+   && [ ! -f "$ROOT/apps/titan_controls/TitanControls.apk" ]; then
+  export SKIP_PREFLIGHT=1
+  info "no APKs in this clone — mouse stage only (SKIP_PREFLIGHT=1)"
+fi
 FORCE_TITAN_REPATCH="${FORCE_TITAN_REPATCH:-0}" \
   "$ROOT/scripts/misterztr/apply_titan_source_patches.sh"
+"$ROOT/scripts/misterztr/verify_gsi_product_staged.sh" --mouse \
+  || die "touchpadd not staged into the tree — refuse inject fallback"
 
 info "GSI systemimage ($FLAVOR)"
 "$ROOT/scripts/misterztr/pipeline.sh" --from=patch
@@ -111,13 +122,16 @@ if [ "$GSI_ONLY" = "1" ]; then
 fi
 
 if [ -n "${STOCK_ZIP:-}" ] && [ -f "${STOCK_ZIP}" ]; then
-  info "STOCK_ZIP set — hybrid pack is still a local vendor attach"
-  info "AtlasOS does not ship Unihertz firmware. Packer: workshop kitchen if present."
+  info "STOCK_ZIP set — hybrid vendor attach; mouse stays in the GSI"
   WORKSHOP="${TITANUS2_WORKSHOP:-$ROOT/../titanus2}"
-  if [ -x "$WORKSHOP/scripts/rom_variant.py" ]; then
-    exec "$WORKSHOP/scripts/rom_variant.py" build --preset lab_rootless
+  GSI_PIN=""
+  [ -f "$ROOT/out/misterztr_exported_gsi.path" ] && GSI_PIN="$(cat "$ROOT/out/misterztr_exported_gsi.path")"
+  if [ -x "$WORKSHOP/scripts/rom_variant.py" ] && [ -n "$GSI_PIN" ] && [ -f "$GSI_PIN" ]; then
+    info "pack $GSI_PIN WITH_TOUCHPADD_INJECT=0"
+    exec env WITH_TOUCHPADD_INJECT=0 \
+      "$WORKSHOP/scripts/rom_variant.py" build --preset lab_rootless --gsi "$GSI_PIN"
   fi
-  info "no packer in this clone — GSI export is the standalone product"
+  info "no packer / no exported GSI — GSI file is the standalone product"
 else
   info "no STOCK_ZIP — GSI only (hybrid needs your region-matching Unihertz zip)"
 fi

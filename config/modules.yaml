@@ -23,12 +23,13 @@ modules:
     path: third_party/titan2-touchpadd
     remote: https://github.com/Abyss-c0re/titan2-touchpadd.git
     mirror: https://gitea.angry.im/Abyss-c0re/titan2-touchpadd.git
+    ssh: ssh://git@gitea-ssh.angry.im:2222/Abyss-c0re/titan2-touchpadd.git
     upstream: https://gitea.angry.im/PeterGSI/titan2-touchpadd.git
     ref: main
     status: overlay
     reusable: true
     overlay: third_party/titan2-touchpadd/idc
-    note: Public GitHub remote. Gitea is the lab mirror. ELF built locally (not in git).
+    note: Public GitHub remote. Gitea SSH is gitea-ssh.angry.im:2222 (not Cloudflare :22). ELF built locally (not in git).
 
   - name: openeuicc
     role: eSIM LPA

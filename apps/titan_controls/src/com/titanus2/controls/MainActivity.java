@@ -174,9 +174,20 @@ public class MainActivity extends Activity {
         UiKit.navRow(root, "Developer",
             "Auto Dev · Remote ADB · USB ADB · debug",
             () -> startActivity(new Intent(this, DevToolsActivity.class)));
-        // Firewall cube — Settings page only (no separate launcher APK).
-        UiKit.navRow(root, "Firewall", "Under VPN · apps · services · binaries",
-            () -> startActivity(new Intent(this, FirewallActivity.class)));
+        // Network wall lives in Settings (TitanNetFw). Hub only deep-links.
+        UiKit.navRow(root, "Firewall", "Network · Settings",
+            () -> {
+                try {
+                    startActivity(new Intent("com.titanus2.netfw.FIREWALL")
+                        .setPackage("com.titanus2.netfw"));
+                } catch (Exception e) {
+                    try {
+                        startActivity(new Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS));
+                    } catch (Exception e2) {
+                        startActivity(new Intent(this, FirewallActivity.class));
+                    }
+                }
+            });
         // LAW: every build stamps CHANGELOG → assets; hub must expose it.
         String verLine = "build";
         try {
@@ -257,8 +268,12 @@ public class MainActivity extends Activity {
                     startActivity(new Intent(this, DevToolsActivity.class));
                     return true;
                 case KeyEvent.KEYCODE_F:
-                    // F = Firewall (was follow toggle; follow stays hub button only)
-                    startActivity(new Intent(this, FirewallActivity.class));
+                    try {
+                        startActivity(new Intent("com.titanus2.netfw.FIREWALL")
+                            .setPackage("com.titanus2.netfw"));
+                    } catch (Exception e) {
+                        startActivity(new Intent(this, FirewallActivity.class));
+                    }
                     return true;
                 case KeyEvent.KEYCODE_G:
                     startActivity(new Intent(this, ChangelogActivity.class));

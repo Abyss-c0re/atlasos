@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.titanus2.netfw"
+    android:versionCode="3"
+    android:versionName="1.2-luci"
+    android:sharedUserId="android.uid.system">
+    <uses-sdk android:minSdkVersion="34" android:targetSdkVersion="35"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <application
+        android:label="Network"
+        android:persistent="true"
+        android:directBootAware="true"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true"
+        android:theme="@android:style/Theme.DeviceDefault.Settings">
+        <service
+            android:name=".TitanNetFwService"
+            android:exported="true"
+            android:permission="android.permission.NETWORK_SETTINGS">
+            <intent-filter>
+                <action android:name="com.titanus2.netfw.BIND"/>
+            </intent-filter>
+        </service>
+        <activity
+            android:name=".RouterActivity"
+            android:exported="true"
+            android:label="Router"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density">
+            <intent-filter>
+                <action android:name="com.android.settings.action.EXTRA_SETTINGS"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.titanus2.netfw.ROUTER"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <meta-data android:name="com.android.settings.category"
+                android:value="com.android.settings.category.ia.wireless"/>
+            <meta-data android:name="com.android.settings.title" android:value="Router"/>
+        </activity>
+        <activity
+            android:name=".FirewallActivity"
+            android:exported="true"
+            android:label="Firewall"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density">
+            <intent-filter>
+                <action android:name="com.android.settings.action.EXTRA_SETTINGS"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.titanus2.netfw.FIREWALL"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <meta-data android:name="com.android.settings.category"
+                android:value="com.android.settings.category.ia.wireless"/>
+            <meta-data android:name="com.android.settings.title" android:value="Firewall"/>
+        </activity>
+    </application>
+</manifest>

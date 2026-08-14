@@ -2,14 +2,21 @@
 # Staged into MISTERZTR_TREE by scripts/misterztr/stage_gsi_product.sh
 # SoT: docs/project/OPTIMIZE_SOURCE_PRODUCT.md · SOURCE_PRODUCT.md
 #
-# Live pin 20260804 systemimage does NOT contain these packages.
-# Hybrid WITH_TOUCHPADD_INJECT=1 until a *new* exported GSI is boot-proven.
+# AtlasOS path: mouse driver is this PRODUCT_PACKAGES + PRODUCT_COPY_FILES,
+# applied to the Lineage tree *before* systemimage. Do not hybrid-inject the ELF
+# onto an AtlasOS-built GSI (WITH_TOUCHPADD_INJECT=0 on that pack).
+# Workshop pin 20260804 image still lacks the ELF — that pin keeps inject ON.
 # Confirmed Mouse Mode ELF (2026-08-13): INPROC_PARK + pad-only + titan2-virtual-mouse.
 
 # Pad runtime SoT (Phase 1.5): musl prebuilt + disabled init (pad-agent starts mouse).
 PRODUCT_PACKAGES += \
     titan2-touchpadd \
     titan2-touchpadd.rc
+
+# InputReader IDC — /system/usr/idc (not /system/etc). ignore = touchpadd owns pad.
+PRODUCT_COPY_FILES += \
+    vendor/titanus2/prebuilts/titan2-touchpadd/touchPad.idc:$(TARGET_COPY_OUT_SYSTEM)/usr/idc/touchPad.idc \
+    vendor/titanus2/prebuilts/titan2-touchpadd/sub_touch.idc:$(TARGET_COPY_OUT_SYSTEM)/usr/idc/sub_touch.idc
 
 # Phase 2 apps (prebuilt APKs + privapp XML). Staged by stage_gsi_product.sh.
 # Hybrid APK inject residual: WITH_CONTROLS/USB_HID/CUBE=0 (GSI has apps).
@@ -84,8 +91,22 @@ PRODUCT_PACKAGES += \
     titan2-sensor-privacy.sh \
     titan2-fw \
     titan2-fw.sh \
+    titan2-tether.sh \
+    titan2-fw-observe \
     titan2-remote-adb.sh \
     titan2-vpn-hotspot.sh \
+    titan2-netfw.rc \
+    TitanNetFw \
     titan2-pad-agent.rc \
     titan2-ims.rc \
     titan2-sensor-privacy.rc
+
+# product.prop (0020) is not read on this GSI bind layout — stamp system.
+PRODUCT_SYSTEM_PROPERTIES += \
+    ro.titanus2.gsi_source=1 \
+    ro.titanus2.maintainer=Abyss-c0re
+
+# product.prop (0020) is not read on this GSI bind layout — stamp system.
+PRODUCT_SYSTEM_PROPERTIES += \
+    ro.titanus2.gsi_source=1 \
+    ro.titanus2.maintainer=Abyss-c0re

@@ -11,7 +11,7 @@
 #   SKIP_SYNC=1 ./scripts/misterztr/pipeline.sh
 #
 # Tree is local (MISTERZTR_TREE). Titan AOSP deltas: patches/gsi_source/.
-# Hybrid inject still owns priv-apps / OEM after export.
+# AtlasOS mouse driver is in the GSI (not hybrid inject). OEM residual only.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"

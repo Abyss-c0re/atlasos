@@ -20,6 +20,9 @@ else
   info "clone $REMOTE → $DEST"
   git clone "$REMOTE" "$DEST"
 fi
+if [ -x "$DEST/scripts/push_both.sh" ]; then
+  "$DEST/scripts/push_both.sh" --setup >/dev/null
+fi
 
 rel="$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$DEST" "$HERE")"
 ln -sfn "$rel" "$HERE/checkout"

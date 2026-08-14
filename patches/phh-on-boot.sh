@@ -181,8 +181,8 @@ if [ -f /vendor/bin/mtkmal ]; then
     setprop persist.dbg.vt_avail_ovr 1 2>/dev/null || true
     setprop persist.dbg.wfc_avail_ovr 1 2>/dev/null || true
     setprop persist.dbg.allow_ims_off 1 2>/dev/null || true
-    # Default ON for MT (phh): allow IMS callbacks on binder thread for incoming calls.
-    # Safe setprop only — does not install packages / not a TrebleApp boot re-apply path.
+    # Incoming MT: binder thread ON. Do NOT set restart_ril=true on this SoC
+    # (vndk.rc restarts vendor.ril-daemon-mtk and UICC apps drop).
     setprop persist.sys.phh.allow_binder_thread_on_incoming_calls 1 2>/dev/null || true
     # NEVER set unsupported.commands=182 (mediatek/huawei) — corrupt/wipe risk.
     setprop persist.sys.bt.unsupported.commands "" 2>/dev/null || true

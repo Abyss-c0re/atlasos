@@ -6,6 +6,21 @@ OUT_DIR="$ROOT/out"
 APP_ASSETS="$(cd "$ROOT/../.." && pwd)/apps/titan_atlas/assets/bin"
 mkdir -p "$OUT_DIR" "$APP_ASSETS"
 
+# Link-farm / same-inode: cp -f errors if src and dest are one file.
+# Dangling dest symlink (workshop → missing AtlasOS asset): replace with real copy.
+_cp() {
+  local src=$1 dest=$2
+  if [ -L "$dest" ]; then
+    if [ -e "$dest" ] && [ "$src" -ef "$dest" ]; then
+      return 0
+    fi
+    rm -f "$dest"
+  elif [ -e "$dest" ] && [ "$src" -ef "$dest" ]; then
+    return 0
+  fi
+  cp -f "$src" "$dest"
+}
+
 NDK="${ANDROID_NDK_HOME:-${ANDROID_NDK:-}}"
 if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then
   NDK=$(ls -d "$HOME/Android/Sdk/ndk"/* 2>/dev/null | sort -V | tail -1 || true)
@@ -36,7 +51,7 @@ build_one() {
     -I"$ROOT/native" \
     -o "$out" "$src"
   chmod 755 "$out"
-  cp -f "$out" "$APP_ASSETS/$name"
+  _cp "$out" "$APP_ASSETS/$name"
   echo "OK $out ($(stat -c%s "$out") bytes) VER=$use_ver → assets/bin/$name"
 }
 
@@ -62,8 +77,8 @@ if [ -f "$ROOT/native/atlas_sudo.c" ]; then
   build_one atlas-sudo "$ROOT/native/atlas_sudo.c"
   # PATH names sudo + su = agent clients only. Real KernelSU is always absolute
   # /system/bin/su after grant — never free interactive root without biometrics.
-  cp -f "$OUT_DIR/atlas-sudo" "$APP_ASSETS/sudo"
-  cp -f "$OUT_DIR/atlas-sudo" "$APP_ASSETS/su"
+  _cp "$OUT_DIR/atlas-sudo" "$APP_ASSETS/sudo"
+  _cp "$OUT_DIR/atlas-sudo" "$APP_ASSETS/su"
   chmod 755 "$APP_ASSETS/sudo" "$APP_ASSETS/su"
   echo "OK sudo/su agent-clients → assets/bin (real su only after agent grant)"
 fi
@@ -90,7 +105,7 @@ if [ "${ATLAS_BUILD_SEAT:-0}" = "1" ]; then
 fi
 # pam_exec helper for Debian hybrid real sudo
 if [ -f "$ROOT/scripts/atlas-auth-pam.sh" ]; then
-  cp -f "$ROOT/scripts/atlas-auth-pam.sh" "$APP_ASSETS/atlas-auth-pam"
+  _cp "$ROOT/scripts/atlas-auth-pam.sh" "$APP_ASSETS/atlas-auth-pam"
   chmod 755 "$APP_ASSETS/atlas-auth-pam"
 fi
 rm -f "$APP_ASSETS/grok-atlas"
@@ -106,7 +121,7 @@ SO_OUT="$OUT_DIR/libatlasterm.so"
   -o "$SO_OUT" \
   "$ROOT/native/termgrid.c" "$ROOT/native/termgrid_jni.c"
 chmod 755 "$SO_OUT"
-cp -f "$SO_OUT" "$APP_ASSETS/libatlasterm.so"
+_cp "$SO_OUT" "$APP_ASSETS/libatlasterm.so"
 echo "OK $SO_OUT ($(stat -c%s "$SO_OUT") bytes) → assets/bin/libatlasterm.so"
 
 # Termux-derived PTY JNI (C) — real /dev/ptmx for TerminalSession
@@ -114,29 +129,29 @@ PTY_SO="$OUT_DIR/libatlaspty.so"
 "$CC" -O2 -fPIC -shared -D_GNU_SOURCE \
   -o "$PTY_SO" "$ROOT/native/termux_pty.c" -llog
 chmod 755 "$PTY_SO"
-cp -f "$PTY_SO" "$APP_ASSETS/libatlaspty.so"
+_cp "$PTY_SO" "$APP_ASSETS/libatlaspty.so"
 echo "OK $PTY_SO ($(stat -c%s "$PTY_SO") bytes) → assets/bin/libatlaspty.so"
 
 # Keep hybrid script staged
 if [ -f "$ROOT/scripts/atlas-hybrid.sh" ]; then
-  cp -f "$ROOT/scripts/atlas-hybrid.sh" "$APP_ASSETS/atlas-hybrid.sh"
+  _cp "$ROOT/scripts/atlas-hybrid.sh" "$APP_ASSETS/atlas-hybrid.sh"
   chmod 755 "$APP_ASSETS/atlas-hybrid.sh"
 fi
 
 REPO="$(cd "$ROOT/../.." && pwd)"
 if [ -f "$REPO/packages/titan2_nanobot/bin/nanobot" ]; then
-  cp -f "$REPO/packages/titan2_nanobot/bin/nanobot" "$APP_ASSETS/nanobot"
+  _cp "$REPO/packages/titan2_nanobot/bin/nanobot" "$APP_ASSETS/nanobot"
   echo "staged nanobot"
 fi
 if [ -f "$REPO/packages/quest_usbip_host/assets/quest-usbip-host" ]; then
-  cp -f "$REPO/packages/quest_usbip_host/assets/quest-usbip-host" "$APP_ASSETS/quest-usbip-host"
+  _cp "$REPO/packages/quest_usbip_host/assets/quest-usbip-host" "$APP_ASSETS/quest-usbip-host"
   echo "staged quest-usbip-host"
 fi
 # static bash if present
 if [ -x "$APP_ASSETS/bash" ]; then
   echo "bash already in assets"
 elif [ -f /tmp/bash_stage/bash.cand ]; then
-  cp -f /tmp/bash_stage/bash.cand "$APP_ASSETS/bash"
+  _cp /tmp/bash_stage/bash.cand "$APP_ASSETS/bash"
   chmod 755 "$APP_ASSETS/bash"
   echo "staged bash"
 fi

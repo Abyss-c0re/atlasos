@@ -160,6 +160,8 @@ apply_ims_props() {
     ;;
   esac
 
+  # Default OFF. persist.sys.phh.restart_ril=true restarts vendor.ril-daemon-mtk
+  # (vndk.rc) and on this SoC kills UICC / hides SIMs. Only honor explicit plane=1.
   ril=`read_first titan2_tel_restart_ril`; [ -n "$ril" ] || ril=0
   case "$ril" in 1|true|on|ON)
     [ "$LAST_TEL_RIL" = "1" ] || { setprop persist.sys.phh.restart_ril true 2>/dev/null || true; LAST_TEL_RIL=1; }

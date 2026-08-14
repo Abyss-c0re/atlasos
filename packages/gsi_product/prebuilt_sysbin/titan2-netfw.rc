@@ -1,0 +1,4 @@
+# TitanNetFw owns INPUT/OUTPUT/FORWARD. Apply desire after boot.
+on property:sys.boot_completed=1
+    exec u:r:su:s0 root -- /system/bin/titan2-fw apply
+    exec u:r:su:s0 root -- /system/bin/titan2-tether.sh apply

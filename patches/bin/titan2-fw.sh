@@ -19,8 +19,13 @@ DESIRE_EN=$T2/fw.enabled
 DESIRE_DENY=$T2/fw.deny
 DESIRE_BINS=$T2/fw.deny.bins
 DESIRE_SVCS=$T2/fw.deny.svcs
+DESIRE_CLIENTS=$T2/fw.clients
+TETHER_PREFIX=$T2/tether.prefix
 PROTECT=$T2/fw.protect
 CATALOG=$T2/fw.catalog
+CHAIN_FWD=titan2_fw_fwd
+CHAIN_IN=titan2_fw_in
+CHAIN_OUT=titan2_fw_out
 LIVE_RING=$ST/titan2_fw.live.ndjson
 # if ST not writable (non-root hybrid), use atlas tmp
 if ! touch "$ST/.fw_w" 2>/dev/null; then
@@ -38,7 +43,7 @@ CHAIN=titan2_fw
 # Android netd / ConnectivityService hook (empty on Titan lab 2026-08-10)
 PARENT=fw_OUTPUT
 PARENT6=fw_OUTPUT
-VER=0.3.2-cube
+VER=0.4.0-netowner
 
 # Prefer /data/misc/titan2; fall back to tip path when unprivileged.
 if ! mkdir -p "$T2" 2>/dev/null || ! touch "$T2/.w" 2>/dev/null; then
@@ -90,6 +95,8 @@ policy_ensure() {
   [ -f "$DESIRE_DENY" ] || : >"$DESIRE_DENY" 2>/dev/null || true
   [ -f "$DESIRE_BINS" ] || : >"$DESIRE_BINS" 2>/dev/null || true
   [ -f "$DESIRE_SVCS" ] || : >"$DESIRE_SVCS" 2>/dev/null || true
+  [ -f "$DESIRE_CLIENTS" ] || : >"$DESIRE_CLIENTS" 2>/dev/null || true
+  [ -f "$TETHER_PREFIX" ] || _write "$TETHER_PREFIX" "10.191.207.1/24"
   if [ ! -f "$PROTECT" ]; then
     # Never auto-block these without FORCE=1 (commander plane)
     cat >"$PROTECT" <<'PROT'
@@ -135,7 +142,8 @@ pkg com.titanus2.nanobot Nanobot app
 pkg com.tailscale.ipn Tailscale VPN
 CAT
   fi
-  chmod 666 "$DESIRE_EN" "$DESIRE_DENY" "$DESIRE_BINS" "$DESIRE_SVCS" "$PROTECT" "$CATALOG" 2>/dev/null || true
+  chmod 666 "$DESIRE_EN" "$DESIRE_DENY" "$DESIRE_BINS" "$DESIRE_SVCS" \
+    "$DESIRE_CLIENTS" "$TETHER_PREFIX" "$PROTECT" "$CATALOG" 2>/dev/null || true
 }
 
 policy_is_protected() {
@@ -322,7 +330,95 @@ policy_reset() {
   policy_ensure
   _write "$DESIRE_EN" "off"
   : >"$DESIRE_DENY" 2>/dev/null || true
-  chmod 666 "$DESIRE_DENY" 2>/dev/null || true
+  : >"$DESIRE_CLIENTS" 2>/dev/null || true
+  chmod 666 "$DESIRE_DENY" "$DESIRE_CLIENTS" 2>/dev/null || true
+}
+
+_norm_mac() {
+  echo "$1" | tr 'A-F' 'a-f' | tr -d ' -'
+}
+
+_lan_prefix() {
+  p=$(cat "$TETHER_PREFIX" 2>/dev/null | head -1 | tr -d '\r\n ')
+  case "$p" in
+    */*) echo "$p" ;;
+    *) echo "10.191.207.0/24" ;;
+  esac
+}
+
+# Rebuild FORWARD/INPUT/OUTPUT client rules. Called from engine_apply when on.
+engine_apply_clients() {
+  lan=$(_lan_prefix)
+  # Always allow DHCP/DNS/ARP-path to the gateway on INPUT.
+  iptables -A "$CHAIN_IN" -p udp --dport 67:68 -j ACCEPT 2>/dev/null || true
+  iptables -A "$CHAIN_IN" -p udp --dport 53 -j ACCEPT 2>/dev/null || true
+  iptables -A "$CHAIN_IN" -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
+  iptables -A "$CHAIN_IN" -p icmp -j ACCEPT 2>/dev/null || true
+  while read -r mac pol extra; do
+    [ -z "$mac" ] && continue
+    case "$mac" in \#*) continue ;; esac
+    m=$(_norm_mac "$mac")
+    [ ${#m} -eq 12 ] || continue
+    colon=$(echo "$m" | sed 's/../&:/g;s/:$//')
+    case "$pol" in
+      block)
+        iptables -A "$CHAIN_FWD" -m mac --mac-source "$colon" -j DROP 2>/dev/null || true
+        ;;
+      isolate)
+        iptables -A "$CHAIN_FWD" -m mac --mac-source "$colon" -d "$lan" -j ACCEPT 2>/dev/null || true
+        iptables -A "$CHAIN_FWD" -m mac --mac-source "$colon" -s "$lan" -d "$lan" -j DROP 2>/dev/null || true
+        ;;
+      lan-only)
+        iptables -A "$CHAIN_FWD" -m mac --mac-source "$colon" -d "$lan" -j ACCEPT 2>/dev/null || true
+        iptables -A "$CHAIN_FWD" -m mac --mac-source "$colon" -j DROP 2>/dev/null || true
+        ;;
+      bypass-vpn)
+        ip=${extra:-}
+        if [ -n "$ip" ]; then
+          ip rule del from "$ip" lookup main pref 20890 2>/dev/null || true
+          ip rule add from "$ip" lookup main pref 20890 2>/dev/null || true
+        fi
+        ;;
+      allow|'')
+        ;;
+    esac
+  done <"$DESIRE_CLIENTS" 2>/dev/null || true
+}
+
+client_set() {
+  mac=$1
+  pol=$2
+  extra=${3:-}
+  [ -n "$mac" ] && [ -n "$pol" ] || _die "usage: titan2-fw client-<pol> <mac> [ip]"
+  m=$(_norm_mac "$mac")
+  policy_ensure
+  tmp=$ST/titan2_fw.clients.tmp
+  grep -vE "^${m}[[:space:]]|^${mac}[[:space:]]" "$DESIRE_CLIENTS" >"$tmp" 2>/dev/null || : >"$tmp"
+  echo "$m $pol $extra" >>"$tmp"
+  cat "$tmp" >"$DESIRE_CLIENTS" 2>/dev/null || true
+  rm -f "$tmp"
+  chmod 666 "$DESIRE_CLIENTS" 2>/dev/null || true
+  echo "desire: client $m $pol $extra"
+  if [ "$(policy_enabled)" = "on" ] && [ "$(id -u 2>/dev/null)" = "0" ]; then
+    engine_apply
+  fi
+}
+
+cmd_client_list() {
+  policy_ensure
+  echo "# prefix=$(_lan_prefix)"
+  echo "# mac policy extra"
+  cat "$DESIRE_CLIENTS" 2>/dev/null || true
+}
+
+cmd_prefix() {
+  if [ -n "${1:-}" ]; then
+    _write "$TETHER_PREFIX" "$1"
+    setprop persist.sys.titan2.tether_ipv4 "$1" 2>/dev/null || true
+    echo "prefix=$1"
+  else
+    echo "prefix=$(_lan_prefix)"
+  fi
 }
 
 # ─── fw-engine ───────────────────────────────────────────────────────────────
@@ -332,32 +428,50 @@ engine_have_ipt() {
   command -v ip6tables >/dev/null 2>&1 || true
 }
 
-# Create private chain + one jump from Android fw_OUTPUT (idempotent).
+# Own INPUT/OUTPUT/FORWARD first. Also keep uid chain on fw_OUTPUT.
+_hook_head() {
+  tbl=$1
+  chain=$2
+  jump=$3
+  iptables -t "$tbl" -N "$jump" 2>/dev/null || true
+  if ! iptables -t "$tbl" -C "$chain" -j "$jump" 2>/dev/null; then
+    iptables -t "$tbl" -I "$chain" 1 -j "$jump" 2>/dev/null \
+      || iptables -t "$tbl" -A "$chain" -j "$jump" 2>/dev/null || true
+  fi
+}
+
 engine_ensure_hooks() {
   engine_have_ipt
-  # IPv4
   iptables -N "$CHAIN" 2>/dev/null || true
   if ! iptables -C "$PARENT" -j "$CHAIN" 2>/dev/null; then
-    # Prefer insert at head of fw_OUTPUT so we run before any future rules.
     iptables -I "$PARENT" 1 -j "$CHAIN" 2>/dev/null \
       || iptables -A "$PARENT" -j "$CHAIN" 2>/dev/null \
       || _die "cannot attach $CHAIN to $PARENT (IPv4)"
   fi
-  # IPv6 (best-effort; same chain name in ip6tables namespace)
+  _hook_head filter FORWARD "$CHAIN_FWD"
+  _hook_head filter INPUT "$CHAIN_IN"
+  _hook_head filter OUTPUT "$CHAIN_OUT"
   if command -v ip6tables >/dev/null 2>&1; then
     ip6tables -N "$CHAIN" 2>/dev/null || true
     if ! ip6tables -C "$PARENT6" -j "$CHAIN" 2>/dev/null; then
       ip6tables -I "$PARENT6" 1 -j "$CHAIN" 2>/dev/null \
         || ip6tables -A "$PARENT6" -j "$CHAIN" 2>/dev/null || true
     fi
+    ip6tables -N "$CHAIN_FWD" 2>/dev/null || true
+    ip6tables -C FORWARD -j "$CHAIN_FWD" 2>/dev/null \
+      || ip6tables -I FORWARD 1 -j "$CHAIN_FWD" 2>/dev/null || true
   fi
 }
 
 engine_flush() {
   engine_ensure_hooks
   iptables -F "$CHAIN" 2>/dev/null || true
+  iptables -F "$CHAIN_FWD" 2>/dev/null || true
+  iptables -F "$CHAIN_IN" 2>/dev/null || true
+  iptables -F "$CHAIN_OUT" 2>/dev/null || true
   if command -v ip6tables >/dev/null 2>&1; then
     ip6tables -F "$CHAIN" 2>/dev/null || true
+    ip6tables -F "$CHAIN_FWD" 2>/dev/null || true
   fi
 }
 
@@ -444,6 +558,7 @@ engine_apply() {
     engine_deny_uid_live "$uid"
     n=$((n + 1))
   done
+  engine_apply_clients
   log "apply: enabled=on denies=$n"
   _write "$STATUS_FILE" "enforcing enabled=on denies=$n ver=$VER"
   echo "applied: enforcing denies=$n"
@@ -905,7 +1020,11 @@ Usage:
   titan2-fw apply
   titan2-fw reset
   titan2-fw observe [limit]
-  titan2-fw observe live [limit] # NDJSON ring for UI (C cube)
+  titan2-fw observe live [limit]
+  titan2-fw prefix [x.x.x.x/24]
+  titan2-fw client-list
+  titan2-fw client-block|client-allow|client-isolate|client-lan-only <mac>
+  titan2-fw client-bypass-vpn <mac> [ip]
   titan2-fw version
 
 Desire (SoT):
@@ -946,6 +1065,13 @@ case "$cmd" in
   apply)    cmd_apply ;;
   reset)    cmd_reset ;;
   observe|conns) cmd_observe "$@" ;;
+  client-list) cmd_client_list ;;
+  client-block) client_set "$1" block ;;
+  client-allow) client_set "$1" allow ;;
+  client-isolate) client_set "$1" isolate ;;
+  client-lan-only) client_set "$1" lan-only ;;
+  client-bypass-vpn) client_set "$1" bypass-vpn "$2" ;;
+  prefix) cmd_prefix "${1:-}" ;;
   version|-V|--version) cmd_version ;;
   help|-h|--help) cmd_help ;;
   *)

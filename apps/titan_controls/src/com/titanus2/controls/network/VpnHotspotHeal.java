@@ -192,15 +192,10 @@ public final class VpnHotspotHeal {
             + "GW=$(ip -o -4 addr show dev $IFC | awk '{for(i=1;i<=NF;i++) if($i==\"inet\"){split($(i+1),a,\"/\"); print a[1]; exit}}'); "
             + "MTU=1280; [ -n \"$TUN\" ] && MTU=$(cat /sys/class/net/$TUN/mtu 2>/dev/null); "
             + "ip link set $IFC mtu ${MTU:-1280} 2>/dev/null; "
-            + "mkdir -p /data/local/tmp/titan2-vpn-hotspot; "
-            + "kill $(cat /data/local/tmp/titan2-vpn-hotspot/dnsmasq.pid 2>/dev/null) 2>/dev/null; "
-            + "[ -n \"$GW\" ] && command -v dnsmasq >/dev/null && dnsmasq "
-            + "  --pid-file=/data/local/tmp/titan2-vpn-hotspot/dnsmasq.pid "
-            + "  --conf-file=/dev/null --interface=$IFC --listen-address=$GW "
-            + "  --bind-interfaces --except-interface=lo --no-dhcp-interface=* --port=53 "
-            + "  --server=100.100.100.100 --server=1.1.1.1 --server=8.8.8.8 --no-resolv "
-            + "  --cache-size=1000 --user=root --group=root "
-            + "  --log-facility=/data/local/tmp/titan2-vpn-hotspot/dnsmasq.log; "
+            + "iptables -t nat -C PREROUTING -i $IFC -p udp --dport 53 -j DNAT --to-destination 1.1.1.1:53 2>/dev/null "
+            + "  || iptables -t nat -I PREROUTING -i $IFC -p udp --dport 53 -j DNAT --to-destination 1.1.1.1:53; "
+            + "iptables -t nat -C PREROUTING -i $IFC -p tcp --dport 53 -j DNAT --to-destination 1.1.1.1:53 2>/dev/null "
+            + "  || iptables -t nat -I PREROUTING -i $IFC -p tcp --dport 53 -j DNAT --to-destination 1.1.1.1:53; "
             + "true";
     }
 

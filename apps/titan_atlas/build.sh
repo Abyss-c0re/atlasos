@@ -52,8 +52,15 @@ mkdir -p "$BUILD"/{gen,obj}
 "$BT/aapt" package -f -m -J "$BUILD/gen" -M "$ROOT/AndroidManifest.xml" -S "$ROOT/res" \
   -I "$PLATFORM/android.jar" -F "$BUILD/resources.ap_"
 
+FIND="${FIND:-/usr/bin/find}"
+[ -x "$FIND" ] || FIND=find
+mapfile -t _JAVAS < <("$FIND" -H "$BUILD/gen" "$ROOT/src" -name '*.java')
+if [ "${#_JAVAS[@]}" -lt 8 ]; then
+  echo "build.sh: only ${#_JAVAS[@]} java files — refusing hollow APK (src symlink?)" >&2
+  exit 1
+fi
 "$JAVAC" --release 17 -encoding UTF-8 -cp "$PLATFORM/android.jar" -d "$BUILD/obj" \
-  $(find "$BUILD/gen" "$ROOT/src" -name '*.java')
+  "${_JAVAS[@]}"
 (cd "$BUILD/obj" && "$JAR" cf "$BUILD/classes.jar" .)
 "$BT/d8" --min-api 28 --output "$BUILD" "$BUILD/classes.jar"
 

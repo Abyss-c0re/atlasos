@@ -6,6 +6,8 @@
 # Default: 0 unless ROM_PROFILE=dev
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+FIND="${FIND:-/usr/bin/find}"
+[ -x "$FIND" ] || FIND=find
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
 BT=$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1)
 PLATFORM=$(ls -d "$SDK"/platforms/android-* 2>/dev/null | sort -V | tail -1)
@@ -39,10 +41,15 @@ public final class BuildConfig {
 }
 EOF
 # Shared framework client sources (apps/titan2_api)
-API_SRC="$(cd "$ROOT/../titan2_api/src" 2>/dev/null && pwd || true)"
+API_SRC="$(cd "$ROOT/../titan2_api/src" 2>/dev/null && pwd -P || true)"
 [ -n "$API_SRC" ] || { echo "missing apps/titan2_api/src"; exit 1; }
+mapfile -t _JAVAS < <("$FIND" -H "$BUILD/gen" "$ROOT/src" "$API_SRC" -name '*.java')
+if [ "${#_JAVAS[@]}" -lt 15 ]; then
+  echo "build.sh: only ${#_JAVAS[@]} java files — refusing hollow APK (src symlink?)" >&2
+  exit 1
+fi
 "$JAVAC" --release 17 -cp "$PLATFORM/android.jar" -d "$BUILD/obj" \
-  $(find "$BUILD/gen" "$ROOT/src" "$API_SRC" -name '*.java')
+  "${_JAVAS[@]}"
 (cd "$BUILD/obj" && "$JAR" cf "$BUILD/classes.jar" .)
 "$BT/d8" --min-api 28 --output "$BUILD" "$BUILD/classes.jar"
 cp "$BUILD/resources.ap_" "$BUILD/unsigned.apk"

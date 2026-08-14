@@ -1,0 +1,29 @@
+# project:packages/apps/Settings
+# Disabled / UICC-off SIM stays in Settings → SIMs as inactive.
+diff --git a/src/com/android/settings/network/telephony/SubscriptionRepository.kt b/src/com/android/settings/network/telephony/SubscriptionRepository.kt
+--- a/src/com/android/settings/network/telephony/SubscriptionRepository.kt
++++ b/src/com/android/settings/network/telephony/SubscriptionRepository.kt
+@@ -61,8 +61,24 @@
+      * @return list of user selectable subscriptions.
+      */
+     fun getSelectableSubscriptionInfoList(): List<SubscriptionInfo> {
+         val availableList =
+-            subscriptionManager.getAvailableSubscriptionInfoList() ?: return emptyList()
++            ArrayList(subscriptionManager.getAvailableSubscriptionInfoList() ?: emptyList())
++        // Titan: a UICC-disabled / slot-off SIM must stay in Settings → SIMs as inactive.
++        // Framework available-list can drop it; merge inserted slots from the full list.
++        try {
++            val have = availableList.map { it.subscriptionId }.toHashSet()
++            val all = subscriptionManager.getAllSubscriptionInfoList()
++            if (all != null) {
++                for (info in all) {
++                    if (info == null || have.contains(info.subscriptionId)) continue
++                    if (info.simSlotIndex == SubscriptionManager.INVALID_SIM_SLOT_INDEX) continue
++                    availableList.add(info)
++                }
++            }
++        } catch (_: Throwable) {
++        }
+         val visibleList =
+             availableList.filter { subInfo ->
+                 // Opportunistic subscriptions are considered invisible to users so they should

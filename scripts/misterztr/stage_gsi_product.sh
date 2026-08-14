@@ -35,6 +35,12 @@ fi
 [ -x "$SRC_BIN" ] || die "missing touchpadd binary: $SRC_BIN (rebuild third_party first)"
 [ -f "$SRC_TP/Android.bp" ] || die "missing $SRC_TP/Android.bp"
 [ -f "$SRC_TP/titan2-touchpadd.rc" ] || die "missing rc"
+IDC_PAD="$SRC_TP/touchPad.idc"
+IDC_SUB="$SRC_TP/sub_touch.idc"
+[ -f "$IDC_PAD" ] || IDC_PAD="$ROOT/third_party/titan2-touchpadd/idc/touchPad.idc"
+[ -f "$IDC_SUB" ] || IDC_SUB="$ROOT/third_party/titan2-touchpadd/idc/sub_touch.idc"
+[ -f "$IDC_PAD" ] || die "missing touchPad.idc"
+[ -f "$IDC_SUB" ] || die "missing sub_touch.idc"
 [ -f "$SRC_PROD/titanus2.mk" ] || die "missing $SRC_PROD/titanus2.mk"
 [ -f "$SRC_APPS/Android.bp" ] || die "missing $SRC_APPS/Android.bp (Phase 2)"
 
@@ -71,10 +77,28 @@ for c in \
   "$ROOT/out/titan_kb_pull_20260808/apk/HwKeyboardLayouts.apk"; do
   [ -f "$c" ] && HWKB_APK="$c" && break
 done
-[ -n "$CTRL_APK" ] || die "missing TitanControls.apk"
-[ -n "$USB_APK" ] || die "missing TitanUsbHid.apk"
-[ -n "$CUBE_APK" ] || die "missing CubeContact.apk"
-[ -n "$POCKET_APK" ] || die "missing PocketBoard.apk (stage from Titan pull or build third_party/pocket-board)"
+WORKSHOP="${TITANUS2_WORKSHOP:-$ROOT/../titanus2}"
+for c in \
+  "$WORKSHOP/apps/titan_controls/TitanControls-v2.apk" \
+  "$WORKSHOP/apps/titan_controls/TitanControls.apk" \
+  "$WORKSHOP/apps/titan_usb_hid/TitanUsbHid.apk" \
+  "$WORKSHOP/apps/cube_contact/CubeContact.apk"; do
+  case "$c" in
+    *TitanControls*) [ -z "$CTRL_APK" ] && [ -f "$c" ] && CTRL_APK="$c" ;;
+    *TitanUsbHid*) [ -z "$USB_APK" ] && [ -f "$c" ] && USB_APK="$c" ;;
+    *CubeContact*) [ -z "$CUBE_APK" ] && [ -f "$c" ] && CUBE_APK="$c" ;;
+  esac
+done
+if [ "${SKIP_PREFLIGHT:-0}" = "1" ]; then
+  [ -n "$CTRL_APK" ] || info "warn: no TitanControls.apk — staging mouse only"
+  [ -n "$USB_APK" ] || info "warn: no TitanUsbHid.apk — staging mouse only"
+  [ -n "$CUBE_APK" ] || info "warn: no CubeContact.apk — staging mouse only"
+else
+  [ -n "$CTRL_APK" ] || die "missing TitanControls.apk"
+  [ -n "$USB_APK" ] || die "missing TitanUsbHid.apk"
+  [ -n "$CUBE_APK" ] || die "missing CubeContact.apk"
+  [ -n "$POCKET_APK" ] || die "missing PocketBoard.apk (stage from Titan pull or build third_party/pocket-board)"
+fi
 # HwKeyboardLayouts optional but recommended for RU system layout picker
 if [ -z "$HWKB_APK" ]; then
   info "warn: HwKeyboardLayouts.apk missing — RU system HW layout pack skipped"
@@ -108,22 +132,35 @@ stage_file() {
 }
 
 info "stage GSI product → $MISTERZTR_TREE"
-# Phase 1.5 touchpadd
+# Phase 1.5 touchpadd (ELF + init + InputReader IDC — GSI source, not inject)
 stage_file "$SRC_BIN" "$DEST_PRE/titan2-touchpadd"
 stage_file "$SRC_TP/Android.bp" "$DEST_PRE/Android.bp"
 stage_file "$SRC_TP/titan2-touchpadd.rc" "$DEST_PRE/titan2-touchpadd.rc"
+stage_file "$IDC_PAD" "$DEST_PRE/touchPad.idc"
+stage_file "$IDC_SUB" "$DEST_PRE/sub_touch.idc"
 
 # Phase 2 apps
-stage_file "$SRC_APPS/Android.bp" "$DEST_APPS/Android.bp"
-stage_file "$CTRL_APK" "$DEST_APPS/TitanControls.apk"
-stage_file "$USB_APK" "$DEST_APPS/TitanUsbHid.apk"
-stage_file "$CUBE_APK" "$DEST_APPS/CubeContact.apk"
-stage_file "$POCKET_APK" "$DEST_APPS/PocketBoard.apk"
-[ -n "$HWKB_APK" ] && stage_file "$HWKB_APK" "$DEST_APPS/HwKeyboardLayouts.apk"
-stage_file "$CTRL_PRIV" "$DEST_APPS/privapp-permissions-com.titanus2.controls.xml"
-stage_file "$USB_PRIV" "$DEST_APPS/privapp-permissions-com.titanus2.usbhid.xml"
-stage_file "$USB_DEF" "$DEST_APPS/default-permissions-com.titanus2.usbhid.xml"
-stage_file "$CUBE_PRIV" "$DEST_APPS/privapp-permissions-com.titanus2.cubecontact.xml"
+if [ -n "$CTRL_APK" ] && [ -n "$USB_APK" ] && [ -n "$CUBE_APK" ]; then
+  stage_file "$SRC_APPS/Android.bp" "$DEST_APPS/Android.bp"
+  stage_file "$CTRL_APK" "$DEST_APPS/TitanControls.apk"
+  stage_file "$USB_APK" "$DEST_APPS/TitanUsbHid.apk"
+  stage_file "$CUBE_APK" "$DEST_APPS/CubeContact.apk"
+  NETFW_APK=""
+  for c in \
+    "$ROOT/packages/titan_netfw/TitanNetFw.apk" \
+    "$SRC_APPS/TitanNetFw.apk"; do
+    [ -f "$c" ] && NETFW_APK="$c" && break
+  done
+  [ -n "$NETFW_APK" ] && stage_file "$NETFW_APK" "$DEST_APPS/TitanNetFw.apk"
+  [ -n "$POCKET_APK" ] && stage_file "$POCKET_APK" "$DEST_APPS/PocketBoard.apk"
+  [ -n "$HWKB_APK" ] && stage_file "$HWKB_APK" "$DEST_APPS/HwKeyboardLayouts.apk"
+  stage_file "$CTRL_PRIV" "$DEST_APPS/privapp-permissions-com.titanus2.controls.xml"
+  stage_file "$USB_PRIV" "$DEST_APPS/privapp-permissions-com.titanus2.usbhid.xml"
+  stage_file "$USB_DEF" "$DEST_APPS/default-permissions-com.titanus2.usbhid.xml"
+  stage_file "$CUBE_PRIV" "$DEST_APPS/privapp-permissions-com.titanus2.cubecontact.xml"
+else
+  info "skip Phase 2 APK stage (missing tip APKs)"
+fi
 
 # USB HID gadget stack (independent of APK inject)
 SRC_HID="$SRC_PROD/prebuilt_usb_hid"
@@ -172,11 +209,22 @@ titan2-ctrl-seed.sh
 titan2-sensor-privacy.sh
 titan2-fw
 titan2-fw.sh
+titan2-fw-observe
 titan2-remote-adb.sh
 titan2-vpn-hotspot.sh
+titan2-tether.sh
 "
+refresh_sot() {
+  local src=$1 dest=$2
+  [ -f "$src" ] || return 0
+  if [ -e "$dest" ] && [ "$src" -ef "$dest" ]; then
+    return 0
+  fi
+  cp -f "$src" "$dest"
+  chmod 755 "$dest" 2>/dev/null || true
+}
 for f in $_SYSBIN_SOT; do
-  [ -f "$ROOT/patches/bin/$f" ] && cp -f "$ROOT/patches/bin/$f" "$SRC_SYS/$f" && chmod 755 "$SRC_SYS/$f"
+  refresh_sot "$ROOT/patches/bin/$f" "$SRC_SYS/$f"
 done
 # Firewall CLI twin may live under magisk module if patches/bin lacks bare name
 [ -f "$SRC_SYS/titan2-fw" ] || {
@@ -185,15 +233,13 @@ done
     && chmod 755 "$SRC_SYS/titan2-fw"
 }
 
-[ -f "$ROOT/packages/titan_ims/bin/titan2-ims-setup.sh" ] \
-  && cp -f "$ROOT/packages/titan_ims/bin/titan2-ims-setup.sh" "$SRC_SYS/titan2-ims-setup.sh" \
-  && chmod 755 "$SRC_SYS/titan2-ims-setup.sh"
-[ -f "$ROOT/patches/init/titan2-pad-agent.rc" ] \
-  && cp -f "$ROOT/patches/init/titan2-pad-agent.rc" "$SRC_SYS/titan2-pad-agent.rc"
-[ -f "$ROOT/packages/titan_ims/init/titan2-ims.rc" ] \
-  && cp -f "$ROOT/packages/titan_ims/init/titan2-ims.rc" "$SRC_SYS/titan2-ims.rc"
-[ -f "$ROOT/patches/init/titan2-sensor-privacy.rc" ] \
-  && cp -f "$ROOT/patches/init/titan2-sensor-privacy.rc" "$SRC_SYS/titan2-sensor-privacy.rc"
+refresh_sot "$ROOT/packages/titan_ims/bin/titan2-ims-setup.sh" "$SRC_SYS/titan2-ims-setup.sh"
+refresh_sot "$ROOT/patches/init/titan2-pad-agent.rc" "$SRC_SYS/titan2-pad-agent.rc"
+refresh_sot "$ROOT/packages/titan_ims/init/titan2-ims.rc" "$SRC_SYS/titan2-ims.rc"
+refresh_sot "$ROOT/patches/init/titan2-sensor-privacy.rc" "$SRC_SYS/titan2-sensor-privacy.rc"
+refresh_sot "$ROOT/patches/init/titan2-netfw.rc" "$SRC_SYS/titan2-netfw.rc"
+[ -f "$SRC_SYS/titan2-netfw.rc" ] || die "missing titan2-netfw.rc (firewall init)"
+[ -f "$SRC_SYS/titan2-fw-observe" ] || die "missing titan2-fw-observe ELF"
 # Guard: ims-setup must not force location_mode
 if grep -qE 'settings put secure location_mode' "$SRC_SYS/titan2-ims-setup.sh" 2>/dev/null; then
   die "titan2-ims-setup.sh still forces location_mode — product privacy violation"
@@ -203,7 +249,8 @@ if ! grep -q '_is_protected_capture_pcm\|Hostless_Spk' "$SRC_SYS/titan2-sensor-p
   die "titan2-sensor-privacy.sh missing hostless/spk protect (v13+) — media silence risk"
 fi
 stage_file "$SRC_SYS/Android.bp" "$DEST_SYS/Android.bp"
-for f in $_SYSBIN_SOT titan2-ims-setup.sh titan2-pad-agent.rc titan2-ims.rc titan2-sensor-privacy.rc; do
+for f in $_SYSBIN_SOT titan2-ims-setup.sh titan2-sensor-privacy.sh \
+  titan2-pad-agent.rc titan2-ims.rc titan2-sensor-privacy.rc titan2-netfw.rc; do
   stage_file "$SRC_SYS/$f" "$DEST_SYS/$f"
 done
 chmod 755 "$DEST_SYS"/*.sh 2>/dev/null || true
@@ -258,8 +305,17 @@ if [ -n "$ATLAS_APK" ] && [ -f "$SRC_ATLAS/Android.bp" ]; then
   stage_file "$NET_SH" "$DEST_ATLAS/atlas-net.sh"
   stage_file "$SRC_ATLAS/atlas-hybrid-boot.sh" "$DEST_ATLAS/atlas-hybrid-boot.sh"
   stage_file "$SRC_ATLAS/atlas-hybrid.rc" "$DEST_ATLAS/atlas-hybrid.rc"
-  # ROM base ELFs (auth/sudo/repl) — priv-app is UI; execute from /system/bin
-  for elf in atlas-auth atlas-sudo atlas-auth-askpass atlas atlas-lpctl; do
+  for h in atlas-hybrid-ctl.sh atlas-hybrid-watch.sh; do
+    src=""
+    for c in "$SRC_ATLAS/$h" "$ROOT/packages/titan_atlas/scripts/$h" "$ROOT/patches/bin/$h"; do
+      [ -f "$c" ] && [ -s "$c" ] && src="$c" && break
+    done
+    [ -n "$src" ] || die "missing Atlas hybrid helper $h"
+    stage_file "$src" "$DEST_ATLAS/$h"
+    [ "$DRY" != "1" ] && chmod 755 "$DEST_ATLAS/$h" 2>/dev/null || true
+  done
+  # ROM base ELFs (auth/sudo/repl/enter) — priv-app is UI; execute from /system/bin
+  for elf in atlas-auth atlas-sudo atlas-auth-askpass atlas atlas-lpctl atlas-enter atlas-enterd; do
     src=""
     for c in "$ROOT/packages/titan_atlas/out/$elf" \
              "$ROOT/apps/titan_atlas/assets/bin/$elf" \
@@ -287,7 +343,8 @@ if [ -n "$ATLAS_APK" ] && [ -f "$SRC_ATLAS/Android.bp" ]; then
     fi
   done
   chmod 755 "$DEST_ATLAS/atlas-hybrid.sh" "$DEST_ATLAS/atlas-net.sh" \
-    "$DEST_ATLAS/atlas-hybrid-boot.sh" 2>/dev/null || true
+    "$DEST_ATLAS/atlas-hybrid-boot.sh" "$DEST_ATLAS/atlas-hybrid-ctl.sh" \
+    "$DEST_ATLAS/atlas-hybrid-watch.sh" 2>/dev/null || true
   # Optional essentials rootfs (large) — not required for stage; device may bootstrap later
   ROOTFS_TAR="${ATLAS_ROOTFS_TAR:-$ROOT/out/atlas_rootfs/debian-trixie-arm64-rootfs.tar.gz}"
   if [ -f "$ROOTFS_TAR" ] && [ "$(stat -c%s "$ROOTFS_TAR" 2>/dev/null || echo 0)" -gt 1000000 ]; then
@@ -348,18 +405,56 @@ if [ "$DRY" != "1" ]; then
   } >"$MISTERZTR_TREE/.titanus2_gsi_product_staged"
   # Keep gsi_product/ touchpadd copy in sync with third_party SoT
   if [ -x "$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd" ]; then
-    cp -f "$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd" \
-      "$SRC_TP/titan2-touchpadd"
-    chmod 755 "$SRC_TP/titan2-touchpadd"
+    if [ ! "$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd" -ef "$SRC_TP/titan2-touchpadd" ]; then
+      cp -f "$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd" \
+        "$SRC_TP/titan2-touchpadd"
+    fi
+    chmod 755 "$SRC_TP/titan2-touchpadd" 2>/dev/null || true
   fi
-  # Keep prebuilt_apps mirror of APKs for offline stage (optional small cache)
-  cp -f "$CTRL_APK" "$SRC_APPS/TitanControls.apk"
-  cp -f "$USB_APK" "$SRC_APPS/TitanUsbHid.apk"
-  cp -f "$CUBE_APK" "$SRC_APPS/CubeContact.apk"
-  cp -f "$CTRL_PRIV" "$SRC_APPS/privapp-permissions-com.titanus2.controls.xml"
-  cp -f "$USB_PRIV" "$SRC_APPS/privapp-permissions-com.titanus2.usbhid.xml"
-  cp -f "$USB_DEF" "$SRC_APPS/default-permissions-com.titanus2.usbhid.xml"
-  cp -f "$CUBE_PRIV" "$SRC_APPS/privapp-permissions-com.titanus2.cubecontact.xml"
+  # Keep prebuilt_apps mirror of APKs for offline stage (skip if same inode).
+  _mirror() {
+    [ -n "${1:-}" ] && [ -f "$1" ] || return 0
+    [ -e "$2" ] && [ "$1" -ef "$2" ] && return 0
+    cp -f "$1" "$2"
+  }
+  _mirror "$CTRL_APK" "$SRC_APPS/TitanControls.apk"
+  _mirror "$USB_APK" "$SRC_APPS/TitanUsbHid.apk"
+  _mirror "$CUBE_APK" "$SRC_APPS/CubeContact.apk"
+  _mirror "$CTRL_PRIV" "$SRC_APPS/privapp-permissions-com.titanus2.controls.xml"
+  _mirror "$USB_PRIV" "$SRC_APPS/privapp-permissions-com.titanus2.usbhid.xml"
+  _mirror "$USB_DEF" "$SRC_APPS/default-permissions-com.titanus2.usbhid.xml"
+  _mirror "$CUBE_PRIV" "$SRC_APPS/privapp-permissions-com.titanus2.cubecontact.xml"
+fi
+
+# Fail closed: every Android.bp src/apk must exist in the staged dest.
+if [ "$DRY" != "1" ]; then
+  verify_bp_srcs() {
+    local dest=$1 bp="$1/Android.bp"
+    [ -f "$bp" ] || return 0
+    local missing=0 f
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      if [ ! -e "$dest/$f" ]; then
+        info "MISSING bp src: $dest/$f"
+        missing=1
+      fi
+    done < <(python3 - "$bp" <<'PY'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+for m in re.finditer(r'(?:src|apk)\s*:\s*"([^"]+)"', text):
+    print(m.group(1))
+for m in re.finditer(r'srcs\s*:\s*\[([^\]]*)\]', text, re.S):
+    for s in re.findall(r'"([^"]+)"', m.group(1)):
+        print(s)
+PY
+)
+    [ "$missing" = 0 ] || die "staged dest missing Android.bp sources: $dest"
+  }
+  verify_bp_srcs "$DEST_PRE"
+  verify_bp_srcs "$DEST_APPS"
+  verify_bp_srcs "$DEST_HID"
+  verify_bp_srcs "$DEST_SYS"
+  verify_bp_srcs "$DEST_ATLAS"
 fi
 
 info "stage_gsi_product OK (dry=$DRY) touchpadd+apps+usb_hid+sysbins+atlas"

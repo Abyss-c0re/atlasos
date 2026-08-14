@@ -25,5 +25,6 @@ features:
   hive: false
 
 inject:
-  # Live pin 20260804 GSI lacks titan2-touchpadd. Keep ON until new pin proves.
-  touchpadd: true
+  # AtlasOS builds mouse into the GSI (SERIES 0040 + stage). Inject is off here.
+  # Workshop pin 20260804 (already-exported image) still injects — not this path.
+  touchpadd: false

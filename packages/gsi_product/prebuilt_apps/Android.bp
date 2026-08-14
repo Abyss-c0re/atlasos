@@ -30,6 +30,16 @@ android_app_import {
 }
 
 android_app_import {
+    name: "TitanNetFw",
+    apk: "TitanNetFw.apk",
+    certificate: "platform",
+    privileged: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+android_app_import {
     name: "CubeContact",
     apk: "CubeContact.apk",
     certificate: "platform",

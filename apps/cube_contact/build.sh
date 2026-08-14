@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+FIND="${FIND:-/usr/bin/find}"
+[ -x "$FIND" ] || FIND=find
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
 BT=$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1)
 PLATFORM=$(ls -d "$SDK"/platforms/android-* 2>/dev/null | sort -V | tail -1)
@@ -13,8 +15,13 @@ trap 'rm -rf "$BUILD"' EXIT
 mkdir -p "$BUILD"/{gen,obj}
 "$BT/aapt" package -f -m -J "$BUILD/gen" -M "$ROOT/AndroidManifest.xml" -S "$ROOT/res" \
   -I "$PLATFORM/android.jar" -F "$BUILD/resources.ap_"
+mapfile -t _JAVAS < <("$FIND" -H "$BUILD/gen" "$ROOT/src" -name '*.java')
+if [ "${#_JAVAS[@]}" -lt 20 ]; then
+  echo "build.sh: only ${#_JAVAS[@]} java files — refusing hollow APK (src symlink?)" >&2
+  exit 1
+fi
 "$JAVAC" --release 17 -cp "$PLATFORM/android.jar" -d "$BUILD/obj" \
-  $(find "$BUILD/gen" "$ROOT/src" -name '*.java')
+  "${_JAVAS[@]}"
 (cd "$BUILD/obj" && "$JAR" cf "$BUILD/classes.jar" .)
 "$BT/d8" --min-api 28 --output "$BUILD" "$BUILD/classes.jar"
 cp "$BUILD/resources.ap_" "$BUILD/unsigned.apk"

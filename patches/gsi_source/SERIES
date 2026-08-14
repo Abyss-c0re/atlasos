@@ -27,9 +27,9 @@
 # Apps SoT: apps/titan_controls|titan_usb_hid|cube_contact
 # 0040 mk matches packages/gsi_product/titanus2.mk at capture; stage always
 # re-writes device/phh/treble/titanus2.mk from that file.
-# Live pin 20260804 GSI still lacks the ELF — hybrid WITH_TOUCHPADD_INJECT=1
-# until pipeline.sh --from=patch exports a new pin and that pin is boot-proven.
-# Do not treat 20260806 inject-off prove as applying to 20260804.
+# AtlasOS: stage ELF+IDC then m systemimage (inject off on that export).
+# Workshop pin 20260804 image still lacks the ELF — inject stays on there.
+# Do not treat 20260806 inject-off prove as applying to the old pin.
 0040-prebuilt-titan2-touchpadd-product-mk.patch
 
 # project:system/sepolicy (or device sepolicy)
@@ -48,3 +48,14 @@
 0050-framework-sensor-privacy-toggles-cube.patch
 0060-framework-force-software-sensor-toggles-cube.patch
 0070-systemui-torch-sysfs-under-camera-privacy.patch
+
+# project:treble_app
+# Incoming calls: Misc binder-thread + auto restart RIL default ON
+0080-trebleapp-incoming-call-defaults.patch
+
+# project:packages/modules/Connectivity
+0090-tethering-sticky-downstream-prefix.patch
+
+# project:packages/apps/Settings
+0091-settings-router-firewall-path.patch
+0092-settings-keep-disabled-sim-in-list.patch

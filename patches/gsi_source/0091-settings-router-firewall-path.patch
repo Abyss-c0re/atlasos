@@ -1,0 +1,29 @@
+diff --git a/res/xml/tether_prefs.xml b/res/xml/tether_prefs.xml
+--- a/res/xml/tether_prefs.xml
++++ b/res/xml/tether_prefs.xml
+@@ -48,6 +48,27 @@
+         android:summary="@string/ethernet_tethering_subtext"
+         settings:keywords="@string/keywords_hotspot_tethering" />
+ 
++    <Preference
++        android:key="titan2_router"
++        android:title="Router"
++        android:summary="Subnet, gateway, clients, VPN share">
++        <intent
++            android:action="com.titanus2.netfw.ROUTER"
++            android:targetPackage="com.titanus2.netfw"
++            android:targetClass="com.titanus2.netfw.RouterActivity" />
++    </Preference>
++    <Preference
++        android:key="titan2_firewall"
++        android:title="Firewall"
++        android:summary="Android, Debian, and hotspot clients">
++        <intent
++            android:action="com.titanus2.netfw.FIREWALL"
++            android:targetPackage="com.titanus2.netfw"
++            android:targetClass="com.titanus2.netfw.FirewallActivity" />
++    </Preference>
++
+     <lineageos.preference.SecureSettingSwitchPreference
+         android:key="tethering_allow_vpn_upstreams"
+         android:title="@string/tethering_allow_vpn_upstreams_title"

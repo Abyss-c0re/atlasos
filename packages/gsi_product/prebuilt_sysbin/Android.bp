@@ -139,6 +139,27 @@ sh_binary {
     src: "titan2-vpn-hotspot.sh",
 }
 
+sh_binary {
+    name: "titan2-tether.sh",
+    src: "titan2-tether.sh",
+}
+
+cc_prebuilt_binary {
+    name: "titan2-fw-observe",
+    srcs: ["titan2-fw-observe"],
+    compile_multilib: "64",
+    check_elf_files: false,
+    system_shared_libs: [],
+    stem: "titan2-fw-observe",
+}
+
+prebuilt_etc {
+    name: "titan2-netfw.rc",
+    src: "titan2-netfw.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}
+
 prebuilt_etc {
     name: "titan2-pad-agent.rc",
     src: "titan2-pad-agent.rc",

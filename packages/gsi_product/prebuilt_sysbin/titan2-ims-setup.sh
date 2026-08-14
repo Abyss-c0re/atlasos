@@ -51,12 +51,22 @@ setprop persist.dbg.vt_avail_ovr 1 2>/dev/null || true
 setprop persist.dbg.wfc_avail_ovr 1 2>/dev/null || true
 setprop persist.dbg.allow_ims_off 1 2>/dev/null || true
 setprop persist.sys.phh.allow_binder_thread_on_incoming_calls 1 2>/dev/null || true
+# NEVER default persist.sys.phh.restart_ril=true on this MTK (vndk.rc restarts
+# vendor.ril-daemon-mtk → UICC apps disabled → SIMs vanish from Settings).
 setprop persist.sys.phh.ims.floss false 2>/dev/null || true
 
 mkdir -p /data/misc/titan2 /data/local/tmp 2>/dev/null || true
 for f in titan2_ims_mtk titan2_ims_force_volte titan2_ims_binder; do
   [ -s /data/misc/titan2/$f ] || echo 1 > /data/misc/titan2/$f 2>/dev/null || true
   chmod 666 /data/misc/titan2/$f 2>/dev/null || true
+done
+[ -s /data/misc/titan2/titan2_tel_restart_ril ] || echo 0 > /data/misc/titan2/titan2_tel_restart_ril 2>/dev/null || true
+chmod 666 /data/misc/titan2/titan2_tel_restart_ril 2>/dev/null || true
+
+# If every subscription has UICC apps off, Settings hides them and they cannot
+# be turned back on from the UI. Re-enable physical subs (no-op if already on).
+for sid in 1 2 3 4; do
+  cmd phone enable-physical-subscription "$sid" 2>/dev/null || true
 done
 
 # Ensure system MtkIms is present; never download third-party IMS

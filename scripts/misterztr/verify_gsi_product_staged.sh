@@ -2,11 +2,16 @@
 # Verify Phase 1.5 GSI product staging without a full pipeline build.
 #
 #   ./scripts/misterztr/verify_gsi_product_staged.sh
+#   ./scripts/misterztr/verify_gsi_product_staged.sh --mouse
 # Exit 0 if staged tree looks ready for pipeline/systemimage.
 set -euo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+MOUSE_ONLY=0
+for a in "$@"; do
+  case "$a" in --mouse) MOUSE_ONLY=1 ;; -h|--help) sed -n '2,6p' "$0"; exit 0 ;; esac
+done
 # Tip SoT first (optional if already staged)
-if [ "${SKIP_PREFLIGHT:-0}" != "1" ] && [ -x "$ROOT/scripts/misterztr/preflight_gsi_product.sh" ]; then
+if [ "$MOUSE_ONLY" != "1" ] && [ "${SKIP_PREFLIGHT:-0}" != "1" ] && [ -x "$ROOT/scripts/misterztr/preflight_gsi_product.sh" ]; then
   "$ROOT/scripts/misterztr/preflight_gsi_product.sh" || exit 1
 fi
 require_tree
@@ -24,6 +29,13 @@ SRC_BIN="$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd"
 [ -x "$DEST_PRE/titan2-touchpadd" ] && ok "staged binary $DEST_PRE/titan2-touchpadd" || bad "missing staged binary"
 [ -f "$DEST_PRE/Android.bp" ] && ok "staged Android.bp" || bad "missing Android.bp"
 [ -f "$DEST_PRE/titan2-touchpadd.rc" ] && ok "staged init rc" || bad "missing rc"
+[ -f "$DEST_PRE/touchPad.idc" ] && grep -q 'touch.deviceType = ignore' "$DEST_PRE/touchPad.idc" \
+  && ok "staged touchPad.idc (ignore)" || bad "missing/non-ignore touchPad.idc"
+[ -f "$DEST_PRE/sub_touch.idc" ] && grep -q 'touch.deviceType = ignore' "$DEST_PRE/sub_touch.idc" \
+  && ok "staged sub_touch.idc (ignore)" || bad "missing/non-ignore sub_touch.idc"
+grep -qF 'usr/idc/touchPad.idc' "$DEST_MK" 2>/dev/null \
+  && ok "titanus2.mk copies touchPad.idc to /system/usr/idc" \
+  || bad "titanus2.mk missing PRODUCT_COPY_FILES touchPad.idc"
 [ -f "$DEST_MK" ] && ok "titanus2.mk" || bad "missing titanus2.mk"
 grep -qF 'titan2-touchpadd' "$DEST_MK" 2>/dev/null && ok "PRODUCT_PACKAGES lists titan2-touchpadd" || bad "mk missing PRODUCT_PACKAGES"
 grep -qF 'device/phh/treble/titanus2.mk' "$BVN4" 2>/dev/null && ok "bvN4 inherits titanus2.mk" || bad "bvN4 missing inherit"
@@ -34,6 +46,22 @@ if [ -f "$SRC_MK" ] && [ -f "$DEST_MK" ]; then
   else
     bad "tree titanus2.mk != packages/gsi_product/titanus2.mk — re-run stage_gsi_product.sh"
   fi
+fi
+if [ "$MOUSE_ONLY" = "1" ]; then
+  if [ -x "$SRC_BIN" ] && [ -x "$DEST_PRE/titan2-touchpadd" ]; then
+    grep -aF 'INPROC_PARK' "$DEST_PRE/titan2-touchpadd" >/dev/null && ok "INPROC_PARK" || bad "missing INPROC_PARK"
+    grep -aF 'Skipping TitanKey (KEYBOARD_FEATURES off)' "$DEST_PRE/titan2-touchpadd" >/dev/null \
+      && ok "pad-only" || bad "missing pad-only"
+    grep -aF 'titan2-virtual-mouse' "$DEST_PRE/titan2-touchpadd" >/dev/null \
+      && ok "titan2-virtual-mouse" || bad "missing titan2-virtual-mouse"
+  fi
+  echo "---"
+  if [ "$ec" -eq 0 ]; then
+    echo "VERIFY MOUSE PASS — GSI source path (no inject)"
+  else
+    echo "VERIFY MOUSE FAIL — stage ELF+IDC into the tree"
+  fi
+  exit "$ec"
 fi
 # Phase 2 apps
 [ -f "$DEST_APPS/Android.bp" ] && ok "staged apps Android.bp" || bad "missing apps Android.bp"

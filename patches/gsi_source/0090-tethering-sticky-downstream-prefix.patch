@@ -1,0 +1,46 @@
+diff --git a/staticlibs/device/com/android/net/module/util/PrivateAddressCoordinator.java b/staticlibs/device/com/android/net/module/util/PrivateAddressCoordinator.java
+--- a/staticlibs/device/com/android/net/module/util/PrivateAddressCoordinator.java
++++ b/staticlibs/device/com/android/net/module/util/PrivateAddressCoordinator.java
+@@ -35,6 +35,7 @@ import android.net.Network;
+ import android.net.NetworkCapabilities;
+ import android.os.RemoteException;
++import android.os.SystemProperties;
+ import android.provider.DeviceConfig;
+ import android.util.ArrayMap;
+ 
+@@ -209,6 +210,22 @@ public class PrivateAddressCoordinator {
+         }
+     }
+ 
++    /**
++     * Titan 2: persist.sys.titan2.tether_ipv4 = "10.191.207.1/24" pins gateway
++     * for every tethering type (wifi/usb/ethernet). Empty = AOSP random sticky.
++     */
++    @Nullable
++    private LinkAddress titan2PinnedDownstream() {
++        final String raw = SystemProperties.get("persist.sys.titan2.tether_ipv4", "");
++        if (raw == null || raw.indexOf('/') < 0) return null;
++        try {
++            return new LinkAddress(raw.trim());
++        } catch (IllegalArgumentException e) {
++            return null;
++        }
++    }
++
+     // TODO: There needs to be a reserveDownstreamAddress() method for the cases where
+     // TetheringRequest has been set a static IPv4 address.
+ 
+@@ -224,6 +241,12 @@ public class PrivateAddressCoordinator {
+     public LinkAddress requestStickyDownstreamAddress(int interfaceType, final int scope,
+             IIpv4PrefixRequest request) {
+         final Ipv4PrefixRequest wrappedRequest = new Ipv4PrefixRequest(request);
+         final AddressKey addrKey = new AddressKey(interfaceType, scope);
++        final LinkAddress pinned = titan2PinnedDownstream();
++        if (pinned != null && !isConflictWithUpstream(asIpPrefix(pinned))) {
++            mCachedAddresses.put(addrKey, pinned);
++            mDownstreams.put(wrappedRequest, pinned);
++            return pinned;
++        }
+         // This ensures that tethering isn't started on 2 different interfaces with the same type.
+         // Once tethering could support multiple interface with the same type,
+         // TetheringSoftApCallback would need to handle it among others.

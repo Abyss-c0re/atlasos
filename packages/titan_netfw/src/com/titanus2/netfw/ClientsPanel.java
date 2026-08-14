@@ -1,0 +1,61 @@
+package com.titanus2.netfw;
+
+import android.app.Activity;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import java.util.List;
+
+/** Live STA / neighbor rows. 2×2 actions fit 1440 square. */
+final class ClientsPanel {
+    private final Activity ctx;
+    private final LinearLayout box;
+    private final TextView empty;
+
+    ClientsPanel(Activity ctx, LinearLayout parent) {
+        this.ctx = ctx;
+        parent.addView(NetUi.section(ctx, "Clients"));
+        empty = NetUi.fact(ctx, "No clients");
+        parent.addView(empty);
+        box = new LinearLayout(ctx);
+        box.setOrientation(LinearLayout.VERTICAL);
+        parent.addView(box);
+    }
+
+    void refresh() {
+        box.removeAllViews();
+        List<Neigh> list = Neigh.load();
+        empty.setVisibility(list.isEmpty() ? android.view.View.VISIBLE : android.view.View.GONE);
+        for (Neigh n : list) addRow(n);
+    }
+
+    private void addRow(Neigh n) {
+        LinearLayout row = new LinearLayout(ctx);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(0, NetUi.dp(ctx, 6), 0, NetUi.dp(ctx, 6));
+        row.addView(NetUi.fact(ctx, n.label()));
+        row.addView(NetUi.fact(ctx, "policy=" + n.policy));
+        LinearLayout g1 = NetUi.row(ctx);
+        LinearLayout g2 = NetUi.row(ctx);
+        addAct(g1, n, "allow", "Allow");
+        addAct(g1, n, "isolate", "Isolate");
+        addAct(g2, n, "lan-only", "LAN");
+        addAct(g2, n, "block", "Block");
+        row.addView(g1);
+        row.addView(g2);
+        box.addView(row);
+    }
+
+    private void addAct(LinearLayout acts, Neigh n, String pol, String label) {
+        Button b = NetUi.btn(ctx, label);
+        boolean on = n.policy.equals(pol);
+        b.setEnabled(!on);
+        if (on) b.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        b.setOnClickListener(v -> {
+            Fw.run("client-" + pol, Fw.colonMac(n.mac), n.ip);
+            if (Fw.enabled()) Fw.run("apply");
+            refresh();
+        });
+        NetUi.weight(acts, b, 1f);
+    }
+}
