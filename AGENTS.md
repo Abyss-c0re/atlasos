@@ -27,7 +27,13 @@ policy or device serials into this repo.
 
 ```bash
 ./scripts/link.sh
+./scripts/link_workshop.sh    # workshop paths → this tree (one inode)
+./scripts/check_links.sh
 ./scripts/build.sh            # GSI from SERIES + hybrid pack via linked workshop
 ./scripts/build.sh --gsi-only
 ./scripts/check_clean.sh
 ```
+
+Shared app/patch paths must stay symlinks. If AtlasOS drifts, an agent copied
+instead of linking — run `link_workshop.sh` again. Do not maintain a second
+`apps/titan_atlas/src`.

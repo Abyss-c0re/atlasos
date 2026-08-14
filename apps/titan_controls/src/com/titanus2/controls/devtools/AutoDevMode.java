@@ -39,7 +39,7 @@ public final class AutoDevMode {
     public static final String STATUS = "/data/local/tmp/titan2_auto_dev.status";
     public static final String PAIR_STATE = "/data/local/tmp/titan2_auto_dev_pair";
 
-    public static final String DEFAULT_PEER_URL = "http://<lab-ip>:18790";
+    public static final String DEFAULT_PEER_URL = "http://192.168.1.10:18790";
 
     private AutoDevMode() {}
 

@@ -31,7 +31,7 @@ public final class StateMatrix {
      * Lab BlackCube BrainCube peer (BUG-42 Atlas 2026-08-11).
      * Titan rear Neural Cube blanks when stuck on PEER_LOCAL with no bus.
      */
-    public static final String PEER_LAB = "http://<lab-ip>:18787";
+    public static final String PEER_LAB = "http://192.168.8.100:18787";
     public static String PEER = PEER_LOCAL; // overridable lab
 
     /**

@@ -15,6 +15,12 @@ debug.keystore
 *.tar.gz
 debian-*-rootfs.tar.gz
 
+# Workshop-only binaries that may sit in a linked dir
+packages/titan_usb_hid_system/hid_bridge
+packages/titan_usb_hid_system/titan2-side-watch
+packages/titan_icon_mask_only/TitanCubeIconMask.apk
+packages/titan_icon_mask_only/build/
+
 # Editor / OS
 .DS_Store
 *.swp

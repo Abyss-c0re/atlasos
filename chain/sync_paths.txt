@@ -1,0 +1,66 @@
+# Shared product paths. Workshop entry is a symlink into AtlasOS.
+# Workshop-only extras (APK, rootfs, jniLibs, out/) stay as real files.
+# Format: one repo-relative path per line. Dirs are replaced wholesale
+# after extras are parked under workshop .atlasos_local/.
+
+# Atlas app + native
+apps/titan_atlas/src
+apps/titan_atlas/res
+apps/titan_atlas/permissions
+apps/titan_atlas/scripts
+apps/titan_atlas/AndroidManifest.xml
+apps/titan_atlas/build.sh
+apps/titan_atlas/README.md
+apps/titan_atlas/assets/fonts
+apps/titan_atlas/assets/ssl
+apps/titan_atlas/assets/term
+packages/titan_atlas/native
+packages/titan_atlas/scripts
+packages/titan_atlas/build_native.sh
+packages/titan_atlas/README.md
+packages/titan_atlas/debian_rootfs.url
+
+# Other product apps (same drift rule)
+apps/titan_controls/src
+apps/titan_controls/res
+apps/titan_controls/permissions
+apps/titan_controls/AndroidManifest.xml
+apps/titan_controls/build.sh
+apps/titan_usb_hid/src
+apps/titan_usb_hid/res
+apps/titan_usb_hid/permissions
+apps/titan_usb_hid/AndroidManifest.xml
+apps/titan_usb_hid/build.sh
+apps/cube_contact/src
+apps/cube_contact/res
+apps/cube_contact/permissions
+apps/cube_contact/AndroidManifest.xml
+apps/cube_contact/build.sh
+apps/titan_fm/src
+apps/titan_fm/res
+apps/titan_fm/permissions
+apps/titan_fm/AndroidManifest.xml
+apps/titan_fm/build.sh
+apps/titan2_api/src
+apps/titan2_api/permissions
+apps/titan2_api/README.md
+apps/titan_ime/src
+apps/titan_ime/res
+apps/titan_ime/AndroidManifest.xml
+apps/titan_ime/build.sh
+apps/titan_nanobot/src
+apps/titan_nanobot/res
+apps/titan_nanobot/permissions
+apps/titan_nanobot/AndroidManifest.xml
+apps/titan_nanobot/build.sh
+apps/ui_template
+
+# Source patches + pad
+patches/gsi_source
+third_party/titan2-touchpadd/patches
+third_party/titan2-touchpadd/idc
+third_party/titan2-touchpadd/init
+third_party/titan2-touchpadd/README.md
+third_party/titan2-touchpadd/fetch.sh
+packages/titan_usb_hid_system
+packages/titan_icon_mask_only

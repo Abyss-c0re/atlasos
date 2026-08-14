@@ -677,9 +677,9 @@ public final class NativeBin {
     }
 
     /** LAN MCP: Titan Grok → BlackCube/BrainCube :18790 + NexusCore :8871. */
-    public static final String MCP_BLACKCUBE = "http://<lab-ip>:18790/mcp";
-    public static final String MCP_BRAINCUBE = "http://<lab-ip>:18790/mcp";
-    public static final String MCP_NEXUSCORE = "http://<lab-ip>:8871/mcp";
+    public static final String MCP_BLACKCUBE = "http://192.168.8.100:18790/mcp";
+    public static final String MCP_BRAINCUBE = "http://192.168.8.100:18790/mcp";
+    public static final String MCP_NEXUSCORE = "http://192.168.8.108:8871/mcp";
     /** Shared on-device nanobot home (Atlas + TitanNanobot peer). */
     public static final String NANOBOT_HOME = "/data/local/tmp/nanobot_home";
 
