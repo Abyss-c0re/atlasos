@@ -739,7 +739,7 @@ static void handle_client(int csock, uid_t peer) {
     setenv("ATLAS_MODE", "debian", 1);
     setenv("ATLAS_SESSION", "hybrid", 1);
     setenv("ATLAS_PRIV", "1", 1);
-    setenv("ATLAS_ROLE", "admin", 1);
+    setenv("ATLAS_ROLE", "atlas", 1);
     /* Avoid "I have no name!" when passwd lacks app uid (LP often RO). */
     setenv("USER", "atlas", 1);
     setenv("LOGNAME", "atlas", 1);

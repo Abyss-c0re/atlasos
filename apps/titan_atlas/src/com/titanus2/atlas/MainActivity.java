@@ -572,8 +572,8 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
     private boolean shellSwitchInFlight;
 
     /**
-     * Top-bar And/Deb: toggle this session between Android admin shell and Debian hybrid.
-     * Does not change global Settings "Privileged hybrid" default for new sessions.
+     * Top-bar And/Deb: toggle this session between Android atlas shell and Debian hybrid.
+     * Does not change Settings "Default new shell: Debian" for new sessions.
      *
      * Bug fixed: we used to set mode=Deb, then restart with mode forced to And, then
      * flip the label back to Deb — strip said Deb while PTY stayed Android ("forgot").
@@ -884,9 +884,9 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         env.add("ATLAS_HYBRID=" + (priv && hybridReady ? "1" : "0"));
         env.add("ATLAS_HYBRID_SIZE_G=" + AtlasPrefs.hybridSizeG(this));
         env.add("ATLAS_REPORTS=" + new File(home, "reports").getAbsolutePath());
-        env.add("USER=admin");
-        env.add("LOGNAME=admin");
-        env.add("ATLAS_ROLE=admin");
+        env.add("USER=atlas");
+        env.add("LOGNAME=atlas");
+        env.add("ATLAS_ROLE=atlas");
         if (ca.isFile()) {
             env.add("SSL_CERT_FILE=" + ca.getAbsolutePath());
             env.add("CURL_CA_BUNDLE=" + ca.getAbsolutePath());

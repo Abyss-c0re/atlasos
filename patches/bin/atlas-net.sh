@@ -8,9 +8,10 @@
 #   priv_app execute_no_trans on privapp_data_file (EACCES / exit 126).
 #
 # Identity:
-#   Interactive shell is always **admin** = Android app UID (non-root).
+#   One shared login: **atlas** on Android and Debian (never admin).
+#   Android plane runs as the app UID (non-root). Debian plane is atlas@10101.
 #   Root only via: sudo/su → Authentication Agent → real KernelSU / setuid path.
-#   Hybrid: root mounts once, then drops to admin before the shell.
+#   Hybrid: root mounts once, then drops to the app UID before the shell.
 #
 export PATH="/system/bin:/system/xbin:/system_ext/bin:/product/bin:/vendor/bin:/data/adb/ksu/bin:$PATH"
 
@@ -352,9 +353,9 @@ export PATH="$ATLAS_USER_BIN:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.
 export TERM="${TERM:-xterm-256color}"
 export LANG="${LANG:-C.UTF-8}"
 export COLORTERM="${COLORTERM:-truecolor}"
-export USER="${USER:-admin}"
-export LOGNAME="${LOGNAME:-admin}"
-export ATLAS_ROLE=admin
+export USER="${USER:-atlas}"
+export LOGNAME="${LOGNAME:-atlas}"
+export ATLAS_ROLE=atlas
 [ -f "$HOME/cacert.pem" ] && export SSL_CERT_FILE="$HOME/cacert.pem"
 [ -d /apex/com.android.conscrypt/cacerts ] && export SSL_CERT_DIR=/apex/com.android.conscrypt/cacerts
 
@@ -404,7 +405,7 @@ find_atlas_enter() {
   return 1
 }
 
-# Run interactive bash as admin (app UID). Never leave an interactive root shell.
+# Run interactive bash as atlas (app UID). Never leave an interactive root shell.
 exec_admin_bash() {
   export PATH="$ATLAS_USER_BIN:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.npm-global/bin:$HOME/.grok/bin:/system/bin:/system_ext/bin:/product/bin:/system/xbin:/vendor/bin"
   if [ -n "$BASH_BIN" ]; then
@@ -417,7 +418,7 @@ exec_admin_bash() {
   export ATLAS_AUTH_DIR="$HOME/auth"
   [ -n "$ATLAS_ASKPASS_BIN" ] && export SUDO_ASKPASS="$ATLAS_ASKPASS_BIN"
   export ATLAS_BIN ATLAS_HOME HOME ATLAS_SYSBIN ATLAS_USER_BIN
-  export USER=admin LOGNAME=admin ATLAS_ROLE=admin
+  export USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas
   stty sane 2>/dev/null || true
   stty erase '^?' 2>/dev/null || true
   cd "$HOME" 2>/dev/null || true
@@ -437,7 +438,7 @@ if [ "$(id -u)" = "0" ]; then
     RSU=`find_real_su`
     if [ -n "$RSU" ] && [ -n "$BASH_BIN" ]; then
       export ATLAS_DROP_UID="$ADMIN_UID"
-      exec "$RSU" "$ADMIN_UID" -c "export HOME='$HOME' ATLAS_HOME='$HOME' ATLAS_BIN='$ATLAS_BIN' ATLAS_SYSBIN='$ATLAS_SYSBIN' ATLAS_USER_BIN='$ATLAS_USER_BIN' ATLAS_AUTH_DIR='$HOME/auth' SUDO_ASKPASS='${ATLAS_ASKPASS_BIN:-}' PATH='$ATLAS_USER_BIN:/system/bin:/system_ext/bin:/product/bin:/system/xbin' USER=admin LOGNAME=admin ATLAS_ROLE=admin; cd '$HOME' 2>/dev/null; exec '$BASH_BIN' -il"
+      exec "$RSU" "$ADMIN_UID" -c "export HOME='$HOME' ATLAS_HOME='$HOME' ATLAS_BIN='$ATLAS_BIN' ATLAS_SYSBIN='$ATLAS_SYSBIN' ATLAS_USER_BIN='$ATLAS_USER_BIN' ATLAS_AUTH_DIR='$HOME/auth' SUDO_ASKPASS='${ATLAS_ASKPASS_BIN:-}' PATH='$ATLAS_USER_BIN:/system/bin:/system_ext/bin:/product/bin:/system/xbin' USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas; cd '$HOME' 2>/dev/null; exec '$BASH_BIN' -il"
     fi
   fi
   echo "atlas-net: FATAL refuse interactive root shell" >&2
@@ -517,7 +518,7 @@ if [ "$want_hybrid" = "1" ]; then
       export ATLAS_AUTH_DIR="${ATLAS_AUTH_DIR:-$HOME/auth}"
     fi
     export SUDO_ASKPASS="${ATLAS_ASKPASS_BIN:-}"
-    export USER=atlas LOGNAME=atlas ATLAS_ROLE=admin
+    export USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas
     export ATLAS_SESSION=hybrid ATLAS_PRIV=1 ATLAS_PLANE=hybrid ATLAS_MODE=debian ATLAS_HYBRID=1
     # Prefer product linux home for Deb (not CE files)
     case "$HOME" in
@@ -562,7 +563,7 @@ if [ "$want_hybrid" = "1" ]; then
     export ATLAS_AUTH_DIR='$HOME/auth'
     export SUDO_ASKPASS='${ATLAS_ASKPASS_BIN:-}'
     export PATH='$ATLAS_USER_BIN:/usr/local/bin:/usr/bin:/bin:/system/bin:/system_ext/bin:/product/bin:/system/xbin:/vendor/bin'
-    export USER=admin LOGNAME=admin ATLAS_ROLE=admin
+    export USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas
     export ATLAS_SESSION=hybrid ATLAS_PRIV=1 ATLAS_PLANE=hybrid ATLAS_MODE=debian ATLAS_HYBRID=1
     HYB='$HYB'
     export ATLAS_INTERNAL_SU=1

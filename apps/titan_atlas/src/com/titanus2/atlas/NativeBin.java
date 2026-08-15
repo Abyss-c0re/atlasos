@@ -952,7 +952,7 @@ public final class NativeBin {
     }
 
     /**
-     * LAW: heal auth on super LP only. World R/W so Deb admin + app both write
+     * LAW: heal auth on super LP only. World R/W so Deb atlas + app both write
      * req/ok/fail (same plane). Wipe-surviving.
      */
     public static void healAuthDir(Context c) {
@@ -1296,6 +1296,7 @@ public final class NativeBin {
                 + "else\n"
                 + "  PS1='\\[\\e[1;33m\\]android\\[\\e[0m\\]:atlas\\$ '\n"
                 + "fi\n"
+                + "export USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas\n"
                 + "# MOTD once per interactive shell (agents + humans)\n"
                 + "if [ -z \"${ATLAS_MOTD_SHOWN:-}\" ] && [ -n \"$PS1\" ]; then\n"
                 + "  export ATLAS_MOTD_SHOWN=1\n"

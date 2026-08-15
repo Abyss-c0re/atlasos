@@ -11,7 +11,7 @@ import java.util.List;
  * Parallel shell modes: per-session Android vs Debian (hybrid) plane.
  */
 public final class SessionHub {
-    /** Shell plane for one PTY: android admin shell, or debian hybrid. */
+    /** Shell plane for one PTY: android atlas shell, or debian hybrid. */
     public static final String MODE_ANDROID = "android";
     public static final String MODE_DEBIAN = "debian";
 
