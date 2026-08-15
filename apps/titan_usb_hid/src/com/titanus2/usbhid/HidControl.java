@@ -730,10 +730,10 @@ public final class HidControl {
             // restored mode wants pad; stop orphan if restore is off.
             String m = PadModeClient.normalize(restore);
             if (PadModeClient.MOUSE.equals(m) || PadModeClient.TRACKPAD.equals(m)) {
+                // INPROC_PARK: plane write is enough. Never killall/restart.
                 try { ensureTouchpaddAlive(); } catch (Exception ignored) {}
-            } else {
-                try { stopTouchpaddAlive(); } catch (Exception ignored) {}
             }
+            // off: leave daemon up; it parks. Kill is heresy (ABS residual + delay).
         } else {
             // B8 1.51: exclusive START via FGS-only / missing restore left
             // pad_mode=mouse + titan2-touchpadd running with session=0 (bench
@@ -747,25 +747,13 @@ public final class HidControl {
                         ctx.getContentResolver(), "titan2_pad_mode", "off");
                 }
             } catch (Exception ignored) {}
-            try { stopTouchpaddAlive(); } catch (Exception ignored) {}
+            // off restore: do not kill touchpadd (INPROC_PARK).
         }
     }
 
-    /** B8 1.41: stop orphan touchpadd after exclusive restore to off. */
+    /** No-op. Killing the pad daemon is the slow HID→phone switch. */
     public static void stopTouchpaddAlive() {
-        if (!Root.available()) {
-            // Rootless best-effort (may no-op without killall perms)
-            try {
-                Runtime.getRuntime().exec(new String[]{
-                    "sh", "-c", "killall titan2-touchpadd 2>/dev/null; true"
-                }).waitFor();
-            } catch (Exception ignored) {}
-            return;
-        }
-        Root.runSu(
-            "stop titan2-touchpadd 2>/dev/null; "
-            + "killall titan2-touchpadd 2>/dev/null; true"
-        );
+        /* keep process; plane files own emit */
     }
 
     public static boolean isGrabOn(Context ctx) {
@@ -887,10 +875,6 @@ public final class HidControl {
             "  if [ -x \"$TP\" ]; then " +
             "    LOGCAT_OUTPUT=true KEYBOARD_FEATURES=false TAP_TO_CLICK=1 " +
             "      \"$TP\" >>/data/local/tmp/titan2_touchpadd.log 2>&1 & " +
-            "    i=0; while [ $i -lt 12 ]; do " +
-            "      pidof titan2-touchpadd >/dev/null 2>&1 && break; " +
-            "      usleep 20000 2>/dev/null || sleep 0.02; i=$((i+1)); " +
-            "    done; " +
             "  fi; " +
             "fi; true"
         );
