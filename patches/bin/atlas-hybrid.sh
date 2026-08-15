@@ -1185,7 +1185,7 @@ if [ -n "${PS1:-}" ] && [ -z "${ATLAS_MOTD_SHOWN:-}" ]; then
 fi
 case "${PS1:-}" in
   *debian*|*android*) ;;
-  *) PS1='\[\e[1;36m\]debian\[\e[0m\]:admin\$ ' ;;
+  *) PS1='\[\e[1;36m\]debian\[\e[0m\]:atlas\$ ' ;;
 esac
 EOF
   chmod 644 "$MERGE/etc/profile.d/zz-atlas-plane.sh" 2>/dev/null || true
@@ -1760,36 +1760,30 @@ ensure_admin_user() {
     pw="$root/etc/passwd"
     gr="$root/etc/group"
     sh="$root/etc/shadow"
-    # Live uid must exist (ssh/sudo/nss). atlas + admin = app uid (not 10198 leftover).
+    # Live uid must exist (ssh/sudo/nss). One name: atlas at app uid.
     if [ -f "$pw" ]; then
       if grep -q "^atlas:" "$pw" 2>/dev/null; then
         sed -i "s#^atlas:[^:]*:[^:]*:[^:]*:#atlas:x:${uid}:${uid}:#" "$pw" 2>/dev/null || true
       else
         echo "atlas:x:${uid}:${uid}:Atlas:${home}:/bin/bash" >>"$pw"
       fi
-      if grep -q "^admin:" "$pw" 2>/dev/null; then
-        sed -i "s#^admin:[^:]*:[^:]*:[^:]*:#admin:x:${uid}:${uid}:#" "$pw" 2>/dev/null || true
-      fi
-      # Drop leftover atlas<uid> alias if atlas now owns that uid.
+      # One identity: atlas. Drop leftover admin alias (same uid).
+      sed -i "/^admin:/d" "$pw" 2>/dev/null || true
       sed -i "/^atlas${uid}:/d" "$pw" 2>/dev/null || true
     fi
-    if [ -f "$gr" ] && ! grep -q ":x:${uid}:" "$gr" 2>/dev/null \
-        && ! grep -q "^atlas:" "$gr" 2>/dev/null; then
-      echo "atlas:x:${uid}:" >>"$gr"
+    if [ -f "$gr" ]; then
+      sed -i "/^admin:/d" "$gr" 2>/dev/null || true
+      if grep -q "^atlas:" "$gr" 2>/dev/null; then
+        sed -i "s#^atlas:x:[^:]*:#atlas:x:${uid}:#" "$gr" 2>/dev/null || true
+      else
+        echo "atlas:x:${uid}:" >>"$gr"
+      fi
     fi
-    if [ -f "$sh" ] && ! grep -q "^atlas:" "$sh" 2>/dev/null \
-        && ! grep -q "^atlas${uid}:" "$sh" 2>/dev/null; then
-      echo "atlas:!:19600:0:99999:7:::" >>"$sh"
-    fi
-    # Legacy admin row (keep if present; add only if missing — do not steal live uid)
-    if [ -f "$pw" ] && ! grep -q "^admin:" "$pw" 2>/dev/null; then
-      echo "admin:x:${uid}:${uid}:Atlas Admin:${home}:/bin/bash" >>"$pw"
-    fi
-    if [ -f "$gr" ] && ! grep -q "^admin:" "$gr" 2>/dev/null; then
-      echo "admin:x:${uid}:" >>"$gr"
-    fi
-    if [ -f "$sh" ] && ! grep -q "^admin:" "$sh" 2>/dev/null; then
-      echo "admin:*:19600:0:99999:7:::" >>"$sh"
+    if [ -f "$sh" ]; then
+      sed -i "/^admin:/d" "$sh" 2>/dev/null || true
+      if ! grep -q "^atlas:" "$sh" 2>/dev/null; then
+        echo "atlas:!:19600:0:99999:7:::" >>"$sh"
+      fi
     fi
     # sudo group membership for atlas (optional; sudoers names uid too)
     if [ -f "$gr" ] && grep -q "^sudo:" "$gr" 2>/dev/null; then
@@ -1801,12 +1795,10 @@ ensure_admin_user() {
     mkdir -p "$root/etc/sudoers.d" 2>/dev/null || true
     printf 'atlas ALL=(ALL) NOPASSWD:ALL\n# uid %s same rights when listed by number\nDefaults:%s !authenticate\n%s ALL=(ALL) NOPASSWD:ALL\n' \
       "$uid" "$uid" "$uid" >"$root/etc/sudoers.d/atlas" 2>/dev/null || true
-    printf 'admin ALL=(ALL) NOPASSWD:ALL\n# uid %s same rights when listed by number\nDefaults:%s !authenticate\n%s ALL=(ALL) NOPASSWD:ALL\n' \
-      "$uid" "$uid" "$uid" >"$root/etc/sudoers.d/atlas-admin" 2>/dev/null || true
-    chown 0:0 "$root/etc/sudoers.d" "$root/etc/sudoers.d/atlas" \
-      "$root/etc/sudoers.d/atlas-admin" 2>/dev/null || true
+    rm -f "$root/etc/sudoers.d/atlas-admin" 2>/dev/null || true
+    chown 0:0 "$root/etc/sudoers.d" "$root/etc/sudoers.d/atlas" 2>/dev/null || true
     chmod 0750 "$root/etc/sudoers.d" 2>/dev/null || true
-    chmod 0440 "$root/etc/sudoers.d/atlas" "$root/etc/sudoers.d/atlas-admin" 2>/dev/null || true
+    chmod 0440 "$root/etc/sudoers.d/atlas" 2>/dev/null || true
     for sbin in "$root/usr/bin/sudo.real" "$root/usr/bin/sudo"; do
       [ -f "$sbin" ] || continue
       if head -1 "$sbin" 2>/dev/null | grep -q '^#!'; then
@@ -2891,9 +2883,9 @@ write_profile() {
 # Atlas combined OS — one terminal, seamless Android ↔ Debian
 export ATLAS_HYBRID=1
 export ATLAS_COMBINED=1
-export USER="${USER:-admin}"
-export LOGNAME="${LOGNAME:-admin}"
-export ATLAS_ROLE=admin
+export USER="${USER:-atlas}"
+export LOGNAME="${LOGNAME:-atlas}"
+export ATLAS_ROLE=atlas
 _AB="${ATLAS_BIN:-}"
 export ATLAS_LINUX_HOME="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
 # Prefer bound Deb home for installs
@@ -2940,9 +2932,9 @@ elif [ -x /usr/bin/bash ]; then
   export SHELL=/usr/bin/bash
 fi
 if [ -n "${BASH_VERSION:-}" ]; then
-  PS1='admin:\w\$ '
+  PS1='atlas:\w\$ '
 else
-  PS1='admin\$ '
+  PS1='atlas\$ '
 fi
 stty sane 2>/dev/null || true
 stty erase ^? intr ^C 2>/dev/null || true
@@ -3647,7 +3639,7 @@ _enter_exec() {
       || stat -c %u /data/user/0/com.titanus2.atlas 2>/dev/null || true`
   fi
   if [ -z "$DROP" ] || [ "$DROP" = "0" ]; then
-    log "FATAL no admin uid (ATLAS_DROP_UID) — refuse root shell"
+    log "FATAL no atlas uid (ATLAS_DROP_UID) — refuse root shell"
     return 1
   fi
 
@@ -3723,7 +3715,7 @@ _enter_exec() {
   export GROK_HOME="$_AH/.grok"
   export ATLAS_AUTH_DIR="${ATLAS_AUTH_DIR:-${ATLAS_AUTH_ON_LP:-/data/local/atlas-linux/var/lib/atlas-auth}}"
   export SUDO_ASKPASS="${SUDO_ASKPASS:-$_AB/atlas-auth-askpass}"
-  export USER=admin LOGNAME=admin ATLAS_ROLE=admin
+  export USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas
   export TERM="${TERM:-xterm-256color}"
   export LANG="${LANG:-C.UTF-8}"
   export COLORTERM="${COLORTERM:-truecolor}"
@@ -3762,7 +3754,7 @@ _enter_exec() {
   # Keep LD_LIBRARY_PATH empty forever in hybrid admin shell.
   _DEB_ENV="
       export HOME='$_AH' ATLAS_HOME='$_AH' ATLAS_BIN='$_AB' GROK_HOME='$_AH/.grok'
-      export ATLAS_HYBRID=1 ATLAS_COMBINED=1 ATLAS_ROLE=admin USER=admin LOGNAME=admin
+      export ATLAS_HYBRID=1 ATLAS_COMBINED=1 ATLAS_ROLE=atlas USER=atlas LOGNAME=atlas
       export PATH='$_PATH'
       export ATLAS_AUTH_DIR='/var/lib/atlas-auth'
       export SUDO_ASKPASS='$_AB/atlas-auth-askpass'
