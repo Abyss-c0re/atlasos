@@ -1507,10 +1507,12 @@ EOF
 link_combined_bins() {
   dest="$MERGE/atlas-bin"
   mkdir -p "$dest" 2>/dev/null || true
+  chmod 0755 "$dest" 2>/dev/null || true
   stamp="$dest/.stamp"
   if [ -z "${ATLAS_RELINK:-}" ] && [ -f "$stamp" ]; then
     # Still reinstall elevate gates (cheap, law must hold)
     ensure_agent_elevate_gates
+    chmod 0755 "$dest" 2>/dev/null || true
     return 0
   fi
   log "linking combined bin → $dest (debian + android peers)"

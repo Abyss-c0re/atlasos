@@ -186,7 +186,7 @@ static int ticket_valid(const char *auth_dir) {
 }
 
 static void write_ticket(const char *auth_dir, int ttl) {
-  if (ttl <= 0) ttl = 90;
+  if (ttl <= 0) ttl = 1800;
   long exp = (long)time(NULL) + ttl;
   if (auth_dir && auth_dir[0]) {
     char path[640];
@@ -298,7 +298,7 @@ int atlas_auth_request(const char *reason, int timeout_sec) {
       unlink(fail);
       unlink(req);
       unlink(busy);
-      write_ticket(auth_dir, 90);
+      write_ticket(auth_dir, 1800);
       return 0;
     }
     if (file_exists(fail)) {

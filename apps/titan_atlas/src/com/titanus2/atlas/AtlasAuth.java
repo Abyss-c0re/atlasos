@@ -39,8 +39,8 @@ public final class AtlasAuth {
     private static final String TAG = "AtlasAuth";
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
-    /** Default ticket lifetime after a successful biometric (seconds). */
-    public static final int TICKET_TTL_SEC = 90;
+    /** Ticket lifetime after a successful biometric (seconds). 90s killed Deb IPC. */
+    public static final int TICKET_TTL_SEC = 1800;
 
     private AtlasAuth() {}
 

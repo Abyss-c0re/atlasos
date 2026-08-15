@@ -71,7 +71,7 @@ if [ -f "$ROOT/native/atlas_auth.c" ]; then
   build_one atlas-auth "$ROOT/native/atlas_auth.c"
 fi
 if [ -f "$ROOT/native/atlas_android.c" ]; then
-  build_one atlas-android "$ROOT/native/atlas_android.c" "1.1.0-wrap"
+  build_one atlas-android "$ROOT/native/atlas_android.c" "1.1.2-wrap"
 fi
 if [ -f "$ROOT/native/atlas_auth_askpass.c" ]; then
   build_one atlas-auth-askpass "$ROOT/native/atlas_auth_askpass.c"

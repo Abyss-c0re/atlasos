@@ -358,7 +358,11 @@ static void print_status(void) {
   printf("plane=%s\n", deb ? "hybrid" : "android");
   printf("storage=%s\n", lp ? "lp" : (deb ? "unknown" : "android"));
   printf("overlay=0\n");
-  printf("binder=%s\n", binder ? "present" : "missing");
+  /* Deb mount ns has empty binderfs. IPC is the wrap, not a local node. */
+  if (wrap && !binder)
+    printf("binder=via-wrap\n");
+  else
+    printf("binder=%s\n", binder ? "present" : "missing");
   printf("android_ipc=%s\n", wrap ? "atlas-android-wrap" : "none");
   printf("wrap=%s\n", wrap ? "atlas-android" : "missing");
   printf("uid=%d\n", (int)getuid());
