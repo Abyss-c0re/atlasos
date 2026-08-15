@@ -24,7 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Saved sessions: rename, notes, multi-select, import/export.
+ * One Saved surface: named $HOME backups. Not seats. Not live PTYs.
  */
 public class BackupsActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -48,8 +48,8 @@ public class BackupsActivity extends Activity {
             ScrollView.LayoutParams.MATCH_PARENT,
             ScrollView.LayoutParams.WRAP_CONTENT));
 
-        UiKit.section(root, "Sessions");
-        UiKit.note(root, "Rename · notes · import/export · survive reboot");
+        UiKit.section(root, "Saved");
+        UiKit.note(root, "Named home backups · survive reboot");
         summary = UiKit.summary(root);
         LinearLayout actions = UiKit.row(root);
         UiKit.flexButton(actions, "Save", this::saveNow);
@@ -60,7 +60,7 @@ public class BackupsActivity extends Activity {
         UiKit.flexButton(selectBar, "Export", this::exportSelected);
         UiKit.flexButton(selectBar, "Delete", this::confirmDeleteSelected);
         UiKit.flexButton(selectBar, "All", this::selectAll);
-        UiKit.section(root, "Saved");
+        UiKit.section(root, "Backups");
         list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         root.addView(list);

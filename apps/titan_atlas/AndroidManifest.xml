@@ -64,14 +64,6 @@
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
 
         <activity
-            android:name=".SessionsActivity"
-            android:label="Sessions"
-            android:theme="@style/Theme.Atlas.Settings"
-            android:exported="false"
-            android:parentActivityName=".SettingsActivity"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
-
-        <activity
             android:name=".BackupsActivity"
             android:label="Backups"
             android:theme="@style/Theme.Atlas.Settings"

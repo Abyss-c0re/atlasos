@@ -2353,27 +2353,9 @@ atlas_sandbox_reapply() {
 }
 
 cmd_seat_sandbox() {
-  need_root || return 1
-  _sb_user="${1:-}"
-  on="${2:-1}"
-  atlas_user_valid "$_sb_user" || { echo "error=bad-name"; return 2; }
-  case "$on" in 0|1) ;; *) echo "error=bad-val"; return 2 ;; esac
-  atlas_seat_write "$_sb_user" sandbox "$on"
-  if [ "$on" = "1" ]; then
-    atlas_user_write_perm "$_sb_user" android 0
-    atlas_sandbox_up "$_sb_user" || {
-      atlas_seat_write "$_sb_user" sandbox 0
-      atlas_user_write_perm "$_sb_user" android 1
-      echo "name=$_sb_user sandbox=0 error=layer"
-      return 1
-    }
-    layer=up
-  else
-    atlas_user_write_perm "$_sb_user" android 1
-    atlas_sandbox_down "$_sb_user"
-    layer=down
-  fi
-  echo "name=$_sb_user sandbox=$on android=$([ "$on" = 1 ] && echo 0 || echo 1) layer=$layer kernel=shared"
+  # Loop-image seats are not product. One LP Debian.
+  echo "error=not-product"
+  return 2
 }
 
 cmd_seat_freeze() {
@@ -2437,28 +2419,8 @@ cmd_seat_rm_snap() {
 }
 
 cmd_seat_clone() {
-  need_root || return 1
-  src="${1:-}"
-  dst="${2:-}"
-  atlas_user_valid "$src" || { echo "error=bad-src"; return 2; }
-  atlas_user_valid "$dst" || { echo "error=bad-dst"; return 2; }
-  pw=`atlas_user_pwfile`
-  grep -q "^${src}:" "$pw" || { echo "error=no-user"; return 2; }
-  grep -q "^${dst}:" "$pw" && { echo "error=exists"; return 2; }
-  ATLAS_USER_SUDO=`atlas_user_read_perm "$src" sudo 1`
-  ATLAS_USER_ANDROID=0
-  ATLAS_USER_DEBIAN=1
-  export ATLAS_USER_SUDO ATLAS_USER_ANDROID ATLAS_USER_DEBIAN
-  cmd_add_user "$dst" || return 1
-  src_home="/data/local/atlas-home/$src"
-  dst_home="/data/local/atlas-home/$dst"
-  if [ -d "$src_home" ]; then
-    cp -a "$src_home/." "$dst_home/" 2>/dev/null || true
-    uid=`awk -F: -v n="$dst" '$1==n {print $3; exit}' "$pw"`
-    chown -R "${uid}:${uid}" "$dst_home" 2>/dev/null || true
-  fi
-  atlas_seat_write "$dst" sandbox 1
-  echo "cloned=$src → $dst sandbox=1"
+  echo "error=not-product"
+  return 2
 }
 
 cmd_seat_export() {

@@ -766,58 +766,6 @@ public final class HybridEnsure {
         return nz(r);
     }
 
-    public static String seatStatus(Context c, String name) {
-        if (!validUserName(name)) return "bad name";
-        return nz(runUserTool(c, null, "seat-status", name));
-    }
-
-    public static String seatSandbox(Context c, String name, boolean on) {
-        return nz(runUserTool(c, null, "seat-sandbox", name, on ? "1" : "0"));
-    }
-
-    public static String seatFreeze(Context c, String name, boolean freeze) {
-        return nz(runUserTool(c, null, freeze ? "seat-freeze" : "seat-thaw", name));
-    }
-
-    public static String seatSave(Context c, String name) {
-        return backupSave(c, name);
-    }
-
-    public static String seatClone(Context c, String src, String dst) {
-        if (!validUserName(src) || !validUserName(dst)) return "bad name";
-        return nz(runUserTool(c, null, "seat-clone", src, dst));
-    }
-
-    public static String seatExport(Context c, String name) {
-        return seatExport(c, name, null);
-    }
-
-    public static String seatExport(Context c, String name, String snap) {
-        if (snap != null && !snap.isEmpty()) {
-            return backupExport(c, snap);
-        }
-        return backupExportLatest(c, name);
-    }
-
-    public static String seatLoad(Context c, String name, String snap) {
-        if (snap != null && !snap.isEmpty()) {
-            return backupLoad(c, name, snap);
-        }
-        return backupLoadLatest(c, name);
-    }
-
-    public static String seatDeleteSnap(Context c, String name, String snap) {
-        if (snap == null || snap.isEmpty()) return "bad snap";
-        return backupDelete(c, snap);
-    }
-
-    /** Backup ids for a seat (newest first). */
-    public static java.util.List<String> seatSnapNames(Context c, String name) {
-        java.util.ArrayList<String> out = new java.util.ArrayList<>();
-        for (Backup b : loadBackups(c, name)) out.add(b.id);
-        return out;
-    }
-
     /** One reboot-persistent Debian moment (home + overlay archive). */
     public static final class Backup {
         public String id = "";
