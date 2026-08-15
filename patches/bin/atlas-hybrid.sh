@@ -1129,6 +1129,14 @@ EOF
   chmod 755 "$MERGE/usr/local/bin/android-exec" "$MERGE/usr/local/bin/android" 2>/dev/null || true
   # Alias names agents expect from issue reports
   ln -sf android "$MERGE/usr/local/bin/android-run" 2>/dev/null || true
+  # Same-name Android IPC wrappers first on PATH (/usr/local/bin).
+  # Deb binderfs is empty — these must not be raw /system/bin ELFs.
+  wrapbin="$MERGE/usr/local/libexec/atlas-android"
+  if [ -x "$wrapbin" ] || [ -x /usr/local/libexec/atlas-android ]; then
+    for t in getprop setprop am pm cmd dumpsys service screencap input wm settings logcat; do
+      ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/$t" 2>/dev/null || true
+    done
+  fi
   # Screencap + status helpers (copy from system/app if present)
   for h in atlas-screencap atlas-agent-status; do
     for src in \

@@ -760,13 +760,14 @@ static void handle_client(int csock, uid_t peer) {
       char path[2048];
       const char *h = getenv("HOME");
       path[0] = 0;
+      /* Wrap first: same-name Android IPC (getprop/am/screencap) via atlas-auth. */
+      path_add_dir(path, sizeof(path), "/atlas-bin");
       path_add_dir(path, sizeof(path), "/usr/local/sbin");
       path_add_dir(path, sizeof(path), "/usr/local/bin");
       path_add_dir(path, sizeof(path), "/usr/sbin");
       path_add_dir(path, sizeof(path), "/usr/bin");
       path_add_dir(path, sizeof(path), "/sbin");
       path_add_dir(path, sizeof(path), "/bin");
-      path_add_dir(path, sizeof(path), "/atlas-bin");
       if (h && h[0]) path_add_user_installs(path, sizeof(path), h);
       /* also CE files home if distinct (android plane tools) */
       path_add_user_installs(path, sizeof(path), "/data/data/com.titanus2.atlas/files");
