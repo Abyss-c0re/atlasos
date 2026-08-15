@@ -112,14 +112,15 @@ public class SettingsActivity extends Activity {
         UiKit.section(root, "Privileges");
         AtlasPrefs.publishPrivilegePlane(this);
         AtlasPrefs.publishBioPlane(this);
-        UiKit.toggle(root, "Debian hybrid", AtlasPrefs.privilegedHybrid(this), on -> {
+        // Pref only: default *new* shells to Debian. Does not mount/unmount the LP.
+        // Per-session And/Deb is the top bar. Off does not stop Debian.
+        UiKit.toggle(root, "Default new shell: Debian", AtlasPrefs.privilegedHybrid(this), on -> {
             if (on) {
                 runIo(() -> {
-                    // Bio only if master enforcement on; else grant privilege path.
                     boolean ok = true;
                     if (AtlasPrefs.biometricAuth(SettingsActivity.this)) {
                         ok = AtlasAuth.requestBlocking(
-                            SettingsActivity.this, "Enable Debian hybrid", 90);
+                            SettingsActivity.this, "Default Debian shell", 90);
                     }
                     if (!ok) {
                         main.post(() -> {
@@ -128,49 +129,31 @@ public class SettingsActivity extends Activity {
                         });
                         return;
                     }
-                    main.post(() -> toast("Ensuring…"));
-                    String prep = ensureHybridReady();
-                    boolean ready = NativeBin.hybridRootfsReady();
-                    String user = ready ? HybridEnsure.createLiveUid(SettingsActivity.this) : null;
+                    String prep = HybridEnsure.debianLpLive()
+                        ? null : ensureHybridReady();
+                    boolean ready = NativeBin.hybridRootfsReady()
+                        || HybridEnsure.debianLpLive();
+                    if (ready && prep == null) {
+                        HybridEnsure.createLiveUid(SettingsActivity.this);
+                    }
+                    final boolean okReady = ready && prep == null;
                     main.post(() -> {
-                        if (prep == null && ready) {
-                            AtlasPrefs.setPrivilegedHybrid(this, true);
-                            try {
-                                NativeBin.writePlaneStatus(this, true, true);
-                            } catch (Exception ignored) {
-                            }
-                            AtlasPrefs.publishPrivilegePlane(this);
-                            toast("DEBIAN up · " + (user != null ? user : HybridEnsure.liveUidStatus()));
-                            refreshHybridStatus();
-                            finish();
-                        } else {
-                            AtlasPrefs.setPrivilegedHybrid(this, false);
-                            try {
-                                NativeBin.writePlaneStatus(this, false, ready);
-                            } catch (Exception ignored) {
-                            }
-                            toast(prep != null ? prep : "hybrid↓");
-                            recreate();
-                        }
+                        AtlasPrefs.setPrivilegedHybrid(this, okReady);
+                        toast(okReady
+                            ? "new shells open Debian"
+                            : (prep != null ? prep : "Debian not ready"));
+                        if (!okReady) recreate();
                     });
                 });
             } else {
                 AtlasPrefs.setPrivilegedHybrid(this, false);
-                try {
-                    NativeBin.writePlaneStatus(this, false, NativeBin.hybridRootfsReady());
-                } catch (Exception ignored) {
-                }
-                toast("Android plane");
-                finish();
+                toast("new shells open Android");
             }
         });
         usersNav = UiKit.navRow(root, "Users", HybridEnsure.listDebianUsers(),
             () -> startActivity(new Intent(this, UsersActivity.class)));
-        UiKit.navRow(root, "Sessions", "Sandbox, freeze, clone",
-            () -> startActivity(new Intent(this, SessionsActivity.class)));
 
         UiKit.section(root, "Backups");
-        UiKit.note(root, "Sessions · rename · notes · import");
         backupsNav = UiKit.navRow(root, "Saved", "…",
             () -> startActivity(new Intent(this, BackupsActivity.class)));
         debianUserStatus = null;
@@ -186,12 +169,6 @@ public class SettingsActivity extends Activity {
                 AtlasPrefs.setPrivDebianSudo(this, on);
                 toast(on ? "Deb elevate on" : "Deb sudo off");
             });
-        UiKit.toggle(root, "Android su",
-            AtlasPrefs.privAndroidSu(this),
-            on -> {
-                AtlasPrefs.setPrivAndroidSu(this, on);
-                toast(on ? "host elevate on" : "Android su off");
-            });
 
         UiKit.section(root, "Biometric");
         UiKit.toggle(root, "Require biometrics",
@@ -200,22 +177,7 @@ public class SettingsActivity extends Activity {
                 AtlasPrefs.setBiometricAuth(this, on);
                 if (!on) AtlasAuth.clearTicket(this);
                 toast(on ? "Bio on" : "Bio off");
-                recreate();
             });
-        if (AtlasPrefs.biometricAuth(this)) {
-            UiKit.toggle(root, "Bio · Android access",
-                AtlasPrefs.bioAndroidAccessPref(this),
-                on -> AtlasPrefs.setBioAndroidAccess(this, on));
-            UiKit.toggle(root, "Bio · Debian sudo",
-                AtlasPrefs.bioDebianSudoPref(this),
-                on -> AtlasPrefs.setBioDebianSudo(this, on));
-            UiKit.toggle(root, "Bio · Android su",
-                AtlasPrefs.bioAndroidSuPref(this),
-                on -> {
-                    AtlasPrefs.setBioAndroidSu(this, on);
-                    if (!on) AtlasAuth.clearTicket(this);
-                });
-        }
 
         UiKit.section(root, "Debian image");
         hybridStatus = UiKit.mono(root);
@@ -244,7 +206,7 @@ public class SettingsActivity extends Activity {
             UiKit.button(root, "Fix home ownership", this::healHome);
         }
 
-        UiKit.section(root, "Sessions");
+        UiKit.section(root, "Agent");
         UiKit.toggle(root, "Keep-alive notification", AtlasPrefs.keepAlive(this), on -> {
             AtlasPrefs.setKeepAlive(this, on);
             if (on) {
