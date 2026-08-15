@@ -328,7 +328,7 @@ if [ -n "$ATLAS_APK" ] && [ -f "$SRC_ATLAS/Android.bp" ]; then
     [ "$DRY" != "1" ] && chmod 755 "$DEST_ATLAS/$h" 2>/dev/null || true
   done
   # ROM base ELFs (auth/sudo/repl/enter) — priv-app is UI; execute from /system/bin
-  for elf in atlas-auth atlas-sudo atlas-auth-askpass atlas atlas-lpctl atlas-enter atlas-enterd; do
+  for elf in atlas-auth atlas-sudo atlas-auth-askpass atlas atlas-lpctl atlas-enter atlas-enterd atlas-android; do
     src=""
     for c in "$ROOT/packages/titan_atlas/out/$elf" \
              "$ROOT/apps/titan_atlas/assets/bin/$elf" \

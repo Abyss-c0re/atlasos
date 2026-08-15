@@ -286,9 +286,11 @@ static int auth_ticket_ok(void) {
     FILE *f = fopen(cands[i], "r");
     if (!f) continue;
     long exp = 0;
-    int n = fscanf(f, "%ld", &exp);
+    int ttl = 0;
+    int n = fscanf(f, "%ld %d", &exp, &ttl);
     fclose(f);
-    if (n == 1 && exp > now) return 1;
+    /* Two fields required. A lone epoch (forged `date +%s`) is not a ticket. */
+    if (n >= 2 && ttl > 0 && exp > now && exp <= now + ttl + 5) return 1;
   }
   return 0;
 }

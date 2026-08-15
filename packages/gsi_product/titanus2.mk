@@ -49,6 +49,7 @@ PRODUCT_PACKAGES += \
     atlas-auth-askpass \
     atlas-enter \
     atlas-enterd \
+    atlas-android \
     atlas-lpctl \
     atlas-agent-status \
     atlas-screencap \

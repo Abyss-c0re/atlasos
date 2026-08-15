@@ -222,7 +222,7 @@ EOF
     chmod 755 "$MNT/etc/init.d/$s"
   done
   echo BlackCube >"$MNT/etc/hostname"
-  echo BlackCube >/proc/sys/kernel/hostname 2>/dev/null || true
+  # Do not stomp the Android/Debian UTS hostname (Titan vs BlackCube identity).
   # Empty root only when the LP has never been inited and root is locked.
   # A real password on the LP must survive wipe and reboot.
   if [ ! -f "$MNT/etc/atlas-openwrt-inited" ]; then

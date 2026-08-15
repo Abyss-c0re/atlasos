@@ -197,6 +197,12 @@ bring_up_from_lp() {
   # Marker so is_bootstrapped / status look healthy
   printf 'atlas-hybrid %s base=lp-atlas_linux home_on_data=1\n' "$VER" >"$MARKER" 2>/dev/null || true
 
+  # Identity: do not leave UTS as BlackCube (OpenWrt leftover) on Titan.
+  _hn=`cat /proc/sys/kernel/hostname 2>/dev/null || true`
+  case "$_hn" in
+    BlackCube|localhost|"") echo Titan2 >/proc/sys/kernel/hostname 2>/dev/null || true ;;
+  esac
+
   bind_android 2>/dev/null || true
   heal_merge_essentials 2>/dev/null || true
   ensure_auth_plane_on_lp 2>/dev/null || true
@@ -912,6 +918,22 @@ bind_rbind() {
 write_android_exec_helpers() {
   d="$MERGE/usr/local/libexec"
   mkdir -p "$d" "$MERGE/usr/local/bin" 2>/dev/null || true
+  # Native wrap (same-name Android peers). Prefer /system/bin, then assets.
+  _wrap=
+  for w in /system/bin/atlas-android \
+    /data/data/com.titanus2.atlas/files/bin/atlas-android \
+    "$d/atlas-android"; do
+    [ -x "$w" ] && _wrap=$w && break
+  done
+  if [ -n "$_wrap" ]; then
+    [ "$_wrap" = "$d/atlas-android" ] || cp -f "$_wrap" "$d/atlas-android" 2>/dev/null || true
+    chmod 755 "$d/atlas-android" 2>/dev/null || true
+    ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android" 2>/dev/null || true
+    ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android-exec" 2>/dev/null || true
+    ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android-run" 2>/dev/null || true
+    ln -sfn /usr/local/libexec/atlas-android "$d/atlas-android-exec" 2>/dev/null || true
+    ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/atlas-screencap" 2>/dev/null || true
+  fi
   cat >"$d/atlas-android-exec" <<'EOF'
 #!/bin/sh
 # Run an Android (Bionic) binary from hybrid Debian root.
@@ -922,6 +944,12 @@ write_android_exec_helpers() {
 #     (Atlas publishes android_auth=1 only when master bio + bio Android access)
 # Deb-internal tools (apt, bash, …) never go through this path.
 set -f
+# Prefer native wrap (auth + enterd elevate). Fall through only if missing.
+for w in /usr/local/libexec/atlas-android /system/bin/atlas-android; do
+  if [ -x "$w" ]; then
+    exec "$w" "$@"
+  fi
+done
 bin="$1"
 shift
 [ -n "$bin" ] || { echo "atlas-android-exec: missing binary" >&2; exit 2; }
@@ -1499,30 +1527,13 @@ link_combined_bins() {
   # Shim for Android tools (one script; names symlink here)
   shim="$MERGE/usr/local/libexec/atlas-android-shim"
   mkdir -p "$MERGE/usr/local/libexec" 2>/dev/null || true
-  cat >"$shim" <<'EOF'
+  wrap=/usr/local/libexec/atlas-android
+  [ -x /system/bin/atlas-android ] && wrap=/system/bin/atlas-android
+  [ -x "$MERGE/usr/local/libexec/atlas-android" ] && wrap=/usr/local/libexec/atlas-android
+  cat >"$shim" <<EOF
 #!/bin/sh
-# argv0 name → host Android binary via android-exec (Bionic + apex).
-# Deb → Android only. Optional bio: ATLAS_ANDROID_AUTH=1.
-# Never used for Deb apt/bash — those are real Deb packages.
-name=`basename "$0"`
-case "$name" in
-  su|sudo|doas|pkexec)
-    echo "atlas: $name is agent-gated — use PATH sudo/su" >&2
-    exit 126
-    ;;
-  apt|apt-get|apt-cache)
-    # Never shim apt to Android — real Deb path must win
-    echo "atlas: $name must be Debian package, not Android shim" >&2
-    exit 126
-    ;;
-esac
-for d in /system/bin /system/xbin /product/bin /vendor/bin; do
-  if [ -x "$d/$name" ]; then
-    exec /usr/local/libexec/atlas-android-exec "$d/$name" "$@"
-  fi
-done
-echo "$name: not found on Android or Debian PATH" >&2
-exit 127
+# argv0 name → atlas-android wrap (discover + auth + elevate).
+exec ${wrap} "\$@"
 EOF
   chmod 755 "$shim" 2>/dev/null || true
 
@@ -1568,7 +1579,7 @@ EOF
         if [ -e "$dest/$b" ] || [ -L "$dest/$b" ]; then
           continue
         fi
-        ln -sfn /usr/local/libexec/atlas-android-shim "$dest/$b" 2>/dev/null || true
+        ln -sfn "$wrap" "$dest/$b" 2>/dev/null || true
       done
     else
       for f in "$dir"/*; do
@@ -1580,7 +1591,7 @@ EOF
         if [ -e "$dest/$b" ] || [ -L "$dest/$b" ]; then
           continue
         fi
-        ln -sfn /usr/local/libexec/atlas-android-shim "$dest/$b" 2>/dev/null || true
+        ln -sfn "$wrap" "$dest/$b" 2>/dev/null || true
       done
     fi
   done
@@ -1749,14 +1760,18 @@ ensure_admin_user() {
     pw="$root/etc/passwd"
     gr="$root/etc/group"
     sh="$root/etc/shadow"
-    # Live uid must exist (ssh/sudo/nss). Prefer name atlas.
-    if [ -f "$pw" ] && ! grep -q ":x:${uid}:${uid}:" "$pw" 2>/dev/null; then
+    # Live uid must exist (ssh/sudo/nss). atlas + admin = app uid (not 10198 leftover).
+    if [ -f "$pw" ]; then
       if grep -q "^atlas:" "$pw" 2>/dev/null; then
-        # Name taken at another uid — still add this uid (atlas<uid>).
-        echo "atlas${uid}:x:${uid}:${uid}:Atlas:${home}:/bin/bash" >>"$pw"
+        sed -i "s#^atlas:[^:]*:[^:]*:[^:]*:#atlas:x:${uid}:${uid}:#" "$pw" 2>/dev/null || true
       else
         echo "atlas:x:${uid}:${uid}:Atlas:${home}:/bin/bash" >>"$pw"
       fi
+      if grep -q "^admin:" "$pw" 2>/dev/null; then
+        sed -i "s#^admin:[^:]*:[^:]*:[^:]*:#admin:x:${uid}:${uid}:#" "$pw" 2>/dev/null || true
+      fi
+      # Drop leftover atlas<uid> alias if atlas now owns that uid.
+      sed -i "/^atlas${uid}:/d" "$pw" 2>/dev/null || true
     fi
     if [ -f "$gr" ] && ! grep -q ":x:${uid}:" "$gr" 2>/dev/null \
         && ! grep -q "^atlas:" "$gr" 2>/dev/null; then
@@ -3262,9 +3277,20 @@ write_product_status() {
   [ -x /system/bin/atlas-enter ] && enter=1
   [ -f "$IMG" ] && img=1
   # mount line alone (is_overlay_up also needs bash — can disagree when whiteout)
-  grep -q " $MERGE " /proc/mounts 2>/dev/null && overlay=1
+  storage=none
+  overlay=0
+  if grep -q " $MERGE overlay " /proc/mounts 2>/dev/null \
+      || grep -q "^overlay $MERGE " /proc/mounts 2>/dev/null; then
+    overlay=1
+    storage=overlay
+  elif grep -q atlas_linux_a /proc/self/mountinfo 2>/dev/null \
+      || grep -q " $MERGE " /proc/mounts 2>/dev/null; then
+    # LP bind or this process already lives on atlas_linux_a — not overlay.
+    storage=lp
+    overlay=0
+  fi
   is_bootstrapped && boot=1
-  if [ "$overlay" = "1" ]; then
+  if [ "$storage" != "none" ]; then
     heal_merge_essentials 2>/dev/null || true
     # ready only if chroot merge can exec bash (lower-only is NOT enterable)
     if [ -x "$MERGE/usr/bin/bash" ] || [ -x "$MERGE/bin/bash" ] || [ -x "$MERGE/bin/sh" ]; then
@@ -3278,6 +3304,7 @@ write_product_status() {
   {
     echo "ready=$ready"
     echo "overlay=$overlay"
+    echo "storage=$storage"
     echo "bootstrapped=$boot"
     echo "img=$img"
     echo "debian=$deb"
@@ -3351,7 +3378,9 @@ cmd_ensure() {
       write_product_status
       return 0
     fi
-    log "ensure: LP present but failed — fall through to loop"
+    log "ensure: LP present but failed — refusing loop/mke2fs (would wipe Debian)"
+    write_product_status
+    return 1
   fi
 
   # LIVE overlay in /proc/mounts: never remount, never e2fsck, never detach.

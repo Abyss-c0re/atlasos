@@ -106,6 +106,17 @@ cc_prebuilt_binary {
     },
 }
 
+cc_prebuilt_binary {
+    name: "atlas-android",
+    srcs: ["atlas-android"],
+    stem: "atlas-android",
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
 // Super LP: mount atlas_linux_a (Debian root). Home stays on /data.
 cc_prebuilt_binary {
     name: "atlas-lpctl",

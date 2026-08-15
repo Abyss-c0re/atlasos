@@ -29,10 +29,21 @@ if is_hybrid_env; then
 fi
 # disk ready?
 disk=no
-[ -f /data/local/atlas-hybrid/lower/etc/os-release ] && disk=yes
-[ -f /data/local/atlas-hybrid/merge/usr/bin/bash ] && disk=yes
+storage=none
 overlay=no
-grep -q ' /data/local/atlas-hybrid/merge ' /proc/mounts 2>/dev/null && overlay=yes
+if grep -q atlas_linux_a /proc/self/mountinfo 2>/dev/null; then
+  disk=yes
+  storage=lp
+  overlay=no
+elif grep -q ' /data/local/atlas-hybrid/merge overlay ' /proc/mounts 2>/dev/null; then
+  disk=yes
+  storage=overlay
+  overlay=yes
+elif [ -f /data/local/atlas-hybrid/merge/usr/bin/bash ] || [ -f /etc/debian_version ]; then
+  disk=yes
+  storage=lp
+  overlay=no
+fi
 rootfs=/
 [ -d /data/local/atlas-hybrid/merge ] && [ "$(readlink /proc/self/root 2>/dev/null)" != "/" ] && rootfs=$(readlink /proc/self/root 2>/dev/null)
 # simpler: check if / is debian
@@ -52,7 +63,9 @@ fi
 # hybrid without init ns → Android IPC needs android / android-exec
 android_ipc=direct
 if [ "$plane" = "hybrid" ]; then
-  if [ -x /usr/local/libexec/atlas-android-exec ] || [ -x /usr/local/bin/android ]; then
+  if [ -x /usr/local/libexec/atlas-android ] || [ -x /system/bin/atlas-android ]; then
+    android_ipc=atlas-android-wrap
+  elif [ -x /usr/local/libexec/atlas-android-exec ] || [ -x /usr/local/bin/android ]; then
     android_ipc=android-exec_nsenter
   else
     android_ipc=nsenter-required
@@ -69,6 +82,7 @@ report() {
   echo "hybrid_env=$(is_hybrid_env && echo yes || echo no)"
   echo "hybrid_disk=$disk"
   echo "hybrid_overlay=$overlay"
+  echo "storage=$storage"
   echo "os_pretty=$os_pretty"
   echo "uid=$(id -u 2>/dev/null) user=${USER:-?} role=${ATLAS_ROLE:-?}"
   echo "home=$HOME"
@@ -83,8 +97,8 @@ report() {
     echo "titan2_atlas_mode=$(cat /data/local/tmp/titan2_atlas_mode 2>/dev/null)"
   fi
   echo "=== AGENT RULES ==="
-  echo "1) plane=hybrid|debian → Debian tools OK; Android Binder tools need: android <cmd> | android-exec"
-  echo "2) screencap: atlas-screencap [out.png]  (never bare screencap in hybrid)"
+  echo "1) plane=hybrid|debian → Debian tools OK; Android tools: same name (screencap, am) via atlas-android wrap"
+  echo "2) screencap / am / wm — same names; wrap does auth + elevate (not atlas-screencap)"
   echo "3) reports: write markdown under \$HOME/reports/ — that is the agent side channel"
   echo "4) prove mode: cat /etc/os-release · atlas-agent-status · echo \$ATLAS_HYBRID"
   if [ "$plane" = "hybrid" ] && [ "$binder" != "present" ]; then
