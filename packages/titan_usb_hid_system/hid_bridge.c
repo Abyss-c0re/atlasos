@@ -47,6 +47,8 @@
 #define PAD_EPOCH_PATH2 "/data/local/tmp/titan2_pad_epoch"
 #define PAD_REGRAB_PATH "/data/misc/titan2/titan2_pad_regrab"
 #define PAD_REGRAB_PATH2 "/data/local/tmp/titan2_pad_regrab"
+#define HID_GRAB_PATH "/data/misc/titan2/titan2_usb_hid_grab"
+#define HID_GRAB_PATH2 "/data/local/tmp/titan2_usb_hid_grab"
 /* After key activity, suppress pad→host mouse (motion + click). While any
  * physical key is still held (incl. hold-Backspace autorepeat), stay blocked
  * so palm on the keyboard surface cannot keep a right-click hold alive. */
@@ -840,23 +842,20 @@ static int wait_rel_mouse(char *out, size_t outsz) {
     out[0] = '\0';
     mouse_pre_oriented = 0;
     if (follow_orient) {
-        /* ~1s for orient-rel to create titan2-orient-mouse after touchpadd up */
-        for (int t = 0; t < 50; t++) {
-            if (find_rel_mouse_ex(out, outsz, 1) == 0) {
-                fprintf(stderr, "mouse=orient-mouse (pre-rotated)\n");
-                return 0;
-            }
-            usleep(20000);
+        /* Orient-rel is either already up or not on this boot. Do not wait 1s
+         * per reopen — that is the HID pad lag (log: orient-mouse timeout). */
+        if (find_rel_mouse_ex(out, outsz, 1) == 0) {
+            fprintf(stderr, "mouse=orient-mouse (pre-rotated)\n");
+            return 0;
         }
-        fprintf(stderr, "orient-mouse timeout — fall back (may steal virtual)\n");
     }
-    /* follow off, or orient never appeared: virtual mouse / scan */
-    for (int t = 0; t < 15; t++) {
+    /* virt mouse / scan — 5×2ms max so a just-spawned uinput can appear */
+    for (int t = 0; t < 5; t++) {
         if (find_rel_mouse_ex(out, outsz, 0) == 0) {
             fprintf(stderr, "mouse=%s pre_orient=%d\n", out, mouse_pre_oriented);
             return 0;
         }
-        usleep(20000);
+        usleep(2000);
     }
     return -1;
 }
@@ -893,6 +892,9 @@ static int open_hidg_index(int idx) {
 static int hw_out_fd = -1;
 static int hw_out_fd_app = -1;
 static int no_hidg = 0;
+/* 1 = BT/soft mirror. USB hidg already sent the key — do not also append
+ * hw.out or FGS drainHwOut replays the file as a burst (lag → many keys). */
+static int want_hw_out = 0;
 
 /* 0 = flush every input event (lowest lag on Snapdragon hosts). */
 #define BT_MOUSE_COALESCE_MS 0
@@ -935,6 +937,8 @@ static void open_hw_out(void) {
 }
 
 static void hw_out4(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
+    if (!want_hw_out && !no_hidg)
+        return;
     uint8_t r[4] = { a, b, c, d };
     int any = 0;
     if (hw_out_fd < 0 && hw_out_fd_app < 0) open_hw_out();
@@ -1361,14 +1365,13 @@ static int open_rel_mouse_grab(const char *relpath) {
     int fd = open(relpath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) return -1;
     int gerr = 0;
-    for (int attempt = 0; attempt < 8; attempt++) {
+    for (int attempt = 0; attempt < 25; attempt++) {
         if (ioctl(fd, EVIOCGRAB, 1) == 0) {
             fprintf(stderr, "EXCLUSIVE grab driver mouse=%s (host only)\n", relpath);
             return fd;
         }
         gerr = errno;
-        /* EBUSY: orient-rel or another client holds the node — wait briefly */
-        usleep(40000);
+        usleep(2000);
     }
     fprintf(stderr, "driver mouse grab FAIL path=%s errno=%d (closed, not shared)\n",
             relpath, gerr);
@@ -1588,7 +1591,8 @@ int main(int argc, char **argv) {
                               "/data/local/tmp/titan2_usb_hid_hw_out", 0);
         if (v) hw_out = 1;
     }
-    if (hw_out) open_hw_out();
+    want_hw_out = hw_out;
+    if (want_hw_out) open_hw_out();
     load_typing_ms();
     load_mouse_feel();
     load_orient();
@@ -2124,6 +2128,29 @@ int main(int argc, char **argv) {
                 }
                 if (epoch > 0) last_pad_epoch = epoch;
                 else if (last_pad_epoch < 0) last_pad_epoch = 0;
+            }
+            /* Share vs exclusive: plane grab is SoT. Do not wait for service
+             * kill/restart — that left share stuck on --grab (phone keys dead)
+             * and dumped a key burst on later ungrab. */
+            {
+                int want = read_int_file(HID_GRAB_PATH, HID_GRAB_PATH2, grab);
+                if (want != grab && kfd >= 0) {
+                    if (want) {
+                        if (ioctl(kfd, EVIOCGRAB, 1) == 0) {
+                            grab = 1;
+                            fprintf(stderr, "plane grab=1 — exclusive TitanKey\n");
+                        }
+                    } else {
+                        uint8_t z6[6] = {0};
+                        mods = 0;
+                        memset(keys, 0, 6);
+                        if (hid_k >= 0) send_kbd(hid_k, 0, z6);
+                        ioctl(kfd, EVIOCGRAB, 0);
+                        grab = 0;
+                        fprintf(stderr, "plane grab=0 — share TitanKey (phone+host)\n");
+                    }
+                    fflush(stderr);
+                }
             }
             /* local-input + keys-only pause checked often (~200ms) */
             if (n - last_reload > 200) {
