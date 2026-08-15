@@ -339,6 +339,31 @@ static int nsenter_ok(void) {
   return WIFEXITED(st) && WEXITSTATUS(st) == 0;
 }
 
+static int file_has(const char *path) {
+  return access(path, F_OK) == 0;
+}
+
+static void print_status(void) {
+  int deb = file_has("/etc/debian_version");
+  int lp = file_has("/dev/block/mapper/atlas_linux_a")
+           || file_has("/data/local/atlas-linux/etc/debian_version");
+  int wrap = file_has("/usr/local/libexec/atlas-android")
+             || file_has("/system/bin/atlas-android")
+             || file_has("/data/local/atlas-linux/usr/local/libexec/atlas-android")
+             || file_has("/data/data/com.titanus2.atlas/files/bin/atlas-android");
+  int binder = 0;
+  struct stat st;
+  if (stat("/dev/binderfs/binder", &st) == 0 && S_ISCHR(st.st_mode)) binder = 1;
+  else if (stat("/dev/binder", &st) == 0 && S_ISCHR(st.st_mode)) binder = 1;
+  printf("plane=%s\n", deb ? "hybrid" : "android");
+  printf("storage=%s\n", lp ? "lp" : (deb ? "unknown" : "android"));
+  printf("overlay=0\n");
+  printf("binder=%s\n", binder ? "present" : "missing");
+  printf("android_ipc=%s\n", wrap ? "atlas-android-wrap" : "none");
+  printf("wrap=%s\n", wrap ? "atlas-android" : "missing");
+  printf("uid=%d\n", (int)getuid());
+}
+
 static void list_bins(void) {
   for (int i = 0; BIN_DIRS[i]; i++) {
     DIR *d = opendir(BIN_DIRS[i]);
@@ -368,10 +393,17 @@ int main(int argc, char **argv) {
     list_bins();
     return 0;
   }
-
+  if (!strcmp(me, "atlas-agent-status")
+      || (argc >= 2 && (!strcmp(argv[1], "status") || !strcmp(argv[1], "--status")))) {
+    print_status();
+    return 0;
+  }
   const char *name;
   char **rest;
-  if (!strcmp(me, "atlas-android") || !strcmp(me, "android") ||
+  if (!strcmp(me, "atlas-screencap")) {
+    name = "screencap";
+    rest = argv + 1;
+  } else if (!strcmp(me, "atlas-android") || !strcmp(me, "android") ||
       !strcmp(me, "android-exec") || !strcmp(me, "android-run")) {
     if (argc < 2) {
       fprintf(stderr,
