@@ -500,6 +500,34 @@ static uint8_t mouse_buttons_from_fd(int rfd) {
     return b;
 }
 
+/** Seed raw-pad contact from kernel state. HID start mid-touch has no
+ *  BTN_TOUCH / TRACKING_ID edge — without this the host waits for lift. */
+static void seed_raw_pad_contact(int fd, int *contact, int *last_x, int *last_y)
+{
+    unsigned long bits[(KEY_MAX + 1 + (sizeof(long) * 8 - 1)) / (sizeof(long) * 8)];
+    struct input_absinfo ax, ay;
+    int x = -1, y = -1, down = 0;
+
+    if (fd < 0 || !contact || !last_x || !last_y) return;
+    memset(bits, 0, sizeof bits);
+    if (ioctl(fd, EVIOCGKEY(sizeof bits), bits) == 0) {
+#define BIT_SET(k) (bits[(k) / (sizeof(long) * 8)] & (1UL << ((k) % (sizeof(long) * 8))))
+        if (BIT_SET(BTN_TOUCH) || BIT_SET(BTN_TOOL_FINGER)) down = 1;
+#undef BIT_SET
+    }
+    if (ioctl(fd, EVIOCGABS(ABS_MT_POSITION_X), &ax) == 0) x = ax.value;
+    else if (ioctl(fd, EVIOCGABS(ABS_X), &ax) == 0) x = ax.value;
+    if (ioctl(fd, EVIOCGABS(ABS_MT_POSITION_Y), &ay) == 0) y = ay.value;
+    else if (ioctl(fd, EVIOCGABS(ABS_Y), &ay) == 0) y = ay.value;
+    if (down) {
+        *contact = 1;
+        if (x >= 0) *last_x = x;
+        if (y >= 0) *last_y = y;
+        fprintf(stderr, "raw pad seed contact=1 x=%d y=%d (HID attach mid-touch)\n",
+                x, y);
+    }
+}
+
 /**
  * Upper-row phone chrome while exclusive grab owns TitanKey.
  * BACK (158), HOME (102), APPSELECT/Recents (580), MENU/HOMEPAGE.
@@ -1645,7 +1673,12 @@ int main(int argc, char **argv) {
         if (rfd < 0 && padpath[0]) {
             pfd = open(padpath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
             if (pfd >= 0) {
-                if (ioctl(pfd, EVIOCGRAB, 1) == 0)
+                int gok = 0;
+                for (int t = 0; t < 25; t++) {
+                    if (ioctl(pfd, EVIOCGRAB, 1) == 0) { gok = 1; break; }
+                    usleep(2000);
+                }
+                if (gok)
                     fprintf(stderr, "EXCLUSIVE raw pad fallback=%s\n", padpath);
                 else {
                     fprintf(stderr, "raw pad grab fail errno=%d\n", errno);
@@ -1693,6 +1726,8 @@ int main(int argc, char **argv) {
     uint8_t mods = 0, keys[6] = {0};
     uint8_t buttons = 0;
     int last_x = -1, last_y = -1, contact = 0;
+    if (pfd >= 0)
+        seed_raw_pad_contact(pfd, &contact, &last_x, &last_y);
     int scale = 2; /* raw touchpad → base mouse gain (speed slider multiplies later) */
     int pad_down_x = -1, pad_down_y = -1, pad_moved = 0;
     struct timespec pad_down_ts = {0, 0};
