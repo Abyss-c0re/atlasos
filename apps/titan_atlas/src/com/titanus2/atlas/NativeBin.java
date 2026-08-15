@@ -653,47 +653,18 @@ public final class NativeBin {
         }
     }
 
-    /** LAN MCP: Titan Grok → BlackCube/BrainCube :18790 + NexusCore :8871. */
-    public static final String MCP_BLACKCUBE = "http://192.168.8.100:18790/mcp";
-    public static final String MCP_BRAINCUBE = "http://192.168.8.100:18790/mcp";
-    public static final String MCP_NEXUSCORE = "http://192.168.8.108:8871/mcp";
-    /** Shared on-device nanobot home (Atlas + TitanNanobot peer). */
+    /** Shared on-device nanobot home (Nanobot app owns the peer list). */
     public static final String NANOBOT_HOME = "/data/local/tmp/nanobot_home";
 
     /** Grok is a user CLI. The OS does not write {@code ~/.grok}. */
 
     /**
-     * Atlas nanobot → BlackCube HTTP MCP (braincube tools live on the same
-     * peer). Writes {@code $NANOBOT_HOME/mcp_servers.json}.
+     * Nanobot peers are owned by the Nanobot app + Titan command plane.
+     * Atlas must not seed hive MCP (blackcube/braincube/nexuscore) or force
+     * {@code enabled:true}. Default is off.
      */
     public static void ensureNanobotMcp(Context c) {
-        String json =
-            "{\n"
-                + "  \"servers\": [\n"
-                + "    {\"id\":\"blackcube\",\"name\":\"blackcube\","
-                + "\"url\":\"" + MCP_BLACKCUBE + "\",\"enabled\":true},\n"
-                + "    {\"id\":\"braincube\",\"name\":\"braincube\","
-                + "\"url\":\"" + MCP_BRAINCUBE + "\",\"enabled\":true},\n"
-                + "    {\"id\":\"nexuscore\",\"name\":\"nexuscore\","
-                + "\"url\":\"" + MCP_NEXUSCORE + "\",\"enabled\":true}\n"
-                + "  ]\n"
-                + "}\n";
-        File[] dirs = new File[] {
-            new File(NANOBOT_HOME),
-            new File(LINUX_HOME, ".nanobot"),
-            c != null ? new File(home(c), ".nanobot") : null
-        };
-        for (File d : dirs) {
-            if (d == null) continue;
-            //noinspection ResultOfMethodCallIgnored
-            d.mkdirs();
-            File f = new File(d, "mcp_servers.json");
-            String cur = readText(f);
-            if (cur == null || !cur.contains("\"blackcube\"")
-                || !cur.contains("\"braincube\"")) {
-                writeText(f, json);
-            }
-        }
+        /* no-op — do not write mcp_servers.json */
     }
 
     private static String readText(File f) {

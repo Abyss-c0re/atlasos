@@ -27,7 +27,7 @@ public final class AtlasApp extends Application {
             NativeBin.ensureNativeLibs(this);
             NativeBin.ensureAuthPlaneOnLp(this);
             NativeBin.healAuthDir(this);
-            NativeBin.ensureNanobotMcp(this);
+            /* Nanobot peers: Nanobot app + Titan command plane. Not Atlas. */
             AtlasPrefs.publishPrivilegePlane(this);
             AtlasPrefs.publishBioPlane(this);
             HybridEnsure.ensureLiveUidAsync(this);

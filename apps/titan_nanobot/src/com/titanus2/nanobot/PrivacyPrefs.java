@@ -18,7 +18,7 @@ public final class PrivacyPrefs {
         return c.getApplicationContext().getSharedPreferences(P, Context.MODE_PRIVATE);
     }
 
-    /** Share agent on LAN (0.0.0.0:8787). Default true for product request. */
+    /** Share agent on LAN (0.0.0.0:8787). Default off. */
     public static boolean shareLan(Context c) {
         // Default OFF — open peer port heats + exposes agent; opt-in only (MCP/LAN).
         // One-shot: older builds defaulted true — force off once per install.
@@ -150,7 +150,14 @@ public final class PrivacyPrefs {
     }
 
     public static boolean allowNetworkAgents(Context c) {
-        return sp(c).getBoolean("allow_network_agents", true);
+        android.content.SharedPreferences s = sp(c);
+        if (!s.getBoolean("mcp_default_off_v1", false)) {
+            s.edit()
+                .putBoolean("allow_network_agents", false)
+                .putBoolean("mcp_default_off_v1", true)
+                .apply();
+        }
+        return s.getBoolean("allow_network_agents", false);
     }
 
     public static void setAllowNetworkAgents(Context c, boolean v) {
@@ -261,14 +268,22 @@ public final class PrivacyPrefs {
         sp(c).edit().putBoolean("enter_as_send", v).apply();
     }
 
-    /** Foreground agent service + peer process. Default on. */
+    /** Foreground agent service + peer process. Default off. */
     public static boolean serviceEnabled(Context c) {
-        return sp(c).getBoolean("service_enabled", true);
+        android.content.SharedPreferences s = sp(c);
+        if (!s.getBoolean("service_default_off_v1", false)) {
+            s.edit()
+                .putBoolean("service_enabled", false)
+                .putBoolean("service_default_off_v1", true)
+                .apply();
+        }
+        return s.getBoolean("service_enabled", false);
     }
 
     public static void setServiceEnabled(Context c, boolean v) {
         sp(c).edit().putBoolean("service_enabled", v).apply();
         plane(c, "titan2_nanobot_service", v ? "1" : "0");
+        plane(c, "titan2_nanobot_on", v ? "1" : "0");
     }
 
     /**
@@ -308,6 +323,8 @@ public final class PrivacyPrefs {
         // do not re-fire lan log: write planes only
         plane(c, "titan2_nanobot_share_lan", shareLan(c) ? "1" : "0");
         plane(c, "titan2_nanobot_service", serviceEnabled(c) ? "1" : "0");
+        plane(c, "titan2_nanobot_on", serviceEnabled(c) ? "1" : "0");
+        plane(c, "titan2_nanobot_mcp_on", allowNetworkAgents(c) ? "1" : "0");
         setDeviceControl(c, deviceControl(c));
         setFilesAcl(c, filesAcl(c));
         setAllowNetworkAgents(c, allowNetworkAgents(c));
