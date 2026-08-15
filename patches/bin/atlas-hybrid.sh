@@ -1972,6 +1972,15 @@ cmd_list_users() {
   [ -f "$pw" ] || { echo "users="; return 1; }
   shad=`dirname "$pw"`/shadow
   app_uid=`atlas_user_app_uid`
+  # Always surface Debian root so Atlas Settings can set its password.
+  if grep -q "^root:" "$pw" 2>/dev/null; then
+    rpass=lock
+    if [ -f "$shad" ]; then
+      rh=`awk -F: '$1=="root"{print $2; exit}' "$shad"`
+      case "$rh" in \$*) rpass=set ;; esac
+    fi
+    echo "name=root uid=0 home=/root pass=$rpass sudo=1 session=0 android=0 debian=1"
+  fi
   awk -F: -v shad="$shad" -v app="$app_uid" '
     $3>=1000 && $3<65000 {
       name=$1; uid=$3; home=$6
@@ -2003,7 +2012,10 @@ cmd_list_users() {
 cmd_set_pass() {
   need_root || return 1
   name="${1:-}"
-  atlas_user_valid "$name" || { echo "error=bad-name"; return 2; }
+  # root is reserved for add/delete; password set is product (Atlas Settings).
+  if [ "$name" != "root" ]; then
+    atlas_user_valid "$name" || { echo "error=bad-name"; return 2; }
+  fi
   pw=`atlas_user_pwfile`
   grep -q "^${name}:" "$pw" 2>/dev/null || { echo "error=no-user"; return 2; }
   pass=""
@@ -3921,6 +3933,11 @@ cmd_pad() {
 
 cmd_destroy() {
   need_root || return 1
+  if lp_dev_present; then
+    log "destroy refused — live Debian is super LP atlas_linux_a (will not trash OS)"
+    echo "error=lp-live"
+    return 2
+  fi
   log "destroy hybrid (overlay + loop + image)"
   umount_overlay
   umount_loop

@@ -217,27 +217,32 @@ public class SettingsActivity extends Activity {
                 });
         }
 
-        UiKit.section(root, "Hybrid disk");
+        UiKit.section(root, "Debian image");
         hybridStatus = UiKit.mono(root);
         hybridStatus.setText("…");
         refreshHybridStatus();
-        sizeLab = UiKit.sliderLabel(root, sizeTargetLabel());
-        UiKit.slider(root, 15, (AtlasPrefs.hybridSizeG(this) - 2) / 2,
-            new SeekBar.OnSeekBarChangeListener() {
-                @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
-                    AtlasPrefs.setHybridSizeG(SettingsActivity.this, 2 + p * 2);
-                    sizeLab.setText(sizeTargetLabel());
-                }
-                @Override public void onStartTrackingTouch(SeekBar s) {}
-                @Override public void onStopTrackingTouch(SeekBar s) {}
-            });
-        LinearLayout diskRow = UiKit.row(root);
-        UiKit.flexButton(diskRow, "Apply size", this::doApplySize);
-        UiKit.flexButton(diskRow, "Remount", this::doRemount);
-        LinearLayout diskRow2 = UiKit.row(root);
-        UiKit.flexButton(diskRow2, "Rebuild", this::confirmRebuild);
-        UiKit.flexButton(diskRow2, "Wipe", this::confirmWipe);
-        UiKit.button(root, "Fix home ownership", this::healHome);
+        if (HybridEnsure.debianLpLive()) {
+            UiKit.note(root, "super LP · wipe-survive · no loop image");
+            UiKit.button(root, "Fix home ownership", this::healHome);
+        } else {
+            sizeLab = UiKit.sliderLabel(root, sizeTargetLabel());
+            UiKit.slider(root, 15, (AtlasPrefs.hybridSizeG(this) - 2) / 2,
+                new SeekBar.OnSeekBarChangeListener() {
+                    @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
+                        AtlasPrefs.setHybridSizeG(SettingsActivity.this, 2 + p * 2);
+                        sizeLab.setText(sizeTargetLabel());
+                    }
+                    @Override public void onStartTrackingTouch(SeekBar s) {}
+                    @Override public void onStopTrackingTouch(SeekBar s) {}
+                });
+            LinearLayout diskRow = UiKit.row(root);
+            UiKit.flexButton(diskRow, "Apply size", this::doApplySize);
+            UiKit.flexButton(diskRow, "Remount", this::doRemount);
+            LinearLayout diskRow2 = UiKit.row(root);
+            UiKit.flexButton(diskRow2, "Rebuild", this::confirmRebuild);
+            UiKit.flexButton(diskRow2, "Wipe", this::confirmWipe);
+            UiKit.button(root, "Fix home ownership", this::healHome);
+        }
 
         UiKit.section(root, "Sessions");
         UiKit.toggle(root, "Keep-alive notification", AtlasPrefs.keepAlive(this), on -> {
@@ -535,6 +540,10 @@ public class SettingsActivity extends Activity {
     }
 
     private void confirmWipe() {
+        if (HybridEnsure.debianLpLive()) {
+            toast("refused · live LP Debian");
+            return;
+        }
         int want = AtlasPrefs.hybridSizeG(this);
         new AlertDialog.Builder(this)
             .setTitle("Wipe hybrid?")
@@ -602,15 +611,14 @@ public class SettingsActivity extends Activity {
 
     private void refreshHybridStatus() {
         runIo(() -> {
-            int act = HybridEnsure.actualImageSizeG();
-            int want = AtlasPrefs.hybridSizeG(SettingsActivity.this);
+            boolean lpLive = HybridEnsure.debianLpLive();
             boolean up = NativeBin.hybridRootfsReady();
-            String sizeLine = "disk=" + (act > 0 ? act + "G" : "none")
-                + "  target=" + want + "G  plane=" + (up ? "UP" : "DOWN");
-            if (act > 0 && want > act) sizeLine += "  grow?";
-            else if (act > 0 && want < act) sizeLine += "  shrink=wipe";
+            String sizeLine = lpLive
+                ? "storage=lp  atlas_linux_a  plane=" + (up ? "UP" : "DOWN")
+                : ("disk=" + HybridEnsure.actualImageSizeG() + "G  plane="
+                    + (up ? "UP" : "DOWN"));
             String st = shellSu(
-                "atlas-hybrid.sh status 2>/dev/null | egrep 'bootstrapped|loop_mounted|overlay|img_size|lp_|linux_home|storage_model' | head -8");
+                "atlas-hybrid.sh status 2>/dev/null | egrep 'bootstrapped|loop_mounted|overlay|img_size|lp_|linux_home|storage_model|storage=' | head -8");
             String lp = shell(
                 "atlas-lpctl status 2>/dev/null | egrep 'present|mounted|home=' | head -4");
             String text = sizeLine

@@ -382,8 +382,15 @@ public final class HybridEnsure {
      *                 false = destroy image and re-bootstrap from seed.
      * @return null on success, error tail otherwise.
      */
+    /** Super LP Debian is product. Never treat loop image wipe as legal. */
+    public static boolean debianLpLive() {
+        return new File("/dev/block/mapper/atlas_linux_a").exists()
+            || new File(NativeBin.LP_MNT + "/etc/debian_version").isFile();
+    }
+
     public static String rebuildBlocking(Context c, boolean preserve) {
         if (c == null) return "no-context";
+        if (!preserve && debianLpLive()) return "error=lp-live";
         final Context app = c.getApplicationContext();
         String script = resolveScript(app);
         if (script == null) return "atlas-hybrid.sh missing";
@@ -735,6 +742,12 @@ public final class HybridEnsure {
         String r = runUserTool(c, new String[] { "ATLAS_NEWUSER_PASS_B64=" + b64 },
             "set-pass", name);
         return r != null && r.contains("pass=set") ? "pass=set" : nz(r);
+    }
+
+    /** Debian root login password on the LP image (not Android). */
+    public static String setRootPass(Context c, String password) {
+        if (password == null || password.isEmpty()) return "empty";
+        return setUserPass(c, "root", password);
     }
 
     public static String setUserPerm(Context c, String name, String key, boolean on) {

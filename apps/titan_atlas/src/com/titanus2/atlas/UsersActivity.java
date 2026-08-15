@@ -45,6 +45,7 @@ public class UsersActivity extends Activity {
         UiKit.note(root, "Android API + Debian login · atlas-auth elevate");
         summary = UiKit.summary(root);
         UiKit.button(root, "Add user", this::showAdd);
+        UiKit.button(root, "Set Debian root password", this::showRootPass);
         UiKit.section(root, "Users");
         list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
@@ -76,6 +77,35 @@ public class UsersActivity extends Activity {
                 + (u.session ? " · session" : "");
             UiKit.listRow(list, u.name + "  " + u.uid, sec, () -> showUser(u));
         }
+    }
+
+    private void showRootPass() {
+        LinearLayout col = formCol();
+        EditText p1 = field(col, "Debian root password", true);
+        EditText p2 = field(col, "confirm", true);
+        TextView fact = AtlasUi.monoFact(this,
+            "LP Debian only · not Android\nnever wipes the image");
+        fact.setPadding(0, dp(8), 0, 0);
+        col.addView(fact, AtlasUi.match());
+        new AlertDialog.Builder(this)
+            .setTitle("Debian root")
+            .setView(col)
+            .setPositiveButton("Set", (d, w) -> {
+                String a = text(p1);
+                String b = text(p2);
+                if (a.isEmpty()) {
+                    toast("empty");
+                    return;
+                }
+                if (!a.equals(b)) {
+                    toast("password mismatch");
+                    return;
+                }
+                runAuthed("Set Debian root password", () ->
+                    HybridEnsure.setRootPass(UsersActivity.this, a));
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
     }
 
     private void showAdd() {
