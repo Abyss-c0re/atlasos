@@ -132,7 +132,10 @@ fi
 if [ -x /system/bin/titan2-dev-action.sh ]; then
   /system/bin/titan2-dev-action.sh enforce_wireless_adb_policy 2>/dev/null || true
 else
-  if [ ! -f /data/misc/titan2/wireless_adb_wanted ]; then
+  _desire=
+  [ -f /data/misc/titan2/remote_adb.desire ] && \
+    _desire=$(tr -d '\r\n ' </data/misc/titan2/remote_adb.desire 2>/dev/null)
+  if [ "$_desire" != "on" ] && [ ! -f /data/misc/titan2/wireless_adb_wanted ]; then
     setprop service.adb.tcp.port -1 2>/dev/null || true
     setprop persist.adb.tcp.port "" 2>/dev/null || true
   fi

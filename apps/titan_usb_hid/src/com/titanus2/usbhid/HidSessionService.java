@@ -817,6 +817,9 @@ public class HidSessionService extends Service {
                 if (doStartKm) {
                     try { HidKeyMapSession.onSessionStart(app); } catch (Exception ignored) {}
                     try { PadModeClient.requestRegrab(app); } catch (Exception ignored) {}
+                    // Once per Start: USB gadget just killed adbd. Restore
+                    // Controls Remote ADB if the human already armed it.
+                    try { HidControl.ensureWirelessAdbBackup(app); } catch (Exception ignored) {}
                 }
             }, "hid-sess-pad").start();
         }

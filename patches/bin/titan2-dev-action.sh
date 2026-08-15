@@ -633,12 +633,18 @@ disarm_wireless_adb() {
   return 0
 }
 
-# Policy: WANT file is the only desired-state SoT.
-#   WANT present  → Remote ADB should be listening (re-arm only if not)
-#   WANT missing  → Remote ADB must not listen (disarm sticky TCP only)
+# Policy: human desire is SoT (remote_adb.desire=on or wireless_adb_wanted).
+#   desired ON   → Remote ADB should be listening (re-arm only if not)
+#   desired OFF  → Remote ADB must not listen (disarm sticky TCP only)
 # Never thrash: do not bounce when already correct.
 enforce_wireless_adb_policy() {
-  if [ -f "$WIRELESS_ADB_WANT" ]; then
+  _desire=
+  if [ -f /data/misc/titan2/remote_adb.desire ]; then
+    _desire=$(tr -d '\r\n ' </data/misc/titan2/remote_adb.desire 2>/dev/null)
+  elif [ -f "$WIRELESS_ADB_WANT" ]; then
+    _desire=on
+  fi
+  if [ "$_desire" = "on" ]; then
     if _tcp_adb_listening; then
       # Already correct — leave USB/TCP alone
       return 0

@@ -328,12 +328,25 @@ public final class HidControl {
     public static boolean isSoftCompose() { return softCompose; }
 
     /**
-     * Lab wireless ADB is <b>host policy</b> ({@code scripts/host/arm_wireless_adb.sh}),
-     * not a product HID feature. Kept as no-op so old call sites compile; do not
-     * re-introduce pad-agent enable_wireless_adb from the app (adbd thrash / crashes).
+     * Re-apply Controls → Developer → Remote ADB after a USB gadget bounce.
+     * Exclusive HID stops adbd; persist alone does not reopen :5555 here.
+     * Never invent ON — {@code enable_hid.sh ensure_tcp} no-ops unless
+     * {@code remote_adb.desire=on} / {@code wireless_adb_wanted}.
      */
     public static void ensureWirelessAdbBackup(Context ctx) {
-        // intentionally empty
+        final String cmd =
+            "for EN in /system/etc/titan2_usb_hid/enable_hid.sh "
+            + "/data/adb/modules/titan2_usb_hid/enable_hid.sh "
+            + "/data/local/tmp/enable_hid.sh; do "
+            + "  [ -x \"$EN\" ] && sh \"$EN\" ensure_tcp && exit 0; "
+            + "done; true";
+        if (Root.available()) {
+            Root.runSu(cmd);
+        } else {
+            try {
+                Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
+            } catch (Exception ignored) {}
+        }
     }
 
     public static void setSession(Context ctx, boolean on, boolean mouse, boolean grab) {
@@ -981,7 +994,10 @@ public final class HidControl {
             + "setprop persist.titanus2.hid_resume 0 2>/dev/null; "
             + "setprop sys.usb.config mtp,adb 2>/dev/null; "
             + "setprop persist.sys.usb.config mtp,adb 2>/dev/null; "
-            + "setprop service.adb.tcp.port 5555 2>/dev/null; true";
+            + "for EN in /system/etc/titan2_usb_hid/enable_hid.sh "
+            + "/data/adb/modules/titan2_usb_hid/enable_hid.sh; do "
+            + "  [ -x \"$EN\" ] && sh \"$EN\" ensure_tcp && break; "
+            + "done; true";
         if (Root.available()) {
             Root.runSu(cmd);
         } else {
@@ -1522,7 +1538,10 @@ public final class HidControl {
             + "  chmod 666 \"$APPF/" + HW_OUT + "\" \"$APPF/" + INJ_NAME + "\" \"$APPF/" + REMOTE_Q + "\" 2>/dev/null; "
             + "fi; "
             + "settings put global adb_enabled 1 2>/dev/null; "
-            + "setprop service.adb.tcp.port 5555 2>/dev/null; "
+            + "for EN in /system/etc/titan2_usb_hid/enable_hid.sh "
+            + "/data/adb/modules/titan2_usb_hid/enable_hid.sh; do "
+            + "  [ -x \"$EN\" ] && sh \"$EN\" ensure_tcp && break; "
+            + "done; "
             + "MOD=/data/adb/modules/titan2_usb_hid; "
             + "alive=0; "
             + "if [ -f /data/local/tmp/t2uhid.pid ]; then "

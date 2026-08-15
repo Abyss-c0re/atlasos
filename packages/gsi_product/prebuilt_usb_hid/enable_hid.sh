@@ -154,16 +154,60 @@ restore_config() {
     sleep 0.2
     setprop sys.usb.config "$prev"
   fi
-  # Do NOT auto-arm TCP ADB here — human only (Controls → Developer).
-  sleep 0.5
+  # USB bounce kills adbd. Re-open classic TCP only if Controls Dev already
+  # armed Remote ADB — never invent ON.
+  ensure_tcp_adb
+  sleep 0.2
   log "restore done config=$(getprop sys.usb.config) state=$(getprop sys.usb.state) tcp=$(getprop service.adb.tcp.port) hidg0=$([ -e /dev/hidg0 ] && echo y || echo n)"
 }
 
-# No longer arms :5555. Left as no-op so callers that still invoke ensure_tcp_adb
-# do not open a network backdoor. Use Controls → Developer → Wireless ADB on.
+# Product Remote ADB (Controls → Developer). USB gadget on/off stops adbd;
+# persist alone does not reopen :5555 on this stack. Re-apply if desired.
+# Never pin_usb here — exclusive HID owns the gadget during session.
+# Never require biometrics (already gated at first ON).
 ensure_tcp_adb() {
-  log "ensure_tcp_adb: no-op (manual Wireless ADB only)"
-  return 0
+  d=
+  if [ -f /data/misc/titan2/remote_adb.desire ]; then
+    d=$(tr -d '\r\n ' </data/misc/titan2/remote_adb.desire 2>/dev/null)
+  elif [ -f /data/misc/titan2/wireless_adb_wanted ]; then
+    d=on
+  fi
+  if [ "$d" != "on" ]; then
+    log "ensure_tcp_adb: skip (desire=${d:-off})"
+    return 0
+  fi
+  port=5555
+  if [ -f /data/misc/titan2/remote_adb_port ]; then
+    p=$(tr -d '\r\n ' </data/misc/titan2/remote_adb_port 2>/dev/null)
+    case "$p" in [1-9]*[0-9]|[1-9][0-9][0-9][0-9]) port=$p ;; esac
+  fi
+  if ss -ltn 2>/dev/null | grep -qE "[:.]${port}[[:space:]]|:${port}\$"; then
+    log "ensure_tcp_adb: already :$port"
+    return 0
+  fi
+  settings put global adb_enabled 1 2>/dev/null || true
+  settings put global development_settings_enabled 1 2>/dev/null || true
+  setprop persist.adb.tcp.port "$port" 2>/dev/null || true
+  setprop service.adb.tcp.port "$port" 2>/dev/null || true
+  setprop ctl.restart adbd 2>/dev/null || true
+  i=0
+  while [ "$i" -lt 16 ]; do
+    if ss -ltn 2>/dev/null | grep -qE "[:.]${port}[[:space:]]|:${port}\$"; then
+      log "ensure_tcp_adb: listening :$port"
+      return 0
+    fi
+    sleep 0.12
+    i=$((i + 1))
+  done
+  setprop persist.adb.tcp.port "$port" 2>/dev/null || true
+  setprop service.adb.tcp.port "$port" 2>/dev/null || true
+  setprop ctl.stop adbd 2>/dev/null || true
+  sleep 0.25
+  setprop persist.adb.tcp.port "$port" 2>/dev/null || true
+  setprop service.adb.tcp.port "$port" 2>/dev/null || true
+  setprop ctl.start adbd 2>/dev/null || true
+  sleep 0.4
+  log "ensure_tcp_adb: bounced tcp=$(getprop service.adb.tcp.port) listen=$(ss -ltn 2>/dev/null | grep -E \":${port}\" || echo none)"
 }
 
 # Force USB stack down so configfs links can change.
@@ -417,6 +461,7 @@ case "${1:-}" in
   on|1|enable) do_on ;;
   off|0|disable) do_off ;;
   force_restore|restore|fix) do_force_restore ;;
+  ensure_tcp|tcp|ensure_tcp_adb) ensure_tcp_adb ;;
   status)
     echo "UDC=$(cat $G/UDC 2>/dev/null)"
     echo "config=$(getprop sys.usb.config) state=$(getprop sys.usb.state)"
@@ -428,5 +473,5 @@ case "${1:-}" in
     }
     linked_of ffs.adb && echo "adb=linked" || echo "adb=not-linked"
     ;;
-  *) echo "usage: $0 on|off|force_restore|status" >&2; exit 2 ;;
+  *) echo "usage: $0 on|off|force_restore|ensure_tcp|status" >&2; exit 2 ;;
 esac

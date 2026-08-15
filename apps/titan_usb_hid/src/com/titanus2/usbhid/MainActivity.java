@@ -1514,7 +1514,8 @@ public class MainActivity extends Activity {
         } else {
             HidControl.setSession(this, true, mouse, grab, keys, usb, bt);
         }
-        // Wireless ADB is host/lab policy (scripts/host/arm_wireless_adb.sh), not product HID.
+        // Remote ADB restore is once-per-Start in HidSessionService
+        // (Controls desire only — never invent ON).
     }
 
     /** Push session/grab/transport to control files (+ FGS if live). */
