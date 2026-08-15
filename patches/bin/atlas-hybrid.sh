@@ -343,7 +343,7 @@ ensure_auth_plane_on_lp() {
   return 0
 }
 
-# Android VPN / network DNS for Debian+musl tools (grok, apt, curl).
+# Android VPN / network DNS for Debian+musl tools (apt, curl, user ELFs).
 # SoT restored from pre-super-LP product (git 1fd4404c + atlas-net.sh):
 #   VPN DnsAddresses first (Tailscale MagicDNS 100.100.100.100, WG, …)
 #   then Wi‑Fi/carrier INTERNET primary — NEVER pin 8.8.8.8 when tun is up.
@@ -1595,7 +1595,7 @@ EOF
       done
     fi
   done
-  # Optional user CLIs on /data (curl-installed grok, ~/.local/bin, …)
+  # Optional user CLIs on /data (~/.local/bin, …)
   link_user_cli_into_merge
   ensure_agent_elevate_gates
   n=0
@@ -1632,12 +1632,11 @@ user_bin_dirs() {
   echo "$h/.local/bin"
   echo "$h/.cargo/bin"
   echo "$h/.npm-global/bin"
-  echo "$h/.grok/bin"
-  # any future tool that uses ~/.tool/bin
+  # any user tool that uses ~/.tool/bin
   for d in "$h"/.* /dev/null; do
     [ -d "$d/bin" ] || continue
     case "$d" in
-      */.local|*/.cargo|*/.grok|*/.npm-global) continue ;; # already listed
+      */.local|*/.cargo|*/.npm-global) continue ;; # already listed
       */.) continue ;;
     esac
     echo "$d/bin"
@@ -2481,30 +2480,6 @@ atlas_backup_dir() {
   fi
 }
 
-# Newest grok session UUID under one or more .grok trees.
-atlas_backup_latest_grok() {
-  newest=""
-  newest_m=0
-  for base in "$@"; do
-    [ -d "$base" ] || continue
-    for d in "$base"/sessions/* "$base"/sessions/*/*; do
-      [ -d "$d" ] || continue
-      b=$(basename "$d")
-      case "$b" in
-        ????????-????-????-????-????????????) ;;
-        *) continue ;;
-      esac
-      m=$(stat -c %Y "$d" 2>/dev/null || echo 0)
-      case "$m" in *[!0-9]*) m=0 ;; esac
-      if [ "$m" -gt "$newest_m" ] 2>/dev/null; then
-        newest_m=$m
-        newest=$b
-      fi
-    done
-  done
-  echo "$newest"
-}
-
 atlas_backup_ensure_roots() {
   mkdir -p "$BACKUP_ROOT"
   if [ -d /data/local/atlas-linux ]; then
@@ -2534,7 +2509,7 @@ cmd_backup_import_legacy() {
   done
 }
 
-# Capture anything that was there: $HOME + grok conversation + writable overlay.
+# Capture $HOME + writable overlay. User tool state under $HOME is included.
 cmd_backup_save() {
   need_root || return 1
   name="${1:-atlas}"
@@ -2551,26 +2526,17 @@ cmd_backup_save() {
     rm -rf "$dest"
     return 1
   }
-  ce_grok=/data/data/com.titanus2.atlas/files/.grok
-  if [ -d "$ce_grok" ]; then
-    tar -C /data/data/com.titanus2.atlas/files -czf "$dest/ce-grok.tgz" .grok 2>/dev/null || true
-  fi
   overlay=0
   if [ -d /data/local/atlas-hybrid/upper ] \
       && [ -n "$(ls -A /data/local/atlas-hybrid/upper 2>/dev/null)" ]; then
     tar -C /data/local/atlas-hybrid/upper -czf "$dest/overlay.tgz" . 2>/dev/null && overlay=1
   fi
-  grok=$(atlas_backup_latest_grok "$home/.grok" "$ce_grok")
   {
     echo "user=$name"
     echo "ts=$ts"
-    echo "grok=$grok"
     echo "overlay=$overlay"
     echo "persist=userdata"
   } >"$dest/meta"
-  if [ -n "$grok" ]; then
-    printf 'ATLAS_RESUME_GROK=%s\n' "$grok" >"$dest/atlas-resume"
-  fi
   sz=$(stat -c %s "$dest/home.tgz" 2>/dev/null || echo 0)
   if [ -d /data/local/atlas-linux ]; then
     mkdir -p "$BACKUP_LP"
@@ -2578,7 +2544,7 @@ cmd_backup_save() {
     cp -a "$dest" "$BACKUP_LP/$id" 2>/dev/null || true
   fi
   atlas_seat_write "$name" last_save "$id"
-  echo "backup=$id saved=$dest grok=${grok:-none} overlay=$overlay bytes=$sz"
+  echo "backup=$id saved=$dest overlay=$overlay bytes=$sz"
 }
 
 cmd_backup_list() {
@@ -2593,10 +2559,9 @@ cmd_backup_list() {
       id=$(basename "$d")
       case "$seen" in *"|$id|"*) continue ;; esac
       seen="${seen}${id}|"
-      user=""; grok=""; overlay=0; ts=""; label=""; note=""
+      user=""; overlay=0; ts=""; label=""; note=""
       if [ -f "$d/meta" ]; then
         user=$(awk -F= '$1=="user"{print $2; exit}' "$d/meta")
-        grok=$(awk -F= '$1=="grok"{print $2; exit}' "$d/meta")
         overlay=$(awk -F= '$1=="overlay"{print $2; exit}' "$d/meta")
         ts=$(awk -F= '$1=="ts"{print $2; exit}' "$d/meta")
         label=$(awk -F= '$1=="label"{print $2; exit}' "$d/meta")
@@ -2612,7 +2577,7 @@ cmd_backup_list() {
       [ -f "$d/home.tgz" ] && sz=$(stat -c %s "$d/home.tgz" 2>/dev/null || echo 0)
       lb64=$(printf '%s' "$label" | base64 | tr -d '\n ')
       nb64=$(printf '%s' "$note" | base64 | tr -d '\n ')
-      echo "id=$id user=$user ts=$ts grok=${grok:-none} overlay=${overlay:-0} bytes=$sz persist=reboot label_b64=$lb64 note_b64=$nb64"
+      echo "id=$id user=$user ts=$ts overlay=${overlay:-0} bytes=$sz persist=reboot label_b64=$lb64 note_b64=$nb64"
       n=$((n + 1))
     done
   done
@@ -2654,43 +2619,12 @@ cmd_backup_load() {
     mkdir -p /data/data/com.titanus2.atlas/files
     tar -C /data/data/com.titanus2.atlas/files -xzf "$dest/ce-grok.tgz" 2>/dev/null || true
   fi
-  grok=""
-  if [ -f "$dest/atlas-resume" ]; then
-    cp -f "$dest/atlas-resume" "$home/.atlas-resume"
-    grok=$(awk -F= '$1=="ATLAS_RESUME_GROK"{print $2; exit}' "$dest/atlas-resume")
-  elif [ -f "$dest/meta" ]; then
-    grok=$(awk -F= '$1=="grok"{print $2; exit}' "$dest/meta")
-    if [ -n "$grok" ] && [ "$grok" != "none" ]; then
-      printf 'ATLAS_RESUME_GROK=%s\n' "$grok" >"$home/.atlas-resume"
-    fi
-  fi
-  atlas_backup_install_resume_hook "$home"
   uid=$(awk -F: -v n="$name" '$1==n {print $3; exit}' "$(atlas_user_pwfile)")
   [ -n "$uid" ] && chown -R "${uid}:${uid}" "$home" 2>/dev/null || true
   _bk_user="$name"
   _bk_id="$id"
   atlas_seat_write "$_bk_user" last_load "$_bk_id"
-  echo "backup=$_bk_id loaded=$dest home=$home grok=${grok:-none}"
-}
-
-atlas_backup_install_resume_hook() {
-  home="$1"
-  [ -d "$home" ] || return 0
-  rc="$home/.bashrc"
-  touch "$rc"
-  if grep -q "ATLAS_RESUME_GROK" "$rc" 2>/dev/null; then
-    return 0
-  fi
-  cat >>"$rc" <<'EOF'
-# Atlas backup resume — one-shot grok --resume after Load
-if [ -f "$HOME/.atlas-resume" ]; then
-  . "$HOME/.atlas-resume"
-  rm -f "$HOME/.atlas-resume"
-  if [ -n "${ATLAS_RESUME_GROK:-}" ] && command -v grok >/dev/null 2>&1; then
-    exec grok --resume "$ATLAS_RESUME_GROK"
-  fi
-fi
-EOF
+  echo "backup=$_bk_id loaded=$dest home=$home"
 }
 
 cmd_backup_rm() {
@@ -2943,14 +2877,6 @@ atlas-bins() { ls -1 /atlas-bin 2>/dev/null | wc -l; echo "entries in /atlas-bin
 if [ -n "${BASH_VERSION:-}" ] && [ -n "${ATLAS_BIN:-}" ]; then
   sudo() { "$ATLAS_BIN/sudo" "$@"; }
   su() { "$ATLAS_BIN/su" "$@"; }
-fi
-# Backup Load: one-shot grok --resume (anything that was there)
-if [ -n "${BASH_VERSION:-}" ] && [ -f "${HOME}/.atlas-resume" ]; then
-  . "${HOME}/.atlas-resume"
-  rm -f "${HOME}/.atlas-resume"
-  if [ -n "${ATLAS_RESUME_GROK:-}" ] && command -v grok >/dev/null 2>&1; then
-    exec grok --resume "$ATLAS_RESUME_GROK"
-  fi
 fi
 # Missed Android name → android-exec (no mode switch)
 if [ -n "${BASH_VERSION:-}" ]; then
@@ -3691,8 +3617,7 @@ _enter_exec() {
   case "$_AB" in
     ""|"/bin"|"//bin") _AB="$_AH/bin" ;;
   esac
-  mkdir -p "$_AH/bin" "$_AH/.local/bin" "$_AH/.cargo/bin" \
-    "$_AH/.npm-global/bin" "$_AH/.grok/bin" "$_AH/reports" "$_AH/etc" 2>/dev/null || true
+  mkdir -p "$_AH/bin" "$_AH/.local/bin" "$_AH/reports" "$_AH/etc" 2>/dev/null || true
   # Heal root-owned HOME after crash/su thrash (admin drop must read .bash_* / write resolv).
   # Symptom: Permission denied on $HOME/.bash_env + HOME/etc/resolv.conf → "android mode" feel.
   _heal_atlas_home "$_AH" "$DROP"
@@ -3702,17 +3627,20 @@ _enter_exec() {
   _AB="$_AH/bin"
   # PATH order (critical):
   #  1) Debian real tools first (/usr/bin apt, nano) — never shadow with Android wrappers
-  #  2) user installs (.local, .grok, $HOME/bin) — curl-installed grok etc.
+  #  2) user installs ($HOME/bin, .local/bin, any ~/.*/bin)
   #  3) ATLAS_BIN — agent sudo/su only
   #  4) Android system bins last
   # NOTE: $HOME/bin has apt/apt-get wrappers for Android shell — must be AFTER /usr/bin
-  _USER_PATH="$_AH/.local/bin:$_AH/.cargo/bin:$_AH/.npm-global/bin:$_AH/.grok/bin:$_AH/bin"
+  _USER_PATH="$_AH/.local/bin:$_AH/bin"
+  for _d in "$_AH"/.*; do
+    [ -d "$_d/bin" ] || continue
+    case "$_d" in */.local|*/.|*/..) continue ;; esac
+    _USER_PATH="$_USER_PATH:$_d/bin"
+  done
   _PATH="/usr/local/sbin:/usr/local/bin:/atlas-bin:/usr/sbin:/usr/bin:/sbin:/bin:$_USER_PATH:$_AB:/system/bin:/system/xbin:/vendor/bin:/product/bin"
 
   export ATLAS_HYBRID=1 ATLAS_COMBINED=1
   export HOME="$_AH" ATLAS_HOME="$_AH" ATLAS_BIN="$_AB"
-  # Pin grok store to app files — never let sessions scatter under cwd=/ or wrong HOME.
-  export GROK_HOME="$_AH/.grok"
   export ATLAS_AUTH_DIR="${ATLAS_AUTH_DIR:-${ATLAS_AUTH_ON_LP:-/data/local/atlas-linux/var/lib/atlas-auth}}"
   export SUDO_ASKPASS="${SUDO_ASKPASS:-$_AB/atlas-auth-askpass}"
   export USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas
@@ -3736,7 +3664,7 @@ _enter_exec() {
   # Bionic linker64 loads Debian libm.so / libc.so which are GNU *ld scripts*
   # (text: "/* GNU ld script") → CANNOT LINK EXECUTABLE bad ELF magic (2f2a2047).
   # Debian ld.so already searches /lib /usr/lib via conf — no LD_LIBRARY_PATH needed.
-  # Lab 2026-08-10 (su enter) + 2026-08-10 (grok/nanobot in Deb shell).
+  # Lab 2026-08-10 (su enter) + 2026-08-10 (mixed Bionic/Debian bins).
   unset LD_LIBRARY_PATH 2>/dev/null || true
   unset LD_PRELOAD 2>/dev/null || true
   [ -n "${SSL_CERT_FILE:-}" ] && export SSL_CERT_FILE
@@ -3753,7 +3681,7 @@ _enter_exec() {
   # Env fragment for Debian shell *after* Bionic su has already linked.
   # Keep LD_LIBRARY_PATH empty forever in hybrid admin shell.
   _DEB_ENV="
-      export HOME='$_AH' ATLAS_HOME='$_AH' ATLAS_BIN='$_AB' GROK_HOME='$_AH/.grok'
+      export HOME='$_AH' ATLAS_HOME='$_AH' ATLAS_BIN='$_AB'
       export ATLAS_HYBRID=1 ATLAS_COMBINED=1 ATLAS_ROLE=atlas USER=atlas LOGNAME=atlas
       export PATH='$_PATH'
       export ATLAS_AUTH_DIR='/var/lib/atlas-auth'
@@ -3772,7 +3700,7 @@ _enter_exec() {
     exec env -u LD_LIBRARY_PATH -u LD_PRELOAD \
       "$CHROOT" "$MERGE" /system/bin/su "$DROP" -s "$shrel" -c "
       $_DEB_ENV
-      # Never start at / — grok keys sessions by cwd; cwd=/ orphaned history under sessions/%2F
+      # Never start at / — cwd-keyed tools orphan history under /
       cd '$_AH' 2>/dev/null || cd \"\$HOME\" 2>/dev/null || true
       exec '$shrel' -l
     "

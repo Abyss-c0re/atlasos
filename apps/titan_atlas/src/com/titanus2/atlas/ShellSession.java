@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * PTY-backed atlas session.
- * Starts via atlas-net.sh so static Linux ELFs (grok) get DNS on GSI —
+ * Starts via atlas-net.sh so static Linux ELFs get DNS on GSI —
  * not a per-tool wrapper; whole terminal session is network-ready.
  */
 public final class ShellSession {
@@ -40,7 +40,7 @@ public final class ShellSession {
         NativeBin.ensureExtracted(app);
         NativeBin.linkUserToolsIntoBin(app);
         NativeBin.ensureShellProfile(app);
-        NativeBin.installPureGrok(app);
+        NativeBin.dropGrokOsHooks(app);
         NativeBin.stageCaBundle(app);
 
         File home = NativeBin.home(app);

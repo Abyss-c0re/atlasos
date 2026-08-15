@@ -27,7 +27,7 @@ public final class AtlasApp extends Application {
             NativeBin.ensureNativeLibs(this);
             NativeBin.ensureAuthPlaneOnLp(this);
             NativeBin.healAuthDir(this);
-            NativeBin.ensureGrokMcp(this);
+            NativeBin.ensureNanobotMcp(this);
             AtlasPrefs.publishPrivilegePlane(this);
             AtlasPrefs.publishBioPlane(this);
             HybridEnsure.ensureLiveUidAsync(this);

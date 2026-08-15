@@ -29,7 +29,7 @@ public final class NativeBin {
     /**
      * Canonical app files dir. Prefer {@code /data/data/.../files} over
      * {@code /data/user/0/.../files} — they are often the same inode after bind,
-     * but grok keys sessions by cwd string; mixing the two splits /resume history.
+     * but tools that key state by cwd string split history if the two mix.
      */
     public static File home(Context c) {
         File f = c.getFilesDir();
@@ -194,13 +194,6 @@ public final class NativeBin {
         }
     }
 
-    public static File grokBin(Context c) {
-        File d = new File(home(c), ".grok/bin");
-        //noinspection ResultOfMethodCallIgnored
-        d.mkdirs();
-        return d;
-    }
-
     public static File atlas(Context c) {
         return new File(binDir(c), "atlas");
     }
@@ -280,7 +273,7 @@ public final class NativeBin {
     public static void ensureUserInstallDirs(Context c) {
         File home = home(c);
         for (String rel : new String[] {
-            "bin", ".local/bin", ".cargo/bin", ".npm-global/bin", ".grok/bin", ".grok/downloads"
+            "bin", ".local/bin"
         }) {
             File d = new File(home, rel);
             //noinspection ResultOfMethodCallIgnored
@@ -404,7 +397,7 @@ public final class NativeBin {
                 // skip junk / dirs
                 if (name.endsWith("/")) continue;
                 File out = new File(destRoot, name);
-                // never clobber live symlinks (grok/agent → ELF)
+                // never clobber live user symlinks to ELFs
                 try {
                     if (java.nio.file.Files.isSymbolicLink(out.toPath())) continue;
                 } catch (Exception ignored) {
@@ -441,7 +434,7 @@ public final class NativeBin {
         } catch (Exception ignored) {
         }
         try {
-            installPureGrok(c);
+            dropGrokOsHooks(c);
         } catch (Exception ignored) {
         }
         try {
@@ -631,18 +624,13 @@ public final class NativeBin {
     }
 
     /**
-     * Free-root sessions often leave $HOME/.grok/* as root:root mode 600.
-     * App uid then gets "Permission denied" on grok (binary is fine; auth.json is not).
-     * Fix what we can as app; flag unreadable root leftovers.
+     * Free-root sessions often leave $HOME files as root:root mode 600.
+     * Fix what we can as app; flag unreadable leftovers.
      */
     public static void healHomePermissions(Context c) {
         File home = home(c);
         fixTreeMode(home);
-        // ensure key dirs exist + user-writable
-        for (String rel : new String[] {
-            ".grok", ".grok/downloads", ".grok/bin", ".grok/logs",
-            "bin", "auth", "etc", "rootfs"
-        }) {
+        for (String rel : new String[] { "bin", ".local/bin" }) {
             File d = new File(home, rel);
             //noinspection ResultOfMethodCallIgnored
             d.mkdirs();
@@ -653,18 +641,7 @@ public final class NativeBin {
             //noinspection ResultOfMethodCallIgnored
             d.setReadable(true, false);
         }
-        File grokElf = grokElf(c);
-        if (grokElf.isFile()) {
-            //noinspection ResultOfMethodCallIgnored
-            grokElf.setExecutable(true, false);
-            //noinspection ResultOfMethodCallIgnored
-            grokElf.setReadable(true, false);
-        }
-        File auth = new File(home, ".grok/auth.json");
-        File cfg = new File(home, ".grok/config.toml");
-        ensureGrokMcp(c);
-        // If still unreadable, root owns them — user needs atlas-heal-home once
-        if ((auth.isFile() && !auth.canRead()) || (cfg.isFile() && !cfg.canRead())) {
+        if (!home.canWrite()) {
             File marker = new File(home, ".atlas-need-heal");
             try (FileWriter w = new FileWriter(marker, false)) {
                 w.write("root-owned files under $HOME — run: atlas-heal-home\n");
@@ -683,79 +660,7 @@ public final class NativeBin {
     /** Shared on-device nanobot home (Atlas + TitanNanobot peer). */
     public static final String NANOBOT_HOME = "/data/local/tmp/nanobot_home";
 
-    public static void ensureGrokMcp(Context c) {
-        File[] homes = new File[] {
-            new File(LINUX_HOME),
-            c != null ? home(c) : null
-        };
-        String block =
-            "\n# Atlas LAN MCP — BlackCube + BrainCube + NexusCore (HTTP).\n"
-                + "[mcp_servers.blackcube]\n"
-                + "url = \"" + MCP_BLACKCUBE + "\"\n"
-                + "enabled = true\n"
-                + "startup_timeout_sec = 20\n"
-                + "tool_timeout_sec = 180\n"
-                + "\n"
-                + "[mcp_servers.braincube]\n"
-                + "url = \"" + MCP_BRAINCUBE + "\"\n"
-                + "enabled = true\n"
-                + "startup_timeout_sec = 20\n"
-                + "tool_timeout_sec = 180\n"
-                + "\n"
-                + "[mcp_servers.nexuscore]\n"
-                + "url = \"" + MCP_NEXUSCORE + "\"\n"
-                + "enabled = true\n"
-                + "startup_timeout_sec = 20\n"
-                + "tool_timeout_sec = 90\n";
-        String trust =
-            "[folders.\"/home/atlas\"]\n"
-                + "trusted = true\n"
-                + "decided_at = " + (System.currentTimeMillis() / 1000L) + "\n"
-                + "\n"
-                + "[folders.\"" + LINUX_HOME + "\"]\n"
-                + "trusted = true\n"
-                + "decided_at = " + (System.currentTimeMillis() / 1000L) + "\n";
-        for (File h : homes) {
-            if (h == null) continue;
-            File grok = new File(h, ".grok");
-            //noinspection ResultOfMethodCallIgnored
-            grok.mkdirs();
-            File cfg = new File(grok, "config.toml");
-            String cur = readText(cfg);
-            if (cur == null) cur = "";
-            if (!cur.contains("[mcp_servers.blackcube]")
-                || !cur.contains("[mcp_servers.braincube]")
-                || !cur.contains("[mcp_servers.nexuscore]")) {
-                try (FileWriter w = new FileWriter(cfg, true)) {
-                    if (!cur.contains("[mcp_servers.blackcube]")
-                        && !cur.contains("[mcp_servers.braincube]")
-                        && !cur.contains("[mcp_servers.nexuscore]")) {
-                        w.write(block);
-                    } else {
-                        if (!cur.contains("[mcp_servers.blackcube]")) {
-                            w.write("\n[mcp_servers.blackcube]\nurl = \""
-                                + MCP_BLACKCUBE + "\"\nenabled = true\n");
-                        }
-                        if (!cur.contains("[mcp_servers.braincube]")) {
-                            w.write("\n[mcp_servers.braincube]\nurl = \""
-                                + MCP_BRAINCUBE + "\"\nenabled = true\n");
-                        }
-                        if (!cur.contains("[mcp_servers.nexuscore]")) {
-                            w.write("\n[mcp_servers.nexuscore]\nurl = \""
-                                + MCP_NEXUSCORE + "\"\nenabled = true\n");
-                        }
-                    }
-                } catch (Exception ignored) {
-                }
-            }
-            File tf = new File(grok, "trusted_folders.toml");
-            String tcur = readText(tf);
-            if (tcur == null || !tcur.contains("/home/atlas")) {
-                writeText(tf, trust);
-            }
-        }
-        ensureNanobotMcp(c);
-    }
+    /** Grok is a user CLI. The OS does not write {@code ~/.grok}. */
 
     /**
      * Atlas nanobot → BlackCube HTTP MCP (braincube tools live on the same
@@ -801,12 +706,10 @@ public final class NativeBin {
         }
     }
 
-    /** True if grok/auth looks blocked by root leftovers. */
+    /** True if $HOME looks blocked by root leftovers. */
     public static boolean needsHomeHeal(Context c) {
-        File auth = new File(home(c), ".grok/auth.json");
-        File cfg = new File(home(c), ".grok/config.toml");
-        if (auth.isFile() && !auth.canRead()) return true;
-        if (cfg.isFile() && !cfg.canRead()) return true;
+        File home = home(c);
+        if (home != null && home.isDirectory() && !home.canWrite()) return true;
         return new File(home(c), ".atlas-need-heal").isFile();
     }
 
@@ -831,7 +734,7 @@ public final class NativeBin {
             //noinspection ResultOfMethodCallIgnored
             root.setWritable(true, true);
             String n = root.getName();
-            if (n.endsWith(".so") || n.equals("atlas") || n.equals("grok")
+            if (n.endsWith(".so") || n.equals("atlas")
                 || n.equals("ptyexec") || n.equals("bash") || !n.contains(".")) {
                 //noinspection ResultOfMethodCallIgnored
                 root.setExecutable(true, false);
@@ -1006,11 +909,6 @@ public final class NativeBin {
         }
     }
 
-    /** Official x.ai ELF only — never shell wrappers. */
-    public static File grokElf(Context c) {
-        return new File(home(c), ".grok/downloads/grok-linux-aarch64");
-    }
-
     /**
      * Stage the same Debian 13 trixie arm64 image Atlas hybrid deploys
      * (peer: Armbian Radxa NIO 12L 16G). Source: assets/rootfs/ or already on disk.
@@ -1069,84 +967,17 @@ public final class NativeBin {
     }
 
     /**
-     * Install {@code $BIN/grok} as a plane gate (not a raw symlink).
-     * Android plane: refuse and tell user to switch top-bar Deb.
-     * Hybrid plane: exec real ELF with stable HOME/GROK_HOME/cwd.
+     * Remove leftover OS wrappers that treated grok as a first-class ROM tool.
+     * Never delete a user ELF or user symlink.
      */
-    public static void installPureGrok(Context c) {
-        File elf = grokElf(c);
-        if (!elf.isFile() || elf.length() < 1_000_000L) {
-            return;
-        }
-        //noinspection ResultOfMethodCallIgnored
-        elf.setExecutable(true, false);
+    public static void dropGrokOsHooks(Context c) {
         File bin = binDir(c);
-        File home = home(c);
-        File link = new File(bin, "grok");
-        // Remove stale symlink-to-ELF (Android could run Debian musl ELF badly /
-        // empty resume). Always prefer the gate script.
-        if (link.exists()) {
+        File gate = new File(bin, "grok");
+        String body = readText(gate);
+        if (body != null && body.contains("Atlas grok gate")) {
             //noinspection ResultOfMethodCallIgnored
-            link.delete();
+            gate.delete();
         }
-        // Prefer Debian /bin/sh in hybrid so a poisoned LD_LIBRARY_PATH cannot
-        // break Bionic /system/bin/sh (CANNOT LINK bad ELF magic). Fallback:
-        // env -u before any Android binary.
-        String body =
-            "#!/bin/sh\n"
-                + "# Atlas grok gate — Debian hybrid only (2026-08-10 LD harden)\n"
-                + "# Never inherit Debian LD_LIBRARY_PATH into Bionic linkers.\n"
-                + "unset LD_LIBRARY_PATH LD_PRELOAD 2>/dev/null || true\n"
-                + "CANON_HOME=\"" + home.getAbsolutePath() + "\"\n"
-                + "case \"${HOME:-}\" in\n"
-                + "  /data/user/*|/data/user_de/*|\"\"|\"/\"|\"/root\") HOME=\"$CANON_HOME\" ;;\n"
-                + "esac\n"
-                + "export HOME=\"${HOME:-$CANON_HOME}\"\n"
-                + "export ATLAS_HOME=\"${ATLAS_HOME:-$HOME}\"\n"
-                + "export GROK_HOME=\"${GROK_HOME:-$HOME/.grok}\"\n"
-                + "cd \"$HOME\" 2>/dev/null || cd \"$CANON_HOME\" 2>/dev/null || true\n"
-                + "hybrid=0\n"
-                + "if [ \"${ATLAS_HYBRID:-0}\" = \"1\" ] || [ \"${ATLAS_COMBINED:-0}\" = \"1\" ] \\\n"
-                + "  || [ \"${ATLAS_SESSION:-}\" = \"hybrid\" ] || [ \"${ATLAS_PLANE:-}\" = \"hybrid\" ] \\\n"
-                + "  || [ \"${ATLAS_MODE:-}\" = \"debian\" ] \\\n"
-                + "  || [ -f /etc/debian_version ] || [ -f /etc/atlas-hybrid-peer ]; then\n"
-                + "  hybrid=1\n"
-                + "fi\n"
-                + "if [ \"$hybrid\" != \"1\" ]; then\n"
-                + "  echo \"grok: blocked on Android plane\" >&2\n"
-                + "  echo \"Switch Atlas top-bar And → Deb (hybrid), then run: grok\" >&2\n"
-                + "  echo \"(Debian tools need the hybrid shell — not Android PATH)\" >&2\n"
-                + "  exit 90\n"
-                + "fi\n"
-                + "ELF=\"" + elf.getAbsolutePath() + "\"\n"
-                + "if [ ! -x \"$ELF\" ]; then\n"
-                + "  echo \"grok: ELF missing: $ELF\" >&2\n"
-                + "  exit 127\n"
-                + "fi\n"
-                + "exec env -u LD_LIBRARY_PATH -u LD_PRELOAD \"$ELF\" \"$@\"\n";
-        writeText(link, body);
-        // Bionic nanobot (NDK) also dies if LD_LIBRARY_PATH points at Debian
-        // libm.so ld-script — install a thin gate when nanobot ELF is present.
-        File nano = new File(bin, "nanobot");
-        File nanoReal = new File(bin, "nanobot.real");
-        if (nano.isFile() && isElf(nano) && !nanoReal.exists()) {
-            //noinspection ResultOfMethodCallIgnored
-            nano.renameTo(nanoReal);
-        }
-        File nanoElf = nanoReal.isFile() ? nanoReal : nano;
-        if (nanoElf.isFile() && isElf(nanoElf)) {
-            String nbody =
-                "#!/bin/sh\n"
-                    + "# Atlas nanobot gate — strip Debian LD_* for Bionic NDK ELF\n"
-                    + "unset LD_LIBRARY_PATH LD_PRELOAD 2>/dev/null || true\n"
-                    + "ELF=\"" + nanoElf.getAbsolutePath() + "\"\n"
-                    + "exec env -u LD_LIBRARY_PATH -u LD_PRELOAD \"$ELF\" \"$@\"\n";
-            writeText(nano, nbody);
-            //noinspection ResultOfMethodCallIgnored
-            nano.setExecutable(true, false);
-        }
-        //noinspection ResultOfMethodCallIgnored
-        link.setExecutable(true, false);
         File wrap = new File(bin, "grok-atlas");
         if (wrap.isFile()) {
             //noinspection ResultOfMethodCallIgnored
@@ -1233,26 +1064,15 @@ public final class NativeBin {
         writeText(new File(lh, ".bashrc"),
             "# Atlas Deb interactive — source PATH helper\n"
                 + "[ -f \"$HOME/.profile\" ] && . \"$HOME/.profile\"\n"
-                + "hash -r 2>/dev/null || true\n"
-                + "if [ -f \"$HOME/.atlas-resume\" ]; then\n"
-                + "  . \"$HOME/.atlas-resume\"\n"
-                + "  rm -f \"$HOME/.atlas-resume\"\n"
-                + "  if [ -n \"${ATLAS_RESUME_GROK:-}\" ]; then\n"
-                + "    _g=\"\"\n"
-                + "    command -v grok >/dev/null 2>&1 && _g=grok\n"
-                + "    [ -z \"$_g\" ] && [ -x \"$HOME/.grok/bin/grok\" ] && _g=\"$HOME/.grok/bin/grok\"\n"
-                + "    [ -n \"$_g\" ] && exec \"$_g\" --resume \"$ATLAS_RESUME_GROK\"\n"
-                + "  fi\n"
-                + "fi\n");
+                + "hash -r 2>/dev/null || true\n");
         writeText(new File(home, ".bash_profile"),
             "# Atlas\n[ -f \"$HOME/.profile\" ] && . \"$HOME/.profile\"\n"
                 + "[ -f \"$HOME/.bashrc\" ] && . \"$HOME/.bashrc\"\n");
         writeText(new File(home, ".bashrc"),
             "# Atlas interactive bash — hybrid awareness for humans + agents\n"
-                + "# Canonical HOME (never /data/user/0) — grok sessions key by cwd string\n"
+                + "# Canonical HOME (never /data/user/0) — cwd-keyed tools stay in one tree\n"
                 + "export HOME=\"" + homePath + "\"\n"
                 + "export ATLAS_HOME=\"" + homePath + "\"\n"
-                + "export GROK_HOME=\"" + homePath + "/.grok\"\n"
                 + "cd \"$HOME\" 2>/dev/null || true\n"
                 + "[ -f \"$HOME/.profile\" ] && . \"$HOME/.profile\"\n"
                 + "# --- PLANE (agents: do not guess android vs debian) ---\n"
@@ -1280,7 +1100,6 @@ public final class NativeBin {
                 + "  return 90\n"
                 + "}\n"
                 + "if [ \"${ATLAS_PLANE:-android}\" != \"hybrid\" ]; then\n"
-                + "  grok() { atlas_need_hybrid grok || return $?; command grok \"$@\"; }\n"
                 + "  apt() { atlas_need_hybrid apt || return $?; }\n"
                 + "  apt-get() { atlas_need_hybrid apt-get || return $?; }\n"
                 + "  apt-cache() { atlas_need_hybrid apt-cache || return $?; }\n"
@@ -1303,11 +1122,9 @@ public final class NativeBin {
                 + "  echo \"Atlas plane=${ATLAS_PLANE:-?} mode=${ATLAS_MODE:-?} session=${ATLAS_SESSION:-?}\"\n"
                 + "  if [ \"${ATLAS_PLANE:-}\" = \"hybrid\" ]; then\n"
                 + "    echo \"Android IPC: android <cmd> | android-exec | atlas-screencap  (not bare screencap/am)\"\n"
-                + "    echo \"Grok: cwd=$HOME · store=$GROK_HOME\"\n"
-                + "    echo \"Grok past chats: /resume (Ctrl+S) — NOT /dashboard (live agents only)\"\n"
                 + "    alias screencap='atlas-screencap' 2>/dev/null || true\n"
                 + "  else\n"
-                + "    echo \"Android shell — Debian tools (grok/apt/python3) blocked.\"\n"
+                + "    echo \"Android shell — Debian tools (apt/python3) blocked.\"\n"
                 + "    echo \"Switch top-bar And → Deb for hybrid.\"\n"
                 + "  fi\n"
                 + "  echo \"Status: atlas-agent-status · Reports: $HOME/reports/\"\n"

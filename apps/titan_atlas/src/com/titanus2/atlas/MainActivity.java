@@ -455,7 +455,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         }, "atlas-save").start();
     }
 
-    /** Pick a reboot-persistent backup and restore home + grok --resume. */
+    /** Pick a reboot-persistent backup and restore $HOME. */
     private void loadSeatDialog() {
         new Thread(() -> {
             List<HybridEnsure.Backup> backups = HybridEnsure.loadBackups(this);
@@ -476,8 +476,6 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
                     String one = b.note.replace('\n', ' ').trim();
                     if (one.length() > 32) one = one.substring(0, 32) + "…";
                     lab = lab + " · " + one;
-                } else if (!"none".equals(b.grok) && b.grok != null && !b.grok.isEmpty()) {
-                    lab = lab + " · grok";
                 }
                 labels.add(lab);
                 picks.add(new String[] { b.user, b.id });
@@ -846,7 +844,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         }
         File authLp = NativeBin.authDirLp();
         // Deb HOME = product linux home (not app CE — chdir denied after hybrid enter).
-        // Android plane keeps CE files for grok/app state.
+        // Android plane keeps CE files for app state.
         File sessionHome = home;
         if (priv) {
             File linuxHome = new File(NativeBin.LINUX_HOME);
@@ -865,8 +863,6 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         env.add("ATLAS_AUTH_IN_DEB=" + NativeBin.AUTH_IN_DEB);
         env.add("ATLAS_LINUX_MNT=" + NativeBin.LP_MNT);
         env.add("ATLAS_LINUX_HOME=" + NativeBin.LINUX_HOME);
-        // Grok always CE files (session key stability)
-        env.add("GROK_HOME=" + new File(home, ".grok").getAbsolutePath());
         // User overlay only — base ELFs are on the system image.
         env.add("ATLAS_BIN=" + bin.getAbsolutePath());
         env.add("ATLAS_USER_BIN=" + bin.getAbsolutePath());

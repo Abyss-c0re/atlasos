@@ -818,11 +818,12 @@ public final class HybridEnsure {
         return out;
     }
 
-    /** One reboot-persistent Debian moment (home + grok + overlay archive). */
+    /** One reboot-persistent Debian moment (home + overlay archive). */
     public static final class Backup {
         public String id = "";
         public String user = "";
         public String ts = "";
+        /** leftover field from old meta; ignored. */
         public String grok = "";
         public String label = "";
         public String note = "";
@@ -834,14 +835,11 @@ public final class HybridEnsure {
         }
         public String fact() {
             return id
-                + (grok.isEmpty() || "none".equals(grok) ? "" : " grok")
                 + (overlay ? " overlay" : "")
                 + (bytes > 0 ? " " + (bytes / 1048576) + "M" : "");
         }
         public String shortFact() {
-            String g = (grok == null || grok.isEmpty() || "none".equals(grok))
-                ? "no grok" : "grok";
-            String o = overlay ? " · overlay" : "";
+            String o = overlay ? "overlay" : "home";
             String sz = bytes > 0 ? " · " + Math.max(1, bytes / 1048576) + "M" : "";
             String n = "";
             if (note != null && !note.isEmpty()) {
@@ -849,7 +847,7 @@ public final class HybridEnsure {
                 if (one.length() > 48) one = one.substring(0, 48) + "…";
                 n = " · " + one;
             }
-            return g + o + sz + n;
+            return o + sz + n;
         }
     }
 

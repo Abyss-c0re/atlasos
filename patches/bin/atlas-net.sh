@@ -83,7 +83,7 @@ export ATLAS_USER_BIN="${ATLAS_USER_BIN:-$HOME/bin}"
 # ROM / system Atlas tool dir (SoT for auth/sudo/hybrid helpers once injected).
 export ATLAS_SYSBIN="${ATLAS_SYSBIN:-/system/bin}"
 
-# DNS for static Linux ELFs (grok/musl). Android apps use netd (VPN/Private DNS);
+# DNS for static Linux ELFs (musl). Android apps use netd (VPN/Private DNS);
 # glibc/musl only read resolv.conf + UDP/53. Always follow Android's *active*
 # network DNS — VPN first (Tailscale MagicDNS, WireGuard, etc.). Never pin
 # public 8.8.8.8 when a VPN is up (that bypasses/breaks the VPN path).
@@ -337,8 +337,7 @@ find_bash() {
 # ATLAS_BIN: PATH search for user tools + thin wrappers. Prefer user dir if present
 # so curl-installed bins win over nothing, but system bins stay on PATH after.
 export ATLAS_BIN="${ATLAS_BIN:-$ATLAS_USER_BIN}"
-mkdir -p "$HOME/bin" "$HOME/.local/bin" "$HOME/.cargo/bin" \
-  "$HOME/.npm-global/bin" "$HOME/.grok/bin" 2>/dev/null || true
+mkdir -p "$HOME/bin" "$HOME/.local/bin" 2>/dev/null || true
 
 BASH_BIN=`find_bash`
 ATLAS_AUTH_BIN=`find_tool atlas-auth`
@@ -349,7 +348,7 @@ ATLAS_SUDO_BIN=`find_tool atlas-sudo`
 [ -z "$ATLAS_ASKPASS_BIN" ] && [ -x "$ATLAS_USER_BIN/atlas-auth-askpass" ] && ATLAS_ASKPASS_BIN="$ATLAS_USER_BIN/atlas-auth-askpass"
 [ -z "$ATLAS_SUDO_BIN" ] && [ -x "$ATLAS_USER_BIN/atlas-sudo" ] && ATLAS_SUDO_BIN="$ATLAS_USER_BIN/atlas-sudo"
 
-export PATH="$ATLAS_USER_BIN:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.npm-global/bin:$HOME/.grok/bin:/system/bin:/system_ext/bin:/product/bin:/system/xbin:/vendor/bin"
+export PATH="$ATLAS_USER_BIN:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.npm-global/bin:/system/bin:/system_ext/bin:/product/bin:/system/xbin:/vendor/bin"
 export TERM="${TERM:-xterm-256color}"
 export LANG="${LANG:-C.UTF-8}"
 export COLORTERM="${COLORTERM:-truecolor}"
@@ -407,7 +406,7 @@ find_atlas_enter() {
 
 # Run interactive bash as atlas (app UID). Never leave an interactive root shell.
 exec_admin_bash() {
-  export PATH="$ATLAS_USER_BIN:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.npm-global/bin:$HOME/.grok/bin:/system/bin:/system_ext/bin:/product/bin:/system/xbin:/vendor/bin"
+  export PATH="$ATLAS_USER_BIN:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.npm-global/bin:/system/bin:/system_ext/bin:/product/bin:/system/xbin:/vendor/bin"
   if [ -n "$BASH_BIN" ]; then
     export SHELL="$BASH_BIN"
   else
@@ -447,7 +446,7 @@ fi
 
 # Hybrid only when Deb/hybrid session is requested.
 # NEVER silent-fallback to Android when Deb was asked — that left strip "Deb"
-# while PTY was pure Android (blank grok, Android PATH). Fail loud instead.
+# while PTY was pure Android (Debian PATH missing). Fail loud instead.
 HYB=`find_hybrid`
 ENTER=`find_atlas_enter`
 RSU=`find_real_su`

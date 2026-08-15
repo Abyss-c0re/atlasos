@@ -152,31 +152,6 @@ static int local_root_enter(uid_t drop, const char *home, int do_ensure) {
   unsetenv("LD_LIBRARY_PATH");
   if (setgid(drop) != 0 || setuid(drop) != 0) die(77, "drop failed");
   if (geteuid() == 0) die(77, "still root");
-  {
-    char rid[80];
-    FILE *rf = fopen("/home/atlas/.atlas-resume", "r");
-    if (!rf) rf = fopen("/data/local/atlas-home/atlas/.atlas-resume", "r");
-    rid[0] = 0;
-    if (rf) {
-      char line[128];
-      while (fgets(line, sizeof(line), rf)) {
-        if (strncmp(line, "ATLAS_RESUME_GROK=", 18) != 0) continue;
-        size_t n = strcspn(line + 18, "\r\n");
-        if (n >= sizeof(rid)) n = sizeof(rid) - 1;
-        memcpy(rid, line + 18, n);
-        rid[n] = 0;
-        break;
-      }
-      fclose(rf);
-    }
-    if (rid[0] && strcmp(rid, "none") != 0) {
-      unlink("/home/atlas/.atlas-resume");
-      unlink("/data/local/atlas-home/atlas/.atlas-resume");
-      execlp("grok", "grok", "--resume", rid, (char *)NULL);
-      if (access("/home/atlas/.grok/bin/grok", X_OK) == 0)
-        execl("/home/atlas/.grok/bin/grok", "grok", "--resume", rid, (char *)NULL);
-    }
-  }
   const char *sh = access("/bin/bash", X_OK) == 0 ? "/bin/bash" : "/bin/sh";
   /* Interactive, not login — avoids broken -l profiles / nameless passwd noise */
   execl(sh, sh, "-i", (char *)NULL);
