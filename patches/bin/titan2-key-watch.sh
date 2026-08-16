@@ -5,7 +5,7 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-KW_VER=2.193-no-am-recents
+KW_VER=2.194-a11y-yield
 KW_STATUS=$ST/titan2_key_watch_status
 KW_PID=$ST/titan2_key_watch.pid
 KW_LOCK=$ST/titan2_key_watch.lock
@@ -170,15 +170,30 @@ _fire_nav() {
   rmdir "$NAV_FIRE_LOCKD" 2>/dev/null || rm -rf "$NAV_FIRE_LOCKD" 2>/dev/null || true
 }
 
+# Plane 1 is a lie after force-stop / adb install (no onDestroy). Age >20s = dead.
+_a11y_live_fresh() {
+  v=`read_km titan2_a11y_live`
+  case "$v" in 1|true|on) ;; *) return 1 ;; esac
+  mt=0
+  for f in "$ST/titan2_a11y_live" "$T2/titan2_a11y_live"; do
+    [ -f "$f" ] || continue
+    t=`stat -c %Y "$f" 2>/dev/null` || t=0
+    case "$t" in ''|*[!0-9]*) t=0 ;; esac
+    [ "$t" -gt "$mt" ] 2>/dev/null && mt=$t
+  done
+  [ "$mt" -gt 0 ] 2>/dev/null || return 1
+  now_s=`date +%s 2>/dev/null` || now_s=0
+  age=$((now_s - mt))
+  [ "$age" -le 20 ] 2>/dev/null
+}
+
 # Only scan 0x244 = KEY_APPSELECT (580)
 _recents_handle() {
   val="$1"
   # Controls a11y owns screen-on Home/Recents. Dual fire closes overview / eats Home.
-  a11y=`read_km titan2_a11y_live`
-  case "$a11y" in 1|true|on)
+  if _a11y_live_fresh; then
     return 0
-    ;;
-  esac
+  fi
   km_en=`read_km titan2_km_enabled`
   case "$km_en" in 0|false|off) return 0 ;; esac
   now_ms=`_now_ms`
@@ -300,8 +315,18 @@ run_key_watch() {
   DEV=`discover_titankey`
   log "start ver=$KW_VER dev=$DEV LONG_MS=$LONG_MS"
   while true; do
+    # Bound a11y owns TitanKey. getevent here starves InputReader (load 18, dead keys).
+    if _a11y_live_fresh; then
+      log "a11y live — yield TitanKey (no getevent)"
+      sleep 2
+      continue
+    fi
     [ -e "$DEV" ] || { sleep 1; DEV=`discover_titankey`; continue; }
     getevent "$DEV" 2>/dev/null | while read -r line; do
+      if _a11y_live_fresh; then
+        log "a11y became live — drop getevent"
+        break
+      fi
       _handle_ev_line "$line"
     done
     log "getevent exited — reopen"

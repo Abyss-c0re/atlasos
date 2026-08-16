@@ -31,6 +31,11 @@ public class BootRestoreReceiver extends BroadcastReceiver {
 
         final Context app = context.getApplicationContext();
         pinAndHeal(app);
+        // adb install kills TrackpadAccessService. Listed-but-crashed + stale
+        // a11y_live=1 makes key-watch skip Home and a11y fire nothing.
+        if (replaced) {
+            try { AccessServiceHelper.forceRebindAfterReplace(app); } catch (Exception ignored) {}
+        }
         // P0: Settings.Secure can lag after wipe / modular reflash — retry a11y
         // + taskbar + B1 km publish until TrackpadAccessService connects (or max).
         scheduleA11yRetries(app);
@@ -246,6 +251,7 @@ public class BootRestoreReceiver extends BroadcastReceiver {
                 try {
                     if (AccessServiceHelper.isUserDisabled(app)) return;
                     // Already filtering keys — re-pin taskbar + unstick typing/pad
+                    AccessServiceHelper.stampLiveTruth(app);
                     if (AccessServiceHelper.isConnected()) {
                         try { TaskbarPin.pinOff(app); } catch (Exception ignored) {}
                         // Late SettingsProvider: re-push OS Look seed once a11y is live

@@ -75,10 +75,23 @@ public final class AccessServiceHelper {
         return TrackpadAccessService.get() != null;
     }
 
-    /** Listed and (preferably) connected — ready for shortcuts. */
+    /** Listed and actually bound. Master-on + listed-but-crashed is not ready. */
     public static boolean isReady(Context ctx) {
-        return isListed(ctx) && (isConnected() || Settings.Secure.getInt(
-            ctx.getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1);
+        return isListed(ctx) && isConnected();
+    }
+
+    /** Stamp plane from process truth. Never write live=1 without a bound instance. */
+    public static void stampLiveTruth(Context ctx) {
+        boolean live = isConnected();
+        try {
+            AgentBridge.put(ctx, AgentBridge.A11Y_LIVE, live ? "1" : "0");
+        } catch (Exception ignored) {}
+        if (ctx != null) {
+            try {
+                Settings.Global.putString(ctx.getContentResolver(),
+                    AgentBridge.A11Y_LIVE, live ? "1" : "0");
+            } catch (Exception ignored) {}
+        }
     }
 
     /**
@@ -89,6 +102,15 @@ public final class AccessServiceHelper {
      * 13.38: also dens taskbar Global pin, ghost host_layout heal, B2 plane
      * heal, and re-publish side factory binds (doze wipe residual).
      */
+    /** Package replace / crash: drop rebind throttle and admit the service is dead. */
+    public static void forceRebindAfterReplace(Context ctx) {
+        lastRebindElapsed = 0L;
+        lastFollowupScheduleElapsed = 0L;
+        lastHeavyEnsureElapsed = 0L;
+        stampLiveTruth(ctx);
+        if (ctx != null) ensureDefaultEnabled(ctx);
+    }
+
     public static boolean forceUnlockBelt(Context ctx) {
         lastHeavyEnsureElapsed = 0L;
         lastFollowupScheduleElapsed = 0L;
@@ -417,11 +439,9 @@ public final class AccessServiceHelper {
             Settings.Secure.putInt(ctx.getContentResolver(),
                 Settings.Secure.ACCESSIBILITY_ENABLED, any ? 1 : 0);
             setUserDisabled(ctx, !on);
-            // 12.66 B1: user toggle off must clear a11y_live so pad-agent KEY_FIRE
-            // owns screen-on shared sides (otherwise sides go dead until destroy).
-            try {
-                AgentBridge.put(ctx, AgentBridge.A11Y_LIVE, on ? "1" : "0");
-            } catch (Exception ignored) {}
+            // Listed is not bound. live=1 before onServiceConnected eats Home
+            // (key-watch skips KEY_FIRE while a11y is still crashed).
+            stampLiveTruth(ctx);
             return true;
         } catch (Exception e) {
             return false;

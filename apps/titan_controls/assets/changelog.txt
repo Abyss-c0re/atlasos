@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.94 (594) — 2026-08-16T14:14Z
+
+- Buttons: a11y_live is a lie after install/crash. Stamp truth. key-watch 2.194 yields TitanKey when a11y is actually live.
+
+---
+
 ## 15.93 (593) — 2026-08-16T13:39Z
 
 ### rebuild 2026-08-16T13:39Z · 15.93 (593)

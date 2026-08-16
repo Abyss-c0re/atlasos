@@ -1,4 +1,4 @@
-versionName=15.93
-versionCode=593
-built_utc=2026-08-16T13:39Z
+versionName=15.94
+versionCode=594
+built_utc=2026-08-16T14:14Z
 allow_root=0
