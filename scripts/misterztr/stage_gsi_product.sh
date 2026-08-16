@@ -355,6 +355,11 @@ if [ -n "$ATLAS_APK" ] && [ -f "$SRC_ATLAS/Android.bp" ]; then
       cp -f "$src" "$SRC_ATLAS/$h" 2>/dev/null || true
     fi
   done
+  for extra in BRIDGE policy; do
+    if [ -f "$SRC_ATLAS/$extra" ]; then
+      stage_file "$SRC_ATLAS/$extra" "$DEST_ATLAS/$extra"
+    fi
+  done
   chmod 755 "$DEST_ATLAS/atlas-hybrid.sh" "$DEST_ATLAS/atlas-net.sh" \
     "$DEST_ATLAS/atlas-hybrid-boot.sh" "$DEST_ATLAS/atlas-hybrid-ctl.sh" \
     "$DEST_ATLAS/atlas-hybrid-watch.sh" 2>/dev/null || true
