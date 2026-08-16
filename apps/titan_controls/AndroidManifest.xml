@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.controls"
-    android:versionCode="595"
-    android:versionName="15.95">
+    android:versionCode="596"
+    android:versionName="15.96">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
     <!-- Framework API: host declares + holds USE_TITAN2_API -->
     <permission

@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.96 (596) — 2026-08-16T16:30Z
+
+- SIMs: SIM 1 / SIM 2 only. No carrier names. Settings 0094 keep-listed for next GSI.
+
+---
+
 ## 15.95 (595) — 2026-08-16T15:22Z
 
 - SIMs: UICC-off with empty ICC + slot -1 stays listed Off. Remember last-seen cards. Do not mirror Settings delete.

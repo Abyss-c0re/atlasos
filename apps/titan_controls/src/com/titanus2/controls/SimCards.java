@@ -1,7 +1,6 @@
 package com.titanus2.controls;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 
@@ -15,11 +14,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Inserted / known SIMs including UICC-off. Settings
- * {@code getAvailableSubscriptionInfoList} drops those; this list does not.
- * <p>
- * Heresy 15.94: empty {@code getIccId()} + {@code simSlotIndex=-1} skipped
- * T-Mobile so Controls mirrored Settings. Named / valid subIds stay.
+ * Known SIMs including UICC-off. Labels are tray names only (SIM 1 / SIM 2).
+ * Never carrier / displayName. Settings available-list may hide a row; this
+ * list does not.
  */
 public final class SimCards {
     private static final String PREF = "titan2_sim_memory";
@@ -31,21 +28,16 @@ public final class SimCards {
         public final int subId;
         public final int slot;
         public final String name;
-        public final String carrier;
         public final boolean uicc;
         public final boolean inSettings;
-        public final String mccMnc;
         public final boolean remembered;
 
-        Card(int subId, int slot, String name, String carrier,
-             boolean uicc, boolean inSettings, String mccMnc, boolean remembered) {
+        Card(int subId, int slot, boolean uicc, boolean inSettings, boolean remembered) {
             this.subId = subId;
             this.slot = slot;
-            this.name = name != null ? name : ("SIM " + subId);
-            this.carrier = carrier != null ? carrier : "";
+            this.name = trayName(slot, subId);
             this.uicc = uicc;
             this.inSettings = inSettings;
-            this.mccMnc = mccMnc != null ? mccMnc : "";
             this.remembered = remembered;
         }
 
@@ -55,11 +47,16 @@ public final class SimCards {
 
         public String fact() {
             String slotWord = slot >= 0 ? ("slot " + slot) : "slot —";
-            String listed = inSettings ? "in Settings"
-                : (remembered ? "Settings hid · remembered" : "Settings hid");
-            String m = mccMnc.isEmpty() ? "" : (" · " + mccMnc);
-            return stateWord() + " · " + slotWord + " · sub " + subId + " · " + listed + m;
+            String listed = inSettings ? "in Settings" : "Settings hid";
+            return stateWord() + " · " + slotWord + " · sub " + subId + " · " + listed;
         }
+    }
+
+    /** Tray label. Slot 0 → SIM 1. Unknown slot falls back to subId. */
+    public static String trayName(int slot, int subId) {
+        int n = slot >= 0 ? slot + 1 : subId;
+        if (n < 1) n = 1;
+        return "SIM " + n;
     }
 
     public static List<Card> list(Context ctx) {
@@ -79,22 +76,10 @@ public final class SimCards {
                 if (c == null) continue;
                 Card old = byId.get(c.subId);
                 int slot = c.slot >= 0 ? c.slot : (old != null ? old.slot : -1);
-                String name = c.name;
-                if ((name == null || name.isEmpty() || name.startsWith("SIM "))
-                        && old != null && old.name != null) {
-                    name = old.name;
-                }
-                String carrier = !c.carrier.isEmpty() ? c.carrier
-                    : (old != null ? old.carrier : "");
-                String plmn = !c.mccMnc.isEmpty() ? c.mccMnc
-                    : (old != null ? old.mccMnc : "");
-                byId.put(c.subId, new Card(c.subId, slot, name, carrier,
-                    c.uicc, c.inSettings, plmn, false));
+                byId.put(c.subId, new Card(c.subId, slot, c.uicc, c.inSettings, false));
             }
         }
 
-        // Slot occupancy: NOT_READY with no mapped card still gets a tray row
-        // only if we have no remembered sub for that tray (avoid dup T-Mobile).
         Set<Integer> slotsTaken = new HashSet<Integer>();
         for (Card c : byId.values()) {
             if (c.slot >= 0) slotsTaken.add(c.slot);
@@ -104,7 +89,6 @@ public final class SimCards {
             if (slotsTaken.contains(i)) continue;
             String st = slotState[i];
             if (st == null || st.isEmpty() || "ABSENT".equals(st)) continue;
-            // Bind a slot=-1 remembered card onto this tray when only one orphan.
             Card orphan = null;
             int orphans = 0;
             for (Card c : byId.values()) {
@@ -114,9 +98,8 @@ public final class SimCards {
                 }
             }
             if (orphans == 1 && orphan != null) {
-                byId.put(orphan.subId, new Card(orphan.subId, i, orphan.name,
-                    orphan.carrier, false, orphan.inSettings, orphan.mccMnc,
-                    orphan.remembered));
+                byId.put(orphan.subId, new Card(orphan.subId, i, false,
+                    orphan.inSettings, orphan.remembered));
             }
         }
 
@@ -168,21 +151,14 @@ public final class SimCards {
         String icc = null;
         try { icc = s.getIccId(); } catch (Throwable ignored) {}
         int slot = s.getSimSlotIndex();
-        String name = s.getDisplayName() != null
-            ? s.getDisplayName().toString() : "";
-        // Empty ICC + invalid slot used to drop UICC-off cards. Keep any
-        // named or ICC-bearing record. Only skip totally hollow ghosts.
-        if ((icc == null || icc.isEmpty()) && slot < 0
-                && (name == null || name.isEmpty())) {
+        String shown = "";
+        try {
+            if (s.getDisplayName() != null) shown = s.getDisplayName().toString();
+        } catch (Throwable ignored) {}
+        if ((icc == null || icc.isEmpty()) && slot < 0 && shown.isEmpty()) {
             return null;
         }
-        if (name == null || name.isEmpty()) name = "SIM " + id;
-        String carrier = "";
-        try {
-            if (s.getCarrierName() != null) carrier = s.getCarrierName().toString();
-        } catch (Throwable ignored) {}
-        return new Card(id, slot, name, carrier, uiccOn(s),
-            available.contains(id), plmnOf(s), remembered);
+        return new Card(id, slot, uiccOn(s), available.contains(id), remembered);
     }
 
     @SuppressWarnings("unchecked")
@@ -207,7 +183,6 @@ public final class SimCards {
                 }
             } catch (Throwable ignored) {}
         }
-        // Brute: inactive UICC-off still answers getSubscriptionInfo(id).
         for (int id = 1; id <= 16; id++) {
             if (seen.contains(id)) continue;
             SubscriptionInfo s = infoById(sm, id);
@@ -242,15 +217,12 @@ public final class SimCards {
         for (String line : raw.split("\n")) {
             if (line == null || line.isEmpty()) continue;
             String[] p = line.split("\t", -1);
-            if (p.length < 4) continue;
+            if (p.length < 2) continue;
             try {
                 int id = Integer.parseInt(p[0]);
-                int slot = Integer.parseInt(p[3]);
-                String name = p[1];
-                String carrier = p.length > 2 ? p[2] : "";
-                String plmn = p.length > 5 ? p[5] : "";
+                int slot = Integer.parseInt(p[1]);
                 if (id <= 0) continue;
-                out.add(new Card(id, slot, name, carrier, false, false, plmn, true));
+                out.add(new Card(id, slot, false, false, true));
             } catch (Exception ignored) {}
         }
         return out;
@@ -261,12 +233,7 @@ public final class SimCards {
         for (Card c : cards) {
             if (c.subId <= 0) continue;
             if (sb.length() > 0) sb.append('\n');
-            sb.append(c.subId).append('\t')
-                .append(c.name.replace('\t', ' ')).append('\t')
-                .append(c.carrier.replace('\t', ' ')).append('\t')
-                .append(c.slot).append('\t')
-                .append('\t')
-                .append(c.mccMnc.replace('\t', ' '));
+            sb.append(c.subId).append('\t').append(c.slot);
         }
         try {
             ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
@@ -288,22 +255,6 @@ public final class SimCards {
         } catch (Exception e) {
             return new String[0];
         }
-    }
-
-    private static String plmnOf(SubscriptionInfo s) {
-        try {
-            Object mcc = s.getClass().getMethod("getMccString").invoke(s);
-            Object mnc = s.getClass().getMethod("getMncString").invoke(s);
-            if (mcc instanceof String && !((String) mcc).isEmpty()) {
-                return (String) mcc + (mnc instanceof String ? (String) mnc : "");
-            }
-        } catch (Throwable ignored) {}
-        try {
-            int mcc = s.getMcc();
-            int mnc = s.getMnc();
-            if (mcc > 0) return String.valueOf(mcc) + (mnc >= 0 ? String.valueOf(mnc) : "");
-        } catch (Throwable ignored) {}
-        return "";
     }
 
     private static boolean uiccOn(SubscriptionInfo s) {

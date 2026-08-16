@@ -88,11 +88,7 @@ public class SimActivity extends Activity {
             UiKit.note(root, "No SIM records.");
         } else {
             for (final SimCards.Card c : cards) {
-                String label = c.name;
-                if (c.carrier != null && !c.carrier.isEmpty() && !c.carrier.equals(c.name)) {
-                    label = c.name + " · " + c.carrier;
-                }
-                UiKit.toggle(root, label, c.uicc, on -> {
+                UiKit.toggle(root, c.name, c.uicc, on -> {
                     if (busy) return;
                     setCard(c, on);
                 });

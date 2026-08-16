@@ -1,0 +1,56 @@
+# project:packages/apps/Settings
+# Proper SIM management: disable does not vanish. Labels are SIM 1 / SIM 2.
+# 0093 still required slot/ICC-on-slot; UICC-off clears both. This keeps known getAll records.
+diff --git a/src/com/android/settings/network/SubscriptionUtil.java b/src/com/android/settings/network/SubscriptionUtil.java
+--- a/src/com/android/settings/network/SubscriptionUtil.java
++++ b/src/com/android/settings/network/SubscriptionUtil.java
+@@ -308,11 +308,12 @@ public class SubscriptionUtil {
+                         .map(i -> {
+                             DisplayInfo info = new DisplayInfo();
+                             info.subscriptionInfo = i;
+-                            String displayName = i.getDisplayName().toString();
+-                            info.originalName =
+-                                    TextUtils.equals(displayName, PROFILE_GENERIC_DISPLAY_NAME)
+-                                            ? context.getResources().getString(R.string.sim_card)
+-                                            : displayName.trim();
++                            // Product: tray names only. Carrier displayName is
++                            // not a Settings label (SIM 1 / SIM 2).
++                            int slot = i.getSimSlotIndex();
++                            int n = slot >= 0 ? slot + 1 : i.getSubscriptionId();
++                            if (n < 1) n = 1;
++                            info.originalName = "SIM " + n;
+                             return info;
+                         });
+ 
+diff --git a/src/com/android/settings/network/telephony/SubscriptionRepository.kt b/src/com/android/settings/network/telephony/SubscriptionRepository.kt
+--- a/src/com/android/settings/network/telephony/SubscriptionRepository.kt
++++ b/src/com/android/settings/network/telephony/SubscriptionRepository.kt
+@@ -65,9 +65,8 @@
+     fun getSelectableSubscriptionInfoList(): List<SubscriptionInfo> {
+         val availableList =
+             ArrayList(subscriptionManager.getAvailableSubscriptionInfoList() ?: emptyList())
+-        // Disable in Settings must not delete the row. UICC-off marks the
+-        // subscription inactive and clears simSlotIndex; keep it if the card
+-        // is still in a slot.
++        // Disable must not delete. UICC-off clears simSlotIndex and may
++        // hide the ICC on UiccSlotInfo. Keep every inserted / known record.
+         mergeInsertedSubscriptions(availableList)
+         val visibleList =
+             availableList.filter { subInfo ->
+@@ -125,12 +124,15 @@
+                 if (info == null || have.contains(info.subscriptionId)) continue
+                 if (info.isOpportunistic) continue
+                 val icc = info.iccId
++                val named = !info.displayName.isNullOrBlank()
+                 val inSlot = info.simSlotIndex != SubscriptionManager.INVALID_SIM_SLOT_INDEX
+                 val cardIn = !icc.isNullOrEmpty() && insertedIcc.any { present ->
+                     present.startsWith(icc) || icc.startsWith(present) ||
+                         (present.length >= 8 && icc.startsWith(present.substring(0, 8)))
+                 }
+-                if (!inSlot && !cardIn) continue
++                // UICC-off: slot=-1 and slot ICC may be empty. A known ICC
++                // or carrier name is enough to keep the row.
++                if (!inSlot && !cardIn && icc.isNullOrEmpty() && !named) continue
+                 availableList.add(info)
+                 have.add(info.subscriptionId)
+             }
