@@ -50,7 +50,7 @@ public class AboutActivity extends Activity {
             "https://github.com/MisterZtr/LineageOS_gsi");
         link(root, "phhusson / Treble", "GSI baseline",
             "https://github.com/phhusson");
-        link(root, "PeterGSI touchpadd", "pad → uinput mouse",
+        link(root, "PeterGSI touchpadd", "original pad driver — we fork",
             "https://gitea.angry.im/PeterGSI/titan2-touchpadd");
         link(root, "PeterCxy OpenEUICC", "GPL-3.0 eSIM",
             "https://gitea.angry.im/PeterCxy/OpenEUICC");

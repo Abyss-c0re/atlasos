@@ -10,7 +10,8 @@ hardware, stock firmware, or LineageOS.
 | [MisterZtr/LineageOS_gsi](https://github.com/MisterZtr/LineageOS_gsi) | LineageOS GSI recipe this product patches |
 | [LineageOS](https://lineageos.org/) | Platform |
 | [phhusson](https://github.com/phhusson) / Treble | GSI / `phh-on-boot` baseline |
-| [PeterGSI/titan2-touchpadd](https://gitea.angry.im/PeterGSI/titan2-touchpadd) | Keyboard-surface → uinput mouse |
+| [PeterGSI/titan2-touchpadd](https://gitea.angry.im/PeterGSI/titan2-touchpadd) | **Original** pad → uinput mouse. We ship a **fork** only. |
+| [Abyss-c0re/titan2-touchpadd](https://github.com/Abyss-c0re/titan2-touchpadd) | Product fork (pad-only, INPROC park). Gitea: [Abyss-c0re/titan2-touchpadd](https://gitea.angry.im/Abyss-c0re/titan2-touchpadd) |
 | [SinuXVR/pocket-board](https://github.com/SinuXVR/pocket-board) (GPL-3.0) | Optional sideload IME — **not** an AtlasOS ROM package |
 | [OpenEUICC](https://openeuicc.com/) (GPL-3.0) | Privileged eSIM LPA |
 | [agreenbhm/Unihertz-Titan-2-LineageOS](https://github.com/agreenbhm/Unihertz-Titan-2-LineageOS) | Early Titan 2 GSI packaging |

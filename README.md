@@ -1,61 +1,122 @@
 # AtlasOS
 
-**CyberDeck OS for the Unihertz Titan 2.**
+**A portable lab on the Unihertz Titan 2.**
 
-HybridOS: you compile a LineageOS GSI (MisterZtr recipe + our patches). The
-kernel and vendor stay stock, because Unihertz publishes no device sources.
+Hardware keyboard, trackpad, rear display, USB/BT HID, a Debian plane, and
+an OpenWrt router for the hotspot — in a pocket. You compile it. Kernel and
+vendor stay stock: Unihertz publishes no device sources.
 
-Clone this repo. It pulls Lineage, applies MisterZtr patches, then ours.
+```
+LineageOS GSI (MisterZtr + our patches)
+  + stock vendor / boot (your region zip)
+  = hybrid super
+```
+
 Flavors: **vanilla** / **microg** / **gapps**.
 
-| Use | Meaning |
-|-----|---------|
-| Smart-home input | Hardware keyboard, trackpad, USB/BT HID |
-| Development device | Atlas terminal, Debian plane, ADB |
-| Grok + local models | Atlas / Nanobot → Grok or a LAN / on-device model |
+## What it is
 
-Cube is **system chrome only** (icon mask + night/cyan). This is not a game
-or hive product. Working-product gates: [`docs/PRODUCT_LOCK.md`](docs/PRODUCT_LOCK.md).
-Not Cube-certified until those gates pass on a wiped image.
+### Titan Controls
+
+Settings hub (not a launcher toy). Pad mode, key remap, keyboard light,
+privacy, sub display, developer ADB.
+
+- **Key mapping** — physical keys to actions (Home/Recents via
+  `GLOBAL_ACTION_*` only, never a ghost Recents activity).
+- **Sub display** — rear panel as a real surface (backlight + composition).
+  Cube lattice is system chrome / optional rear face, not a private theme
+  inside Controls.
+- **Pad** — `titan2-touchpadd` in the GSI. **Original author:
+  [PeterGSI](https://gitea.angry.im/PeterGSI/titan2-touchpadd).** This tree
+  ships a product **fork** ([Abyss-c0re/titan2-touchpadd](https://github.com/Abyss-c0re/titan2-touchpadd)):
+  pad-only, INPROC park. We did not invent the driver.
+
+### HID (USB / Bluetooth)
+
+Titan as a keyboard/mouse for a PC, tablet, or glasses.
+
+**Shared mode** — HID is armed and the phone stays yours: you type and
+move on the guest **and** keep using Titan (multitask). Exclusive grab is
+the other mode (guest owns the pad). Shared is the lab default when you
+still need the device.
+
+### Atlas (Debian plane)
+
+Terminal + wipe-surviving Debian on super LP `atlas_linux`.
+
+Debian **cannot** see Android Binder or user files as if they were local.
+One bridge:
+
+```text
+android <tool> [args]
+android cat|write|ls <android-path>
+```
+
+Policy is Magisk-style **allow / ask / deny** (Settings → Atlas → Access).
+Sudo/wipe stay gated. Seeing the screen is `android screencap`, not a fake
+`screencap` on PATH.
+
+### OpenWrt (hotspot)
+
+Official OpenWrt on super LP `atlas_openwrt`. The phone hotspot is a
+router you can actually manage: LuCI + Titan **Router** wrapper — clients,
+leases, firewall. Not a Settings toggle that pretends to be a lab.
+
+### Portable lab
+
+This is the point: a Titan you can sit down with and work.
+
+| Piece | Job |
+|-------|-----|
+| HW keyboard + pad | Type and point without a glass slab |
+| Sub display | Second surface, not a toy |
+| HID shared | Drive a host, keep the phone |
+| Atlas | Real Debian, secure Android IPC |
+| OpenWrt | Own the hotspot clients |
+| ADB / Atlas | Agents and humans use the same plane |
+
+Not in the image: PocketBoard (sideload IME), Clanker, Magisk-as-UX,
+stock firmware, OEM kernel sources (none exist).
+
+Working-product gates: [`docs/PRODUCT_LOCK.md`](docs/PRODUCT_LOCK.md).
+Credits: [`CREDITS.md`](CREDITS.md). On-device: Controls → **About**.
 
 ## Build (standalone)
 
 ```bash
 git clone https://github.com/Abyss-c0re/AtlasOS.git AtlasOS && cd AtlasOS
-./scripts/bootstrap.sh                 # repo init/sync Lineage + MisterZtr + our SERIES
-./scripts/build.sh --flavor vanilla    # GSI; mouse driver compiled in (not inject)
+./scripts/bootstrap.sh                 # Lineage + MisterZtr + our SERIES
+./scripts/build.sh --flavor vanilla    # GSI; mouse driver compiled in
 ./scripts/build.sh --flavor microg     # + fetched microG (not in git)
 ./scripts/build.sh --flavor gapps      # MisterZtr bgN4 lunch, if the tree has it
 ```
 
-What you must fetch yourself: [`DEPENDENCIES.md`](DEPENDENCIES.md).
+Fetch list: [`DEPENDENCIES.md`](DEPENDENCIES.md).
 
 The Android tree is **local** (`.links/lineage`, gitignored). Tens of GB.
 
-Hybrid super (stock vendor + this GSI) needs **your** region-matching Unihertz
-zip (`STOCK_ZIP=`). That firmware is not in this git.
+Hybrid super needs **your** region-matching Unihertz zip (`STOCK_ZIP=`).
+That firmware is not in this git. Cross-region vendor is forbidden.
 
 ## Layout
 
 | Path | Role |
 |------|------|
-| `apps/` | Product apps (Titan-only stay here) |
-| `patches/gsi_source/` | Our Lineage SERIES |
-| `patches/bin/` | One copy of every shippable script |
+| `apps/` | Controls, HID, Atlas, Nanobot wrapper, CubeContact |
+| `patches/gsi_source/` | Lineage SERIES |
+| `patches/bin/` | Shippable scripts (one copy) |
+| `packages/gsi_product/` | `PRODUCT_PACKAGES` + prebuilts |
 | `config/flavors.yaml` | vanilla / microg / gapps |
-| `config/modules.yaml` | Reusable remotes + unpublished in-tree |
+| `config/modules.yaml` | Remotes + unpublished in-tree |
 | `scripts/sync-modules.sh` | Pull remotes into `.links/upstream/` |
 
-Reusable apps that are **not published yet** stay in this repo. When a remote
-exists, add it to `.gitmodules` (see `.gitmodules.example`) and
-`./scripts/sync-modules.sh`.
-
-## Commands
+Apps without a public remote stay here until split (see modules.yaml).
 
 ```bash
 ./scripts/sync-modules.sh --status
 ./scripts/check_dupes.sh
 ./scripts/check_clean.sh
+./scripts/check_publish.sh    # required before a public push
 ```
 
 ## License
@@ -63,10 +124,5 @@ exists, add it to `.gitmodules` (see `.gitmodules.example`) and
 Original work: MIT (`LICENSE`). Third-party map: [`NOTICE.md`](NOTICE.md).  
 What must not be in git: [`docs/LEGAL.md`](docs/LEGAL.md).
 
-```bash
-./scripts/check_publish.sh    # must pass before a public push
-```
-
-Termux emulator sources are **GPLv3** (not MIT). PocketBoard is **not** an AtlasOS
-ROM package (optional sideload). microG / OpenEUICC APKs are fetched at build
-time, not committed. Unihertz firmware is never in this repo.
+Termux emulator sources in Atlas are **GPLv3**. PocketBoard is **not**
+shipped. microG / OpenEUICC APKs are fetched at build time.
