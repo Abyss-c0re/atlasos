@@ -75,8 +75,6 @@ This is the point: a Titan you can sit down with and work.
 | OpenWrt | Own the hotspot clients |
 | ADB / Atlas | Agents and humans use the same plane |
 
-Not in the image: PocketBoard (sideload IME), Clanker, Magisk-as-UX,
-stock firmware, OEM kernel sources (none exist).
 
 Working-product gates: [`docs/PRODUCT_LOCK.md`](docs/PRODUCT_LOCK.md).
 Credits: [`CREDITS.md`](CREDITS.md). On-device: Controls → **About**.
