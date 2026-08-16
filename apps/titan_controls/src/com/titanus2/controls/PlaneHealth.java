@@ -38,11 +38,14 @@ public final class PlaneHealth {
     public static final class Report {
         public final List<Row> calls = new ArrayList<Row>();
         public final List<Row> keys = new ArrayList<Row>();
+        public final List<Row> sims = new ArrayList<Row>();
         public final List<Row> host = new ArrayList<Row>();
         public boolean callsOk;
         public boolean keysOk;
+        public boolean simsOk;
         public String callsVerdict = "";
         public String keysVerdict = "";
+        public String simsVerdict = "";
     }
 
     private PlaneHealth() {}
@@ -51,6 +54,7 @@ public final class PlaneHealth {
         Report r = new Report();
         probeCalls(ctx, r);
         probeKeys(ctx, r);
+        probeSims(ctx, r);
         probeHost(r);
         return r;
     }
@@ -194,6 +198,61 @@ public final class PlaneHealth {
         r.keys.add(0, new Row("Nav keys", r.keysOk, r.keysVerdict));
     }
 
+    private static void probeSims(Context ctx, Report r) {
+        try {
+            SubscriptionManager sm = ctx.getSystemService(SubscriptionManager.class);
+            if (sm == null) {
+                r.sims.add(new Row("SIMs", false, "no SubscriptionManager"));
+                r.simsOk = false;
+                r.simsVerdict = "FAIL — no subscription manager";
+                return;
+            }
+            List<SubscriptionInfo> all = sm.getAllSubscriptionInfoList();
+            List<SubscriptionInfo> avail = invokeSubList(sm, "getAvailableSubscriptionInfoList");
+            java.util.HashSet<Integer> listed = new java.util.HashSet<Integer>();
+            if (avail != null) {
+                for (SubscriptionInfo s : avail) {
+                    if (s != null) listed.add(s.getSubscriptionId());
+                }
+            }
+            int hidden = 0;
+            int shown = 0;
+            if (all != null) {
+                for (SubscriptionInfo s : all) {
+                    if (s == null) continue;
+                    String icc = s.getIccId();
+                    int slot = s.getSimSlotIndex();
+                    if ((icc == null || icc.isEmpty()) && slot < 0) continue;
+                    boolean inList = listed.contains(s.getSubscriptionId());
+                    boolean uicc = true;
+                    try {
+                        Object v = s.getClass().getMethod("areUiccApplicationsEnabled").invoke(s);
+                        uicc = !Boolean.FALSE.equals(v);
+                    } catch (Throwable ignored) {}
+                    String name = s.getDisplayName() != null
+                        ? s.getDisplayName().toString() : ("sub " + s.getSubscriptionId());
+                    boolean deleted = !inList && (slot >= 0 || !uicc);
+                    if (deleted) hidden++;
+                    else shown++;
+                    r.sims.add(new Row(
+                        (deleted ? "hidden " : (uicc ? "on " : "off ")) + name,
+                        !deleted,
+                        "slot=" + slot + " sub=" + s.getSubscriptionId()
+                            + " uicc=" + uicc + " settingsList=" + inList));
+                }
+            }
+            r.simsOk = hidden == 0;
+            r.simsVerdict = hidden == 0
+                ? ("OK — " + shown + " SIM(s) still listed")
+                : ("FAIL — " + hidden + " SIM(s) disabled and deleted from Settings");
+            r.sims.add(0, new Row("Disable ≠ delete", r.simsOk, r.simsVerdict));
+        } catch (Throwable t) {
+            r.sims.add(new Row("SIMs", false, t.getClass().getSimpleName()));
+            r.simsOk = false;
+            r.simsVerdict = "FAIL — probe error";
+        }
+    }
+
     private static void probeHost(Report r) {
         String persist = prop("persist.sys.hostname", "");
         String live = readFile("/proc/sys/kernel/hostname").trim();
@@ -236,6 +295,15 @@ public final class PlaneHealth {
             case ServiceState.STATE_POWER_OFF: return "POWER_OFF";
             default: return "unknown(" + s + ")";
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<SubscriptionInfo> invokeSubList(SubscriptionManager sm, String method) {
+        try {
+            Object v = sm.getClass().getMethod(method).invoke(sm);
+            if (v instanceof List) return (List<SubscriptionInfo>) v;
+        } catch (Throwable ignored) {}
+        return null;
     }
 
     private static String prop(String k, String def) {

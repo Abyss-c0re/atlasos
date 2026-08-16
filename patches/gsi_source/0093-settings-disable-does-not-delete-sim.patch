@@ -1,0 +1,101 @@
+# project:packages/apps/Settings
+# Disable in Settings must leave the SIM row (inactive). 0092 still dropped
+# UICC-off records after markSubscriptionsInactive cleared simSlotIndex.
+diff --git a/src/com/android/settings/network/telephony/SubscriptionRepository.kt b/src/com/android/settings/network/telephony/SubscriptionRepository.kt
+--- a/src/com/android/settings/network/telephony/SubscriptionRepository.kt
++++ b/src/com/android/settings/network/telephony/SubscriptionRepository.kt
+@@ -18,6 +18,8 @@
+ import android.content.Context
+ import android.telephony.SubscriptionInfo
+ import android.telephony.SubscriptionManager
++import android.telephony.TelephonyManager
++import android.telephony.UiccSlotInfo
+ import android.util.Log
+ import androidx.lifecycle.LifecycleOwner
+ import com.android.settings.network.SubscriptionUtil
+@@ -63,20 +65,10 @@
+     fun getSelectableSubscriptionInfoList(): List<SubscriptionInfo> {
+         val availableList =
+             ArrayList(subscriptionManager.getAvailableSubscriptionInfoList() ?: emptyList())
+-        // Titan: a UICC-disabled / slot-off SIM must stay in Settings → SIMs as inactive.
+-        // Framework available-list can drop it; merge inserted slots from the full list.
+-        try {
+-            val have = availableList.map { it.subscriptionId }.toHashSet()
+-            val all = subscriptionManager.getAllSubscriptionInfoList()
+-            if (all != null) {
+-                for (info in all) {
+-                    if (info == null || have.contains(info.subscriptionId)) continue
+-                    if (info.simSlotIndex == SubscriptionManager.INVALID_SIM_SLOT_INDEX) continue
+-                    availableList.add(info)
+-                }
+-            }
+-        } catch (_: Throwable) {
+-        }
++        // Disable in Settings must not delete the row. UICC-off marks the
++        // subscription inactive and clears simSlotIndex; keep it if the card
++        // is still in a slot.
++        mergeInsertedSubscriptions(availableList)
+         val visibleList =
+             availableList.filter { subInfo ->
+                 // Opportunistic subscriptions are considered invisible to users so they should
+@@ -109,12 +101,8 @@
+     fun isSubscriptionVisibleFlow(subId: Int): Flow<Boolean> {
+         return subscriptionsChangedFlow()
+             .map {
+-                val subInfo =
+-                    subscriptionManager.availableSubscriptionInfoList?.firstOrNull { subInfo ->
+-                        subInfo.subscriptionId == subId
+-                    }
+-                subInfo != null &&
+-                    SubscriptionUtil.isSubscriptionVisible(subscriptionManager, context, subInfo)
++                getSelectableSubscriptionInfoList().any { it.subscriptionId == subId }
+             }
+             .conflate()
+             .onEach { Log.d(TAG, "[$subId] isSubscriptionVisibleFlow: $it") }
+@@ -129,6 +117,46 @@
+     }
+ 
+     /** Flow of whether the subscription enabled for the given [subId]. */
++    private fun mergeInsertedSubscriptions(availableList: ArrayList<SubscriptionInfo>) {
++        try {
++            val have = availableList.map { it.subscriptionId }.toHashSet()
++            val insertedIcc = insertedIccIds()
++            val all = subscriptionManager.getAllSubscriptionInfoList() ?: return
++            for (info in all) {
++                if (info == null || have.contains(info.subscriptionId)) continue
++                if (info.isOpportunistic) continue
++                val icc = info.iccId
++                val inSlot = info.simSlotIndex != SubscriptionManager.INVALID_SIM_SLOT_INDEX
++                val cardIn = !icc.isNullOrEmpty() && insertedIcc.any { present ->
++                    present.startsWith(icc) || icc.startsWith(present) ||
++                        (present.length >= 8 && icc.startsWith(present.substring(0, 8)))
++                }
++                if (!inSlot && !cardIn) continue
++                availableList.add(info)
++                have.add(info.subscriptionId)
++            }
++        } catch (_: Throwable) {
++        }
++    }
++
++    private fun insertedIccIds(): List<String> {
++        val tm = context.getSystemService(TelephonyManager::class.java) ?: return emptyList()
++        val slots = tm.uiccSlotsInfo ?: return emptyList()
++        val out = ArrayList<String>()
++        for (slot in slots) {
++            if (slot == null) continue
++            if (slot.cardStateInfo != UiccSlotInfo.CARD_STATE_INFO_PRESENT) continue
++            try {
++                for (port in slot.ports) {
++                    val id = port.iccId ?: continue
++                    if (id.isNotEmpty()) out.add(id)
++                }
++            } catch (_: Throwable) {
++            }
++        }
++        return out
++    }
++
+     fun isSubscriptionEnabledFlow(subId: Int): Flow<Boolean> {
+         if (!SubscriptionManager.isValidSubscriptionId(subId)) return flowOf(false)
+         return subscriptionsChangedFlow()

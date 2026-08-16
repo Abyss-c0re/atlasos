@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.90 (590) — 2026-08-16T13:18Z
+
+### rebuild 2026-08-16T13:19Z · 15.90 (590)
+
+- Rebuild (ALLOW_ROOT=0)
+
+
+- Diagnostics: disable must not delete SIMs. IMS setup no longer re-enables UICC.
+
+---
+
 ## 15.89 (589) — 2026-08-16T13:10Z
 
 ### rebuild 2026-08-16T13:10Z · 15.89 (589)

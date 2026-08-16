@@ -106,6 +106,7 @@ public class DiagnosticsActivity extends Activity {
 
         paint(root, "Incoming calls", r.calls);
         paint(root, "Keyboard / nav", r.keys);
+        paint(root, "SIMs", r.sims);
         paint(root, "Host", r.host);
         UiKit.button(root, "Refresh", this::refresh);
     }

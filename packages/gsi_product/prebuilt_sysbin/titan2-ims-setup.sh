@@ -63,9 +63,8 @@ done
 [ -s /data/misc/titan2/titan2_tel_restart_ril ] || echo 0 > /data/misc/titan2/titan2_tel_restart_ril 2>/dev/null || true
 chmod 666 /data/misc/titan2/titan2_tel_restart_ril 2>/dev/null || true
 
-for sid in 1 2 3 4; do
-  cmd phone enable-physical-subscription "$sid" 2>/dev/null || true
-done
+# Never enable-physical-subscription / setUiccApplicationsEnabled here.
+# User "Use SIM" off must stay off. Re-enabling deletes that choice.
 
 # Ensure system MtkIms is present; never download third-party IMS
 if ! pm path com.mediatek.ims >/dev/null 2>&1; then
