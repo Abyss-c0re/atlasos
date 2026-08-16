@@ -77,6 +77,11 @@ public class SimActivity extends Activity {
         root.removeAllViews();
         UiKit.title(root, "SIMs");
         UiKit.note(root, "Disable stays Off. Row is not deleted.");
+        UiKit.toggle(root, "Disable phone calls", PhoneCalls.isDisabled(this), on -> {
+            PhoneCalls.setDisabled(this, on);
+            UiKit.toast(this, on ? "Phone calls Off" : "Phone calls On");
+            h.post(this::render);
+        });
 
         List<SimCards.Card> cards = SimCards.list(this);
         if (cards.isEmpty()) {

@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.93 (593) — 2026-08-16T13:39Z
+
+### rebuild 2026-08-16T13:39Z · 15.93 (593)
+
+- compile fix
+
+
+- Disable phone calls. Diagnostics: incoming OFF when disabled; FAIL if LTE/NR and MMTEL has no VOICE. Binder-thread is not incoming.
+
+---
+
 ## 15.92 (592) — 2026-08-16T13:33Z
 
 - SIMs screen: UICC-off cards stay listed Off. Settings hide is not delete.

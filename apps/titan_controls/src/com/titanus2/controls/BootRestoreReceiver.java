@@ -141,6 +141,7 @@ public class BootRestoreReceiver extends BroadcastReceiver {
             if (SubDisplayPrefs.isOn(context)) {
                 try { SubDisplayService.restore(context); } catch (Exception ignored) {}
             }
+            try { PhoneCalls.apply(app); } catch (Exception ignored) {}
             // Optional VPN-over-hotspot heal (Tweaks); delayed — SoftAP may come later
             try {
                 if (VpnHotspotHeal.isEnabled(app)) {

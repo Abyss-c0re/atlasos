@@ -115,7 +115,7 @@ public class DiagnosticsActivity extends Activity {
         UiKit.section(parent, title);
         if (rows == null) return;
         for (PlaneHealth.Row row : rows) {
-            String mark = row.ok ? "OK" : "FAIL";
+            String mark = row.mark != null ? row.mark : (row.ok ? "OK" : "FAIL");
             UiKit.listRow(parent, mark + "  " + row.name, row.detail, () -> { });
         }
     }

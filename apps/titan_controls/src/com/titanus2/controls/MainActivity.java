@@ -57,6 +57,7 @@ public class MainActivity extends Activity {
     private TextView bLedTest;
 
     private LinearLayout navKeys, navSub, navNotif, navTweaks, navSims;
+    private UiKit.Toggle tCalls;
     private ScrollView scroll;
     private LinearLayout sectionPad;
     private final Handler h = new Handler(Looper.getMainLooper());
@@ -149,6 +150,11 @@ public class MainActivity extends Activity {
 
         // --- Destinations ---
         UiKit.section(root, "Phone");
+        tCalls = UiKit.toggle(root, "Disable phone calls", PhoneCalls.isDisabled(this), on -> {
+            PhoneCalls.setDisabled(this, on);
+            UiKit.toast(this, on ? "Phone calls Off" : "Phone calls On");
+            try { UiKit.setNavSummary(navSims, simHubSummary()); } catch (Exception ignored) {}
+        });
         navKeys = UiKit.navRow(root, "Keys", "Shortcuts, layouts, Fn",
             () -> startActivity(new Intent(this, KeyMapActivity.class)));
         // USB HID = own launcher app (com.titanus2.usbhid) — not a hub row.
@@ -687,14 +693,24 @@ public class MainActivity extends Activity {
         UiKit.setNavSummary(navKeys, keysSum);
         UiKit.setNavSummary(navSub, SubDisplayPrefs.getMode(this).label());
         try {
-            UiKit.setNavSummary(navSims, SimCards.hubSummary(this));
+            UiKit.setNavSummary(navSims, simHubSummary());
         } catch (Exception ignored) {}
+        if (tCalls != null) {
+            try { tCalls.setChecked(PhoneCalls.isDisabled(this)); } catch (Exception ignored) {}
+        }
         if (NotifLedPrefs.isEnabled(this)) {
             UiKit.setNavSummary(navNotif,
                 hasNotifAccess() ? NotifLedPrefs.getMode(this) : "Allow notification access");
         } else {
             UiKit.setNavSummary(navNotif, "Off");
         }
+    }
+
+    private String simHubSummary() {
+        String sims = SimCards.hubSummary(this);
+        String calls = PhoneCalls.hubSummary(this);
+        if (sims == null || sims.isEmpty()) return calls;
+        return sims + " · " + calls;
     }
 
     /** Flash keyboard light now (bumps activity + level) so Test works even if idle. */

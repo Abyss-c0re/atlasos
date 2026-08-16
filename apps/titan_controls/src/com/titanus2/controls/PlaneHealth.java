@@ -28,10 +28,16 @@ public final class PlaneHealth {
         public final String name;
         public final boolean ok;
         public final String detail;
+        /** OK / FAIL / OFF / INFO */
+        public final String mark;
         public Row(String name, boolean ok, String detail) {
+            this(name, ok, detail, ok ? "OK" : "FAIL");
+        }
+        public Row(String name, boolean ok, String detail, String mark) {
             this.name = name;
             this.ok = ok;
             this.detail = detail != null ? detail : "";
+            this.mark = mark != null ? mark : (ok ? "OK" : "FAIL");
         }
     }
 
@@ -60,6 +66,11 @@ public final class PlaneHealth {
     }
 
     private static void probeCalls(Context ctx, Report r) {
+        boolean disabled = PhoneCalls.isDisabled(ctx);
+        r.calls.add(new Row("Disable phone calls", true,
+            disabled ? "on — incoming/outgoing voice stopped" : "off",
+            disabled ? "OFF" : "INFO"));
+
         boolean airplane = "1".equals(Settings.Global.getString(
             ctx.getContentResolver(), Settings.Global.AIRPLANE_MODE_ON));
         r.calls.add(new Row("Airplane", !airplane, airplane ? "on" : "off"));
@@ -69,9 +80,9 @@ public final class PlaneHealth {
         r.calls.add(new Row("SIM", simLoaded, simProp.isEmpty() ? "empty" : simProp));
 
         String binder = prop("persist.sys.phh.allow_binder_thread_on_incoming_calls", "");
-        boolean binderOn = "1".equals(binder) || "true".equalsIgnoreCase(binder);
-        r.calls.add(new Row("Binder-thread prop", binderOn,
-            binder.isEmpty() ? "unset" : binder));
+        r.calls.add(new Row("Binder-thread prop", true,
+            binder.isEmpty() ? "unset (not incoming)" : (binder + " (not incoming)"),
+            "INFO"));
 
         String imsPath = "";
         try {
@@ -81,18 +92,14 @@ public final class PlaneHealth {
             imsPath.isEmpty() ? "com.mediatek.ims missing" : imsPath));
 
         int voice = -1;
-        int subId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+        int radioTech = -1;
+        int subId = PhoneCalls.defaultVoiceSubId(ctx);
+        int voiceSlot = -1;
         try {
-            SubscriptionManager sm = ctx.getSystemService(SubscriptionManager.class);
-            if (sm != null) {
-                List<SubscriptionInfo> list = sm.getActiveSubscriptionInfoList();
-                if (list != null) {
-                    for (SubscriptionInfo si : list) {
-                        if (si != null) {
-                            subId = si.getSubscriptionId();
-                            break;
-                        }
-                    }
+            for (SimCards.Card c : SimCards.list(ctx)) {
+                if (c != null && c.subId == subId) {
+                    voiceSlot = c.slot;
+                    break;
                 }
             }
             TelephonyManager tm = ctx.getSystemService(TelephonyManager.class);
@@ -102,14 +109,23 @@ public final class PlaneHealth {
             }
             if (tm != null) {
                 ServiceState ss = tm.getServiceState();
-                if (ss != null) voice = ss.getState();
+                if (ss != null) {
+                    voice = ss.getState();
+                    try {
+                        radioTech = (Integer) ss.getClass()
+                            .getMethod("getRilVoiceRadioTechnology").invoke(ss);
+                    } catch (Throwable ignored) {}
+                }
             }
         } catch (Throwable t) {
             r.calls.add(new Row("Voice radio", false, "tm: " + t.getClass().getSimpleName()));
         }
         boolean inService = voice == ServiceState.STATE_IN_SERVICE;
         r.calls.add(new Row("Voice radio", inService,
-            voiceName(voice) + (subId > 0 ? " sub=" + subId : "")));
+            voiceName(voice)
+                + (subId > 0 ? " sub=" + subId : "")
+                + (voiceSlot >= 0 ? " slot=" + voiceSlot : "")
+                + (radioTech >= 0 ? " rat=" + radioTech : "")));
 
         boolean imsReg = false;
         String imsDetail = "n/a";
@@ -130,47 +146,66 @@ public final class PlaneHealth {
         }
         r.calls.add(new Row("IMS registered", imsReg, imsDetail));
 
+        boolean mmtelVoice = imsMmTelVoice(subId);
         String phoneDump = dump("phone", 400_000);
+        String lastConn = lastLine(phoneDump, "addConnection, subId=" + subId + ", type=MMTEL");
+        if (lastConn.isEmpty()) lastConn = lastLine(phoneDump, "type=MMTEL, conn=FeatureContainer");
+        String lastBinder = lastLine(phoneDump, "addImsFeatureBinder");
+        String lastCaps = lastLine(phoneDump,
+            (voiceSlot >= 0 ? "[" + voiceSlot + "] notifyFeatureCapabilitiesChanged, type=MMTEL"
+                : "notifyFeatureCapabilitiesChanged, type=MMTEL"));
         boolean noIms = phoneDump.contains("NO_IMS_SERVICE_CONFIGURED");
-        boolean nullIface = phoneDump.contains("null IInterface");
+        boolean nullIface = lastBinder.contains("null IInterface");
+        boolean capsVoice = lastCaps.contains("VOICE") && !lastCaps.contains("capabilities={ }");
+        if (lastConn.contains("VOICE") && !lastConn.contains("EMERGENCY_OVER_MMTEL }")
+                && !lastConn.contains("capabilities={ }")) {
+            capsVoice = true;
+        }
+        if (lastConn.contains("capabilities={ }") || lastCaps.contains("capabilities={ }")) {
+            capsVoice = false;
+        }
         boolean bound = phoneDump.contains("isBound=true");
-        r.calls.add(new Row("MMTEL feature", !noIms && !nullIface,
+        boolean mmtelOk = !noIms && !nullIface && (mmtelVoice || capsVoice);
+        r.calls.add(new Row("MMTEL voice", mmtelOk,
             (noIms ? "NO_IMS_SERVICE_CONFIGURED " : "")
-                + (nullIface ? "null IInterface " : "")
+                + (nullIface ? "last binder=null IInterface " : "")
+                + (capsVoice ? "VOICE cap " : "no VOICE cap ")
+                + (mmtelVoice ? "isAvailable " : "")
                 + (bound ? "controller-bound" : "controller-unbound")));
 
         String sw = prop("persist.vendor.radio.simswitch", "");
-        int voiceSlot = -1;
-        try {
-            String st = prop("gsm.sim.state", "");
-            String[] parts = st.split(",");
-            for (int i = 0; i < parts.length; i++) {
-                if (parts[i].contains("LOADED") || parts[i].contains("READY")) {
-                    voiceSlot = i;
-                    break;
-                }
-            }
-        } catch (Exception ignored) {}
         boolean swOk = true;
         String swDetail = "simswitch=" + sw;
         if (voiceSlot >= 0) {
             int want = voiceSlot + 1;
             swOk = String.valueOf(want).equals(sw);
             swDetail += " voiceSlot=" + voiceSlot + " want=" + want
-                + (swOk ? "" : " (IMS major SIM is the other slot)");
+                + (swOk ? "" : " (IMS major is the other slot)");
         }
         r.calls.add(new Row("IMS capability slot", swOk, swDetail));
 
-        boolean visualOnly = binderOn && inService && simLoaded
-            && (!imsReg || noIms || nullIface || !swOk);
-        r.callsOk = !airplane && simLoaded && inService && imsReg && !noIms
-            && !nullIface && swOk;
-        if (visualOnly) {
-            r.callsVerdict = "FAIL incoming — binder-thread ON, IMS not serving MMTEL";
+        boolean packetVoice = radioTech == 14 || radioTech == 20; // LTE / NR
+        boolean incomingReady = !airplane && simLoaded && inService
+            && (mmtelOk || (!packetVoice && inService))
+            && swOk;
+
+        if (disabled) {
+            r.callsOk = true;
+            r.callsVerdict = "OFF — phone calls disabled";
+            r.calls.add(0, new Row("Incoming", true, r.callsVerdict, "OFF"));
+            return;
+        }
+        r.callsOk = incomingReady;
+        if (!inService || airplane || !simLoaded) {
+            r.callsVerdict = "FAIL incoming — radio not in service";
+        } else if (!mmtelOk && packetVoice) {
+            r.callsVerdict = "FAIL incoming — LTE/NR and MMTEL has no VOICE";
+        } else if (!swOk) {
+            r.callsVerdict = "FAIL incoming — IMS capability on the other SIM slot";
         } else if (r.callsOk) {
-            r.callsVerdict = "OK — radio + IMS registered (no test call)";
+            r.callsVerdict = "OK — voice path present (no test call)";
         } else {
-            r.callsVerdict = "FAIL incoming — radio/IMS not ready";
+            r.callsVerdict = "FAIL incoming — voice path not ready";
         }
         r.calls.add(0, new Row("Incoming (no test call)", r.callsOk, r.callsVerdict));
     }
@@ -309,6 +344,38 @@ public final class PlaneHealth {
         String raw = Settings.Secure.getString(ctx.getContentResolver(),
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
         return raw != null && raw.contains("TrackpadAccessService");
+    }
+
+    private static boolean imsMmTelVoice(int subId) {
+        if (subId <= 0) return false;
+        try {
+            Class<?> cls = Class.forName("android.telephony.ims.ImsMmTelManager");
+            Object mgr = cls.getMethod("createForSubscriptionId", int.class)
+                .invoke(null, Integer.valueOf(subId));
+            if (mgr == null) return false;
+            // CAPABILITY_TYPE_VOICE = 1, REGISTRATION_TECH_LTE = 1 / NR = 3 / IWLAN = 2
+            int[] techs = { 1, 3, 2, 0 };
+            for (int tech : techs) {
+                try {
+                    Object v = mgr.getClass()
+                        .getMethod("isAvailable", int.class, int.class)
+                        .invoke(mgr, Integer.valueOf(1), Integer.valueOf(tech));
+                    if (Boolean.TRUE.equals(v)) return true;
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private static String lastLine(String hay, String needle) {
+        if (hay == null || needle == null || needle.isEmpty()) return "";
+        int i = hay.lastIndexOf(needle);
+        if (i < 0) return "";
+        int start = hay.lastIndexOf('\n', i);
+        start = start < 0 ? 0 : start + 1;
+        int end = hay.indexOf('\n', i);
+        if (end < 0) end = hay.length();
+        return hay.substring(start, end);
     }
 
     private static String voiceName(int s) {

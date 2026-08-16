@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.controls"
-    android:versionCode="592"
-    android:versionName="15.92">
+    android:versionCode="593"
+    android:versionName="15.93">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
     <!-- Framework API: host declares + holds USE_TITAN2_API -->
     <permission
@@ -28,6 +28,7 @@
     <uses-permission android:name="android.permission.INJECT_EVENTS"/>
     <!-- OEM space-bar / shortcut parity: answer, end, mute (no Agui) -->
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS"/>
+    <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS"/>
     <uses-permission android:name="android.permission.MODIFY_PHONE_STATE"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
     <!-- Rear dual-display: display-scoped power + bind sub_touch → display 2 -->
@@ -428,6 +429,15 @@
                 android:name="android.service.quicksettings.TOGGLEABLE_TILE"
                 android:value="true"/>
         </service>
+        <receiver
+            android:name=".PhoneCallBlockReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter android:priority="999">
+                <action android:name="android.intent.action.PHONE_STATE"/>
+                <action android:name="android.intent.action.NEW_OUTGOING_CALL"/>
+            </intent-filter>
+        </receiver>
         <receiver
             android:name=".BootRestoreReceiver"
             android:enabled="true"

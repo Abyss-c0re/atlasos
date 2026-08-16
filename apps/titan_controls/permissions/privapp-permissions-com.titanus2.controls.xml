@@ -12,6 +12,7 @@
         <permission name="android.permission.READ_PRIVILEGED_PHONE_STATE"/>
         <permission name="android.permission.DUMP"/>
         <permission name="android.permission.ANSWER_PHONE_CALLS"/>
+        <permission name="android.permission.PROCESS_OUTGOING_CALLS"/>
         <permission name="android.permission.MODIFY_AUDIO_SETTINGS"/>
         <permission name="android.permission.WAKE_LOCK"/>
         <permission name="android.permission.SYSTEM_ALERT_WINDOW"/>
