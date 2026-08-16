@@ -115,9 +115,7 @@ PRODUCT_SYSTEM_PROPERTIES += \
     ro.titanus2.maintainer=Abyss-c0re \
     ro.atlasos.brand=AtlasOS \
     ro.atlasos.version=23.2 \
-    ro.lineage.display.version=AtlasOS-23.2 \
-    ro.build.display.id=AtlasOS-23.2 \
     persist.sys.titan2.tether_ipv4=192.168.6.1/24
 
-# Dated stamp written by stage_gsi_product.sh (AtlasOS-23.2-YYYYMMDD).
+# Dated display id (AtlasOS-23.2-YYYYMMDD) — only here, never also in this file.
 -include device/phh/treble/atlasos_stamp.mk
