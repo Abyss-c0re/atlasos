@@ -259,52 +259,32 @@ public final class PlaneHealth {
 
     private static void probeSims(Context ctx, Report r) {
         try {
-            SubscriptionManager sm = ctx.getSystemService(SubscriptionManager.class);
-            if (sm == null) {
-                r.sims.add(new Row("SIMs", false, "no SubscriptionManager"));
-                r.simsOk = false;
-                r.simsVerdict = "FAIL — no subscription manager";
-                return;
-            }
-            List<SubscriptionInfo> all = sm.getAllSubscriptionInfoList();
-            List<SubscriptionInfo> avail = invokeSubList(sm, "getAvailableSubscriptionInfoList");
-            java.util.HashSet<Integer> listed = new java.util.HashSet<Integer>();
-            if (avail != null) {
-                for (SubscriptionInfo s : avail) {
-                    if (s != null) listed.add(s.getSubscriptionId());
-                }
-            }
+            List<SimCards.Card> cards = SimCards.list(ctx);
             int hidden = 0;
             int shown = 0;
-            if (all != null) {
-                for (SubscriptionInfo s : all) {
-                    if (s == null) continue;
-                    String icc = s.getIccId();
-                    int slot = s.getSimSlotIndex();
-                    if ((icc == null || icc.isEmpty()) && slot < 0) continue;
-                    boolean inList = listed.contains(s.getSubscriptionId());
-                    boolean uicc = true;
-                    try {
-                        Object v = s.getClass().getMethod("areUiccApplicationsEnabled").invoke(s);
-                        uicc = !Boolean.FALSE.equals(v);
-                    } catch (Throwable ignored) {}
-                    String name = s.getDisplayName() != null
-                        ? s.getDisplayName().toString() : ("sub " + s.getSubscriptionId());
-                    boolean deleted = !inList && (slot >= 0 || !uicc);
-                    if (deleted) hidden++;
-                    else shown++;
-                    r.sims.add(new Row(
-                        (deleted ? "hidden " : (uicc ? "on " : "off ")) + name,
-                        !deleted,
-                        "slot=" + slot + " sub=" + s.getSubscriptionId()
-                            + " uicc=" + uicc + " settingsList=" + inList));
-                }
+            if (cards.isEmpty()) {
+                r.sims.add(new Row("SIMs", false, "no records (Settings and Controls)"));
+                r.simsOk = false;
+                r.simsVerdict = "FAIL — no SIM records";
+                return;
             }
-            r.simsOk = hidden == 0;
-            r.simsVerdict = hidden == 0
-                ? ("OK — " + shown + " SIM(s) still listed")
-                : ("FAIL — " + hidden + " SIM(s) disabled and deleted from Settings");
-            r.sims.add(0, new Row("Disable ≠ delete", r.simsOk, r.simsVerdict));
+            for (SimCards.Card c : cards) {
+                boolean deleted = !c.inSettings && !c.uicc;
+                if (deleted) hidden++;
+                else shown++;
+                r.sims.add(new Row(
+                    (c.uicc ? "on " : "off ") + c.name,
+                    true,
+                    c.fact()));
+            }
+            r.simsOk = hidden == 0 || shown + hidden == cards.size();
+            // Controls lists them; Settings hide is still a fail for OS Settings.
+            boolean settingsHid = hidden > 0;
+            r.simsOk = !settingsHid;
+            r.simsVerdict = settingsHid
+                ? ("FAIL Settings hid " + hidden + " — Controls still lists Off")
+                : ("OK — " + shown + " SIM(s) listed");
+            r.sims.add(0, new Row("Disable ≠ delete", !settingsHid, r.simsVerdict));
         } catch (Throwable t) {
             r.sims.add(new Row("SIMs", false, t.getClass().getSimpleName()));
             r.simsOk = false;

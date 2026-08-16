@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.95 (595) — 2026-08-16T15:22Z
+
+- SIMs: UICC-off with empty ICC + slot -1 stays listed Off. Remember last-seen cards. Do not mirror Settings delete.
+
+---
+
 ## 15.94 (594) — 2026-08-16T14:14Z
 
 - Buttons: a11y_live is a lie after install/crash. Stamp truth. key-watch 2.194 yields TitanKey when a11y is actually live.
