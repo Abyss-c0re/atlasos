@@ -112,12 +112,18 @@ public class MainActivity extends Activity {
     private boolean keysMoreOpen;
     private SoftPadView pad;
     private LinearLayout padChrome;
+    private PadKeyBar padKeys;
+    private View padFnRow;
+    private View padExtraKeys;
+    private View padModRow;
+    private TextView extraKeysToggle;
+    private boolean extraKeysOn = true;
     private ScrollView keysScroll;
     private ScrollView settingsScroll;
     private FrameLayout stage;
     private boolean session;
     private boolean exclusive = true;
-    /** Keep HID live with display blank (default on — no screen burn). */
+    /** Type with panel actually off (FGS + service UDC/input stay-awake). */
     private boolean screenOff = true;
     private int transport = HidControl.TRANSPORT_BT;
     private int typingMs = HidControl.DEFAULT_TYPING_MS;
@@ -168,6 +174,11 @@ public class MainActivity extends Activity {
     private static final String[] BLOCK_LAB = new String[]{"Off", "Short", "Med", "Long"};
 
     @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(HidTheme.wrap(base));
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         HidAppContext.init(this);
@@ -179,8 +190,8 @@ public class MainActivity extends Activity {
         }
         prefs = getSharedPreferences("usb_hid", MODE_PRIVATE);
         exclusive = prefs.getBoolean("exclusive", true);
-        // Default true: keep HID keyboard/mouse with display blank (no burn).
-        // Product VR / Quest path needs this; KEEP_SCREEN_ON only when false.
+        extraKeysOn = prefs.getBoolean("extra_keys", true);
+        // Product: type on the host while Android blanks the panel.
         screenOff = prefs.getBoolean("screen_off", true);
         // Default BT+USB when hybrid stack present; else BT only.
         int defTransport = Root.defaultTransport();
@@ -197,6 +208,7 @@ public class MainActivity extends Activity {
         if (typeSpeedPct > 400) typeSpeedPct = 400;
         accel = prefs.getInt("accel", HidControl.DEFAULT_ACCEL);
         HidControl.init(this);
+        try { HidQsDefaults.ensureDefaultTile(this); } catch (Exception ignored) {}
         HidControl.setTransport(transport);
         // Heal stuck usb=0/bt=0 plane from older Stop paths (prefs still valid).
         HidControl.writeTransportEnables(this);
@@ -216,10 +228,16 @@ public class MainActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        // Match Settings chrome; keep stage free for pad
+        // Theme windowBackground — do not paint light fallback over AMOLED.
         int edge = UiKit.dp(root, UiKit.PAD_H);
         root.setPadding(edge, UiKit.dp(root, 12), edge, edge);
         setContentView(root);
+        WindowManager.LayoutParams wlp = getWindow().getAttributes();
+        wlp.height = WindowManager.LayoutParams.MATCH_PARENT;
+        wlp.width = WindowManager.LayoutParams.MATCH_PARENT;
+        wlp.gravity = Gravity.TOP;
+        wlp.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
+        getWindow().setAttributes(wlp);
 
         // Title row: name + short state
         LinearLayout titleRow = new LinearLayout(this);
@@ -282,6 +300,10 @@ public class MainActivity extends Activity {
             if (!session) startSession();
             KeyLedClient.bumpActivity();
         }, null);
+        padKeys = new PadKeyBar(this, (mod, usage) -> HidControl.keyTap(mod, usage));
+        int fnH = Math.max(UiKit.dp(new View(this), 36), clickBtnHeightPx() * 2 / 3);
+        padFnRow = padKeys.buildFnRow(fnH);
+        padChrome.addView(padFnRow);
         padChrome.addView(pad);
 
         LinearLayout clicks = new LinearLayout(this);
@@ -306,6 +328,13 @@ public class MainActivity extends Activity {
             HidControl.mouseButtons(0);
             KeyLedClient.bumpActivity();
         });
+        extraKeysToggle = mouseBtn(clicks, extraKeysOn ? "⌨▾" : "⌨▴", clickH, this::toggleExtraKeys);
+        int extraH = Math.max(UiKit.dp(new View(this), 40), clickH * 3 / 4);
+        padExtraKeys = padKeys.buildExtra(extraH);
+        padExtraKeys.setVisibility(extraKeysOn ? View.VISIBLE : View.GONE);
+        padChrome.addView(padExtraKeys);
+        padModRow = padKeys.buildMods(extraH);
+        padChrome.addView(padModRow);
         stage.addView(padChrome);
 
         // --- Keys ---
@@ -413,16 +442,10 @@ public class MainActivity extends Activity {
                 toggleSettings();
                 return true;
             case KeyEvent.KEYCODE_E:
-                exclusive = true;
-                savePrefs();
-                if (session) restartSession();
-                refreshState();
+                setRoutingExclusive();
                 return true;
             case KeyEvent.KEYCODE_R:
-                exclusive = false;
-                savePrefs();
-                if (session) restartSession();
-                refreshState();
+                setRoutingShare();
                 return true;
             case KeyEvent.KEYCODE_U:
                 setTransport(HidControl.TRANSPORT_USB);
@@ -535,11 +558,11 @@ public class MainActivity extends Activity {
         return b;
     }
 
-    private void mouseBtn(LinearLayout row, String lab, int height, Runnable r) {
+    private TextView mouseBtn(LinearLayout row, String lab, int height, Runnable r) {
         TextView b = new TextView(this);
         b.setText(lab);
         b.setTextColor(UiKit.textColor(this));
-        b.setTextSize(20f);
+        b.setTextSize(lab.length() > 1 ? 14f : 20f);
         b.setTypeface(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.BOLD);
         b.setGravity(Gravity.CENTER);
         b.setBackground(UiKit.square(UiKit.TILE));
@@ -550,6 +573,16 @@ public class MainActivity extends Activity {
         b.setLayoutParams(lp);
         b.setOnClickListener(v -> r.run());
         row.addView(b);
+        return b;
+    }
+
+    private void toggleExtraKeys() {
+        extraKeysOn = !extraKeysOn;
+        if (padExtraKeys != null) {
+            padExtraKeys.setVisibility(extraKeysOn ? View.VISIBLE : View.GONE);
+        }
+        if (extraKeysToggle != null) extraKeysToggle.setText(extraKeysOn ? "⌨▾" : "⌨▴");
+        savePrefs();
     }
 
     private void buildSettings(LinearLayout setRoot) {
@@ -588,18 +621,8 @@ public class MainActivity extends Activity {
 
         UiKit.section(setRoot, "Routing");
         LinearLayout route = UiKit.row(setRoot);
-        bExclusive = UiKit.flexButton(route, "Exclusive", () -> {
-            exclusive = true;
-            savePrefs();
-            if (session) restartSession();
-            refreshState();
-        });
-        bShare = UiKit.flexButton(route, "Share", () -> {
-            exclusive = false;
-            savePrefs();
-            if (session) restartSession();
-            refreshState();
-        });
+        bExclusive = UiKit.flexButton(route, "Exclusive", this::setRoutingExclusive);
+        bShare = UiKit.flexButton(route, "Share", this::setRoutingShare);
 
         // Open Controls layout editor (view/modify specials · arrows · custom)
         UiKit.section(setRoot, "Layouts");
@@ -622,15 +645,21 @@ public class MainActivity extends Activity {
         });
         setRoot.addView(settingsAdvanced);
 
-        // Black stay-awake: brightness 0 + KEEP_SCREEN_ON (true panel blank
-        // kills USB/input on this SoC — product “screen off HID”).
-        // Do NOT restartSession — that thrash-killed exclusive mid-use.
+        // Real screen-off typing: FGS + PARTIAL wake + service UDC/input on.
+        // Never dim the backlight and call it blank.
+        UiKit.section(settingsAdvanced, "Theme");
+        final TextView[] themeBtn = new TextView[1];
+        themeBtn[0] = UiKit.button(settingsAdvanced,
+                "Theme · " + HidTheme.label(HidTheme.mode(this)), () -> {
+            HidTheme.cycle(this);
+            recreate();
+        });
+
         screenOffToggle = UiKit.toggle(settingsAdvanced,
-                "Black screen · keep keyboard", screenOff, on -> {
+                "Type with screen off", screenOff, on -> {
             screenOff = on;
             HidControl.setScreenOffOk(this, screenOff);
             applyKeepScreenFlag();
-            applyBlackScreenMode();
             savePrefs();
             if (session) {
                 if (HidSessionService.isRunning()) {
@@ -639,6 +668,15 @@ public class MainActivity extends Activity {
                 }
             }
             refreshState();
+        });
+
+        UiKit.toggle(settingsAdvanced, "Pad extra keys", extraKeysOn, on -> {
+            extraKeysOn = on;
+            if (padExtraKeys != null) {
+                padExtraKeys.setVisibility(extraKeysOn ? View.VISIBLE : View.GONE);
+            }
+            if (extraKeysToggle != null) extraKeysToggle.setText(extraKeysOn ? "⌨▾" : "⌨▴");
+            savePrefs();
         });
 
         UiKit.section(settingsAdvanced, "Pad gestures");
@@ -1454,6 +1492,22 @@ public class MainActivity extends Activity {
         refreshState();
     }
 
+    private void setRoutingExclusive() {
+        exclusive = true;
+        savePrefs();
+        if (session) restartSession();
+        refreshState();
+        ShareTileService.requestRefresh(this);
+    }
+
+    private void setRoutingShare() {
+        exclusive = false;
+        savePrefs();
+        if (session) restartSession();
+        refreshState();
+        ShareTileService.requestRefresh(this);
+    }
+
     private boolean effectiveGrab() {
         return exclusive && !typeSoftOnly;
     }
@@ -1527,6 +1581,7 @@ public class MainActivity extends Activity {
     private void toggleSession() {
         if (session) stopSession();
         else startSession();
+        ShareTileService.requestRefresh(this);
     }
 
     /**
@@ -1615,6 +1670,8 @@ public class MainActivity extends Activity {
         if (prefs == null) return;
         prefs.edit()
             .putBoolean("exclusive", exclusive)
+            .putBoolean("android_mode", false)
+            .putBoolean("extra_keys", extraKeysOn)
             .putBoolean("screen_off", screenOff)
             .putInt("transport", transport)
             .putInt("typing_ms", typingMs)
@@ -1851,39 +1908,21 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Product “screen off HID”: keep the panel interactive (USB + keys live)
-     * but black the display. True POWER blank suspends UDC/input on MTK Titan.
-     * When {@code screenOff} is false, still KEEP_SCREEN_ON during session so
-     * lab typing does not time out; user can disable via OS timeout if wanted.
+     * Screen-off typing: do not hold the panel on and do not touch brightness.
+     * Service {@code ensure_screen_off_hid_awake} keeps UDC + matrix powered
+     * after {@code ACTION_SCREEN_OFF}. KEEP_SCREEN_ON only when that is off.
      */
     private void applyKeepScreenFlag() {
-        // Always keep screen "on" (interactive) during HID session paths.
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        applyBlackScreenMode();
-    }
-
-    private int savedBrightness = -1;
-
-    private void applyBlackScreenMode() {
         try {
             WindowManager.LayoutParams lp = getWindow().getAttributes();
-            if (screenOff && session) {
-                if (savedBrightness < 0) {
-                    try {
-                        savedBrightness = android.provider.Settings.System.getInt(
-                            getContentResolver(),
-                            android.provider.Settings.System.SCREEN_BRIGHTNESS);
-                    } catch (Exception e) {
-                        savedBrightness = 80;
-                    }
-                }
-                lp.screenBrightness = 0.01f; // nearly black, still interactive
-                getWindow().setAttributes(lp);
-            } else {
-                lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
-                getWindow().setAttributes(lp);
-            }
+            lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+            getWindow().setAttributes(lp);
         } catch (Exception ignored) {}
+        if (screenOff) {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
     }
 
     private String transportLabel() {

@@ -148,7 +148,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         try {
             NativeBin.ensureExtracted(this);
             binsReady = true;
-        } catch (Exception e) {
+        } catch (Throwable e) {
             binsReady = NativeBin.hasCoreBins(this);
             if (!binsReady) {
                 strip.setText("extract fail");

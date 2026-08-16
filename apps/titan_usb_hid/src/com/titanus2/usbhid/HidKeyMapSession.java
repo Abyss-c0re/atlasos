@@ -150,7 +150,7 @@ public final class HidKeyMapSession {
         seedProfileFromLegacySides(api, app);
     }
 
-    /** One-shot: copy SideKeyHostPrefs into profile if profile lacks that slot. */
+    /** One-shot: HID host profile inherits Controls / legacy side maps. */
     private static void seedProfileFromLegacySides(Titan2Client api, Context app) {
         Map<String, String> existing = api.getProfileMap(Titan2ApiContract.HID_HOST_PKG);
         String[] slots = {
@@ -164,9 +164,21 @@ public final class HidKeyMapSession {
         for (String slot : slots) {
             if (existing.containsKey(slot)) continue;
             String a = SideKeyHostPrefs.get(app, slot);
-            if (a == null || a.isEmpty() || "default".equals(a)) continue;
+            if (!isComputerAction(a)) {
+                try { a = api.getKeyAction(slot); } catch (Exception ignored) { a = null; }
+            }
+            if (!isComputerAction(a)) continue;
             api.setKeyAction(slot, a, Titan2ApiContract.HID_HOST_PKG);
         }
+    }
+
+    /** Controls computer actions — same pins silence keeps for the guest. */
+    private static boolean isComputerAction(String a) {
+        if (a == null) return false;
+        String t = a.trim();
+        if (t.isEmpty() || "default".equals(t) || "none".equals(t) || "-".equals(t))
+            return false;
+        return t.startsWith("host:") || t.startsWith("mouse:");
     }
 
     private static boolean pushHostProfileLayer(Titan2Client api) {

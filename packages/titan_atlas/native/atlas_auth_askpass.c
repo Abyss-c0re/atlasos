@@ -26,8 +26,9 @@ int main(int argc, char **argv) {
 
   pid_t p = fork();
   if (p == 0) {
-    execl(path, "atlas-auth", "request", reason, (char *)NULL);
-    execlp("atlas-auth", "atlas-auth", "request", reason, (char *)NULL);
+    execl(path, "atlas-auth", "request", "--scope", "sudo", reason, (char *)NULL);
+    execlp("atlas-auth", "atlas-auth", "request", "--scope", "sudo", reason,
+           (char *)NULL);
     _exit(4);
   }
   if (p < 0) return 1;

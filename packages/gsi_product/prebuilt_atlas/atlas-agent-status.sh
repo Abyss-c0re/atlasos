@@ -96,13 +96,18 @@ report() {
   if [ -f /data/local/tmp/titan2_atlas_mode ]; then
     echo "titan2_atlas_mode=$(cat /data/local/tmp/titan2_atlas_mode 2>/dev/null)"
   fi
-  echo "=== AGENT RULES ==="
-  echo "1) plane=hybrid|debian → Debian tools OK; Android tools: same name (screencap, am) via atlas-android wrap"
-  echo "2) screencap / am / wm — same names; wrap does auth + elevate (not atlas-screencap)"
-  echo "3) reports: write markdown under \$HOME/reports/ — that is the agent side channel"
-  echo "4) prove mode: cat /etc/os-release · atlas-agent-status · echo \$ATLAS_HYBRID"
-  if [ "$plane" = "hybrid" ] && [ "$binder" != "present" ]; then
-    echo "WARN: binder not live in this mount ns — use android screencap/am/pm"
+  echo "=== BRIDGE (read this) ==="
+  echo "Debian cannot see Android Binder or user files."
+  echo "ONE command:  android <tool> [args]"
+  echo "  android screencap -p \$HOME/exports/x.png"
+  echo "  android am start -n …"
+  echo "  android cat|write|ls <android-path>"
+  echo "Do not run: screencap screenshot atlas-screencap am pm (not Deb tools)"
+  echo "Policy: /var/lib/atlas-auth/policy  (allow|ask|deny)"
+  echo "Reports: \$HOME/reports/"
+  if [ -f /var/lib/atlas-auth/policy ]; then
+    echo "=== POLICY ==="
+    grep -E '^(storage|cmd\.|default|bridge)=' /var/lib/atlas-auth/policy 2>/dev/null
   fi
 }
 

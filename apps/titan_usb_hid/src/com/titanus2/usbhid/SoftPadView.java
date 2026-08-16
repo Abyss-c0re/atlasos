@@ -118,7 +118,8 @@ public class SoftPadView extends View {
         c.drawLine(cx, cy - arm, cx, cy + arm, guide);
         c.drawLine(cx - arm, cy, cx + arm, cy, guide);
         if (h >= 48f * density) {
-            c.drawText(compact ? "soft pad" : "trackpad", cx, cy - 8f * density, label);
+            c.drawText(compact ? "soft pad" : "trackpad",
+                cx, cy - 8f * density, label);
             if (h >= 64f * density) {
                 c.drawText(leftLatch
                         ? "L held · 2×tap release"

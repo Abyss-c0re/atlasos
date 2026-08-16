@@ -3,6 +3,7 @@ package com.titanus2.usbhid.ui;
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
@@ -62,16 +63,39 @@ public final class UiKit {
         return resolveAttr(c, android.R.attr.colorAccent, ACCENT);
     }
 
+    public static boolean nightUi(Context c) {
+        if (c == null) return true;
+        int n = c.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        return n == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    public static boolean lightColor(int argb) {
+        int r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = argb & 0xFF;
+        return (r * 299 + g * 587 + b * 114) >= 160000;
+    }
+
+    /** Ink that contrasts with bg — never white-on-white / black-on-black. */
+    public static int contrastOn(int bg) {
+        return lightColor(bg) ? 0xFF212121 : 0xFFFFFFFF;
+    }
+
     public static int liveBody(Context c) {
-        return resolveAttr(c, android.R.attr.colorBackground, 0xFFFAFAFA);
+        int fallback = nightUi(c) ? 0xFF121212 : 0xFFFAFAFA;
+        return resolveAttr(c, android.R.attr.colorBackground, fallback);
     }
 
     public static int textColor(Context c) {
-        return resolveAttr(c, android.R.attr.textColorPrimary, TEXT);
+        int bg = liveBody(c);
+        int want = contrastOn(bg);
+        int t = resolveAttr(c, android.R.attr.textColorPrimary, want);
+        if (lightColor(bg) == lightColor(t)) return want;
+        return t;
     }
 
     public static int mutedColor(Context c) {
-        return resolveAttr(c, android.R.attr.textColorSecondary, MUTED);
+        int ink = textColor(c);
+        int a = 0x99;
+        return (a << 24) | (ink & 0x00FFFFFF);
     }
 
     private static int resolveAttr(Context c, int attr, int fallback) {

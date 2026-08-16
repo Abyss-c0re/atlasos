@@ -7,7 +7,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 
-import com.titanus2.controls.devtools.AutoDevMode;
 import com.titanus2.controls.network.VpnHotspotHeal;
 import com.titanus2.controls.notifled.NotifLedController;
 import com.titanus2.controls.subdisplay.SubDisplayPrefs;
@@ -35,8 +34,6 @@ public class BootRestoreReceiver extends BroadcastReceiver {
         // P0: Settings.Secure can lag after wipe / modular reflash — retry a11y
         // + taskbar + B1 km publish until TrackpadAccessService connects (or max).
         scheduleA11yRetries(app);
-        // Auto Dev: prefs SoT; residual Global/tmp must not leave service armed.
-        try { AutoDevMode.syncFailClosed(app); } catch (Exception ignored) {}
         // Package-replace: a11y + taskbar + plane only (no full pad/LED restore).
         if (replaced) return;
 

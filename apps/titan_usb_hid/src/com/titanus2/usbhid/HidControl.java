@@ -40,13 +40,13 @@ public final class HidControl {
     /** Physical TitanKey → host (0 = soft inject only; Type tab). */
     public static final String KEYS = "titan2_usb_hid_keys";
     /**
-     * 1 = phone has active text field / IME — bridge releases TitanKey + pad to
-     * Android and stops host redirect until 0. Soft inject still works.
+     * 1 = phone has active text field / IME — bridge yields TitanKey to Android
+     * (share only). Pad stays on the HID guest. Typing lock still samples keys.
      */
     public static final String LOCAL_INPUT = "titan2_usb_hid_local_input";
     /**
-     * 1 = user opted into Screen off OK (FGS + PARTIAL wake while display off).
-     * Plane mirror for pad-agent / lab; in-memory {@link #screenOffOk} is the hot path.
+     * 1 = type with panel actually off (FGS + PARTIAL wake + service UDC/input).
+     * Not a brightness lock. Plane for pad-agent / root service stay-awake.
      */
     public static final String SCREEN_OFF = "titan2_usb_hid_screen_off";
     public static final int DEFAULT_TYPING_MS = 600;
@@ -328,10 +328,10 @@ public final class HidControl {
     public static boolean isSoftCompose() { return softCompose; }
 
     /**
-     * Re-apply Controls → Developer → Remote ADB after a USB gadget bounce.
-     * Exclusive HID stops adbd; persist alone does not reopen :5555 here.
-     * Never invent ON — {@code enable_hid.sh ensure_tcp} no-ops unless
-     * {@code remote_adb.desire=on} / {@code wireless_adb_wanted}.
+     * Re-apply wireless TCP ADB after a USB gadget bounce.
+     * Exclusive HID stops USB adbd; persist alone does not reopen :5555 here.
+     * {@code enable_hid.sh ensure_tcp} keeps an already-armed port (props /
+     * listen / hid_tcp_keep / desire / lab). Never rewrite sys.usb.config.
      */
     public static void ensureWirelessAdbBackup(Context ctx) {
         final String cmd =
@@ -607,9 +607,8 @@ public final class HidControl {
     }
 
     /**
-     * Pause/resume physical key + pad redirect while the phone has a focused
-     * editor (share mode: type on phone; exclusive: same escape hatch).
-     * Bridge polls this hot; does not restart the session.
+     * Yield TitanKey to Android while a phone editor is focused (share only).
+     * Pad stays on the guest. Bridge polls this hot; does not restart.
      */
     public static void setLocalInputPause(Context ctx, boolean pause) {
         write(ctx, LOCAL_INPUT, pause ? "1" : "0");
@@ -2031,6 +2030,34 @@ public final class HidControl {
 
     public static boolean keyTap(int hidUsage) {
         return keyTap(0, hidUsage);
+    }
+
+    /** Modifier HID usage (0xE0–0xE7) press/release — hold Alt for Alt+Tab. */
+    public static boolean keyDown(int hidUsage) {
+        return key(0, hidUsage, true);
+    }
+
+    public static boolean keyUp(int hidUsage) {
+        return key(0, hidUsage, false);
+    }
+
+    /**
+     * Tap a key without releasing modifiers already held (physical or virtual).
+     * Use for Tab while Alt is down. {@link #keyTap(int, int)} still releases
+     * the mods it was called with (typeText Shift+letter).
+     */
+    public static boolean keyTapKeepMods(int hidUsage) {
+        int hold = Math.max(8, keyHoldMs());
+        int gap = Math.max(3, keyGapMs());
+        boolean a = key(0, hidUsage, true);
+        try { Thread.sleep(hold); } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+        boolean b = key(0, hidUsage, false);
+        try { Thread.sleep(gap); } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+        return a && b;
     }
 
     public static boolean keyTap(int mod, int hidUsage) {

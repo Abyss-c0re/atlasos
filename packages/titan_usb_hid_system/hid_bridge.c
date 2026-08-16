@@ -1,11 +1,13 @@
 /* Titan 2 USB HID bridge: TitanKey + touchPad (+ app socket) → hidg keyboard/mouse.
  *
  * Session protocol (control files polled by parent service, or CLI flags):
- *   --grab / --nograb     exclusive TitanKey (phone blind) vs share keys (phone+host)
+ *   --grab / --nograb     exclusive TitanKey vs share (focus-routed keys)
  *   --mouse / --nomouse   virtual mouse always EVIOCGRAB when on (share + exclusive);
- *                         phone pad never moves Android cursor while session is live
+ *                         pad is always the HID guest — never Android cursor
  *   --keys / --nokeys     open TitanKey (default on); --nokeys = soft inject only
- *   local_input=1         pause host keys+mouse (share only; ignored under --grab)
+ *   local_input=1         share only: TitanKey → Android (editor). Pad stays guest.
+ *                         Bridge stays up; hot EVIOCGRAB flip. Typing lock still
+ *                         samples TitanKey. Ignored under --grab.
  *   --sock PATH           unix DGRAM for app inject (default /data/local/tmp/titan2_hid.sock)
  *
  * Socket packets (little-endian):
@@ -77,6 +79,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <time.h>
 
@@ -223,10 +226,14 @@ static void load_orient(void) {
     display_rotation = r;
 }
 
-/* Phone typing in a local editor/IME — pause physical key redirect (hot). */
+/* Phone editor/IME focused — yield TitanKey to Android (share only). */
 static int local_input_pause = 0;
 /* Specials inject / keys_pause — TitanKey closed; mouse stays open. */
 static int keys_host_pause = 0;
+/* TitanKey EVIOCGRAB currently held. */
+static int key_grabbed = 0;
+/* Emit TitanKey to HID guest (0 = Android owns keys; we only watch typing). */
+static int keys_emit = 1;
 /* 1 = inject-mode map (share: plane inject; exclusive: always in-bridge). */
 static int specials_inject_mode = 0;
 
@@ -398,7 +405,7 @@ static int sym_layer_held(void) {
 }
 
 /*
- * Exclusive inject specials: keep EVIOCGRAB; map Titan printed specials layer
+ * Host HID specials (share + exclusive): map Titan printed specials layer
  * → US HID usages (host always sees boot-protocol US keyboard, NOT TitanKey.kcm).
  * Product map matches HostLayoutController.specialsChar (C→8, A→@, …).
  * Returns 1 if code is a specials-layer letter; *out_mod = LShift (0x02) or 0;
@@ -616,14 +623,50 @@ static void phone_nav_tap(unsigned code) {
 }
 
 /**
- * Exclusive grab path: re-inject nav keys to Android. Returns 1 if consumed
- * (caller must not stream to host).
- * Recents (580): short → Home, long (≥400ms) → App switch — pad-agent SoT.
- *
- * Android Generic.kl maps:
- *   KEY_HOME (102) → MOVE_HOME (text cursor) — NOT launcher home
- *   KEY_HOMEPAGE (172) → HOME (launcher)
- * So phone home must always inject KEY_HOMEPAGE, never KEY_HOME.
+ * Fire Controls KEY_FIRE — same path as titan2-key-watch / a11y.
+ * Home = GLOBAL_ACTION_HOME, Recents = GLOBAL_ACTION_RECENTS.
+ * Never keyevent 3, never 187, never RecentsActivity, never uinput APPSELECT.
+ */
+static void fire_os_nav(const char *act) {
+    pid_t pid;
+    char scan[8];
+    /* AccessibilityService.GLOBAL_ACTION_*: 1=back 2=home 3=recents.
+     * Same factory action as Controls a11y. Used when Key a11y is listed
+     * but not bound (KEY_FIRE then no-ops). Never 187 / RecentsActivity. */
+    const char *sys_act = NULL;
+    if (!act || !act[0]) return;
+    if (!strcmp(act, "back")) sys_act = "1";
+    else if (!strcmp(act, "home")) sys_act = "2";
+    else if (!strcmp(act, "recents")) sys_act = "3";
+    snprintf(scan, sizeof scan, "%s", (strcmp(act, "back") == 0) ? "158" : "580");
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "phone-nav: fork KEY_FIRE %s errno=%d\n", act, errno);
+        return;
+    }
+    if (pid == 0) {
+        pid_t g = fork();
+        if (g != 0) _exit(0);
+        if (sys_act)
+            execl("/system/bin/cmd", "cmd", "accessibility",
+                  "call-system-action", sys_act, (char *)NULL);
+        execl("/system/bin/titan2-key-fire.sh", "titan2-key-fire.sh",
+              "fire", act, scan, (char *)NULL);
+        execl("/system/bin/am", "am", "broadcast",
+              "-a", "com.titanus2.controls.KEY_FIRE",
+              "-n", "com.titanus2.controls/.KeyFireReceiver",
+              "--es", "action", act,
+              "--ei", "scan", scan,
+              (char *)NULL);
+        _exit(127);
+    }
+    (void)waitpid(pid, NULL, 0);
+}
+
+/**
+ * Exclusive grab path: top-panel Home/Recents stay on the phone via the
+ * host-OS binding (Controls KEY_FIRE). Returns 1 if consumed.
+ * Recents (580): short → home, long (≥400ms) → recents.
  */
 static int handle_phone_nav_exclusive(unsigned code, int value) {
     if (!is_phone_nav_key(code)) return 0;
@@ -639,31 +682,36 @@ static int handle_phone_nav_exclusive(unsigned code, int value) {
                 ? (now_ms() - recents_down_ms) : 0;
             recents_down_ms = 0;
             if (held >= PHONE_NAV_LONG_MS) {
-                fprintf(stderr, "phone-nav: APPSELECT long → Recents\n");
+                fprintf(stderr, "phone-nav: APPSELECT long → KEY_FIRE recents\n");
                 fflush(stderr);
-                phone_nav_tap(KEY_APPSELECT); /* Recents / APP_SWITCH */
+                fire_os_nav("recents");
             } else {
-                fprintf(stderr, "phone-nav: APPSELECT short → HOME (homepage)\n");
+                fprintf(stderr, "phone-nav: APPSELECT short → KEY_FIRE home\n");
                 fflush(stderr);
-                phone_nav_tap(KEY_HOMEPAGE); /* Android HOME, not MOVE_HOME */
+                fire_os_nav("home");
             }
             return 1;
         }
         return 1;
     }
 
-    /* BACK / MENU pass through; remap raw KEY_HOME → HOMEPAGE for Android. */
-    unsigned out = code;
-    if (code == KEY_HOME)
-        out = KEY_HOMEPAGE;
-    if (value == 1 || value == 0) {
+    if (code == KEY_HOME || code == KEY_HOMEPAGE) {
         if (value == 1) {
-            fprintf(stderr, "phone-nav: code=%u → phone %u value=%d\n",
-                    code, out, value);
+            fprintf(stderr, "phone-nav: HOME → KEY_FIRE home\n");
             fflush(stderr);
+            fire_os_nav("home");
         }
-        phone_nav_emit(out, value);
+        return 1;
     }
+
+    /* BACK / MENU: KEY_FIRE back + uinput (a11y may be unbound). */
+    if (value == 1) {
+        fprintf(stderr, "phone-nav: BACK → KEY_FIRE back\n");
+        fflush(stderr);
+        fire_os_nav("back");
+    }
+    if (value == 1 || value == 0)
+        phone_nav_emit(code, value);
     return 1;
 }
 
@@ -732,12 +780,18 @@ static uint8_t linux_to_hid(unsigned code) {
     case KEY_RIGHTALT: return 0xe6; case KEY_RIGHTMETA: return 0xe7;
     /* Titan OEM dual reports (decimal scan codes, not 0xNNN hex BTN_DPAD) */
     case 183: case 251: return 0xe0; /* Fn → Left Ctrl on host */
-    /* Sym: kcm path → Right Alt for OS specials; inject path → drop (remote_q glyphs) */
+    /* Sym: never host Right Alt. In-bridge Titan layer owns specials (share + exclusive). */
     case 222: case 253:
-        if (specials_inject_mode || keys_host_pause) return 0;
-        return 0xe6;
-    case KEY_BACK: return 0x29; case KEY_DELETE: return 0x4c;
-    case KEY_HOME: return 0x4a; case KEY_END: return 0x4d;
+        return 0;
+    /* Titan Back/Home/Recents stay on the phone OS — never HID guest. */
+    case KEY_BACK:
+    case KEY_HOME:
+    case KEY_HOMEPAGE:
+    case KEY_MENU:
+    case KEY_APPSELECT:
+        return 0;
+    case KEY_DELETE: return 0x4c;
+    case KEY_END: return 0x4d;
     case KEY_PAGEUP: return 0x4b; case KEY_PAGEDOWN: return 0x4e;
     case KEY_INSERT: return 0x49;
     default: return 0;
@@ -1168,11 +1222,12 @@ static int send_kbd(int fd, uint8_t mods, const uint8_t keys[6]) {
     return ok ? 0 : -1;
 }
 
-/* Open / close TitanKey for host redirect. local_input_pause leaves keys on phone. */
+/* Open / close TitanKey. Grab is a live ioctl — do not close to switch owners. */
 static int open_key_fd(const char *keypath, int grab) {
     if (!keypath || !keypath[0]) return -1;
     int fd = open(keypath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) return -1;
+    key_grabbed = 0;
     if (grab) {
         /* EVIOCGRAB is exclusive: EBUSY (16) = dual owner (second hid_bridge /
          * unpatched touchpadd / side-watch). Retry once after short wait so a
@@ -1181,6 +1236,7 @@ static int open_key_fd(const char *keypath, int grab) {
         int tries = 0;
         for (;;) {
             if (ioctl(fd, EVIOCGRAB, 1) == 0) {
+                key_grabbed = 1;
                 fprintf(stderr, "EXCLUSIVE grab key=%s\n", keypath);
                 break;
             }
@@ -1198,26 +1254,63 @@ static int open_key_fd(const char *keypath, int grab) {
             break;
         }
     } else {
-        fprintf(stderr, "nograb key=%s\n", keypath);
+        fprintf(stderr, "nograb key=%s (android)\n", keypath);
     }
     return fd;
 }
 
-static void close_key_fd(int *kfd, int grab, int hid_k, uint8_t *mods, uint8_t keys[6]) {
-    if (!kfd || *kfd < 0) return;
+static void flush_guest_kbd(int hid_k, uint8_t *mods, uint8_t keys[6]) {
     if (mods) *mods = 0;
     if (keys) memset(keys, 0, 6);
-    phys_keys_held = 0;
-    /* Boot-protocol hosts latch modifiers until empty report — flush USB + BT. */
     {
         uint8_t z6[6] = {0};
         if (hid_k >= 0) send_kbd(hid_k, 0, z6);
         hw_out4(0x01, 0, 0, 0);
     }
-    if (grab) ioctl(*kfd, EVIOCGRAB, 0);
+}
+
+static int set_key_grab(int kfd, int want) {
+    if (kfd < 0) return -1;
+    if (want == key_grabbed) return 0;
+    if (ioctl(kfd, EVIOCGRAB, want ? 1 : 0) == 0) {
+        key_grabbed = want ? 1 : 0;
+        return 0;
+    }
+    fprintf(stderr, "key grab %d fail errno=%d\n", want, errno);
+    return -1;
+}
+
+/* Share hub: guest gets keys unless an Android editor is focused.
+ * Exclusive: always guest. Never close the fd — pad stays grabbed. */
+static void apply_key_route(int kfd, int grab_mode, int hid_k,
+        uint8_t *mods, uint8_t keys[6]) {
+    int want_guest = 1;
+    if (!grab_mode && (local_input_pause || keys_host_pause))
+        want_guest = 0;
+    keys_emit = want_guest;
+    if (kfd < 0) return;
+    if (want_guest) {
+        if (set_key_grab(kfd, 1) == 0)
+            fprintf(stderr, "keys → guest (hub)\n");
+    } else {
+        flush_guest_kbd(hid_k, mods, keys);
+        specials_mod_mask = 0;
+        if (set_key_grab(kfd, 0) == 0)
+            fprintf(stderr, "keys → android (hub, pad stays guest)\n");
+    }
+    fflush(stderr);
+}
+
+static void close_key_fd(int *kfd, int grab, int hid_k, uint8_t *mods, uint8_t keys[6]) {
+    if (!kfd || *kfd < 0) return;
+    flush_guest_kbd(hid_k, mods, keys);
+    phys_keys_held = 0;
+    if (key_grabbed || grab) ioctl(*kfd, EVIOCGRAB, 0);
+    key_grabbed = 0;
+    keys_emit = 0;
     close(*kfd);
     *kfd = -1;
-    fprintf(stderr, "keys → phone (local input pause)\n");
+    fprintf(stderr, "keys fd closed\n");
 }
 
 static void write_plane_digit(const char *name, int one) {
@@ -1234,54 +1327,6 @@ static void write_plane_digit(const char *name, int one) {
         fclose(f);
         chmod(path, 0666);
     }
-}
-
-/*
- * Exclusive grab steals TitanKey from a11y — Controls never sees Sym DOWN to
- * arm keys_pause, so inject specials never run (host only gets raw letters).
- * Bridge must release TitanKey on specials-mod press when method=inject.
- */
-static int bridge_armed_inject_pause = 0;
-
-static void arm_inject_keys_pause_from_bridge(int *kfd, int grab_mode,
-        int hid_k, uint8_t *mods, uint8_t keys[6]) {
-    write_plane_digit("titan2_specials_inject_pause", 1);
-    write_plane_digit("titan2_host_layout_keys_pause", 1);
-    write_plane_digit("titan2_usb_hid_keys_pause", 1);
-    write_plane_digit("titan2_usb_hid_keys", 0);
-    write_plane_digit("titan2_usb_hid_local_input", 0);
-    keys_host_pause = 1;
-    bridge_armed_inject_pause = 1;
-    if (kfd && *kfd >= 0)
-        close_key_fd(kfd, grab_mode, hid_k, mods, keys);
-    fprintf(stderr, "inject Sym arm — TitanKey → phone (a11y specials)\n");
-}
-
-static void release_inject_keys_pause_from_bridge(void) {
-    if (!bridge_armed_inject_pause) return;
-    write_plane_digit("titan2_specials_inject_pause", 0);
-    {
-        FILE *f = fopen("/data/local/tmp/titan2_host_layout", "r");
-        char buf[32] = {0};
-        int layout_on = 0;
-        if (f) {
-            if (fgets(buf, sizeof buf, f)) {
-                char *p = buf;
-                while (*p == ' ' || *p == '\t') p++;
-                if (p[0] && strncmp(p, "off", 3) && strncmp(p, "0", 1)
-                        && strncmp(p, "none", 4) && strncmp(p, "inherit", 7))
-                    layout_on = 1;
-            }
-            fclose(f);
-        }
-        if (!layout_on) {
-            write_plane_digit("titan2_host_layout_keys_pause", 0);
-            write_plane_digit("titan2_usb_hid_keys_pause", 0);
-            write_plane_digit("titan2_usb_hid_keys", 1);
-        }
-    }
-    bridge_armed_inject_pause = 0;
-    fprintf(stderr, "inject Sym release — keys plane may return to host\n");
 }
 
 static int send_mouse(int fd, uint8_t buttons, int8_t dx, int8_t dy, int8_t wheel) {
@@ -1488,9 +1533,11 @@ static void apply_key(uint8_t *mods, uint8_t keys[6], uint8_t m, uint8_t h, uint
             keys[5] = 0; break;
         }
     }
-    /* Soft inject: m is absolute modifier mask. m=0 must clear Left Shift.
-     * Old "if (m) *mods = m" left Shift stuck after A/!/@ and flipped case. */
-    *mods = m;
+    /* Soft inject m bits OR in on press. Never assign m on a letter/tab —
+     * that wiped held physical/virtual Alt so Alt+Tab became bare Tab.
+     * Soft Shift+letter still clears via a later e1 release packet. */
+    if (press && m)
+        *mods |= m;
 }
 
 static const char *inj_paths[] = {
@@ -1644,7 +1691,6 @@ int main(int argc, char **argv) {
                 write_plane_digit("titan2_usb_hid_keys", 1);
             }
         }
-        bridge_armed_inject_pause = 0;
         keys_on = 1; /* force open for exclusive inject map */
         fprintf(stderr,
             "exclusive inject — TitanKey open, specials layer in-bridge (owner=%s)\n",
@@ -1655,24 +1701,24 @@ int main(int argc, char **argv) {
     /* exclusive inject: never honor keys_host_pause for opening (map needs grab) */
     if (grab && specials_inject_mode)
         keys_host_pause = 0;
-    if (keypath[0] && keys_on && !local_input_pause && !keys_host_pause) {
-        kfd = open_key_fd(keypath, grab);
-    } else if (keypath[0] && keys_on && local_input_pause) {
-        fprintf(stderr, "keys paused — local text input active\n");
+    if (keypath[0] && keys_on && !keys_host_pause) {
+        /* Share: grab keys for guest unless an editor is already focused. */
+        int want_g = grab || !local_input_pause;
+        kfd = open_key_fd(keypath, want_g);
+        keys_emit = want_g;
+        if (local_input_pause)
+            fprintf(stderr, "keys → android at start (editor, pad stays guest)\n");
     } else if (keypath[0] && keys_on && keys_host_pause) {
         fprintf(stderr, "keys paused — specials inject / keys_pause (mouse stays)\n");
     } else if (keypath[0] && !keys_on) {
         fprintf(stderr, "nokeys — TitanKey stays on phone (soft inject only)\n");
     }
     /*
-     * Prefer titan2-touchpadd virtual mouse (tap L/R, scroll, drag, swipe).
-     * Mouse is ALWAYS exclusive-grabbed while session mouse is on — share mode
-     * only softens TitanKey so the phone keyboard still works for navigation.
+     * Pad is ALWAYS exclusive-grabbed while session mouse is on.
+     * Share yields only TitanKey to Android editors — never the pad.
      * Do NOT grab raw touchPad when virtual mouse exists (starves touchpadd).
-     * Fallback: raw abs pad only if virtual mouse missing (also grabbed).
-     * local_input_pause closes mouse fds so the phone can use the pad in editors.
      */
-    if (mouse_on && !local_input_pause) {
+    if (mouse_on) {
         rfd = open_best_rel_mouse_grab(relpath, sizeof relpath);
         if (rfd < 0 && padpath[0]) {
             pfd = open(padpath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
@@ -1693,10 +1739,8 @@ int main(int argc, char **argv) {
         }
         fprintf(stderr, "mode=%s keys=%s raw=%d rel=%d path=%s pre_orient=%d\n",
                 grab ? "exclusive" : "share",
-                grab ? "host-only" : "phone+host",
+                keys_emit ? "guest" : "android",
                 pfd >= 0, rfd >= 0, relpath[0] ? relpath : "-", mouse_pre_oriented);
-    } else if (mouse_on && local_input_pause) {
-        fprintf(stderr, "mouse paused — local text input active\n");
     }
 
     int hid_k = -1, hid_m = -1;
@@ -1786,16 +1830,15 @@ int main(int argc, char **argv) {
             while (read(kfd, &ev, sizeof ev) == (ssize_t)sizeof ev) {
                 if (ev.type != EV_KEY) continue;
                 /*
-                 * Exclusive: upper-row Back / Home / Recents must stay on the
-                 * phone so the user can leave apps while letters go to host.
-                 * EVIOCGRAB steals TitanKey from InputReader + pad-agent — we
-                 * re-inject via titan2-phone-nav uinput. Share (no grab): OS
-                 * already sees these keys; do not dual-fire.
+                 * Upper-row Back / Home (short 580) / Recents (long 580):
+                 * always Titan OS in exclusive and share. Never HID guest
+                 * (Quest ESC / host Home). If TitanKey is grabbed, re-inject
+                 * via KEY_FIRE / phone-nav. If not, OS already sees them —
+                 * do not dual-fire.
                  */
-                if (grab && is_phone_nav_key(ev.code)) {
-                    /* Always consume: never stream Back/Home/Recents to host
-                     * (Quest ESC / host Home residual when inject is flaky). */
-                    (void)handle_phone_nav_exclusive((unsigned)ev.code, ev.value);
+                if (is_phone_nav_key(ev.code)) {
+                    if (key_grabbed)
+                        (void)handle_phone_nav_exclusive((unsigned)ev.code, ev.value);
                     continue;
                 }
                 /* Autorepeat (value=2): keep typing-lock alive for hold-Backspace;
@@ -1819,57 +1862,48 @@ int main(int argc, char **argv) {
                     if (phys_keys_held > 0) phys_keys_held--;
                     note_typing(); /* cooldown after release still blocks palm */
                 }
-                /*
-                 * Inject specials product method:
-                 * - Exclusive grab: keep TitanKey grabbed; map printed specials
-                 *   layer → US HID usages in-bridge (host boot protocol is US,
-                 *   not TitanKey.kcm). Phone a11y handoff was flaky while keys
-                 *   redirected → host got raw letters / no specials.
-                 * - Share (no grab): release keys to phone a11y (remote_q path).
-                 * Never stream Sym as host Right Alt under inject mode.
-                 */
-                if (specials_inject_mode && is_specials_mod_scan(ev.code)) {
-                    if (grab) {
-                        unsigned bit = specials_mod_bit(ev.code);
-                        if (ev.value == 1) {
-                            unsigned was = specials_mod_mask;
-                            if (bit) specials_mod_mask |= bit;
-                            else specials_mod_mask |= 1u; /* unknown but matched */
-                            if (!was && specials_mod_mask) {
-                                fprintf(stderr,
-                                    "sym layer on (exclusive inject map) code=%d mask=0x%x\n",
-                                    ev.code, specials_mod_mask);
-                                fflush(stderr);
-                            }
-                        } else if (ev.value == 0) {
-                            if (bit) specials_mod_mask &= ~bit;
-                            else specials_mod_mask = 0;
-                            if (!specials_mod_mask) {
-                                /* clear any stuck shift from specials chords */
-                                if (hid_k >= 0 || hw_out_fd >= 0 || hw_out_fd_app >= 0) {
-                                    uint8_t empty[6] = {0};
-                                    hw_out4(0x01, 0, 0, 0);
-                                    if (hid_k >= 0) send_kbd(hid_k, 0, empty);
-                                }
-                                fprintf(stderr, "sym layer off\n");
-                                fflush(stderr);
-                            }
-                        }
-                        continue;
-                    }
-                    if (ev.value == 1) {
-                        arm_inject_keys_pause_from_bridge(&kfd, grab, hid_k,
-                            &mods, keys);
-                        i_k = -1; /* poll list rebuild next loop */
-                        break;
-                    }
-                    if (ev.value == 0) {
-                        release_inject_keys_pause_from_bridge();
-                    }
-                    continue; /* never stream Sym as host Alt */
+                if (!keys_emit) {
+                    /* Android owns TitanKey; keep sampling for pad typing lock. */
+                    continue;
                 }
-                /* Exclusive + Sym held: letter → Titan specials glyph as US HID */
-                if (specials_inject_mode && grab && sym_layer_held() && ev.value != 2) {
+                /*
+                 * Host HID specials: one map, share and exclusive.
+                 * Titan printed layer → US HID (host boot protocol is US, not
+                 * TitanKey.kcm). Share keeps TitanKey ungrabbed so the phone
+                 * still gets KCM specials; host never sees raw RAlt+letter.
+                 * Never close TitanKey on share Sym (remote_q / inject_pause
+                 * is phone-path only).
+                 */
+                if (is_specials_mod_scan(ev.code)) {
+                    unsigned bit = specials_mod_bit(ev.code);
+                    if (ev.value == 1) {
+                        unsigned was = specials_mod_mask;
+                        if (bit) specials_mod_mask |= bit;
+                        else specials_mod_mask |= 1u; /* unknown but matched */
+                        if (!was && specials_mod_mask) {
+                            fprintf(stderr,
+                                "sym layer on (host HID map) code=%d mask=0x%x grab=%d\n",
+                                ev.code, specials_mod_mask, grab);
+                            fflush(stderr);
+                        }
+                    } else if (ev.value == 0) {
+                        if (bit) specials_mod_mask &= ~bit;
+                        else specials_mod_mask = 0;
+                        if (!specials_mod_mask) {
+                            /* clear any stuck shift from specials chords */
+                            if (hid_k >= 0 || hw_out_fd >= 0 || hw_out_fd_app >= 0) {
+                                uint8_t empty[6] = {0};
+                                hw_out4(0x01, 0, 0, 0);
+                                if (hid_k >= 0) send_kbd(hid_k, 0, empty);
+                            }
+                            fprintf(stderr, "sym layer off\n");
+                            fflush(stderr);
+                        }
+                    }
+                    continue; /* never stream Sym as host Right Alt */
+                }
+                /* Sym held: letter → Titan specials glyph as US HID */
+                if (sym_layer_held() && ev.value != 2) {
                     uint8_t sm = 0, su = 0;
                     if (titan_specials_layer_hid(ev.code, &sm, &su)) {
                         uint8_t report_mods = (uint8_t)(mods | sm);
@@ -2074,7 +2108,7 @@ int main(int argc, char **argv) {
              * touchpadd dead) or our mouse fd is already dead.
              * Epoch-only bumps used to close→ungrab→reopen every few seconds —
              * Android stole the virt mouse mid-session (host "unplug"). */
-            if (mouse_on && !local_input_pause && n - last_reload > 200) {
+            if (mouse_on && n - last_reload > 200) {
                 int epoch = read_int_file(PAD_EPOCH_PATH, PAD_EPOCH_PATH2, 0);
                 int regrab = read_int_file(PAD_REGRAB_PATH, PAD_REGRAB_PATH2, 0);
                 int need = 0;
@@ -2135,20 +2169,10 @@ int main(int argc, char **argv) {
             {
                 int want = read_int_file(HID_GRAB_PATH, HID_GRAB_PATH2, grab);
                 if (want != grab && kfd >= 0) {
-                    if (want) {
-                        if (ioctl(kfd, EVIOCGRAB, 1) == 0) {
-                            grab = 1;
-                            fprintf(stderr, "plane grab=1 — exclusive TitanKey\n");
-                        }
-                    } else {
-                        uint8_t z6[6] = {0};
-                        mods = 0;
-                        memset(keys, 0, 6);
-                        if (hid_k >= 0) send_kbd(hid_k, 0, z6);
-                        ioctl(kfd, EVIOCGRAB, 0);
-                        grab = 0;
-                        fprintf(stderr, "plane grab=0 — share TitanKey (phone+host)\n");
-                    }
+                    grab = want;
+                    apply_key_route(kfd, grab, hid_k, &mods, keys);
+                    fprintf(stderr, "plane grab=%d — %s\n",
+                        grab, grab ? "exclusive" : "share hub");
                     fflush(stderr);
                 }
             }
@@ -2158,46 +2182,11 @@ int main(int argc, char **argv) {
                 int khp = load_keys_host_pause();
                 if (lip != local_input_pause) {
                     local_input_pause = lip;
-                    if (keys_on) {
-                        if (local_input_pause && kfd >= 0) {
-                            close_key_fd(&kfd, grab, hid_k, &mods, keys);
-                        } else if (!local_input_pause && !keys_host_pause
-                                   && kfd < 0 && keypath[0]) {
-                            kfd = open_key_fd(keypath, grab);
-                            if (kfd >= 0)
-                                fprintf(stderr, "keys → host (local input idle)\n");
-                        }
-                    }
-                    /* Pad follows the same pause: release to phone in editors. */
-                    if (mouse_on) {
-                        if (local_input_pause) {
-                            if (buttons && hid_m >= 0)
-                                emit_mouse(hid_m, 0, 0, 0, 0, 0);
-                            buttons = 0;
-                            close_mouse_fd(&rfd, 1);
-                            close_mouse_fd(&pfd, 1);
-                            fprintf(stderr, "mouse → phone (local input pause)\n");
-                        } else {
-                            /* Always rediscover: follow/orient may have changed
-                             * while paused; never reuse a stale non-grab path. */
-                            relpath[0] = '\0';
-                            rfd = open_best_rel_mouse_grab(relpath, sizeof relpath);
-                            if (rfd >= 0)
-                                fprintf(stderr, "mouse → host (local input idle) path=%s\n",
-                                        relpath);
-                            if (rfd < 0 && padpath[0] && pfd < 0) {
-                                pfd = open(padpath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-                                if (pfd >= 0) {
-                                    if (ioctl(pfd, EVIOCGRAB, 1) == 0)
-                                        fprintf(stderr, "mouse raw → host (local input idle)\n");
-                                    else {
-                                        close(pfd);
-                                        pfd = -1;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    if (keys_on && kfd < 0 && keypath[0] && !keys_host_pause)
+                        kfd = open_key_fd(keypath, 0);
+                    if (keys_on)
+                        apply_key_route(kfd, grab, hid_k, &mods, keys);
+                    /* pad stays grabbed — never close on editor focus */
                 }
                 /* Keys-only: layout specials / share inject — close TitanKey, keep mouse.
                  * Exclusive inject maps specials in-bridge: ignore inject_pause (never close). */
@@ -2206,22 +2195,16 @@ int main(int argc, char **argv) {
                         write_plane_digit("titan2_specials_inject_pause", 0);
                         keys_host_pause = 0;
                     }
-                    if (kfd < 0 && keys_on && !local_input_pause && keypath[0]) {
-                        kfd = open_key_fd(keypath, grab);
-                        if (kfd >= 0)
-                            fprintf(stderr, "keys → host (exclusive inject re-open)\n");
+                    if (kfd < 0 && keys_on && keypath[0]) {
+                        kfd = open_key_fd(keypath, 1);
+                        apply_key_route(kfd, grab, hid_k, &mods, keys);
                     }
                 } else if (khp != keys_host_pause) {
                     keys_host_pause = khp;
-                    if (keys_on && !local_input_pause) {
-                        if (keys_host_pause && kfd >= 0) {
-                            close_key_fd(&kfd, grab, hid_k, &mods, keys);
-                            fprintf(stderr, "keys → phone (inject/layout pause; mouse stays)\n");
-                        } else if (!keys_host_pause && kfd < 0 && keypath[0]) {
-                            kfd = open_key_fd(keypath, grab);
-                            if (kfd >= 0)
-                                fprintf(stderr, "keys → host (inject/layout pause clear)\n");
-                        }
+                    if (keys_on) {
+                        if (kfd < 0 && keypath[0])
+                            kfd = open_key_fd(keypath, 0);
+                        apply_key_route(kfd, grab, hid_k, &mods, keys);
                     }
                 }
                 last_reload = n;
@@ -2234,7 +2217,7 @@ int main(int argc, char **argv) {
                 load_specials_method(grab);
                 load_char_mod_owner();
                 last_slow = n;
-                if (mouse_on && !local_input_pause && rfd < 0) {
+                if (mouse_on && rfd < 0) {
                     rfd = reopen_rel_mouse(-1, 1, relpath, sizeof relpath);
                     if (rfd >= 0)
                         fprintf(stderr, "virt mouse recovered\n");
@@ -2242,8 +2225,8 @@ int main(int argc, char **argv) {
                 /* hidg may reappear after cable reattach */
                 if (hid_k < 0) hid_k = open_hidg_index(0);
                 if (hid_m < 0) hid_m = open_hidg_index(1);
-                /* recover TitanKey if session wants keys and not paused */
-                if (keys_on && !local_input_pause && !keys_host_pause && kfd < 0) {
+                /* recover TitanKey — stay open while yielding to Android too */
+                if (keys_on && !keys_host_pause && kfd < 0) {
                     if (!keypath[0])
                         find_by_name("TitanKey", keypath, sizeof keypath);
                     if (keypath[0])

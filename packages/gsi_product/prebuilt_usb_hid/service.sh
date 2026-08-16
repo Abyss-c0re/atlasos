@@ -650,7 +650,8 @@ usb_host_linked() {
 # Phone has a focused text field / IME (launcher search, EditText, …).
 # Root dumpsys is reliable; the app's LocalInputGuard often can't see
 # mServedView (late in the dump) and dual-types into host + phone.
-# Sets titan2_usb_hid_local_input so hid_bridge pauses keys+pad to host.
+# Sets titan2_usb_hid_local_input so hid_bridge yields TitanKey to Android.
+# Pad stays guest. Bridge stays up (hot grab flip).
 update_local_input_pause() {
   # Share-mode only (caller also gates grab=0). Exclusive never pauses.
   if [ "${grab:-0}" = "1" ]; then
@@ -1046,7 +1047,8 @@ while true; do
   host=0
   usb_host_linked && host=1
 
-  # Share only: pause host keys+pad while a phone editor/search is focused.
+  # Share only: yield TitanKey to Android while a phone editor/search is focused.
+  # Pad stays on the HID guest. hid_bridge is the hub — do not restart it.
   # Exclusive (grab=1): host owns TitanKey — never local_input (dual-type /
   # dead host KB when IME focus glitches on launcher/search).
   # Root path — app-only detection missed launcher AppsSearchContainerLayout.

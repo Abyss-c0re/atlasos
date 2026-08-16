@@ -222,7 +222,8 @@ EOF
     chmod 755 "$MNT/etc/init.d/$s"
   done
   echo BlackCube >"$MNT/etc/hostname"
-  # Do not stomp the Android/Debian UTS hostname (Titan vs BlackCube identity).
+  # OpenWrt chroot name only. Never sethostname() / never write host UTS.
+  # This Android/Debian box is Titan2.
   # Empty root only when the LP has never been inited and root is locked.
   # A real password on the LP must survive wipe and reboot.
   if [ ! -f "$MNT/etc/atlas-openwrt-inited" ]; then

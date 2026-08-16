@@ -135,8 +135,20 @@ port_listen() {
     || ss -ltn 2>/dev/null | grep -qE "[:.]${p}[[:space:]]"
 }
 
+hid_usb_live() {
+  u=$(getprop sys.usb.config 2>/dev/null | tr -d '\r')
+  case "$u" in titan_hid) return 0 ;; esac
+  [ -e /dev/hidg0 ] && return 0
+  return 1
+}
+
 pin_usb() {
   u=$(getprop sys.usb.config 2>/dev/null | tr -d '\r')
+  # HID owns the gadget. Wireless ADB is TCP-only — do not rewrite USB.
+  if hid_usb_live; then
+    echo "$u"
+    return 0
+  fi
   [ -n "$u" ] || u=$(getprop persist.sys.usb.config 2>/dev/null | tr -d '\r')
   [ -n "$u" ] || u="mtp,adb"
   case "$u" in *adb*) ;; *) u="mtp,adb" ;; esac
@@ -261,7 +273,11 @@ apply() {
       return 1
       ;;
     *)
-      # off
+      # off — never drop TCP while HID session owns the gadget.
+      if hid_usb_live || [ -f /data/misc/titan2/hid_tcp_keep ]; then
+        log "apply OFF skipped — HID keeps wireless ADB"
+        return 0
+      fi
       clear_pair_files
       service call adb 11 >/dev/null 2>&1 || true
       settings put global adb_wifi_enabled 0 2>/dev/null || true

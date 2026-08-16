@@ -296,15 +296,27 @@ public final class KeyMapPrefs {
         { ACT_MUTE, "Mute / unmute" },
     };
     /**
+     * Mouse pointer — valid on sides and any remap. HID session sends the
+     * guest wheel; without HID / touchpadd, Android gets a real mouse wheel
+     * (not Page Up/Down).
+     */
+    public static final String[][] GROUP_POINTER = new String[][] {
+        { ACT_MOUSE_SCROLL_UP, "Scroll up" },
+        { ACT_MOUSE_SCROLL_DOWN, "Scroll down" },
+        { ACT_MOUSE_LEFT, "Left click" },
+        { ACT_MOUSE_RIGHT, "Right click" },
+        { ACT_MOUSE_MIDDLE, "Middle click" },
+    };
+    /**
      * Computer — clicks & keys for the machine you are controlling
      * (USB keyboard app, Moonlight, any remote desktop). Not phone UI.
      */
     public static final String[][] GROUP_COMPUTER = new String[][] {
+        { ACT_MOUSE_SCROLL_UP, "Scroll up" },
+        { ACT_MOUSE_SCROLL_DOWN, "Scroll down" },
         { ACT_MOUSE_LEFT, "Left click" },
         { ACT_MOUSE_RIGHT, "Right click" },
         { ACT_MOUSE_MIDDLE, "Middle click" },
-        { ACT_MOUSE_SCROLL_UP, "Scroll up" },
-        { ACT_MOUSE_SCROLL_DOWN, "Scroll down" },
         { ACT_HOST_PREFIX + "up", "Arrow up" },
         { ACT_HOST_PREFIX + "down", "Arrow down" },
         { ACT_HOST_PREFIX + "left", "Arrow left" },

@@ -197,11 +197,21 @@ bring_up_from_lp() {
   # Marker so is_bootstrapped / status look healthy
   printf 'atlas-hybrid %s base=lp-atlas_linux home_on_data=1\n' "$VER" >"$MARKER" 2>/dev/null || true
 
-  # Identity: do not leave UTS as BlackCube (OpenWrt leftover) on Titan.
-  _hn=`cat /proc/sys/kernel/hostname 2>/dev/null || true`
-  case "$_hn" in
-    BlackCube|localhost|"") echo Titan2 >/proc/sys/kernel/hostname 2>/dev/null || true ;;
-  esac
+  # This device is Titan. OpenWrt "BlackCube" must never own UTS or Debian.
+  echo Titan2 >/proc/sys/kernel/hostname 2>/dev/null || true
+  echo Titan2 >"$LP_MNT/etc/hostname" 2>/dev/null || true
+  echo Titan2 >"$MERGE/etc/hostname" 2>/dev/null || true
+  # Hive MCP is not product on this phone. Strip leftover seed.
+  for _mcp in \
+    "$ATLAS_LINUX_HOME/.nanobot/mcp_servers.json" \
+    /data/local/atlas-home/atlas/.nanobot/mcp_servers.json \
+    /data/data/com.titanus2.atlas/files/.nanobot/mcp_servers.json
+  do
+    [ -f "$_mcp" ] || continue
+    if grep -q blackcube "$_mcp" 2>/dev/null || grep -q braincube "$_mcp" 2>/dev/null; then
+      printf '%s\n' '{"servers":[]}' >"$_mcp" 2>/dev/null || rm -f "$_mcp"
+    fi
+  done
 
   bind_android 2>/dev/null || true
   heal_merge_essentials 2>/dev/null || true
@@ -932,7 +942,17 @@ write_android_exec_helpers() {
     ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android-exec" 2>/dev/null || true
     ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android-run" 2>/dev/null || true
     ln -sfn /usr/local/libexec/atlas-android "$d/atlas-android-exec" 2>/dev/null || true
-    ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/atlas-screencap" 2>/dev/null || true
+    # Seeing is current — do not symlink screencap to the auth wrap.
+    _sc=
+    for s in /system/bin/atlas-screencap \
+      /data/data/com.titanus2.atlas/files/bin/atlas-screencap \
+      /data/data/com.titanus2.atlas/files/bin/atlas-screencap.sh; do
+      [ -f "$s" ] && _sc=$s && break
+    done
+    if [ -n "$_sc" ]; then
+      cp -f "$_sc" "$MERGE/usr/local/bin/atlas-screencap" 2>/dev/null || true
+      chmod 755 "$MERGE/usr/local/bin/atlas-screencap" 2>/dev/null || true
+    fi
   fi
   cat >"$d/atlas-android-exec" <<'EOF'
 #!/bin/sh
@@ -1034,7 +1054,7 @@ if _bio_android_want; then
   done
   if [ -n "$AUTH" ]; then
     base=`basename "$bin"`
-    "$AUTH" request "android $base" || {
+    "$AUTH" request --scope "$base" "android $base" || {
       echo "atlas-android-exec: biometric denied for android $base" >&2
       exit 1
     }
@@ -1132,10 +1152,33 @@ EOF
   # Same-name Android IPC wrappers first on PATH (/usr/local/bin).
   # Deb binderfs is empty — these must not be raw /system/bin ELFs.
   wrapbin="$MERGE/usr/local/libexec/atlas-android"
+  # ONE bridge name. Do not plant fake screencap/am peers — agents try those first.
   if [ -x "$wrapbin" ] || [ -x /usr/local/libexec/atlas-android ]; then
-    for t in getprop setprop am pm cmd dumpsys service screencap input wm settings logcat; do
-      ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/$t" 2>/dev/null || true
-    done
+    ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android" 2>/dev/null || true
+  fi
+  cat >"$MERGE/usr/local/libexec/atlas-android-hint" <<'EOF'
+#!/bin/sh
+echo "use: android ${0##*/} $*" >&2
+echo "Debian cannot see Android. Run: atlas-agent-status" >&2
+exit 64
+EOF
+  chmod 755 "$MERGE/usr/local/libexec/atlas-android-hint" 2>/dev/null || true
+  for t in getprop setprop am pm cmd dumpsys service screencap screenshot \
+    input wm settings logcat content atlas-screencap; do
+    rm -f "$MERGE/usr/local/bin/$t" "$MERGE/atlas-bin/$t" 2>/dev/null || true
+    ln -sfn /usr/local/libexec/atlas-android-hint "$MERGE/usr/local/bin/$t" 2>/dev/null || true
+  done
+  # User-managed: replace Deb ELF with symlink → atlas-wrap → atlas-auth
+  _apply=""
+  for s in \
+    /data/local/tmp/atlas-managed-apply.sh \
+    /data/data/com.titanus2.atlas/files/bin/atlas-managed-apply.sh \
+    /system/bin/atlas-managed-apply.sh
+  do
+    [ -f "$s" ] && _apply=$s && break
+  done
+  if [ -n "$_apply" ]; then
+    sh "$_apply" 2>/dev/null || true
   fi
   # Screencap + status helpers (copy from system/app if present)
   for h in atlas-screencap atlas-agent-status; do
@@ -1188,8 +1231,8 @@ unset _atlas_up _h _d
 export ATLAS_REPORTS="${HOME}/reports"
 if [ -n "${PS1:-}" ] && [ -z "${ATLAS_MOTD_SHOWN:-}" ]; then
   export ATLAS_MOTD_SHOWN=1
-  echo "Atlas PLANE=hybrid MODE=debian — Android IPC via: android <cmd> | atlas-screencap"
-  echo "Status: atlas-agent-status · Reports: $ATLAS_REPORTS · HOME=$HOME"
+  echo "Atlas: Debian cannot see Android."
+  echo "Bridge: android <cmd>   files: android cat|write|ls   status: atlas-agent-status"
 fi
 case "${PS1:-}" in
   *debian*|*android*) ;;
@@ -1260,15 +1303,28 @@ bind_android() {
       mkdir -p "$MERGE/data/misc/titan2" 2>/dev/null || true
       bind_one /data/misc/titan2 "$MERGE/data/misc/titan2"
     fi
-    bind_rbind /storage "$MERGE/storage"
     # Prefer selective /mnt — full rbind also re-enters hybrid under mnt paths.
     mkdir -p "$MERGE/mnt" 2>/dev/null || true
-    if [ -d /sdcard ] || [ -L /sdcard ]; then
-      if is_mounted "$MERGE/sdcard" && [ ! -e "$MERGE/sdcard/Download" ] && [ ! -d "$MERGE/sdcard" ]; then
-        umount -l "$MERGE/sdcard" 2>/dev/null || true
-      fi
-      bind_one /sdcard "$MERGE/sdcard"
+    _st=`plane_read titan2_atlas_storage ask`
+    if [ -f "$LP_MNT/var/lib/atlas-auth/policy" ]; then
+      _ps=`grep '^storage=' "$LP_MNT/var/lib/atlas-auth/policy" 2>/dev/null | head -1 | cut -d= -f2`
+      [ -n "$_ps" ] && _st=$_ps
     fi
+    case "$_st" in
+      allow|1|shared)
+        bind_rbind /storage "$MERGE/storage"
+        if [ -d /sdcard ] || [ -L /sdcard ]; then
+          bind_one /sdcard "$MERGE/sdcard"
+        fi
+        ;;
+      *)
+        mkdir -p "$MERGE/etc/atlas" 2>/dev/null || true
+        printf '%s\n' \
+          "Android user files are not mounted here." \
+          "use: android cat|write|ls <path>" \
+          >"$MERGE/etc/atlas/BRIDGE" 2>/dev/null || true
+        ;;
+    esac
   else
     log "storage=isolated — skipping /data /sdcard binds"
     mkdir -p "$MERGE/data/local/tmp" "$MERGE/sdcard" 2>/dev/null || true
@@ -1327,6 +1383,15 @@ bind_android() {
 is_elevate_name() {
   case "$1" in
     su|sudo|sudo.real|doas|pkexec|su.real) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Android IPC must not appear as Deb PATH names (Grok tries screencap first).
+is_android_ipc_name() {
+  case "$1" in
+    screencap|screenshot|atlas-screencap|am|pm|cmd|dumpsys|getprop|setprop|\
+    logcat|input|wm|settings|service|content|app_process|app_process64) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -1585,6 +1650,7 @@ EOF
         b=${f##*/}
         [ -n "$b" ] || continue
         is_elevate_name "$b" && continue
+        is_android_ipc_name "$b" && continue
         # Debian package wins on name clash (nano, curl, …)
         if [ -e "$dest/$b" ] || [ -L "$dest/$b" ]; then
           continue
@@ -1598,6 +1664,7 @@ EOF
         [ -x "$f" ] || continue
         b=${f##*/}
         is_elevate_name "$b" && continue
+        is_android_ipc_name "$b" && continue
         if [ -e "$dest/$b" ] || [ -L "$dest/$b" ]; then
           continue
         fi

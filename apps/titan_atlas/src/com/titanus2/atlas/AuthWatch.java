@@ -22,17 +22,15 @@ public final class AuthWatch {
         try {
             //noinspection deprecation
             observer = new FileObserver(dir.getAbsolutePath(),
-                FileObserver.CREATE | FileObserver.MOVED_TO | FileObserver.CLOSE_WRITE
-                    | FileObserver.MODIFY) {
+                FileObserver.CREATE | FileObserver.MOVED_TO | FileObserver.CLOSE_WRITE) {
                 @Override
                 public void onEvent(int event, String path) {
                     if (path == null) return;
-                    if (path.startsWith("req.") || path.equals("wake") || path.startsWith("busy.")) {
-                        try {
-                            AtlasAuth.pollOnce(app);
-                        } catch (Exception e) {
-                            Log.w(TAG, "poll", e);
-                        }
+                    if (!path.startsWith("req.")) return;
+                    try {
+                        AtlasAuth.pollOnce(app);
+                    } catch (Exception e) {
+                        Log.w(TAG, "poll", e);
                     }
                 }
             };

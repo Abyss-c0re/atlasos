@@ -43,6 +43,9 @@ public class SettingsActivity extends Activity {
     private TextView debianUserStatus;
     private TextView sizeLab;
     private LinearLayout backupsNav;
+    private TextView ttlLab;
+    private LinearLayout authLogNav;
+    private LinearLayout authBinsNav;
 
     private static final String[] THEMES = {
         "dark", "light", "green", "amber", "cyan"
@@ -178,6 +181,45 @@ public class SettingsActivity extends Activity {
                 if (!on) AtlasAuth.clearTicket(this);
                 toast(on ? "Bio on" : "Bio off");
             });
+
+        UiKit.section(root, "Auth");
+        AtlasPrefs.publishAuthPolicy(this);
+        boolean strict = AtlasPrefs.authStrict(this);
+        UiKit.toggle(root, "Strict (every call)", strict, on -> {
+            AtlasPrefs.setAuthStrict(this, on);
+            if (on) AtlasAuth.clearTicket(this);
+            toast(on ? "auth every call" : "tickets per command");
+            recreate();
+        });
+        if (strict) {
+            UiKit.note(root, "expiration off · finger for each binary");
+        } else {
+            int ttl = AtlasPrefs.ticketTtlSec(this);
+            ttlLab = UiKit.sliderLabel(root, "Ticket " + AtlasPrefs.ticketTtlLabel(ttl));
+            UiKit.slider(root, AtlasPrefs.TICKET_TTL_CHOICES.length - 1,
+                AtlasPrefs.ticketTtlChoiceIndex(ttl),
+                new SeekBar.OnSeekBarChangeListener() {
+                    @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
+                        if (!u) return;
+                        int sec = AtlasPrefs.TICKET_TTL_CHOICES[
+                            Math.max(0, Math.min(AtlasPrefs.TICKET_TTL_CHOICES.length - 1, p))];
+                        AtlasPrefs.setTicketTtlSec(SettingsActivity.this, sec);
+                        if (ttlLab != null) {
+                            ttlLab.setText("Ticket " + AtlasPrefs.ticketTtlLabel(sec));
+                        }
+                    }
+                    @Override public void onStartTrackingTouch(SeekBar s) {}
+                    @Override public void onStopTrackingTouch(SeekBar s) {}
+                });
+            UiKit.note(root, "per command · not a blanket grant");
+        }
+        UiKit.navRow(root, "Access", "allow · ask · deny",
+            () -> startActivity(new Intent(this, AuthAccessActivity.class)));
+        authBinsNav = UiKit.navRow(root, "Managed binaries",
+            AtlasPrefs.managedBinCount(this) + " added",
+            () -> startActivity(new Intent(this, AuthBinsActivity.class)));
+        authLogNav = UiKit.navRow(root, "Request log", "…",
+            () -> startActivity(new Intent(this, AuthLogActivity.class)));
 
         UiKit.section(root, "Debian image");
         hybridStatus = UiKit.mono(root);
@@ -588,11 +630,19 @@ public class SettingsActivity extends Activity {
                 + (lp != null && !lp.trim().isEmpty() ? "\n" + lp.trim() : "");
             final String user = HybridEnsure.listDebianUsers();
             final String backs = HybridEnsure.backupSummary(SettingsActivity.this);
+            final int logN = AtlasAuth.readLogTail(SettingsActivity.this, 500).size();
+            final int bins = AtlasPrefs.managedBinCount(SettingsActivity.this);
             main.post(() -> {
                 if (hybridStatus != null) hybridStatus.setText(text);
                 if (sizeLab != null) sizeLab.setText(sizeTargetLabel());
                 if (usersNav != null) UiKit.setNavSummary(usersNav, user);
                 if (backupsNav != null) UiKit.setNavSummary(backupsNav, backs);
+                if (authBinsNav != null) {
+                    UiKit.setNavSummary(authBinsNav, bins + " added");
+                }
+                if (authLogNav != null) {
+                    UiKit.setNavSummary(authLogNav, logN == 0 ? "empty" : logN + " events");
+                }
             });
         });
     }

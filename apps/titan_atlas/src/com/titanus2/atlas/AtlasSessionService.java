@@ -35,10 +35,11 @@ public class AtlasSessionService extends Service {
         @Override
         public void run() {
             try {
+                AtlasPrefs.isAuthUiShowing(AtlasSessionService.this);
                 AtlasAuth.pollOnce(AtlasSessionService.this);
             } catch (Exception ignored) {
             }
-            handler.postDelayed(this, 400);
+            handler.postDelayed(this, 2000);
         }
     };
     private final Runnable hybridHealth = new Runnable() {

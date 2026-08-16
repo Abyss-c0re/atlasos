@@ -16,24 +16,17 @@ import com.titanus2.controls.DebugPrefs;
 import com.titanus2.controls.ui.UiKit;
 
 /**
- * Dev tools: AUTO DEV MODE (nanobot MCP), Remote ADB, USB ADB, lab debug.
+ * Dev tools: Remote ADB, USB ADB, lab debug.
  * Remote ADB logic lives in {@link RemoteAdbUi} + {@code titan2-remote-adb.sh}.
- * AUTO DEV: {@link AutoDevUi} + {@link AutoDevService} + QS tile.
  */
 public class DevToolsActivity extends Activity {
-    /** QS tile / external arm: after resume, launch Atlas bio to enable AUTO DEV. */
-    public static final String EXTRA_ARM_AUTO_DEV = "arm_auto_dev";
-
     private final Handler h = new Handler(Looper.getMainLooper());
     private TextView status;
     private TextView debugState;
     private RemoteAdbUi remoteAdb;
-    private AutoDevUi autoDev;
-    private boolean armAutoDevOnce;
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (remoteAdb != null) remoteAdb.onResumeTick();
-            if (autoDev != null) autoDev.onResumeTick();
             refreshState();
             h.postDelayed(this, 1000);
         }
@@ -42,17 +35,12 @@ public class DevToolsActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
-        armAutoDevOnce = getIntent() != null
-            && getIntent().getBooleanExtra(EXTRA_ARM_AUTO_DEV, false);
         ScrollView sc = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         UiKit.screen(root);
         sc.addView(root);
 
         UiKit.title(root, "Dev");
-
-        autoDev = new AutoDevUi(this);
-        autoDev.build(root);
 
         remoteAdb = new RemoteAdbUi(this);
         remoteAdb.build(root);
@@ -109,32 +97,10 @@ public class DevToolsActivity extends Activity {
         UiKit.section(root, "State");
         status = UiKit.mono(root);
         TextView kbHint = UiKit.mono(root);
-        kbHint.setText("A Auto Dev · W Remote ON · X OFF · C copy · Esc");
+        kbHint.setText("W Remote ON · X OFF · C copy · Esc");
 
         setContentView(sc);
         refreshState();
-        if (armAutoDevOnce) {
-            armAutoDevOnce = false;
-            h.postDelayed(() -> {
-                if (autoDev != null && !AutoDevMode.isOn(this)) {
-                    // Re-use bio path via toggle simulation: launch ON bio
-                    try {
-                        Intent i = new Intent();
-                        i.setClassName("com.titanus2.atlas",
-                            "com.titanus2.atlas.AuthPromptActivity");
-                        i.putExtra("auth_id",
-                            "autodev-tile-" + System.currentTimeMillis());
-                        i.putExtra("auth_reason",
-                            "Enable Auto Dev · QS");
-                        i.putExtra("auth_for_result", true);
-                        //noinspection deprecation
-                        startActivityForResult(i, AutoDevUi.REQ_BIO_ON);
-                    } catch (Exception e) {
-                        UiKit.toast(this, "Atlas auth missing");
-                    }
-                }
-            }, 300);
-        }
     }
 
     @Override
@@ -152,39 +118,6 @@ public class DevToolsActivity extends Activity {
         switch (kc) {
             case KeyEvent.KEYCODE_ESCAPE:
                 finish();
-                return true;
-            case KeyEvent.KEYCODE_A:
-                // Toggle AUTO DEV via bio (same as UI)
-                if (AutoDevMode.isOn(this)) {
-                    try {
-                        Intent i = new Intent();
-                        i.setClassName("com.titanus2.atlas",
-                            "com.titanus2.atlas.AuthPromptActivity");
-                        i.putExtra("auth_id",
-                            "autodev-off-" + System.currentTimeMillis());
-                        i.putExtra("auth_reason", "Disable Auto Dev");
-                        i.putExtra("auth_for_result", true);
-                        //noinspection deprecation
-                        startActivityForResult(i, AutoDevUi.REQ_BIO_OFF);
-                    } catch (Exception e) {
-                        UiKit.toast(this, "Atlas auth missing");
-                    }
-                } else {
-                    try {
-                        Intent i = new Intent();
-                        i.setClassName("com.titanus2.atlas",
-                            "com.titanus2.atlas.AuthPromptActivity");
-                        i.putExtra("auth_id",
-                            "autodev-on-" + System.currentTimeMillis());
-                        i.putExtra("auth_reason",
-                            "Enable Auto Dev");
-                        i.putExtra("auth_for_result", true);
-                        //noinspection deprecation
-                        startActivityForResult(i, AutoDevUi.REQ_BIO_ON);
-                    } catch (Exception e) {
-                        UiKit.toast(this, "Atlas auth missing");
-                    }
-                }
                 return true;
             case KeyEvent.KEYCODE_E:
                 boolean ok = enableAdbFromApp();
@@ -222,9 +155,6 @@ public class DevToolsActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (autoDev != null && autoDev.onActivityResult(requestCode, resultCode)) {
-            return;
-        }
         if (remoteAdb != null && remoteAdb.onActivityResult(requestCode, resultCode)) {
             return;
         }
@@ -277,8 +207,6 @@ public class DevToolsActivity extends Activity {
         sb.append("usb_debug=").append(adb == 1 ? "on" : "off")
             .append("  dev_opts=").append(dev == 1 ? "on" : "off")
             .append("\ntcp=").append(tcp).append('\n');
-        String ad = AutoDevMode.statusLine(this);
-        if (ad != null) sb.append(ad.trim()).append('\n');
         String ag = AgentBridge.readStatus(AgentBridge.STATUS_AGENT);
         sb.append(ag != null ? ag.trim() : "pad-agent: no status");
         if (status != null) status.setText(sb.toString());

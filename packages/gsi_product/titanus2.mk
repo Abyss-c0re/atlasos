@@ -53,7 +53,9 @@ PRODUCT_PACKAGES += \
     atlas-lpctl \
     atlas-agent-status \
     atlas-screencap \
-    atlas
+    atlas \
+    atlas-bridge \
+    atlas-auth-policy
 
 # USB HID gadget stack (independent of APK inject). Hybrid residual:
 # WITH_USB_HID_STACK=1 (default). REG 20260806: stack must never couple to APK=0.
@@ -112,4 +114,11 @@ PRODUCT_PACKAGES += \
 PRODUCT_SYSTEM_PROPERTIES += \
     ro.titanus2.gsi_source=1 \
     ro.titanus2.maintainer=Abyss-c0re \
+    ro.atlasos.brand=AtlasOS \
+    ro.atlasos.version=23.2 \
+    ro.lineage.display.version=AtlasOS-23.2 \
+    ro.build.display.id=AtlasOS-23.2 \
     persist.sys.titan2.tether_ipv4=192.168.6.1/24
+
+# Dated stamp written by stage_gsi_product.sh (AtlasOS-23.2-YYYYMMDD).
+-include device/phh/treble/atlasos_stamp.mk

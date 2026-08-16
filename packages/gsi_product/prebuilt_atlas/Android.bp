@@ -165,3 +165,17 @@ sh_binary {
     name: "atlas-screencap",
     src: "atlas-screencap.sh",
 }
+
+prebuilt_etc {
+    name: "atlas-bridge",
+    src: "BRIDGE",
+    sub_dir: "atlas",
+    filename: "BRIDGE",
+}
+
+prebuilt_etc {
+    name: "atlas-auth-policy",
+    src: "policy",
+    sub_dir: "atlas",
+    filename: "policy",
+}

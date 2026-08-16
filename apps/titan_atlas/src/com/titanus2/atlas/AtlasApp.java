@@ -30,6 +30,18 @@ public final class AtlasApp extends Application {
             /* Nanobot peers: Nanobot app + Titan command plane. Not Atlas. */
             AtlasPrefs.publishPrivilegePlane(this);
             AtlasPrefs.publishBioPlane(this);
+            AtlasPrefs.publishAuthPolicy(this);
+            /* Leftover blanket ticket / observe-class tickets are heresy. */
+            try {
+                java.io.File dir = NativeBin.authDirLp();
+                //noinspection ResultOfMethodCallIgnored
+                new java.io.File(dir, "ticket").delete();
+                //noinspection ResultOfMethodCallIgnored
+                new java.io.File(dir, "ticket.screencap").delete();
+                //noinspection ResultOfMethodCallIgnored
+                new java.io.File("/data/local/tmp/atlas_auth.ticket").delete();
+            } catch (Exception ignored) {
+            }
             HybridEnsure.ensureLiveUidAsync(this);
         } catch (Throwable t) {
             Log.w(TAG, "native lib / auth plane warm", t);

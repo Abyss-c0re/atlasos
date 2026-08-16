@@ -39,14 +39,17 @@ static int run_auth(const char *reason) {
     snprintf(path, sizeof path, "/data/user/0/com.titanus2.atlas/files/bin/atlas-auth");
   else if (access("/data/data/com.titanus2.atlas/files/bin/atlas-auth", X_OK) == 0)
     snprintf(path, sizeof path, "/data/data/com.titanus2.atlas/files/bin/atlas-auth");
+  else if (access("/system/bin/atlas-auth", X_OK) == 0)
+    snprintf(path, sizeof path, "/system/bin/atlas-auth");
   else
     snprintf(path, sizeof path, "atlas-auth");
 
   pid_t p = fork();
   if (p < 0) return 4;
   if (p == 0) {
-    execl(path, "atlas-auth", "request", reason, (char *)NULL);
-    execlp("atlas-auth", "atlas-auth", "request", reason, (char *)NULL);
+    execl(path, "atlas-auth", "request", "--scope", "sudo", reason, (char *)NULL);
+    execlp("atlas-auth", "atlas-auth", "request", "--scope", "sudo", reason,
+           (char *)NULL);
     _exit(4);
   }
   int st = 0;
@@ -476,56 +479,28 @@ int main(int argc, char **argv) {
         /* Settings toggled bio off for this plane — elevate without agent */
         goto after_auth;
       }
-      /* Valid ticket → skip client entirely (enterd also re-checks ticket). */
-      int ticket_ok = 0;
-      {
-        char envpath[640];
-        envpath[0] = 0;
-        const char *ad = getenv("ATLAS_AUTH_DIR");
-        if (ad && ad[0])
-          snprintf(envpath, sizeof envpath, "%s/ticket", ad);
-        const char *cands[10];
-        int nc = 0;
-        if (envpath[0]) cands[nc++] = envpath;
-        cands[nc++] = "/data/local/atlas-linux/var/lib/atlas-auth/ticket";
-        cands[nc++] = "/var/lib/atlas-auth/ticket";
-        cands[nc++] = "/data/user/0/com.titanus2.atlas/files/auth/ticket";
-        cands[nc++] = "/data/data/com.titanus2.atlas/files/auth/ticket";
-        cands[nc++] = "/data/local/tmp/atlas_auth.ticket";
-        long now = (long)time(NULL);
-        for (int i = 0; i < nc; i++) {
-          if (!cands[i] || !cands[i][0]) continue;
-          FILE *tf = fopen(cands[i], "r");
-          long exp = 0;
-          if (tf && fscanf(tf, "%ld", &exp) == 1 && exp > now) ticket_ok = 1;
-          if (tf) fclose(tf);
-          if (ticket_ok) break;
-        }
-      }
-      if (!ticket_ok) {
-        fprintf(stderr, "%s: auth agent (biometrics)…\n", base);
-        int rc = run_auth(reason);
-        if (rc != 0) {
-          fprintf(stderr, "%s: denied by auth agent (exit %d)\n", base, rc);
-          return rc == 3 ? 3 : 1;
-        }
+      /* One wrap: atlas-auth owns tickets (ticket.sudo only, never blanket). */
+      fprintf(stderr, "%s: auth agent (biometrics)…\n", base);
+      int rc = run_auth(reason);
+      if (rc != 0) {
+        fprintf(stderr, "%s: denied by auth agent (exit %d)\n", base, rc);
+        return rc == 3 ? 3 : 1;
       }
     }
   }
 after_auth:
-  /* enterd ELEVATE always wants a ticket file — mint short ticket when bio was
-   * skipped (Settings off / ATLAS_SKIP_BIOMETRIC) so product path works without KSU. */
+  /* enterd wants ticket.exec (15s one-shot). atlas-auth writes it on grant.
+   * If bio was skipped, mint exec token only — never a 1800s blanket. */
   {
-    long exp = (long)time(NULL) + 90;
+    long exp = (long)time(NULL) + 15;
     static const char *mirrors[] = {
-        "/data/local/tmp/atlas_auth.ticket",
-        "/data/local/atlas-linux/var/lib/atlas-auth/ticket",
-        "/var/lib/atlas-auth/ticket",
+        "/data/local/atlas-linux/var/lib/atlas-auth/ticket.exec",
+        "/var/lib/atlas-auth/ticket.exec",
         NULL};
     for (int i = 0; mirrors[i]; i++) {
       FILE *tf = fopen(mirrors[i], "w");
       if (!tf) continue;
-      fprintf(tf, "%ld 90\n", exp);
+      fprintf(tf, "%ld 15\n", exp);
       fclose(tf);
       chmod(mirrors[i], 0644);
     }

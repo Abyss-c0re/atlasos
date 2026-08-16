@@ -435,7 +435,7 @@ public final class NativeBin {
         }
         try {
             dropGrokOsHooks(c);
-        } catch (Exception ignored) {
+        } catch (Throwable ignored) {
         }
         try {
             stageCaBundle(c);
@@ -483,11 +483,13 @@ public final class NativeBin {
                 + "status_file=" + homePath + "/ATLAS_STATUS\n"
                 + "plane_files=/data/local/tmp/titan2_atlas_mode /data/misc/titan2/\n"
                 + "titan2_atlas_mode=" + mode + "\n"
-                + "=== AGENT RULES ===\n"
-                + "1) plane=hybrid|debian → Debian tools OK; Android Binder: android <cmd>\n"
-                + "2) screencap: atlas-screencap only (never bare screencap in hybrid)\n"
-                + "3) reports: $HOME/reports/ · atlas-agent-status before claims\n"
-                + "4) prove: cat /etc/os-release · echo $ATLAS_HYBRID\n";
+                + "=== BRIDGE ===\n"
+                + "Debian cannot see Android.\n"
+                + "use: android <tool> [args]\n"
+                + "files: android cat|write|ls <path>\n"
+                + "not Deb: screencap screenshot am pm\n"
+                + "policy: /var/lib/atlas-auth/policy\n"
+                + "reports: $HOME/reports/\n";
         writeText(new File(home, "ATLAS_STATUS"), body);
         writeText(new File(home, "ATLAS_PLANE.env"),
             "ATLAS_PLANE=" + plane + "\n"
@@ -669,6 +671,8 @@ public final class NativeBin {
 
     private static String readText(File f) {
         if (f == null || !f.isFile()) return null;
+        /* Never slurp ELFs / grok binaries (267MB OOM crash 2026-08-16). */
+        if (f.length() > 64 * 1024L) return null;
         try {
             byte[] b = java.nio.file.Files.readAllBytes(f.toPath());
             return new String(b);
@@ -727,7 +731,8 @@ public final class NativeBin {
             "atlas-auth", "atlas-auth-askpass", "atlas-heal-home",
             "atlas-sudo", "sudo", "su", "atlas-auth-pam",
             "apt-hybrid.sh", "atlas-hybrid.sh", "atlas-net.sh",
-            "atlas-agent-status.sh", "atlas-screencap.sh"
+            "atlas-agent-status.sh", "atlas-screencap.sh",
+            "atlas-wrap.sh", "atlas-managed-apply.sh"
         };
         for (String name : force) {
             File out = new File(destRoot, name);
@@ -784,8 +789,63 @@ public final class NativeBin {
         // Agent-facing short names (no .sh) for PATH discovery
         linkOrCopy(destRoot, "atlas-agent-status.sh", "atlas-agent-status");
         linkOrCopy(destRoot, "atlas-screencap.sh", "atlas-screencap");
+        linkOrCopy(destRoot, "atlas-wrap.sh", "atlas-wrap");
+        linkOrCopy(destRoot, "atlas-managed-apply.sh", "atlas-managed-apply");
+        installManagedWraps(c);
         writeReportsReadme(c);
         healAuthDir(c);
+    }
+
+    /**
+     * Deb PATH: replace the real ELF with a symlink to atlas-wrap (atlas-auth).
+     * Real binary is stashed under /usr/local/libexec/atlas-managed/.
+     */
+    public static void installManagedWraps(Context c) {
+        if (c == null) return;
+        AtlasPrefs.publishManagedBins(c);
+        File apply = new File("/data/local/tmp/atlas-managed-apply.sh");
+        File src = new File(binDir(c), "atlas-managed-apply.sh");
+        if (!src.isFile()) src = new File(binDir(c), "atlas-managed-apply");
+        try {
+            if (src.isFile()) {
+                copyFile(src, apply);
+            }
+        } catch (Exception ignored) {
+        }
+        if (apply.isFile()) {
+            //noinspection ResultOfMethodCallIgnored
+            apply.setExecutable(true, false);
+            AtlasBridge.elevateAndroid("sh /data/local/tmp/atlas-managed-apply.sh", 15_000);
+        }
+        File appBin = binDir(c);
+        File wrap = new File(appBin, "atlas-wrap");
+        if (!wrap.isFile()) wrap = new File(appBin, "atlas-wrap.sh");
+        for (AtlasPrefs.ManagedBin b : AtlasPrefs.managedBins(c)) {
+            if (b == null || b.builtin || AtlasPrefs.isReservedManaged(b.name)) continue;
+            File link = new File(appBin, b.name);
+            try {
+                if (link.exists()) {
+                    //noinspection ResultOfMethodCallIgnored
+                    link.delete();
+                }
+                if (wrap.isFile()) {
+                    java.nio.file.Files.createSymbolicLink(link.toPath(), wrap.toPath());
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    public static void removeManagedWrap(Context c, String name) {
+        name = AtlasAuth.sanitizeScope(name);
+        if (name.isEmpty() || AtlasPrefs.isReservedManaged(name)) return;
+        File app = new File(binDir(c), name);
+        if (app.exists()) {
+            //noinspection ResultOfMethodCallIgnored
+            app.delete();
+        }
+        AtlasPrefs.publishManagedBins(c);
+        AtlasBridge.elevateAndroid("sh /data/local/tmp/atlas-managed-apply.sh", 15_000);
     }
 
     private static void linkOrCopy(File destRoot, String srcName, String dstName) {
@@ -821,8 +881,8 @@ public final class NativeBin {
                 + "- Machine plane: `../ATLAS_STATUS`, `../ATLAS_PLANE.env`, "
                 + "`/data/local/tmp/atlas_status.txt`.\n"
                 + "- Always run `atlas-agent-status` before claiming hybrid or Android IPC.\n"
-                + "- Hybrid Android tools: `android <cmd>`, `android-exec`, `atlas-screencap` "
-                + "(never bare `screencap` / `am` without nsenter).\n");
+                + "- Hybrid Android tools: `android <cmd>` / `atlas-auth exec` "
+                + "(one wrap; not a second screenshot lock).\n");
     }
 
     /**
@@ -944,10 +1004,13 @@ public final class NativeBin {
     public static void dropGrokOsHooks(Context c) {
         File bin = binDir(c);
         File gate = new File(bin, "grok");
-        String body = readText(gate);
-        if (body != null && body.contains("Atlas grok gate")) {
-            //noinspection ResultOfMethodCallIgnored
-            gate.delete();
+        /* User grok ELF is tens/hundreds of MB — never read as text. */
+        if (gate.isFile() && gate.length() <= 64 * 1024L) {
+            String body = readText(gate);
+            if (body != null && body.contains("Atlas grok gate")) {
+                //noinspection ResultOfMethodCallIgnored
+                gate.delete();
+            }
         }
         File wrap = new File(bin, "grok-atlas");
         if (wrap.isFile()) {
@@ -1092,8 +1155,7 @@ public final class NativeBin {
                 + "  export ATLAS_MOTD_SHOWN=1\n"
                 + "  echo \"Atlas plane=${ATLAS_PLANE:-?} mode=${ATLAS_MODE:-?} session=${ATLAS_SESSION:-?}\"\n"
                 + "  if [ \"${ATLAS_PLANE:-}\" = \"hybrid\" ]; then\n"
-                + "    echo \"Android IPC: android <cmd> | android-exec | atlas-screencap  (not bare screencap/am)\"\n"
-                + "    alias screencap='atlas-screencap' 2>/dev/null || true\n"
+                + "    echo \"Android IPC: android <cmd> → atlas-auth exec (one wrap)\"\n"
                 + "  else\n"
                 + "    echo \"Android shell — Debian tools (apt/python3) blocked.\"\n"
                 + "    echo \"Switch top-bar And → Deb for hybrid.\"\n"

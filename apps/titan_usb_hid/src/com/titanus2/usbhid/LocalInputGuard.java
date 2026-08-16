@@ -9,7 +9,8 @@ import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Detects phone text-field / IME focus so HID can pause host keys+pad.
+ * Detects phone text-field / IME focus so HID can yield TitanKey to Android.
+ * Pad stays on the HID guest.
  *
  * <p><b>Works without root.</b> Primary probe is plain {@code dumpsys} via
  * {@code sh} (no {@code su}). Root is an optional fallback if the unprivileged

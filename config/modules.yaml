@@ -59,9 +59,12 @@ modules:
   - name: nanobot
     role: Grok + LAN / on-device models
     path: apps/titan_nanobot
-    remote: null
+    remote: https://github.com/Abyss-c0re/nanobot.git
     status: unpublished
     reusable: true
+    note: >
+      Core nanobot is public (Abyss-c0re/nanobot). This path is the Titan
+      Android wrapper — unpublished until split.
 
   - name: titan-controls
     role: Titan pad / keys / Settings hub

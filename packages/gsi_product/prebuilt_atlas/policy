@@ -1,0 +1,21 @@
+# atlas-auth policy — Magisk-style allow|ask|deny
+# Deb→Android bridge is only: android <tool>
+default=ask
+storage=ask
+bridge=android
+cmd.getprop=allow
+cmd.dumpsys=allow
+cmd.screencap=ask
+cmd.am=ask
+cmd.pm=ask
+cmd.settings=ask
+cmd.input=ask
+cmd.wm=ask
+cmd.setprop=ask
+cmd.service=ask
+cmd.content=ask
+cmd.cmd=ask
+cmd.logcat=ask
+cmd.cat=ask
+cmd.write=ask
+cmd.ls=ask

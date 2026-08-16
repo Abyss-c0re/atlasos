@@ -36,7 +36,7 @@ CC="$TOOLCHAIN/bin/aarch64-linux-android${API}-clang"
 # Product package version (UI/tools). enterd has its own peel string — never stomp it
 # with 1.0.0 (lab 2026-08-13: VER=1.0.0 overwrote 1.2.4-enter-fast in product ship).
 VER="${ATLAS_VERSION:-1.0.0}"
-ENTERD_VER="${ATLAS_ENTERD_VERSION:-1.2.7-resume}"
+ENTERD_VER="${ATLAS_ENTERD_VERSION:-1.2.9-agent}"
 LPCTL_VER="${ATLAS_LPCTL_VERSION:-1.0.1-wipe-home}"
 echo "CC=$CC VER=$VER ENTERD_VER=$ENTERD_VER LPCTL_VER=$LPCTL_VER"
 
@@ -68,10 +68,10 @@ fi
 
 # Auth + biometric sudo gate (all modes: android / debian / hybrid)
 if [ -f "$ROOT/native/atlas_auth.c" ]; then
-  build_one atlas-auth "$ROOT/native/atlas_auth.c"
+  build_one atlas-auth "$ROOT/native/atlas_auth.c" "1.1.3-wrap"
 fi
 if [ -f "$ROOT/native/atlas_android.c" ]; then
-  build_one atlas-android "$ROOT/native/atlas_android.c" "1.1.2-wrap"
+  build_one atlas-android "$ROOT/native/atlas_android.c" "1.1.7-policy"
 fi
 if [ -f "$ROOT/native/atlas_auth_askpass.c" ]; then
   build_one atlas-auth-askpass "$ROOT/native/atlas_auth_askpass.c"

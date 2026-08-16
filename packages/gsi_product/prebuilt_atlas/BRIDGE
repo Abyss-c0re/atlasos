@@ -1,0 +1,8 @@
+Debian cannot see Android Binder or user files.
+ONE command:  android <tool> [args]
+  android screencap -p $HOME/exports/x.png
+  android am start -n …
+  android cat|write|ls <android-path>
+Do not run: screencap screenshot atlas-screencap am pm
+Policy: /var/lib/atlas-auth/policy   (allow | ask | deny)
+Status: atlas-agent-status

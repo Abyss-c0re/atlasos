@@ -82,12 +82,6 @@ public final class AgentBridge {
     /** One-shot: enable_adb | enable_wireless_adb | disable_wireless_adb */
     public static final String DEV_ACTION = "titan2_dev_action";
     /**
-     * AUTO DEV MODE plane (Controls Developer + QS tile, Atlas bio gated).
-     * {@code titan2_auto_dev_mode}=0|1 · analyze · peer · action one-shots.
-     */
-    public static final String AUTO_DEV_MODE = "titan2_auto_dev_mode";
-    public static final String AUTO_DEV_ACTION = "titan2_auto_dev_action";
-    /**
      * Firewall cube one-shot for pad-agent 2.214+:
      * {@code enable|disable|apply|reset|deny-uid|allow-uid|deny-bin|allow-bin|deny-svc|allow-svc}.
      * Written after Atlas biometrics (master) or direct for deny rows; agent runs titan2-fw as root.

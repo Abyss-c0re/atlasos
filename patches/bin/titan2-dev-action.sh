@@ -820,32 +820,19 @@ log "dev_action=$act0"
       chmod 666 "$ST/titan2_enterd_reload_status" 2>/dev/null || true
       ;;
     atlas_auth_ticket|plant_auth_ticket)
-      # Root heal: ensure Atlas auth/ dir + short ticket (lab prove / enterd elevate).
-      # Production path: atlas-auth request → AuthPrompt → writeResult ticket.
-      TTL=90
-      case "$2" in ''|*[!0-9]*) ;; *) TTL=$2 ;; esac
-      [ "$TTL" -gt 0 ] 2>/dev/null || TTL=90
-      [ "$TTL" -gt 600 ] 2>/dev/null && TTL=600
+      # Lab heal: ticket.exec one-shot for enterd only. Never a blanket ticket.
+      TTL=15
       EXP=`date +%s`
       EXP=$((EXP + TTL))
-      for home in /data/user/0/com.titanus2.atlas/files /data/data/com.titanus2.atlas/files; do
-        [ -d "$home" ] || continue
-        mkdir -p "$home/auth" 2>/dev/null || true
-        printf '%s %s\n' "$EXP" "$TTL" >"$home/auth/ticket" 2>/dev/null || true
-        chmod 644 "$home/auth" "$home/auth/ticket" 2>/dev/null || true
-        # app-owned
-        _u=`stat -c %u "$home" 2>/dev/null` || _u=
-        _g=`stat -c %g "$home" 2>/dev/null` || _g=
-        case "$_u" in ''|*[!0-9]*) ;; *)
-          chown "$_u:$_g" "$home/auth" "$home/auth/ticket" 2>/dev/null || true
-          ;;
-        esac
-        log "auth ticket planted home=$home exp=$EXP ttl=$TTL"
+      for dir in /data/local/atlas-linux/var/lib/atlas-auth /var/lib/atlas-auth; do
+        mkdir -p "$dir" 2>/dev/null || true
+        printf '%s %s\n' "$EXP" "$TTL" >"$dir/ticket.exec" 2>/dev/null || true
+        chmod 644 "$dir/ticket.exec" 2>/dev/null || true
+        rm -f "$dir/ticket" 2>/dev/null || true
+        log "auth exec token planted dir=$dir exp=$EXP ttl=$TTL"
       done
-      # world-readable mirror (SELinux blocks shell from app CE auth/)
-      printf '%s %s\n' "$EXP" "$TTL" >"$ST/atlas_auth.ticket" 2>/dev/null || true
-      chmod 644 "$ST/atlas_auth.ticket" 2>/dev/null || true
-      echo "ticket exp=$EXP ttl=$TTL" >"$ST/titan2_auth_ticket_status" 2>/dev/null || true
+      rm -f /data/local/tmp/atlas_auth.ticket 2>/dev/null || true
+      echo "ticket.exec exp=$EXP ttl=$TTL blanket=0" >"$ST/titan2_auth_ticket_status" 2>/dev/null || true
       chmod 666 "$ST/titan2_auth_ticket_status" 2>/dev/null || true
       ;;
     atlas_sudo_tip|stage_atlas_sudo)

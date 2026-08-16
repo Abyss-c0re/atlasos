@@ -41,7 +41,7 @@
 #endif
 
 #ifndef ATLAS_VERSION
-#define ATLAS_VERSION "1.2.7-resume"
+#define ATLAS_VERSION "1.2.9-agent"
 #endif
 
 #define ABS_NAME "atlasenter"
@@ -270,16 +270,45 @@ static int recv_fd(int sock) {
   return fd;
 }
 
-/* Valid atlas-auth ticket written after biometric/agent grant. */
+/* Seeing is Cube current — first-token basename of CMD, not the ELEVATE header.
+ * Header is "ELEVATE chroot=0" and never contains screencap; checking it
+ * dammed every observe call behind ticket.exec (heresy). */
+static int observe_class(const char *cmd) {
+  if (!cmd || !cmd[0]) return 0;
+  const char *s = cmd;
+  while (*s == ' ' || *s == '\t') s++;
+  if (strncmp(s, "CMD ", 4) == 0) s += 4;
+  while (*s == ' ' || *s == '\t' || *s == '\'' || *s == '"') s++;
+  const char *slash = s;
+  const char *p = s;
+  while (*p && *p != ' ' && *p != '\t' && *p != '\'' && *p != '"') {
+    if (*p == '/') slash = p + 1;
+    p++;
+  }
+  size_t n = (size_t)(p - slash);
+  if (n == 0 || n >= 64) return 0;
+  char name[64];
+  memcpy(name, slash, n);
+  name[n] = 0;
+  static const char *obs[] = {
+      "screencap", "screenshot", "dumpsys", "getprop", "setprop",
+      "logcat", "am", "pm", "cmd", "wm", "input", "settings",
+      "service", "content", "app_process", "app_process64",
+      NULL};
+  for (int i = 0; obs[i]; i++)
+    if (strcmp(name, obs[i]) == 0) return 1;
+  /* env -i PATH=… /system/bin/screencap — first token is env */
+  return strstr(cmd, "screencap") || strstr(cmd, "dumpsys") ||
+         strstr(cmd, "getprop") || strstr(cmd, "/bin/logcat") ||
+         strstr(cmd, " app_process");
+}
+
+/* enterd accepts ticket.exec only (15s one-shot after atlas-auth grant).
+ * A leftover ticket.screencap / blanket ticket must not elevate. */
 static int auth_ticket_ok(void) {
   static const char *cands[] = {
-      /* LAW: super LP auth plane (survives wipe) */
-      "/data/local/atlas-linux/var/lib/atlas-auth/ticket",
-      "/var/lib/atlas-auth/ticket",
-      "/data/user/0/com.titanus2.atlas/files/auth/ticket",
-      "/data/data/com.titanus2.atlas/files/auth/ticket",
-      /* world-readable mirror for shell/chroot when CE path is SELinux-denied */
-      "/data/local/tmp/atlas_auth.ticket",
+      "/data/local/atlas-linux/var/lib/atlas-auth/ticket.exec",
+      "/var/lib/atlas-auth/ticket.exec",
       NULL};
   long now = (long)time(NULL);
   for (int i = 0; cands[i]; i++) {
@@ -289,8 +318,8 @@ static int auth_ticket_ok(void) {
     int ttl = 0;
     int n = fscanf(f, "%ld %d", &exp, &ttl);
     fclose(f);
-    /* Two fields required. A lone epoch (forged `date +%s`) is not a ticket. */
-    if (n >= 2 && ttl > 0 && exp > now && exp <= now + ttl + 5) return 1;
+    if (n >= 2 && ttl > 0 && ttl <= 30 && exp > now && exp <= now + ttl + 5)
+      return 1;
   }
   return 0;
 }
@@ -318,11 +347,6 @@ static void handle_elevate(int csock, uid_t peer, char *line) {
   /* Ticket is the real gate (post atlas-auth biometrics).
    * TCP SO_PEERCRED on Android loopback is flaky (often wrong uid) — do not
    * hard-deny on peer alone when a valid ticket is present. */
-  if (!auth_ticket_ok()) {
-    dprintf(csock, "ERR need-auth-ticket peer=%u\n", (unsigned)peer);
-    close(csock);
-    return;
-  }
   if (!caller_ok(peer)) {
     /* Still allow: ticket proves Atlas agent granted recently. */
     logf2("elevate peer-odd", "ticket-ok");
@@ -363,6 +387,15 @@ static void handle_elevate(int csock, uid_t peer, char *line) {
   if (strncmp(cmd, "CMD ", 4) == 0) shellcmd = cmd + 4;
   if (!shellcmd[0]) {
     dprintf(csock, "ERR empty-cmd\n");
+    close(csock);
+    return;
+  }
+
+  /* chroot=0 is atlas-android Android-plane plumbing — not a second ticket
+   * religion. Ticket.exec only for Deb-root (chroot=1) mutate. Observe-class
+   * never tickets. Checking the ELEVATE header was the 1.2.7 agent-dead bug. */
+  if (do_chroot && !observe_class(shellcmd) && !auth_ticket_ok()) {
+    dprintf(csock, "ERR need-auth-ticket peer=%u\n", (unsigned)peer);
     close(csock);
     return;
   }

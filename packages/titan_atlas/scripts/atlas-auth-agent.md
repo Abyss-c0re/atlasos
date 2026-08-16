@@ -31,4 +31,6 @@ shell; PATH is bidirectional.
 
 ## Ticket
 
-~90s after fingerprint so multi-step apt does not re-prompt.
+Per command (`ticket.<argv0>`), default 60s. Strict mode (Atlas Settings) =
+auth every call. `ticket.exec` is a 15s enterd one-shot, not a hall pass.
+Blanket `ticket` is heresy — see `HERESY_2026-08-16_ATLAS_AUTH_BLANKET_TICKET.md`.

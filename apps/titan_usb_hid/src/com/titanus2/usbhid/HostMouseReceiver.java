@@ -75,9 +75,8 @@ public class HostMouseReceiver extends BroadcastReceiver {
                 }
             } catch (Exception ignored) {}
             try { HidControl.ensureSpecialsQueues(context); } catch (Exception ignored) {}
-            // B2 1.28: typing freeze / phone local_input must not stick mid-glyph
-            try { HidControl.write(context, "titan2_pad_cursor_pause", "0"); } catch (Exception ignored) {}
-            try { HidControl.write(context, HidControl.LOCAL_INPUT, "0"); } catch (Exception ignored) {}
+            // Side / host chords must not steal TitanKey back from an Android editor.
+            // Never clear local_input here (share hub).
             Log.i(TAG, "host key hid=0x" + Integer.toHexString(hid)
                 + " mod=0x" + Integer.toHexString(hidMod)
                 + " session=" + HidSessionService.isRunning());

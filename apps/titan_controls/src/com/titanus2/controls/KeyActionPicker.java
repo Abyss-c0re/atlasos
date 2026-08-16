@@ -64,6 +64,10 @@ public final class KeyActionPicker {
         actions.add(() -> showGroup(activity, rootTitle, "Tools",
             KeyMapPrefs.GROUP_TOOLS, chord, allowRemove, pressKind, banChrome, listener));
 
+        labels.add("Mouse…");
+        actions.add(() -> showGroup(activity, rootTitle, "Mouse",
+            KeyMapPrefs.GROUP_POINTER, chord, allowRemove, pressKind, banChrome, listener));
+
         labels.add("Computer…");
         actions.add(() -> showGroup(activity, rootTitle, "Computer",
             KeyMapPrefs.GROUP_COMPUTER, chord, allowRemove, pressKind, banChrome, listener));

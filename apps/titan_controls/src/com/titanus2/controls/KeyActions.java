@@ -309,7 +309,7 @@ public final class KeyActions {
                     stampRemote(ctx, action);
                     return;
                 }
-                // Session off: phone page scroll (no host REMOTE_INPUT).
+                // Session off: real mouse wheel on Android (no HID / no touchpadd).
                 injectPhoneScroll(ctx, wheel);
                 stampRemote(ctx, action);
                 return;
@@ -733,14 +733,54 @@ public final class KeyActions {
         return 0;
     }
 
-    /** Phone-only scroll when HID is off (page keys — reliable without a11y gestures). */
+    /**
+     * Phone mouse wheel when HID / touchpadd are off. Prefer SOURCE_MOUSE
+     * ACTION_SCROLL so the focused window actually scrolls. Page keys only
+     * if inject is denied.
+     */
     private static void injectPhoneScroll(Context ctx, int wheel) {
         if (wheel == 0) return;
-        int code = wheel > 0 ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
         int n = Math.min(15, Math.abs(wheel));
-        for (int i = 0; i < n; i++) {
-            injectKeyCode(ctx, code);
+        float dir = wheel > 0 ? 1f : -1f;
+        boolean ok = false;
+        try {
+            InputManager im = (InputManager) ctx.getSystemService(Context.INPUT_SERVICE);
+            Method m = InputManager.class.getMethod("injectInputEvent",
+                android.view.InputEvent.class, int.class);
+            android.util.DisplayMetrics dm = ctx.getResources().getDisplayMetrics();
+            float x = dm.widthPixels / 2f;
+            float y = dm.heightPixels / 2f;
+            android.view.MotionEvent.PointerProperties pp =
+                new android.view.MotionEvent.PointerProperties();
+            pp.id = 0;
+            pp.toolType = android.view.MotionEvent.TOOL_TYPE_MOUSE;
+            for (int i = 0; i < n; i++) {
+                long now = SystemClock.uptimeMillis();
+                android.view.MotionEvent.PointerCoords pc =
+                    new android.view.MotionEvent.PointerCoords();
+                pc.x = x;
+                pc.y = y;
+                pc.pressure = 1f;
+                pc.size = 1f;
+                pc.setAxisValue(android.view.MotionEvent.AXIS_VSCROLL, dir);
+                android.view.MotionEvent ev = android.view.MotionEvent.obtain(
+                    now, now, android.view.MotionEvent.ACTION_SCROLL,
+                    1,
+                    new android.view.MotionEvent.PointerProperties[]{pp},
+                    new android.view.MotionEvent.PointerCoords[]{pc},
+                    0, 0, 1f, 1f, 0, 0,
+                    InputDevice.SOURCE_MOUSE, 0);
+                Object r = m.invoke(im, ev, 0);
+                ev.recycle();
+                ok = !(r instanceof Boolean) || (Boolean) r;
+                if (!ok) break;
+            }
+        } catch (Exception e) {
+            ok = false;
         }
+        if (ok) return;
+        int code = wheel > 0 ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
+        for (int i = 0; i < n; i++) injectKeyCode(ctx, code);
     }
 
     private static final class HostChord {

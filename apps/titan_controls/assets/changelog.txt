@@ -5,6 +5,41 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.86-about (586) — 2026-08-16T10:02Z
+
+- About: AtlasOS build, repo link, Abyss-c0re / NexusCore / Hive / Grok agents, third-party projects.
+
+---
+
+## 15.85-changelog-notitle (585) — 2026-08-15T21:24Z
+
+- Changelog: drop duplicate in-page title and LAW stamp block (action bar is enough).
+
+---
+
+## 15.84-changelog-md (584) — 2026-08-15T21:10Z
+
+- Changelog screen renders stamped markdown (headings, lists, bold, code) instead of raw # ** -.
+
+---
+
+## 15.83-mouse-scroll (583) — 2026-08-15T20:58Z
+
+- Mouse scroll is a first-class remap (Mouse… in picker). HID off / no touchpadd: inject real mouse wheel, not Page Up/Down. HID on: guest wheel without pad.
+
+---
+
+## 15.82-no-autodev (582) — 2026-08-14T23:35Z
+
+### rebuild 2026-08-14T23:36Z · 15.82-no-autodev (582)
+
+- Remove Auto Dev, Analyze shots, and BlackCube peer from Developer / QS.
+
+
+- Remove Auto Dev, Analyze shots, and BlackCube peer from Developer / QS.
+
+---
+
 ## 15.81-hub-clean (581) — 2026-08-14T16:27Z
 
 ### rebuild 2026-08-14T16:27Z · 15.81-hub-clean (581)

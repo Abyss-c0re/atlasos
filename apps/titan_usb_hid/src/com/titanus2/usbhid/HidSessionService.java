@@ -265,9 +265,8 @@ public class HidSessionService extends Service {
         }
     };
     /**
-     * Share mode only: pause host redirect when a phone editor is focused.
-     * Exclusive (grab) must never arm {@code local_input} — host owns TitanKey;
-     * pause caused dual-type (phone IME + Specials remote_q) and dead host KB.
+     * Share mode only: yield TitanKey to Android when a phone editor is focused.
+     * Pad stays guest. Exclusive must never arm {@code local_input}.
      * <p><b>Never</b> run dumpsys on the main thread while Type is open —
      * that locked IME binder for ~1.1s every poll (logcat Davey/Skipped frames).
      */
@@ -353,6 +352,16 @@ public class HidSessionService extends Service {
     }
 
     public static boolean isRunning() { return running && !ending; }
+
+    /** Share hub: session live, not exclusive, phys pad/keys (not Type soft). */
+    public static boolean isShareRouting() {
+        return running && !ending && !appliedGrab && (appliedKeys || appliedMouse);
+    }
+
+    /** Phys HID session (share or exclusive). Type soft is not live. */
+    public static boolean isPhysLive() {
+        return running && !ending && (appliedGrab || appliedKeys || appliedMouse);
+    }
 
     public static void start(Context ctx, boolean mouse, boolean grab,
                              int transport, boolean screenOff) {
@@ -896,13 +905,14 @@ public class HidSessionService extends Service {
         else link = "USB";
         String route;
         if (!keysMode && !mouseMode) route = "soft";
-        else if (localInputPaused) route = "local";
+        else if (localInputPaused) route = "share · pad:guest · keys:android";
         else if (grabMode) route = "excl";
-        else route = "share · pad:host";
+        else route = "share · pad:guest · keys:guest";
         String body = link + " · " + route;
         if (bt) body += " · " + BluetoothHidClient.get().status();
         if (screenOffOk) body += " · screen-off";
-        if (localInputPaused) body += " · phone input";
+        if (localInputPaused) body += " · phone kb";
+        try { ShareTileService.requestRefresh(this); } catch (Exception ignored) {}
 
         Notification.Builder b;
         if (Build.VERSION.SDK_INT >= 26) {
@@ -966,6 +976,7 @@ public class HidSessionService extends Service {
         h.removeCallbacks(notifTick);
         h.removeCallbacks(localInputTick);
         try { HidKeyMapSession.onSessionStop(this); } catch (Exception ignored) {}
+        try { ShareTileService.requestRefresh(this); } catch (Exception ignored) {}
         try { HidControl.setLocalInputPause(this, false); } catch (Exception ignored) {}
         localInputPaused = false;
         try { BluetoothHidClient.get().stop(); } catch (Exception ignored) {}

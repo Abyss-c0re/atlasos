@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.atlas"
-    android:versionCode="135"
-    android:versionName="1.0.8-sess">
+    android:versionCode="140"
+    android:versionName="1.0.13-auth-reap">
 
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
 
@@ -66,6 +66,30 @@
         <activity
             android:name=".BackupsActivity"
             android:label="Backups"
+            android:theme="@style/Theme.Atlas.Settings"
+            android:exported="false"
+            android:parentActivityName=".SettingsActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
+
+        <activity
+            android:name=".AuthLogActivity"
+            android:label="Request log"
+            android:theme="@style/Theme.Atlas.Settings"
+            android:exported="false"
+            android:parentActivityName=".SettingsActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
+
+        <activity
+            android:name=".AuthAccessActivity"
+            android:label="Access"
+            android:theme="@style/Theme.Atlas.Settings"
+            android:exported="false"
+            android:parentActivityName=".SettingsActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
+
+        <activity
+            android:name=".AuthBinsActivity"
+            android:label="Managed binaries"
             android:theme="@style/Theme.Atlas.Settings"
             android:exported="false"
             android:parentActivityName=".SettingsActivity"

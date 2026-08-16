@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.usbhid"
-    android:versionCode="220"
-    android:versionName="2.19-hid-profile-gestures">
+    android:versionCode="227"
+    android:versionName="2.25-sys-theme">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
     <!-- Titan2 framework API (pad / temp keymap / LED) -->
     <uses-permission android:name="com.titanus2.permission.USE_TITAN2_API" />
@@ -31,19 +31,23 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Hid.Pad">
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|screenLayout"
             android:windowSoftInputMode="adjustResize|stateHidden"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            android:theme="@style/Theme.Hid.Pad">
             <!-- Product: own launcher icon (separate app from Titan Controls). -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
             </intent-filter>
         </activity>
         <service
@@ -53,6 +57,19 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="hid_session_usb_bt" />
+        </service>
+        <service
+            android:name=".ShareTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_hid_share"
+            android:label="@string/qs_hid_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true"/>
         </service>
         <!-- Controls Computer actions → USB/BT HID (mouse + keys).
              No android:permission gate: senders already use setPackage/setClassName;

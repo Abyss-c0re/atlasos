@@ -172,7 +172,7 @@ public class MainActivity extends Activity {
         // Wireless ADB = classic :5555 for Tailscale/LTE/Wi‑Fi after opt-in —
         // not stock Settings "Wireless debugging".
         UiKit.navRow(root, "Developer",
-            "Auto Dev · Remote ADB · USB ADB · debug",
+            "Remote ADB · USB ADB · debug",
             () -> startActivity(new Intent(this, DevToolsActivity.class)));
         // LAW: every build stamps CHANGELOG → assets; hub must expose it.
         String verLine = "build";
@@ -185,6 +185,8 @@ public class MainActivity extends Activity {
         }
         UiKit.navRow(root, "Changelog", verLine,
             () -> startActivity(new Intent(this, ChangelogActivity.class)));
+        UiKit.navRow(root, "About", "AtlasOS · credits",
+            () -> startActivity(new Intent(this, AboutActivity.class)));
 
         // Mono fact: HW keyboard map for this hub (not marketing).
         TextView kbHint = UiKit.mono(root);

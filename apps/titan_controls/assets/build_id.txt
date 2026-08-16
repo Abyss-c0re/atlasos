@@ -1,4 +1,4 @@
-versionName=15.81-hub-clean
-versionCode=581
-built_utc=2026-08-14T16:27Z
+versionName=15.86-about
+versionCode=586
+built_utc=2026-08-16T10:02Z
 allow_root=0

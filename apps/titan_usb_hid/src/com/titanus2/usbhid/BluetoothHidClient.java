@@ -1461,12 +1461,11 @@ public final class BluetoothHidClient {
             else keyState.mods &= ~bit;
             return;
         }
-        // Soft typeText / keyTap: non-zero mod byte is absolute (Shift+A).
-        // Physical TitanKey path always sends mod=0 and drives sticky mods via
-        // e0–e7 usage events. Overwriting mods=0 on every letter wiped held
-        // Ctrl/Alt/Shift so BT hosts saw bare keys (or nothing useful with Sym).
-        if (mod != 0) {
-            keyState.mods = mod;
+        // Soft extra bits OR in (Shift+A). Never replace the mask — that
+        // dropped held physical/virtual Alt so Alt+Tab arrived as bare Tab.
+        // Releases go through e0–e7 (is_mod path above).
+        if (press && mod != 0) {
+            keyState.mods |= mod;
         }
         if (press) {
             for (int i = 0; i < 6; i++) if (keyState.keys[i] == (byte) usage) return;

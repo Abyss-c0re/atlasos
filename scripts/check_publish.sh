@@ -42,7 +42,7 @@ while IFS= read -r f; do
     ELF*)
       base=$(basename "$f")
       case "$base" in
-        atlas|atlas-*|ptyexec|su|sudo|hid_bridge|titan2-orient-rel|titan2-subpanel-bl|titan2-fw)
+        atlas|atlas-*|ptyexec|su|sudo|hid_bridge|openwrt-lpctl|titan2-*)
           ok "own ELF $f"
           ;;
         *)

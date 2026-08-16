@@ -8,7 +8,8 @@
  *
  * Discovers bins by scanning Android bin dirs — no hardcoded tool list.
  * Never execs the Bionic ELF in the Debian mount ns (empty binderfs).
- * Auth: plane files + atlas-auth when bio is on; a valid LP ticket skips.
+ * Auth: atlas-auth exec is the one lock (scoped ticket / strict). This binary
+ * is nsenter/elevate plumbing only — not a second ticket religion.
  * Exec: nsenter -t 1 if permitted, else enterd ELEVATE chroot=0 (init ns).
  */
 #include <dirent.h>
@@ -25,7 +26,7 @@
 #include <unistd.h>
 
 #ifndef ATLAS_VERSION
-#define ATLAS_VERSION "1.1.0-wrap"
+#define ATLAS_VERSION "1.1.7-policy"
 #endif
 
 static const char *BIN_DIRS[] = {
@@ -38,15 +39,10 @@ static const char *SOCKS[] = {
     NULL};
 
 static const char *AUTH_BINS[] = {
-    "/system/bin/atlas-auth",
     "/usr/local/bin/atlas-auth",
+    "/data/data/com.titanus2.atlas/files/bin/atlas-auth",
+    "/system/bin/atlas-auth",
     "/bin/atlas-auth",
-    NULL};
-
-static const char *TICKETS[] = {
-    "/var/lib/atlas-auth/ticket",
-    "/data/local/atlas-linux/var/lib/atlas-auth/ticket",
-    "/data/local/tmp/atlas_auth.ticket",
     NULL};
 
 static int blocked_name(const char *n) {
@@ -111,25 +107,140 @@ static int sandbox_on(void) {
   return plane_on(p) == 1;
 }
 
-/* Ticket must be "expiry ttl" (two fields). A lone epoch (forged date +%s) is invalid. */
-static int ticket_ok(void) {
-  long now = (long)time(NULL);
-  for (int i = 0; TICKETS[i]; i++) {
-    FILE *f = fopen(TICKETS[i], "r");
+static int auth_already_done(void) {
+  const char *d = getenv("ATLAS_AUTH_DONE");
+  return d && d[0] == '1';
+}
+
+#define POL_UNSET (-1)
+#define POL_DENY 0
+#define POL_ALLOW 1
+#define POL_ASK 2
+
+static int policy_parse_mode(const char *v) {
+  if (!v || !v[0]) return POL_UNSET;
+  if (v[0] == 'a' && v[1] == 'l') return POL_ALLOW;
+  if (v[0] == 'd' || v[0] == '0' || v[0] == 'b') return POL_DENY;
+  if (v[0] == 'a' && v[1] == 's') return POL_ASK;
+  if (v[0] == '1') return POL_ALLOW;
+  return POL_UNSET;
+}
+
+static int policy_lookup(const char *key) {
+  static const char *files[] = {
+      "/var/lib/atlas-auth/policy",
+      "/data/local/atlas-linux/var/lib/atlas-auth/policy",
+      "/data/misc/titan2/policy",
+      "/data/local/tmp/policy",
+      "/system/etc/atlas/policy",
+      NULL};
+  char line[256];
+  size_t klen = key ? strlen(key) : 0;
+  if (!klen) return POL_UNSET;
+  for (int i = 0; files[i]; i++) {
+    FILE *f = fopen(files[i], "r");
     if (!f) continue;
-    long exp = 0;
-    int ttl = 0;
-    int n = fscanf(f, "%ld %d", &exp, &ttl);
+    while (fgets(line, sizeof line, f)) {
+      if (line[0] == '#' || line[0] == '\n') continue;
+      if (strncmp(line, key, klen) != 0) continue;
+      if (line[klen] != '=') continue;
+      char *v = line + klen + 1;
+      while (*v == ' ' || *v == '\t') v++;
+      char *nl = strchr(v, '\n');
+      if (nl) *nl = 0;
+      fclose(f);
+      return policy_parse_mode(v);
+    }
     fclose(f);
-    if (n < 2 || ttl <= 0) continue;
-    if (exp > now && exp <= now + ttl + 5) return 1;
   }
+  return POL_UNSET;
+}
+
+static int policy_cmd(const char *name) {
+  if (!name) return POL_ASK;
+  char key[80];
+  snprintf(key, sizeof key, "cmd.%s", name);
+  int m = policy_lookup(key);
+  if (m != POL_UNSET) return m;
+  if (!strcmp(name, "getprop") || !strcmp(name, "dumpsys")) return POL_ALLOW;
+  m = policy_lookup("default");
+  return m != POL_UNSET ? m : POL_ASK;
+}
+
+static int policy_storage(void) {
+  int m = policy_lookup("storage");
+  if (m != POL_UNSET) return m;
+  static const char *p[] = {
+      "/var/lib/atlas-auth/titan2_atlas_storage",
+      "/data/local/tmp/titan2_atlas_storage", NULL};
+  int v = plane_on(p);
+  if (v == 1) return POL_ALLOW;
+  if (v == 0) return POL_DENY;
+  return POL_ASK;
+}
+
+static int android_path(const char *p) {
+  if (!p) return 0;
+  if (!strncmp(p, "/sdcard", 7) || !strncmp(p, "/storage/", 9)
+      || !strncmp(p, "/data/media/", 12) || !strncmp(p, "/data/user/", 11)
+      || !strncmp(p, "/data/data/", 11) || !strncmp(p, "/data/local/", 12))
+    return 1;
   return 0;
 }
 
-static int request_auth(const char *name) {
-  if (ticket_ok()) return 0;
-  if (!bio_want()) return 0;
+static int policy_path(const char *path, int wr) {
+  (void)wr;
+  if (!android_path(path)) return POL_ALLOW;
+  if (!strncmp(path, "/data/data/com.titanus2.atlas", 29)) return POL_ALLOW;
+  if (!strncmp(path, "/data/local/atlas-home", 22)) return POL_ALLOW;
+  if (!strncmp(path, "/data/local/tmp", 15)) return POL_ALLOW;
+  if (!strncmp(path, "/data/data/", 11)) return POL_DENY;
+  return policy_storage();
+}
+
+/* Fork-bomb / recurse only. Screencap is NOT special — it takes the same
+ * atlas-auth wrap as any other Android bin when bio Android access is on. */
+static int skip_auth_name(const char *name) {
+  const char *rec = getenv("ATLAS_AUTH_RECURSE");
+  if (rec && rec[0] == '1') return 1;
+  if (!name) return 0;
+  static const char *skip[] = {
+      "am", "cmd", "app_process", "app_process64",
+      "dumpsys", "getprop", "logcat",
+      NULL};
+  for (int i = 0; skip[i]; i++)
+    if (!strcmp(name, skip[i])) return 1;
+  return 0;
+}
+
+static int self_path(char *out, size_t n) {
+  ssize_t r = readlink("/proc/self/exe", out, n - 1);
+  if (r > 0) {
+    out[r] = 0;
+    return 0;
+  }
+  static const char *c[] = {
+      "/usr/local/libexec/atlas-android",
+      "/system/bin/atlas-android",
+      "/data/data/com.titanus2.atlas/files/bin/atlas-android",
+      NULL};
+  for (int i = 0; c[i]; i++) {
+    if (access(c[i], X_OK) == 0) {
+      snprintf(out, n, "%s", c[i]);
+      return 0;
+    }
+  }
+  return -1;
+}
+
+/* Policy allow → no wrap. deny is handled in main. ask → atlas-auth.
+ * am/cmd still skip wrap (fork-bomb). */
+static void wrap_through_auth(const char *scope, const char *name, char **rest) {
+  if (auth_already_done()) return;
+  if (skip_auth_name(scope) || skip_auth_name(name)) return;
+  int pol = policy_cmd(scope);
+  if (pol == POL_ALLOW) return;
+  if (pol != POL_ASK && !bio_want()) return;
   const char *auth = NULL;
   for (int i = 0; AUTH_BINS[i]; i++) {
     if (access(AUTH_BINS[i], X_OK) == 0) {
@@ -137,18 +248,23 @@ static int request_auth(const char *name) {
       break;
     }
   }
-  if (!auth) return 0;
-  char reason[128];
-  snprintf(reason, sizeof reason, "android %s", name);
-  pid_t p = fork();
-  if (p < 0) return -1;
-  if (p == 0) {
-    execl(auth, auth, "request", reason, (char *)NULL);
-    _exit(127);
-  }
-  int st = 0;
-  waitpid(p, &st, 0);
-  return WIFEXITED(st) ? WEXITSTATUS(st) : 1;
+  if (!auth) return;
+  char self[512];
+  if (self_path(self, sizeof self) != 0) return;
+  int nrest = 0;
+  while (rest && rest[nrest]) nrest++;
+  char *nargv[nrest + 10];
+  int k = 0;
+  nargv[k++] = (char *)auth;
+  nargv[k++] = "exec";
+  nargv[k++] = "--scope";
+  nargv[k++] = (char *)scope;
+  nargv[k++] = "--";
+  nargv[k++] = self;
+  nargv[k++] = (char *)name;
+  for (int i = 0; i < nrest; i++) nargv[k++] = rest[i];
+  nargv[k] = NULL;
+  execv(auth, nargv);
 }
 
 static int resolve_bin(const char *name, char *out, size_t n) {
@@ -404,17 +520,20 @@ int main(int argc, char **argv) {
   }
   const char *name;
   char **rest;
-  if (!strcmp(me, "atlas-screencap")) {
-    name = "screencap";
-    rest = argv + 1;
+  if (!strcmp(me, "atlas-screencap") || !strcmp(me, "screencap")
+      || !strcmp(me, "screenshot")) {
+    fprintf(stderr,
+            "atlas: screencap is not a Deb tool\n"
+            "use: android screencap -p $HOME/exports/x.png\n");
+    return 64;
   } else if (!strcmp(me, "atlas-android") || !strcmp(me, "android") ||
       !strcmp(me, "android-exec") || !strcmp(me, "android-run")) {
     if (argc < 2) {
       fprintf(stderr,
-              "usage: %s <tool|path> [args…]\n"
-              "       %s --list\n"
-              "same-name symlinks (screencap, am, …) wrap Android bins\n",
-              me, me);
+              "use: android <tool> [args]\n"
+              "     android cat|write|ls <android-path>\n"
+              "     android --list\n"
+              "Debian cannot see Android. This is the only bridge.\n");
       return 2;
     }
     name = argv[1];
@@ -438,6 +557,75 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  {
+    int pol = policy_cmd(name);
+    if (pol == POL_DENY) {
+      fprintf(stderr, "atlas-android: denied (%s)  policy=deny\n", name);
+      return 1;
+    }
+    for (int i = 0; rest && rest[i]; i++) {
+      if (!android_path(rest[i])) continue;
+      int wr = !strcmp(name, "write") || !strcmp(name, "rm")
+               || !strcmp(name, "setprop");
+      int pp = policy_path(rest[i], wr);
+      if (pp == POL_DENY) {
+        fprintf(stderr, "atlas-android: denied path %s\n", rest[i]);
+        return 1;
+      }
+      if (pp == POL_ASK) {
+        wrap_through_auth("fs", "fs", rest);
+        if (!auth_already_done() && policy_cmd("cat") == POL_ASK) {
+          fprintf(stderr, "atlas-android: path needs auth: android cat|write|ls\n");
+          return 1;
+        }
+      }
+    }
+  }
+
+  if (!strcmp(name, "cat") || !strcmp(name, "write") || !strcmp(name, "ls")) {
+    const char *path = (rest && rest[0]) ? rest[0] : NULL;
+    if (!path) {
+      fprintf(stderr, "use: android %s <android-path>\n", name);
+      return 2;
+    }
+    char mapped[512];
+    snprintf(mapped, sizeof mapped, "%s", path);
+    rewrite_home(mapped, sizeof mapped);
+    char *nargv[4];
+    if (!strcmp(name, "write")) {
+      nargv[0] = "/system/bin/tee";
+      nargv[1] = mapped;
+      nargv[2] = NULL;
+    } else if (!strcmp(name, "ls")) {
+      nargv[0] = "/system/bin/ls";
+      nargv[1] = mapped;
+      nargv[2] = NULL;
+    } else {
+      nargv[0] = "/system/bin/cat";
+      nargv[1] = mapped;
+      nargv[2] = NULL;
+    }
+    wrap_through_auth("fs", name, rest);
+    if (!auth_already_done() && policy_path(mapped, !strcmp(name, "write")) == POL_ASK) {
+      fprintf(stderr, "atlas-android: path needs auth\n");
+      return 1;
+    }
+    if (nsenter_ok()) {
+      char *ns[16];
+      int k = 0;
+      ns[k++] = "/system/bin/nsenter";
+      ns[k++] = "-t";
+      ns[k++] = "1";
+      ns[k++] = "-m";
+      ns[k++] = "--";
+      ns[k++] = nargv[0];
+      ns[k++] = nargv[1];
+      ns[k] = NULL;
+      execv(ns[0], ns);
+    }
+    return elevate_run(nargv);
+  }
+
   char real[512];
   if (resolve_bin(name, real, sizeof real) != 0) {
     fprintf(stderr, "atlas-android: %s: not an Android host binary\n", name);
@@ -450,10 +638,11 @@ int main(int argc, char **argv) {
     return 126;
   }
 
-  int ar = request_auth(base);
-  if (ar != 0) {
-    fprintf(stderr, "atlas-android: biometric denied for android %s\n", base);
-    return ar == 3 ? 3 : 1;
+  wrap_through_auth(base, name, rest);
+  if (!auth_already_done() && policy_cmd(base) == POL_ASK
+      && !skip_auth_name(base) && !skip_auth_name(name)) {
+    fprintf(stderr, "atlas-android: atlas-auth wrap failed for %s\n", base);
+    return 1;
   }
 
   int narg = 0;

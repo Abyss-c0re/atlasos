@@ -23,4 +23,15 @@ hardware, stock firmware, or LineageOS.
 - `patches/gsi_source` SERIES (SystemUI, sensor privacy, product mk)
 - Hybrid pack overlay for OEM vendor (IMS SAFE, camera, region) — not uploaded
 
-Credits stay in this file, never on-device UI.
+On-device subset: Titan Controls → About (names + links). Full map stays here.
+
+## Hive / agents
+
+| Name | Role |
+|------|------|
+| Abyss-c0re | Maintainer |
+| NexusCore | Station / offline core |
+| Hive Mind | Lab agents (`Dev/AGENTS.md`) |
+| Grok / Atlas agents | Implementation sessions (xAI) |
+
+Nanobot core (models / Grok host): [Abyss-c0re/nanobot](https://github.com/Abyss-c0re/nanobot). The on-device `apps/titan_nanobot` wrapper is unpublished (this tree).

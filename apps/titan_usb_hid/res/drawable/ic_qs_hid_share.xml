@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <!-- keyboard, not pad surface -->
+    <path android:fillColor="#FF000000"
+        android:pathData="M3,7h18v10H3V7zM5,9h2v2H5V9zM8,9h2v2H8V9zM11,9h2v2h-2V9zM14,9h2v2h-2V9zM17,9h2v2h-2V9zM5,12h14v2H5v-2zM7,15h10v1.4H7V15z"/>
+    <!-- side keys as mapped -->
+    <path android:fillColor="#FF000000"
+        android:pathData="M1,10h1.6v4H1zM21.4,10H23v4h-1.6z"/>
+</vector>

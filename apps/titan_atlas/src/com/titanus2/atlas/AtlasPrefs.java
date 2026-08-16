@@ -166,21 +166,36 @@ public final class AtlasPrefs {
      * Quiet after close is long enough for biometric sheet teardown + task switch.
      */
     public static void markAuthUi(Context c, boolean showing) {
-        long until = showing
-            ? Long.MAX_VALUE / 4
-            : System.currentTimeMillis() + 30_000L;
-        p(c).edit()
-            .putBoolean("auth_ui_showing", showing)
-            .putLong("auth_ui_quiet_until", until)
-            .commit();
-        if (!showing) {
-            // Auth just finished — never let a deferred ensure-flag kill the shell.
+        long now = System.currentTimeMillis();
+        if (showing) {
+            p(c).edit()
+                .putBoolean("auth_ui_showing", true)
+                .putLong("auth_ui_since", now)
+                .putLong("auth_ui_quiet_until", Long.MAX_VALUE / 4)
+                .commit();
+        } else {
+            p(c).edit()
+                .putBoolean("auth_ui_showing", false)
+                .putLong("auth_ui_since", 0L)
+                .putLong("auth_ui_quiet_until", now + 8_000L)
+                .commit();
             clearSessionRestart(c);
         }
     }
 
+    /** Stuck prompt (process death) must not block agents for minutes. */
+    public static boolean isAuthUiShowing(Context c) {
+        if (!p(c).getBoolean("auth_ui_showing", false)) return false;
+        long since = p(c).getLong("auth_ui_since", 0L);
+        if (since > 0L && System.currentTimeMillis() - since > 25_000L) {
+            markAuthUi(c, false);
+            return false;
+        }
+        return true;
+    }
+
     public static boolean isAuthUiQuietPeriod(Context c) {
-        if (p(c).getBoolean("auth_ui_showing", false)) return true;
+        if (isAuthUiShowing(c)) return true;
         return System.currentTimeMillis() < p(c).getLong("auth_ui_quiet_until", 0L);
     }
 
@@ -227,6 +242,257 @@ public final class AtlasPrefs {
         p(c).edit().putBoolean("biometric_auth", on).apply();
         publishBioPlane(c);
         publishPrivilegePlane(c);
+        publishAuthPolicy(c);
+    }
+
+    /**
+     * Strict: biometric (when master bio is on) on every privileged call.
+     * Disables ticket TTL. No command may inherit another command's grant.
+     */
+    public static boolean authStrict(Context c) {
+        return p(c).getBoolean("auth_strict", false);
+    }
+
+    public static void setAuthStrict(Context c, boolean on) {
+        p(c).edit().putBoolean("auth_strict", on).apply();
+        publishAuthPolicy(c);
+    }
+
+    /** Ticket lifetime seconds when not strict. 0 = every call. Max 1800. */
+    public static final int[] TICKET_TTL_CHOICES = {0, 30, 60, 300, 900, 1800};
+
+    public static int ticketTtlSec(Context c) {
+        if (authStrict(c)) return 0;
+        return Math.max(0, Math.min(1800, p(c).getInt("ticket_ttl_sec", 60)));
+    }
+
+    public static void setTicketTtlSec(Context c, int sec) {
+        p(c).edit().putInt("ticket_ttl_sec", Math.max(0, Math.min(1800, sec))).apply();
+        publishAuthPolicy(c);
+    }
+
+    public static String ticketTtlLabel(int sec) {
+        if (sec <= 0) return "every call";
+        if (sec < 60) return sec + "s";
+        if (sec % 60 == 0) {
+            int m = sec / 60;
+            return m == 1 ? "1 min" : m + " min";
+        }
+        return sec + "s";
+    }
+
+    public static int ticketTtlChoiceIndex(int sec) {
+        int best = 0;
+        int diff = Integer.MAX_VALUE;
+        for (int i = 0; i < TICKET_TTL_CHOICES.length; i++) {
+            int d = Math.abs(TICKET_TTL_CHOICES[i] - sec);
+            if (d < diff) {
+                diff = d;
+                best = i;
+            }
+        }
+        return best;
+    }
+
+    /** Publish strict + TTL for native atlas-auth (one wrap). */
+    public static void publishAuthPolicy(Context c) {
+        String strict = authStrict(c) ? "1" : "0";
+        String ttl = String.valueOf(ticketTtlSec(c));
+        String[][] keys = {
+            { "titan2_atlas_auth_strict", strict },
+            { "titan2_atlas_ticket_ttl", ttl },
+        };
+        String[] roots = {
+            "/data/local/tmp",
+            "/data/misc/titan2",
+            NativeBin.AUTH_ON_LP,
+        };
+        for (String root : roots) {
+            java.io.File dir = new java.io.File(root);
+            //noinspection ResultOfMethodCallIgnored
+            dir.mkdirs();
+            for (String[] kv : keys) {
+                writePlaneLine(new java.io.File(dir, kv[0]), kv[1]);
+            }
+        }
+        writePlaneLine(new java.io.File("/data/local/tmp/titan2_atlas_auth_policy"),
+            "strict=" + strict + "\nttl=" + ttl + "\nblanket=0\n");
+        publishManagedBins(c);
+        AtlasPolicy.publish(c);
+    }
+
+    /** Built-in wraps — shown in Settings, not user-removable. */
+    public static final String[] BUILTIN_MANAGED = {
+        "sudo", "su", "apt", "screencap"
+    };
+
+    public static final String[] MANAGED_SUGGESTIONS = {
+        "dumpsys", "iptables", "tcpdump", "setprop", "logcat", "ip"
+    };
+
+    public static final class ManagedBin {
+        public final String name;
+        public final String path;
+        public final boolean builtin;
+
+        public ManagedBin(String name, String path, boolean builtin) {
+            this.name = name;
+            this.path = path != null ? path : "";
+            this.builtin = builtin;
+        }
+    }
+
+    public static java.util.List<ManagedBin> managedBins(Context c) {
+        java.util.ArrayList<ManagedBin> out = new java.util.ArrayList<>();
+        java.util.Set<String> names = p(c).getStringSet("managed_bins",
+            java.util.Collections.emptySet());
+        if (names != null) {
+            java.util.ArrayList<String> sorted = new java.util.ArrayList<>(names);
+            java.util.Collections.sort(sorted);
+            for (String line : sorted) {
+                if (line == null || line.isEmpty()) continue;
+                int eq = line.indexOf('=');
+                String name = eq > 0 ? line.substring(0, eq) : line;
+                String path = eq > 0 ? line.substring(eq + 1) : "";
+                name = AtlasAuth.sanitizeScope(name);
+                if (name.isEmpty() || isBuiltinManaged(name)) continue;
+                out.add(new ManagedBin(name, path, false));
+            }
+        }
+        return out;
+    }
+
+    public static int managedBinCount(Context c) {
+        return managedBins(c).size();
+    }
+
+    public static boolean isBuiltinManaged(String name) {
+        if (name == null) return false;
+        String n = AtlasAuth.sanitizeScope(name);
+        for (String b : BUILTIN_MANAGED) {
+            if (b.equals(n)) return true;
+        }
+        return false;
+    }
+
+    public static boolean isReservedManaged(String name) {
+        if (name == null) return true;
+        String n = AtlasAuth.sanitizeScope(name);
+        if (n.isEmpty() || "ask".equals(n) || "exec".equals(n)) return true;
+        String[] bad = {
+            "atlas-auth", "atlas-android", "atlas-sudo", "atlas",
+            "atlas-wrap", "atlas-managed",
+            "am", "cmd", "app_process", "app_process64",
+            "sh", "bash", "login", "su", "sudo", "apt", "screencap"
+        };
+        for (String b : bad) {
+            if (b.equals(n)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Add a user-managed binary. {@code spec} is a name ({@code tcpdump}) or
+     * absolute path. Returns null on success, else a short error.
+     */
+    public static String addManagedBin(Context c, String spec) {
+        if (spec == null) return "empty";
+        spec = spec.trim();
+        if (spec.isEmpty()) return "empty";
+        String name;
+        String path;
+        if (spec.startsWith("/")) {
+            name = AtlasAuth.sanitizeScope(spec);
+            path = spec;
+        } else {
+            name = AtlasAuth.sanitizeScope(spec);
+            path = resolveManagedPath(spec);
+        }
+        if (isBuiltinManaged(name)) return "already managed";
+        if (isReservedManaged(name)) return "reserved";
+        if (path == null || path.isEmpty()) path = resolveManagedPath(name);
+        if (path == null || path.isEmpty()) return "not found";
+        java.io.File f = new java.io.File(path);
+        if (!f.isFile()) return "not found";
+        java.util.LinkedHashSet<String> next = new java.util.LinkedHashSet<>();
+        java.util.Set<String> cur = p(c).getStringSet("managed_bins",
+            java.util.Collections.emptySet());
+        if (cur != null) {
+            for (String line : cur) {
+                if (line == null) continue;
+                int eq = line.indexOf('=');
+                String n = AtlasAuth.sanitizeScope(eq > 0 ? line.substring(0, eq) : line);
+                if (!n.equals(name)) next.add(line);
+            }
+        }
+        next.add(name + "=" + path);
+        p(c).edit().putStringSet("managed_bins", next).apply();
+        publishManagedBins(c);
+        NativeBin.installManagedWraps(c);
+        return null;
+    }
+
+    public static void removeManagedBin(Context c, String name) {
+        name = AtlasAuth.sanitizeScope(name);
+        if (name.isEmpty() || isBuiltinManaged(name)) return;
+        java.util.LinkedHashSet<String> next = new java.util.LinkedHashSet<>();
+        java.util.Set<String> cur = p(c).getStringSet("managed_bins",
+            java.util.Collections.emptySet());
+        if (cur != null) {
+            for (String line : cur) {
+                if (line == null) continue;
+                int eq = line.indexOf('=');
+                String n = AtlasAuth.sanitizeScope(eq > 0 ? line.substring(0, eq) : line);
+                if (!n.equals(name)) next.add(line);
+            }
+        }
+        p(c).edit().putStringSet("managed_bins", next).apply();
+        publishManagedBins(c);
+        NativeBin.removeManagedWrap(c, name);
+        NativeBin.installManagedWraps(c);
+    }
+
+    public static String resolveManagedPath(String name) {
+        if (name == null || name.isEmpty()) return null;
+        if (name.startsWith("/")) {
+            java.io.File f = new java.io.File(name);
+            return f.isFile() ? name : null;
+        }
+        String[] dirs = {
+            NativeBin.LP_MNT + "/usr/local/sbin",
+            NativeBin.LP_MNT + "/usr/local/bin",
+            NativeBin.LP_MNT + "/usr/sbin",
+            NativeBin.LP_MNT + "/usr/bin",
+            NativeBin.LP_MNT + "/sbin",
+            NativeBin.LP_MNT + "/bin",
+            "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin",
+            "/sbin", "/bin",
+            "/system/bin", "/system/xbin", "/system_ext/bin",
+            "/product/bin", "/vendor/bin",
+        };
+        for (String d : dirs) {
+            java.io.File f = new java.io.File(d, name);
+            if (f.isFile()) return f.getAbsolutePath();
+        }
+        return null;
+    }
+
+    public static void publishManagedBins(Context c) {
+        StringBuilder body = new StringBuilder();
+        for (ManagedBin b : managedBins(c)) {
+            if (b.name == null || b.name.isEmpty() || b.path == null || b.path.isEmpty())
+                continue;
+            body.append(b.name).append(' ').append(b.path).append('\n');
+        }
+        String text = body.toString();
+        String[] roots = {
+            "/data/local/tmp",
+            "/data/misc/titan2",
+            NativeBin.AUTH_ON_LP,
+        };
+        for (String root : roots) {
+            writePlaneLine(new java.io.File(root, "managed.bins"), text);
+        }
     }
 
     /**
@@ -244,6 +510,7 @@ public final class AtlasPrefs {
 
     /** Raw bio toggle for Android access (UI); effective only if biometricAuth. */
     public static boolean bioAndroidAccessPref(Context c) {
+        /* Observe (screencap) must flow. Default off — sudo/wipe still gated. */
         return p(c).getBoolean("bio_android_access", false);
     }
 
@@ -348,6 +615,7 @@ public final class AtlasPrefs {
             "android_access=" + a + "\ndebian_sudo=" + d + "\nandroid_su=" + s + "\n");
         // Keep bio plane in sync so android_auth never stays stale "1" after privilege publish
         publishBioPlane(c);
+        publishAuthPolicy(c);
     }
 
     /**

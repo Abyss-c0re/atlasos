@@ -4,8 +4,6 @@
     <string name="access_desc">Remaps side keys and pad mode. Does not read screen content.</string>
     <string name="qs_pad_tile_label">Pad</string>
     <string name="qs_pad_tile_desc">Off / Trackpad / Mouse</string>
-    <string name="qs_auto_dev_label">Auto Dev</string>
-    <string name="qs_auto_dev_desc">Off until bio</string>
     <string name="qs_camera_privacy_label">Camera</string>
     <string name="qs_mic_privacy_label">Microphone</string>
     <string name="qs_torch_label">Flashlight</string>

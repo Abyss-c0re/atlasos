@@ -64,10 +64,10 @@ fi
 if [ -f "$USB" ]; then
   v=$(apk_ver "$USB" || true)
   code=${v%% *}; name=${v#* }
-  if [ -n "$code" ] && [ "$code" -ge 218 ] 2>/dev/null && [[ "$name" == 2.17* || "$name" == 2.1[89]* ]]; then
+  if [ -n "$code" ] && [ "$code" -ge 218 ] 2>/dev/null && [[ "$name" == 2.1[7-9]* || "$name" == 2.2* ]]; then
     ok "TitanUsbHid tip $v"
   else
-    bad "TitanUsbHid tip want ≥218/2.17* got '$v' ($USB)"
+    bad "TitanUsbHid tip want ≥218/2.17+ got '$v' ($USB)"
   fi
 else
   bad "missing TitanUsbHid.apk"

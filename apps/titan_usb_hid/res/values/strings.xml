@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">HID</string>
+    <string name="qs_hid_label">HID</string>
+    <string name="qs_hid_excl">Exclusive</string>
+    <string name="qs_hid_share">Share</string>
 </resources>

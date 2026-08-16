@@ -40,4 +40,6 @@ third_party/titan2-touchpadd/patches
 
 # App/package compile scraps — never product
 packages/*/out/
+apps/titan_atlas/assets/bin/libatlaspty.so
+apps/titan_atlas/assets/bin/libatlasterm.so
 *.idsig

@@ -161,34 +161,80 @@ restore_config() {
   log "restore done config=$(getprop sys.usb.config) state=$(getprop sys.usb.state) tcp=$(getprop service.adb.tcp.port) hidg0=$([ -e /dev/hidg0 ] && echo y || echo n)"
 }
 
-# Product Remote ADB (Controls → Developer). USB gadget on/off stops adbd;
-# persist alone does not reopen :5555 on this stack. Re-apply if desired.
-# Never pin_usb here — exclusive HID owns the gadget during session.
-# Never require biometrics (already gated at first ON).
-ensure_tcp_adb() {
-  d=
+# Wireless ADB must survive HID. USB gadget bounce stops adbd; persist alone
+# does not reopen :5555 on this MTK stack. Keep an already-armed TCP port
+# (props / listen / hid_tcp_keep / desire / lab). Never invent ON on ship
+# images. Never rewrite sys.usb.config here — HID owns the gadget.
+TCP_KEEP=/data/misc/titan2/hid_tcp_keep
+
+valid_tcp_port() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$1" -ge 1024 ] 2>/dev/null && [ "$1" -le 65535 ] 2>/dev/null
+}
+
+tcp_already() {
+  for p in \
+    "$(getprop persist.adb.tcp.port 2>/dev/null | tr -d '\r\n ')" \
+    "$(getprop service.adb.tcp.port 2>/dev/null | tr -d '\r\n ')" \
+    "$(tr -d '\r\n ' <"$TCP_KEEP" 2>/dev/null)" \
+    "$(tr -d '\r\n ' </data/misc/titan2/remote_adb_port 2>/dev/null)"
+  do
+    valid_tcp_port "$p" && { echo "$p"; return 0; }
+  done
+  if ss -ltn 2>/dev/null | grep -qE '[:.]5555[[:space:]]|:5555$'; then
+    echo 5555
+    return 0
+  fi
+  return 1
+}
+
+want_tcp() {
   if [ -f /data/misc/titan2/remote_adb.desire ]; then
     d=$(tr -d '\r\n ' </data/misc/titan2/remote_adb.desire 2>/dev/null)
-  elif [ -f /data/misc/titan2/wireless_adb_wanted ]; then
-    d=on
+    [ "$d" = "on" ] && return 0
   fi
-  if [ "$d" != "on" ]; then
-    log "ensure_tcp_adb: skip (desire=${d:-off})"
+  [ -f /data/misc/titan2/wireless_adb_wanted ] && return 0
+  [ -f "$TCP_KEEP" ] && return 0
+  tcp_already >/dev/null && return 0
+  lab_wants_adb && return 0
+  return 1
+}
+
+snap_tcp_keep() {
+  p=$(tcp_already) || {
+    if lab_wants_adb; then
+      p=5555
+    else
+      return 0
+    fi
+  }
+  mkdir -p /data/misc/titan2 2>/dev/null || true
+  printf '%s\n' "$p" >"$TCP_KEEP" 2>/dev/null || true
+  chmod 666 "$TCP_KEEP" 2>/dev/null || true
+  log "snap_tcp_keep port=$p"
+}
+
+ensure_tcp_adb() {
+  if ! want_tcp; then
+    log "ensure_tcp_adb: skip (no keep, no desire, no persist)"
     return 0
   fi
-  port=5555
-  if [ -f /data/misc/titan2/remote_adb_port ]; then
-    p=$(tr -d '\r\n ' </data/misc/titan2/remote_adb_port 2>/dev/null)
-    case "$p" in [1-9]*[0-9]|[1-9][0-9][0-9][0-9]) port=$p ;; esac
-  fi
-  if ss -ltn 2>/dev/null | grep -qE "[:.]${port}[[:space:]]|:${port}\$"; then
-    log "ensure_tcp_adb: already :$port"
-    return 0
-  fi
+  port=$(tcp_already) || port=5555
+  valid_tcp_port "$port" || port=5555
+  mkdir -p /data/misc/titan2 2>/dev/null || true
+  printf '%s\n' "$port" >"$TCP_KEEP" 2>/dev/null || true
+  chmod 666 "$TCP_KEEP" 2>/dev/null || true
+  # Never pin_usb / sys.usb.config — that tore down titan_hid.
   settings put global adb_enabled 1 2>/dev/null || true
   settings put global development_settings_enabled 1 2>/dev/null || true
   setprop persist.adb.tcp.port "$port" 2>/dev/null || true
   setprop service.adb.tcp.port "$port" 2>/dev/null || true
+  if ss -ltn 2>/dev/null | grep -qE "[:.]${port}[[:space:]]|:${port}\$"; then
+    log "ensure_tcp_adb: already :$port"
+    return 0
+  fi
   setprop ctl.restart adbd 2>/dev/null || true
   i=0
   while [ "$i" -lt 16 ]; do
@@ -382,7 +428,8 @@ attach_once() {
 
 do_on() {
   [ -d "$G" ] || { log "no $G"; return 1; }
-  # Lab: keep a non-USB adb channel before pure-HID steals the port
+  # Snapshot TCP before gadget steal — bounce clears service.adb.tcp.port.
+  snap_tcp_keep
   ensure_tcp_adb
   own_config
 

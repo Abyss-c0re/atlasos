@@ -21,12 +21,14 @@ Not Cube-certified until those gates pass on a wiped image.
 ## Build (standalone)
 
 ```bash
-git clone <this-repo> AtlasOS && cd AtlasOS
+git clone https://github.com/Abyss-c0re/AtlasOS.git AtlasOS && cd AtlasOS
 ./scripts/bootstrap.sh                 # repo init/sync Lineage + MisterZtr + our SERIES
 ./scripts/build.sh --flavor vanilla    # GSI; mouse driver compiled in (not inject)
 ./scripts/build.sh --flavor microg     # + fetched microG (not in git)
 ./scripts/build.sh --flavor gapps      # MisterZtr bgN4 lunch, if the tree has it
 ```
+
+What you must fetch yourself: [`DEPENDENCIES.md`](DEPENDENCIES.md).
 
 The Android tree is **local** (`.links/lineage`, gitignored). Tens of GB.
 

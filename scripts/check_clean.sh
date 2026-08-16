@@ -8,16 +8,21 @@ bad() { echo "BAD $*"; ec=1; }
 
 cd "$ROOT"
 
-# Trees that must never live in this git
-for p in \
-  misterztr_lineage lineage .repo \
-  gsi/*.img firmware out/*.img \
-  '*.tar.gz' debian-*-rootfs.tar.gz
+# Trees / blobs that must never be tracked. Gitignored local cook output
+# (gsi/*.img after export, out/*.img) is expected on a working clone.
+for p in misterztr_lineage lineage .repo firmware '*.tar.gz' debian-*-rootfs.tar.gz
 do
-  if compgen -G "$p" >/dev/null 2>&1; then
+  if [ -e "$p" ] || compgen -G "$p" >/dev/null 2>&1; then
     bad "forbidden path present: $p"
   fi
 done
+if [ -d .git ]; then
+  if git ls-files -- 'gsi/*.img' 'gsi/*.img.gz' 'out/*.img' | grep -q .; then
+    bad "GSI / super image tracked in git"
+  else
+    ok "no tracked GSI / super images"
+  fi
+fi
 
 if [ -d .git ]; then
   if git ls-files --error-unmatch '*.apk' >/dev/null 2>&1; then
