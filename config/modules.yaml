@@ -15,10 +15,9 @@ modules:
     ssh: ssh://git@gitea-ssh.angry.im:2222/Abyss-c0re/titan2-touchpadd.git
     upstream: https://gitea.angry.im/PeterGSI/titan2-touchpadd.git
     ref: main
-    status: overlay
+    status: submodule
     reusable: true
-    overlay: third_party/titan2-touchpadd/idc
-    note: Public GitHub remote. Gitea SSH is gitea-ssh.angry.im:2222 (not Cloudflare :22). ELF built locally (not in git).
+    note: Git submodule. Build pulls this SHA, compiles musl, packs the ELF into the GSI. ELF is not in git.
 
   - name: openeuicc
     role: eSIM LPA

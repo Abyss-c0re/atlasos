@@ -11,7 +11,7 @@ You compile those locally.
 | Unihertz stock zip | your device region | `STOCK_ZIP=` for hybrid super — never committed |
 | microG APKs | flavor `microg` | `./packages/microg/fetch.sh` |
 | OpenEUICC APK | eSIM | `./third_party/openeuicc/fetch.sh` |
-| `titan2-touchpadd` ELF | pad/mouse | `./scripts/build_touchpadd.sh` (source: Abyss-c0re fork) |
+| `titan2-touchpadd` | pad/mouse | `git submodule update --init` then `./scripts/build_touchpadd.sh` |
 | Debian rootfs | Atlas hybrid | `packages/titan_atlas` `build_debian_rootfs.sh` |
 | Android NDK + SDK | Atlas / Controls APKs | `apps/*/build.sh` |
 
@@ -21,7 +21,7 @@ You compile those locally.
 |---------|--------|----------------|
 | MisterZtr GSI recipe | https://github.com/MisterZtr/LineageOS_gsi | no (clone) |
 | LineageOS | https://github.com/LineageOS | no (repo sync) |
-| titan2-touchpadd | https://github.com/Abyss-c0re/titan2-touchpadd | overlay + patches; ELF rebuilt |
+| titan2-touchpadd | https://github.com/Abyss-c0re/titan2-touchpadd | **submodule** `third_party/titan2-touchpadd`; ELF packed at build |
 | OpenEUICC | https://gitea.angry.im/PeterCxy/OpenEUICC | fetch APK |
 | nanobot (models) | https://github.com/Abyss-c0re/nanobot | **published separately** |
 | Termux emulator | https://github.com/termux/termux-app | vendored `apps/titan_atlas/src/com/termux/` |

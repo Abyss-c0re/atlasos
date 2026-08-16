@@ -1,7 +1,7 @@
 // Prebuilt touchpadd for MisterZtr systemimage (OPTIMIZE Phase 1.5).
 // AtlasOS: stage into the tree, then m systemimage. Not hybrid inject.
 // Confirmed Mouse Mode: INPROC_PARK + pad-only + titan2-virtual-mouse.
-// SoT binary: third_party/titan2-touchpadd/bin/titan2-touchpadd
+// SoT source: third_party/titan2-touchpadd (git submodule). ELF packed here at build.
 // IDC: PRODUCT_COPY_FILES in titanus2.mk → /system/usr/idc
 // Stage: ./scripts/misterztr/stage_gsi_product.sh → vendor/titanus2/prebuilts/…
 

@@ -19,7 +19,7 @@ inject.
 | USB HID stack | `packages/titan_usb_hid_system/` + `hid_bridge` | `prebuilt_usb_hid/` (gadget + init; **not** coupled to APK inject) |
 | Sysbins | pad-agent, peels, ims-setup, **sensor-privacy** | `prebuilt_sysbin/` — **ims-setup never forces location**; **sensor-privacy v13+ never revokes Hostless_Spk_Init/FM** |
 | CubeContact | `apps/cube_contact/` | priv-app |
-| titan2-touchpadd | `third_party/titan2-touchpadd/bin/` | `/system/bin` + init.rc |
+| titan2-touchpadd | submodule `third_party/titan2-touchpadd/` → packed `prebuilt_touchpadd/` | `/system/bin` + init.rc |
 | TitanAtlas | `apps/titan_atlas/` + `packages/titan_atlas/` | priv-app + hybrid scripts + boot mount |
 | TitanNanobot (opt) | `apps/titan_nanobot/` | optional PRODUCT_PACKAGES |
 

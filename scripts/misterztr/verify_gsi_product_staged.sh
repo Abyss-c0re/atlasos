@@ -24,7 +24,7 @@ DEST_PRE="$MISTERZTR_TREE/vendor/titanus2/prebuilts/titan2-touchpadd"
 DEST_APPS="$MISTERZTR_TREE/vendor/titanus2/prebuilts/apps"
 DEST_MK="$MISTERZTR_TREE/device/phh/treble/titanus2.mk"
 BVN4="$MISTERZTR_TREE/device/phh/treble/lineage_arm64_bvN4.mk"
-SRC_BIN="$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd"
+SRC_BIN="$ROOT/packages/gsi_product/prebuilt_touchpadd/titan2-touchpadd"
 
 [ -x "$DEST_PRE/titan2-touchpadd" ] && ok "staged binary $DEST_PRE/titan2-touchpadd" || bad "missing staged binary"
 [ -f "$DEST_PRE/Android.bp" ] && ok "staged Android.bp" || bad "missing Android.bp"
@@ -115,7 +115,7 @@ if [ -x "$SRC_BIN" ] && [ -x "$DEST_PRE/titan2-touchpadd" ]; then
   if grep -aF 'Skipping TitanKey (KEYBOARD_FEATURES off)' "$DEST_PRE/titan2-touchpadd" >/dev/null 2>&1; then
     ok "staged binary has pad-only (KEYBOARD_FEATURES off)"
   else
-    bad "staged binary missing pad-only marker — rebuild third_party/titan2-touchpadd/patches"
+    bad "staged binary missing pad-only marker — ./scripts/build_touchpadd.sh"
   fi
   if grep -aF 'titan2-virtual-mouse' "$DEST_PRE/titan2-touchpadd" >/dev/null 2>&1; then
     ok "staged binary has titan2-virtual-mouse"

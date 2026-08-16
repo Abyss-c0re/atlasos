@@ -94,10 +94,8 @@ if [ "$WITH_GAPPS" = "1" ]; then
   fi
 fi
 
-if [ ! -x "$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd" ]; then
-  info "building titan2-touchpadd (musl)"
-  "$ROOT/scripts/build_touchpadd.sh"
-fi
+info "pull titan2-touchpadd submodule, compile, pack into GSI prebuilt"
+"$ROOT/scripts/build_touchpadd.sh"
 "$ROOT/scripts/check_clean.sh"
 
 # Mouse driver: patch/stage the Lineage tree, then compile it into systemimage.

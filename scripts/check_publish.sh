@@ -27,10 +27,15 @@ if echo "$tracked" | grep -qx 'apps/titan_atlas/assets/bin/quest-usbip-host'; th
 else
   ok "no quest-usbip-host ELF"
 fi
-if echo "$tracked" | grep -qx 'third_party/titan2-touchpadd/bin/titan2-touchpadd'; then
-  bad "touchpadd ELF tracked — rebuild from patches, do not upload prebuilt"
+if echo "$tracked" | grep -qE 'titan2-touchpadd/bin/titan2-touchpadd$|prebuilt_touchpadd/titan2-touchpadd$'; then
+  bad "touchpadd ELF tracked — pull submodule and rebuild, do not upload the binary"
 else
   ok "no touchpadd ELF"
+fi
+if ! echo "$tracked" | grep -qx 'third_party/titan2-touchpadd'; then
+  bad "titan2-touchpadd submodule not recorded"
+else
+  ok "titan2-touchpadd submodule recorded"
 fi
 
 # Tracked ELF must be ours (NDK pie from our .c) or have a sibling .c

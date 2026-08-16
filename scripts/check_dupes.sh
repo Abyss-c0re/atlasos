@@ -19,7 +19,6 @@ roots = [
     A / "packages/titan_atlas/scripts",
     A / "apps/titan_atlas/assets/bin",
     A / "packages/gsi_product/prebuilt_touchpadd",
-    A / "third_party/titan2-touchpadd/bin",
     W / "packages/magisk_titan2_pad_agent/system/bin",
     W / "packages/magisk_titan2_atlas_hybrid/system/bin",
     W / "packages/magisk_titan2_touchpadd/system/bin",

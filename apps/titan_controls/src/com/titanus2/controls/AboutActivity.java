@@ -52,6 +52,8 @@ public class AboutActivity extends Activity {
             "https://github.com/phhusson");
         link(root, "PeterGSI touchpadd", "original pad driver — we fork",
             "https://gitea.angry.im/PeterGSI/titan2-touchpadd");
+        link(root, "Abyss-c0re touchpadd", "product fork (submodule)",
+            "https://github.com/Abyss-c0re/titan2-touchpadd");
         link(root, "PeterCxy OpenEUICC", "GPL-3.0 eSIM",
             "https://gitea.angry.im/PeterCxy/OpenEUICC");
         link(root, "Termux", "GPLv3 terminal emulator",

@@ -9,7 +9,7 @@ atlasos/                          PRODUCT SoT (this git)
   patches/keylayout|idc           TitanKey + pad
   packages/titan_atlas/native/    Atlas C sources
   packages/gsi_product/           Soong wrappers (Android.bp / mk) — files are links
-  third_party/titan2-touchpadd/   pad ELF + patches
+  third_party/titan2-touchpadd/   git submodule (Abyss-c0re/titan2-touchpadd)
 
 titanus2/                         optional lab workshop
   product → ../atlasos

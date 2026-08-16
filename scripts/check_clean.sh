@@ -65,10 +65,14 @@ fi
 [ -f patches/gsi_source/SERIES ] && ok "gsi_source SERIES present" || bad "missing SERIES"
 [ -d apps/titan_controls ] && ok "Titan Controls present" || bad "missing Controls"
 [ -d apps/titan_atlas ] && ok "Atlas present" || bad "missing Atlas"
-if [ -f third_party/titan2-touchpadd/src/pause.rs ] || [ -f third_party/titan2-touchpadd/checkout/src/pause.rs ]; then
-  ok "touchpadd source linked (pause.rs)"
+if [ -f third_party/titan2-touchpadd/src/pause.rs ] && [ -f third_party/titan2-touchpadd/Cargo.toml ]; then
+  if [ -f third_party/titan2-touchpadd/.git ] || [ -d third_party/titan2-touchpadd/.git ]; then
+    ok "touchpadd submodule $(git -C third_party/titan2-touchpadd rev-parse --short HEAD 2>/dev/null || echo '?')"
+  else
+    bad "touchpadd source present but not a submodule — git submodule update --init"
+  fi
 else
-  bad "touchpadd source not linked — run third_party/titan2-touchpadd/fetch.sh"
+  bad "touchpadd submodule missing — git submodule update --init"
 fi
 [ -f NOTICE.md ] && ok "NOTICE.md present" || bad "missing NOTICE.md"
 

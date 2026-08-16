@@ -1,35 +1,19 @@
 #!/usr/bin/env bash
-# Push titan2-touchpadd to GitHub and Gitea (gitea-ssh.angry.im:2222).
-# Finds the product checkout, then runs scripts/push_both.sh there.
+# Push the titan2-touchpadd submodule to GitHub (and Gitea if configured).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SRC="$ROOT/third_party/titan2-touchpadd"
 info() { echo "==> $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-src_candidates() {
-  local d
-  for d in \
-    "${TITAN2_TOUCHPADD_SRC:-}" \
-    "$ROOT/third_party/titan2-touchpadd/checkout" \
-    "$ROOT/.links/upstream/titan2-touchpadd" \
-    "$HOME/Dev/titanus2-artifacts/titan2-touchpadd"
-  do
-    [ -n "$d" ] && [ -d "$d/.git" ] && [ -f "$d/Cargo.toml" ] && printf '%s\n' "$d" && return 0
-  done
-  return 1
-}
+[ -d "$SRC/.git" ] || [ -f "$SRC/.git" ] || die "submodule missing — git submodule update --init"
+[ -f "$SRC/Cargo.toml" ] || die "not a touchpadd checkout: $SRC"
+info "checkout $SRC @ $(git -C "$SRC" rev-parse --short HEAD)"
 
-SRC="$(src_candidates || true)"
-if [ -z "$SRC" ]; then
-  info "no checkout — fetch"
-  "$ROOT/third_party/titan2-touchpadd/fetch.sh"
-  SRC="$(src_candidates || true)"
+if [ -x "$SRC/scripts/push_both.sh" ]; then
+  exec "$SRC/scripts/push_both.sh" "$@"
 fi
-[ -n "$SRC" ] || die "no titan2-touchpadd checkout (set TITAN2_TOUCHPADD_SRC=)"
-
-PUSH="$SRC/scripts/push_both.sh"
-if [ ! -x "$PUSH" ]; then
-  die "missing $PUSH — update the checkout"
+git -C "$SRC" push origin HEAD
+if git -C "$SRC" remote get-url gitea >/dev/null 2>&1; then
+  git -C "$SRC" push gitea HEAD
 fi
-info "checkout $SRC"
-exec "$PUSH" "$@"

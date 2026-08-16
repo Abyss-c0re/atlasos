@@ -1,35 +1,19 @@
 #!/usr/bin/env bash
-# Build titan2-touchpadd (Abyss-c0re fork) the AtlasOS way: musl aarch64.
-# Installs third_party/titan2-touchpadd/bin/titan2-touchpadd (gitignored).
+# Pull the titan2-touchpadd submodule and pack a musl aarch64 ELF into the GSI.
+# Source SoT: https://github.com/Abyss-c0re/titan2-touchpadd (git submodule).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN_DIR="$ROOT/third_party/titan2-touchpadd/bin"
-OUT="$BIN_DIR/titan2-touchpadd"
+SRC="$ROOT/third_party/titan2-touchpadd"
+PRE="$ROOT/packages/gsi_product/prebuilt_touchpadd/titan2-touchpadd"
 info() { echo "==> $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-src_candidates() {
-  local d
-  for d in \
-    "${TITAN2_TOUCHPADD_SRC:-}" \
-    "$ROOT/third_party/titan2-touchpadd/checkout" \
-    "$ROOT/.links/upstream/titan2-touchpadd" \
-    "$HOME/Dev/titanus2-artifacts/titan2-touchpadd"
-  do
-    [ -n "$d" ] && [ -f "$d/Cargo.toml" ] && [ -d "$d/src" ] && printf '%s\n' "$d" && return 0
-  done
-  return 1
-}
-
-SRC="$(src_candidates || true)"
-if [ -z "$SRC" ]; then
-  info "no checkout — fetch Abyss-c0re fork"
-  "$ROOT/third_party/titan2-touchpadd/fetch.sh"
-  SRC="$(src_candidates || true)"
-fi
-[ -n "$SRC" ] || die "no titan2-touchpadd checkout (set TITAN2_TOUCHPADD_SRC=)"
-[ -f "$SRC/src/pause.rs" ] || die "checkout missing pause.rs — not the product fork: $SRC"
-info "source $SRC"
+[ -d "$ROOT/.git" ] || [ -f "$ROOT/.git" ] || die "not an AtlasOS git checkout"
+info "submodule update third_party/titan2-touchpadd"
+git -C "$ROOT" submodule update --init --checkout third_party/titan2-touchpadd
+[ -f "$SRC/Cargo.toml" ] || die "submodule missing Cargo.toml — git submodule update --init"
+[ -f "$SRC/src/pause.rs" ] || die "submodule is not the product fork (no pause.rs): $SRC"
+info "source $SRC @ $(git -C "$SRC" rev-parse --short HEAD)"
 
 command -v cargo >/dev/null || die "cargo not found"
 rustup target add aarch64-unknown-linux-musl >/dev/null 2>&1 || true
@@ -47,13 +31,8 @@ grep -aF 'INPROC_PARK' "$ELF" >/dev/null || die "ELF missing INPROC_PARK"
 grep -aF 'Skipping TitanKey (KEYBOARD_FEATURES off)' "$ELF" >/dev/null \
   || die "ELF missing pad-only marker"
 
-mkdir -p "$BIN_DIR"
-cp -f "$ELF" "$OUT"
-chmod 755 "$OUT"
-info "installed $OUT ($(stat -c%s "$OUT") bytes)"
-
-# Keep Soong prebuilt name as a link (not a second file).
-PRE="$ROOT/packages/gsi_product/prebuilt_touchpadd/titan2-touchpadd"
 mkdir -p "$(dirname "$PRE")"
-ln -sfn ../../../third_party/titan2-touchpadd/bin/titan2-touchpadd "$PRE"
-info "prebuilt_touchpadd → bin/titan2-touchpadd"
+rm -f "$PRE"
+cp -f "$ELF" "$PRE"
+chmod 755 "$PRE"
+info "packed $PRE ($(stat -c%s "$PRE") bytes) from $(git -C "$SRC" rev-parse --short HEAD)"

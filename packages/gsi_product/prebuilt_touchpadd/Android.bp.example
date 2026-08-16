@@ -1,5 +1,5 @@
 // EXAMPLE — land into MISTERZTR_TREE via gsi_source patch when binary is proven.
-// Product SoT binary: third_party/titan2-touchpadd/bin/titan2-touchpadd
+// Product SoT: third_party/titan2-touchpadd submodule; ELF packed here at build.
 // Policy: OPTIMIZE_SOURCE_PRODUCT.md Phase 1.5
 
 // cc_prebuilt_binary {

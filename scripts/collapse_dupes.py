@@ -5,7 +5,7 @@ SoT:
   patches/bin/<name>              titan2-*.sh atlas-*.sh apt-hybrid.sh
   patches/init/<name>             *.rc
   apps/titan_atlas/assets/bin/    atlas native ELFs (enter, auth, sudo, …)
-  third_party/titan2-touchpadd/   touchpadd ELF + idc
+  packages/gsi_product/prebuilt_touchpadd/  packed touchpadd ELF + idc
   packages/titan_usb_hid_system/  HID gadget scripts
   apps/<app>/permissions/         privapp XML
 
@@ -51,8 +51,6 @@ SCAN_A = [
     A / "packages/gsi_product/prebuilt_apps",
     A / "packages/titan_atlas/scripts",
     A / "apps/titan_atlas/assets/bin",
-    A / "third_party/titan2-touchpadd/bin",
-    A / "third_party/titan2-touchpadd/init",
     A / "packages/titan_usb_hid_system",
 ]
 
@@ -84,7 +82,7 @@ def sot_for(name: str, copies: list[Path]) -> Path:
         if pref.exists():
             return pref
     if name == "titan2-touchpadd":
-        return A / "third_party/titan2-touchpadd/bin/titan2-touchpadd"
+        return A / "packages/gsi_product/prebuilt_touchpadd/titan2-touchpadd"
     if name.endswith(".rc"):
         pref = A / "patches/init" / name
         if pref.exists() or reals:

@@ -27,18 +27,16 @@ done
 SRC_PROD="$ROOT/packages/gsi_product"
 SRC_TP="$SRC_PROD/prebuilt_touchpadd"
 SRC_APPS="$SRC_PROD/prebuilt_apps"
-SRC_BIN="$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd"
-# Prefer staged copy under gsi_product if present
-if [ -x "$SRC_TP/titan2-touchpadd" ]; then
-  SRC_BIN="$SRC_TP/titan2-touchpadd"
+SRC_BIN="$SRC_TP/titan2-touchpadd"
+if [ ! -x "$SRC_BIN" ] && [ -x "$ROOT/scripts/build_touchpadd.sh" ]; then
+  info "touchpadd ELF missing — pull submodule and pack"
+  "$ROOT/scripts/build_touchpadd.sh"
 fi
-[ -x "$SRC_BIN" ] || die "missing touchpadd binary: $SRC_BIN (rebuild third_party first)"
+[ -x "$SRC_BIN" ] || die "missing touchpadd binary: $SRC_BIN (./scripts/build_touchpadd.sh)"
 [ -f "$SRC_TP/Android.bp" ] || die "missing $SRC_TP/Android.bp"
 [ -f "$SRC_TP/titan2-touchpadd.rc" ] || die "missing rc"
 IDC_PAD="$SRC_TP/touchPad.idc"
 IDC_SUB="$SRC_TP/sub_touch.idc"
-[ -f "$IDC_PAD" ] || IDC_PAD="$ROOT/third_party/titan2-touchpadd/idc/touchPad.idc"
-[ -f "$IDC_SUB" ] || IDC_SUB="$ROOT/third_party/titan2-touchpadd/idc/sub_touch.idc"
 [ -f "$IDC_PAD" ] || die "missing touchPad.idc"
 [ -f "$IDC_SUB" ] || die "missing sub_touch.idc"
 [ -f "$SRC_PROD/titanus2.mk" ] || die "missing $SRC_PROD/titanus2.mk"
@@ -425,14 +423,6 @@ if [ "$DRY" != "1" ]; then
     echo "mk=$DEST_MK"
     echo "phase=1.5+2"
   } >"$MISTERZTR_TREE/.titanus2_gsi_product_staged"
-  # Keep gsi_product/ touchpadd copy in sync with third_party SoT
-  if [ -x "$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd" ]; then
-    if [ ! "$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd" -ef "$SRC_TP/titan2-touchpadd" ]; then
-      cp -f "$ROOT/third_party/titan2-touchpadd/bin/titan2-touchpadd" \
-        "$SRC_TP/titan2-touchpadd"
-    fi
-    chmod 755 "$SRC_TP/titan2-touchpadd" 2>/dev/null || true
-  fi
   # Keep prebuilt_apps mirror of APKs for offline stage (skip if same inode).
   _mirror() {
     [ -n "${1:-}" ] && [ -f "$1" ] || return 0

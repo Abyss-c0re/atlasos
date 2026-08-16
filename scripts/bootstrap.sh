@@ -37,9 +37,10 @@ fi
 export MISTERZTR_TREE="${MISTERZTR_TREE:-$ROOT/.links/lineage}"
 mkdir -p "$ROOT/.links"
 
-info "modules (upstream fetch, overlays kept)"
+info "modules (upstream fetch)"
 "$ROOT/scripts/sync-modules.sh" || info "module fetch had warnings (offline remotes are OK)"
-info "titan2-touchpadd (Abyss-c0re fork, musl)"
+info "titan2-touchpadd submodule + musl pack"
+git -C "$ROOT" submodule update --init --checkout third_party/titan2-touchpadd
 "$ROOT/scripts/build_touchpadd.sh" || info "touchpadd build skipped (install rustc + musl target)"
 
 info "Lineage + MisterZtr tree → $MISTERZTR_TREE"

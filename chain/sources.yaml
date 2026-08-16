@@ -59,7 +59,7 @@ pin:
   # Live matching pin (workshop). Next AtlasOS export gets a new date.
   live_pin: "20260804"
   note: >
-    AtlasOS next export patches MISTERZTR_TREE (0040 + stage) and builds
-    titan2-touchpadd into the GSI. That pack uses WITH_TOUCHPADD_INJECT=0.
+    titan2-touchpadd is a git submodule. Build pulls the pinned SHA and
+    packs the ELF into the GSI (WITH_TOUCHPADD_INJECT=0 on that export).
     Already-flashed workshop pin 20260804 still has no ELF — inject stays
     on for that image only.

@@ -86,7 +86,7 @@ else
 fi
 
 # --- touchpadd ---
-TP="${ROOT}/third_party/titan2-touchpadd/bin/titan2-touchpadd"
+TP="${ROOT}/packages/gsi_product/prebuilt_touchpadd/titan2-touchpadd"
 if [ ! -x "$TP" ] && [ -x "$ROOT/scripts/build_touchpadd.sh" ]; then
   echo "==> touchpadd ELF missing — AtlasOS musl build"
   "$ROOT/scripts/build_touchpadd.sh" || true

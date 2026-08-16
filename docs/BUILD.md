@@ -1,6 +1,9 @@
 # Build
 
 ```bash
+git clone --recurse-submodules https://github.com/Abyss-c0re/AtlasOS
+# existing clone:
+git submodule update --init
 ./scripts/bootstrap.sh                 # pull Lineage + MisterZtr + our SERIES
 ./scripts/build.sh --flavor vanilla
 ./scripts/build.sh --flavor microg

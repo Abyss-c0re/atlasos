@@ -71,6 +71,8 @@ for m in mods:
     pull = "-"
     if status_only:
         pull = "skip"
+    elif st == "submodule":
+        pull = "git submodule (not .links)"
     elif remote and st in ("upstream", "vendored", "overlay", "fetch"):
         dest = up_root / name
         if not dest.exists():
@@ -91,7 +93,7 @@ for m in mods:
     print(f"{name:<22} {st:<14} {(remote or '—'):<44} {pull}")
 
 print()
-print("Overlays stay in this git. Upstream trees stay under .links/upstream/ (gitignored).")
-print("Unpublished modules stay in apps/ until their remotes exist — then add them to .gitmodules.")
+print("Submodules live in this git (.gitmodules). Other remotes stay under .links/upstream/ (gitignored).")
+print("Unpublished modules stay in apps/ until their remotes exist.")
 sys.exit(ec)
 PY

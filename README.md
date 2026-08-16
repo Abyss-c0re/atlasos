@@ -27,9 +27,11 @@ privacy, sub display, developer ADB.
   Cube lattice is system chrome / optional rear face, not a private theme
   inside Controls.
 - **Pad** — `titan2-touchpadd` in the GSI. **Original author:
-  [PeterGSI](https://gitea.angry.im/PeterGSI/titan2-touchpadd).** This tree
-  ships a product **fork** ([Abyss-c0re/titan2-touchpadd](https://github.com/Abyss-c0re/titan2-touchpadd)):
-  pad-only, INPROC park. We did not invent the driver.
+  [PeterGSI](https://gitea.angry.im/PeterGSI/titan2-touchpadd).** Product
+  **fork** is a git submodule
+  ([Abyss-c0re/titan2-touchpadd](https://github.com/Abyss-c0re/titan2-touchpadd)):
+  pad-only, INPROC park. `./scripts/build.sh` pulls that SHA, compiles it,
+  and packs the ELF. We did not invent the driver.
 
 ### HID (USB / Bluetooth)
 
