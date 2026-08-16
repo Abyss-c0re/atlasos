@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.controls"
-    android:versionCode="588"
-    android:versionName="15.88">
+    android:versionCode="589"
+    android:versionName="15.89">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
     <!-- Framework API: host declares + holds USE_TITAN2_API -->
     <permission
@@ -37,6 +37,9 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+    <uses-permission android:name="android.permission.READ_PRIVILEGED_PHONE_STATE"/>
+    <uses-permission android:name="android.permission.DUMP"/>
     <!-- FB-SEC-1: fail-closed camera/mic (SensorPrivacyEnforcer) -->
     <uses-permission android:name="android.permission.MANAGE_SENSOR_PRIVACY"/>
     <uses-permission android:name="android.permission.OBSERVE_SENSOR_PRIVACY"/>
@@ -103,6 +106,13 @@
             android:name=".AboutActivity"
             android:exported="false"
             android:label="About"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.Titan.DayNight"
+            android:configChanges="orientation|screenSize|keyboardHidden"/>
+        <activity
+            android:name=".DiagnosticsActivity"
+            android:exported="false"
+            android:label="Diagnostics"
             android:parentActivityName=".MainActivity"
             android:theme="@style/Theme.Titan.DayNight"
             android:configChanges="orientation|screenSize|keyboardHidden"/>

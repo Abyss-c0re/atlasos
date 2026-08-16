@@ -167,6 +167,8 @@ public class MainActivity extends Activity {
         // HW stays here. TrebleApp (hidden) owns GSI IMS/misc call paths; Tweaks wraps it.
         navTweaks = UiKit.navRow(root, "Tweaks", "Treble/IMS + keyboard",
             () -> startActivity(new Intent(this, NetworkActivity.class)));
+        UiKit.navRow(root, "Diagnostics", "Calls + nav, no test call",
+            () -> startActivity(new Intent(this, DiagnosticsActivity.class)));
         // Look hub stays out — ROM chrome is cube-ux / RROs (ThemeActivity adb only).
         // Developer: always on hub. TCP ADB is human-only (no boot auto-arm).
         // Wireless ADB = classic :5555 for Tailscale/LTE/Wi‑Fi after opt-in —
@@ -190,7 +192,7 @@ public class MainActivity extends Activity {
 
         // Mono fact: HW keyboard map for this hub (not marketing).
         TextView kbHint = UiKit.mono(root);
-        kbHint.setText("K Keys · S Sub · N notif · W Wi‑Fi · T Tweaks · D Dev · G log · "
+        kbHint.setText("K Keys · S Sub · N notif · W Wi‑Fi · T Tweaks · I diag · D Dev · G log · "
             + "0/1/2 pad · C tap · L light · O idle");
         setContentView(scroll);
         // Inherit OS DeviceDefault theme (Cube is system-wide via cube-ux / RROs, not app paint)
@@ -244,6 +246,9 @@ public class MainActivity extends Activity {
                     return true;
                 case KeyEvent.KEYCODE_T:
                     startActivity(new Intent(this, NetworkActivity.class));
+                    return true;
+                case KeyEvent.KEYCODE_I:
+                    startActivity(new Intent(this, DiagnosticsActivity.class));
                     return true;
                 case KeyEvent.KEYCODE_W:
                     try {

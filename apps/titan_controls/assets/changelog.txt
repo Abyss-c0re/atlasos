@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.89 (589) — 2026-08-16T13:10Z
+
+### rebuild 2026-08-16T13:10Z · 15.89 (589)
+
+- Rebuild (ALLOW_ROOT=0)
+
+
+- Diagnostics: incoming-call + nav health without a test call.
+
+---
+
 ## 15.88 (588) — 2026-08-16T10:46Z
 
 - About: product pad fork URL (submodule).

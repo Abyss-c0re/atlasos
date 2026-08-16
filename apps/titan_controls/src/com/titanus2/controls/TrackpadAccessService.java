@@ -26,6 +26,11 @@ import com.titanus2.controls.subdisplay.SubDisplayPrefs;
  */
 public class TrackpadAccessService extends AccessibilityService {
     private static TrackpadAccessService instance;
+
+    /** True only while this service is bound. Listed-but-crashed is false. */
+    public static boolean isBound() {
+        return instance != null;
+    }
     private String lastPkg;
     private final Handler h = new Handler(Looper.getMainLooper());
     private final Map<Integer, Long> downAt = new HashMap<>();
