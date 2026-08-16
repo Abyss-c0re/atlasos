@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.92 (592) — 2026-08-16T13:33Z
+
+- SIMs screen: UICC-off cards stay listed Off. Settings hide is not delete.
+
+---
+
 ## 15.91 (591) — 2026-08-16T13:25Z
 
 - Diagnostics: incoming FAIL if MMTEL binder null or IMS capability on the other SIM slot.

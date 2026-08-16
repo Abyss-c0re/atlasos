@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
     private TextView bIdleTimeout;
     private TextView bLedTest;
 
-    private LinearLayout navKeys, navSub, navNotif, navTweaks;
+    private LinearLayout navKeys, navSub, navNotif, navTweaks, navSims;
     private ScrollView scroll;
     private LinearLayout sectionPad;
     private final Handler h = new Handler(Looper.getMainLooper());
@@ -167,6 +167,8 @@ public class MainActivity extends Activity {
         // HW stays here. TrebleApp (hidden) owns GSI IMS/misc call paths; Tweaks wraps it.
         navTweaks = UiKit.navRow(root, "Tweaks", "Treble/IMS + keyboard",
             () -> startActivity(new Intent(this, NetworkActivity.class)));
+        navSims = UiKit.navRow(root, "SIMs", "On / Off — disable does not delete",
+            () -> startActivity(new Intent(this, SimActivity.class)));
         UiKit.navRow(root, "Diagnostics", "Calls + nav, no test call",
             () -> startActivity(new Intent(this, DiagnosticsActivity.class)));
         // Look hub stays out — ROM chrome is cube-ux / RROs (ThemeActivity adb only).
@@ -192,7 +194,7 @@ public class MainActivity extends Activity {
 
         // Mono fact: HW keyboard map for this hub (not marketing).
         TextView kbHint = UiKit.mono(root);
-        kbHint.setText("K Keys · S Sub · N notif · W Wi‑Fi · T Tweaks · I diag · D Dev · G log · "
+        kbHint.setText("K Keys · S Sub · N notif · W Wi‑Fi · T Tweaks · M SIMs · I diag · D Dev · G log · "
             + "0/1/2 pad · C tap · L light · O idle");
         setContentView(scroll);
         // Inherit OS DeviceDefault theme (Cube is system-wide via cube-ux / RROs, not app paint)
@@ -246,6 +248,9 @@ public class MainActivity extends Activity {
                     return true;
                 case KeyEvent.KEYCODE_T:
                     startActivity(new Intent(this, NetworkActivity.class));
+                    return true;
+                case KeyEvent.KEYCODE_M:
+                    startActivity(new Intent(this, SimActivity.class));
                     return true;
                 case KeyEvent.KEYCODE_I:
                     startActivity(new Intent(this, DiagnosticsActivity.class));
@@ -681,6 +686,9 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
         UiKit.setNavSummary(navKeys, keysSum);
         UiKit.setNavSummary(navSub, SubDisplayPrefs.getMode(this).label());
+        try {
+            UiKit.setNavSummary(navSims, SimCards.hubSummary(this));
+        } catch (Exception ignored) {}
         if (NotifLedPrefs.isEnabled(this)) {
             UiKit.setNavSummary(navNotif,
                 hasNotifAccess() ? NotifLedPrefs.getMode(this) : "Allow notification access");
