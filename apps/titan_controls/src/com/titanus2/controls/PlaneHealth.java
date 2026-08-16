@@ -139,8 +139,32 @@ public final class PlaneHealth {
                 + (nullIface ? "null IInterface " : "")
                 + (bound ? "controller-bound" : "controller-unbound")));
 
-        boolean visualOnly = binderOn && inService && simLoaded && (!imsReg || noIms || nullIface);
-        r.callsOk = !airplane && simLoaded && inService && imsReg && !noIms && !nullIface;
+        String sw = prop("persist.vendor.radio.simswitch", "");
+        int voiceSlot = -1;
+        try {
+            String st = prop("gsm.sim.state", "");
+            String[] parts = st.split(",");
+            for (int i = 0; i < parts.length; i++) {
+                if (parts[i].contains("LOADED") || parts[i].contains("READY")) {
+                    voiceSlot = i;
+                    break;
+                }
+            }
+        } catch (Exception ignored) {}
+        boolean swOk = true;
+        String swDetail = "simswitch=" + sw;
+        if (voiceSlot >= 0) {
+            int want = voiceSlot + 1;
+            swOk = String.valueOf(want).equals(sw);
+            swDetail += " voiceSlot=" + voiceSlot + " want=" + want
+                + (swOk ? "" : " (IMS major SIM is the other slot)");
+        }
+        r.calls.add(new Row("IMS capability slot", swOk, swDetail));
+
+        boolean visualOnly = binderOn && inService && simLoaded
+            && (!imsReg || noIms || nullIface || !swOk);
+        r.callsOk = !airplane && simLoaded && inService && imsReg && !noIms
+            && !nullIface && swOk;
         if (visualOnly) {
             r.callsVerdict = "FAIL incoming — binder-thread ON, IMS not serving MMTEL";
         } else if (r.callsOk) {

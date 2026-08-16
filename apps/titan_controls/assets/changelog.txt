@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.91 (591) — 2026-08-16T13:25Z
+
+- Diagnostics: incoming FAIL if MMTEL binder null or IMS capability on the other SIM slot.
+
+---
+
 ## 15.90 (590) — 2026-08-16T13:18Z
 
 ### rebuild 2026-08-16T13:19Z · 15.90 (590)

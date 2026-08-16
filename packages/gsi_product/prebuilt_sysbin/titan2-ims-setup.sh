@@ -160,6 +160,24 @@ ims_active_slot() {
   echo "$_slot"
 }
 
+# MTK 4G/IMS capability is 1-indexed persist.vendor.radio.simswitch.
+# Voice SIM on slot 1 with simswitch=1 → ImsService createMmTelFeature returns
+# null IInterface (listener "unused"). Align persist only — do not restart
+# modem here (ril restart can drop UICC). Next reboot applies.
+ims_align_simswitch() {
+  _slot=`ims_active_slot`
+  case "$_slot" in
+    0|1|2|3) _want=$((_slot + 1)) ;;
+    *) return 0 ;;
+  esac
+  _cur=`getprop persist.vendor.radio.simswitch 2>/dev/null | tr -d '\r\n '`
+  [ "$_cur" = "$_want" ] && return 0
+  logt "simswitch $_cur -> $_want (voice slot $_slot). reboot to apply; not restart-modem"
+  setprop persist.vendor.radio.simswitch "$_want" 2>/dev/null || true
+  setprop persist.vendor.radio.c_capability_slot "$_want" 2>/dev/null || true
+  setprop persist.radio.simswitch "$_want" 2>/dev/null || true
+}
+
 # Resolve live subId (never leave multi_sim at -1 when a US/TMO row exists).
 ims_active_subid() {
   _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
@@ -406,6 +424,7 @@ for SLOT in 0 1; do
   cmd phone cc set-value -s "$SLOT" -p carrier_default_wfc_ims_mode_int 2 2>/dev/null || true
 done
 logt "pixel-ims carrier config forced (cc set-value -p); GBA required=false; WFC mode=2"
+ims_align_simswitch
 
 # Sub-level WFC/VoLTE including roaming (US SIM abroad)
 if [ -n "$SUB" ]; then
