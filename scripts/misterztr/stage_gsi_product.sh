@@ -64,7 +64,6 @@ for c in \
   "$SRC_APPS/CubeContact.apk"; do
   [ -f "$c" ] && CUBE_APK="$c" && break
 done
-# PocketBoard is not a ROM package — do not stage.
 HWKB_APK=""
 for c in \
   "$SRC_APPS/HwKeyboardLayouts.apk" \
@@ -152,7 +151,6 @@ if [ -n "$CTRL_APK" ] && [ -n "$USB_APK" ] && [ -n "$CUBE_APK" ]; then
     [ -f "$c" ] && LUCI_APK="$c" && break
   done
   [ -n "$LUCI_APK" ] && stage_file "$LUCI_APK" "$DEST_APPS/TitanLuci.apk"
-  rm -f "$DEST_APPS/PocketBoard.apk" 2>/dev/null || true
   [ -n "$HWKB_APK" ] && stage_file "$HWKB_APK" "$DEST_APPS/HwKeyboardLayouts.apk"
   stage_file "$CTRL_PRIV" "$DEST_APPS/privapp-permissions-com.titanus2.controls.xml"
   stage_file "$USB_PRIV" "$DEST_APPS/privapp-permissions-com.titanus2.usbhid.xml"

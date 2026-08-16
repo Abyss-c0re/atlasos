@@ -186,7 +186,7 @@ heal_soft_ime() {
   return 0
 }
 
-# PocketBoard is not a ROM package. Empty IME → LatinIME. Leave any user IME.
+# Empty IME → LatinIME. Leave any user IME.
 heal_default_ime() {
   command -v pm >/dev/null 2>&1 || return 0
   command -v settings >/dev/null 2>&1 || return 0

@@ -7,19 +7,6 @@
 schema: atlasos.modules.v1
 
 modules:
-  - name: pocket-board
-    role: hardware-keyboard IME
-    path: third_party/pocket-board
-    remote: https://github.com/SinuXVR/pocket-board.git
-    ref: master
-    license: GPL-3.0
-    status: vendored
-    reusable: true
-    overlay: overlays/pocket-board
-    note: >
-      Not an AtlasOS ROM package. Optional keyboard-track / sideload only.
-      Sync fetches upstream; does not wipe overlay.
-
   - name: titan2-touchpadd
     role: pad / mouse daemon
     path: third_party/titan2-touchpadd

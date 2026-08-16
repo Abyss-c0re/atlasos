@@ -122,5 +122,5 @@ Apps without a public remote stay here until split (see modules.yaml).
 Original work: MIT (`LICENSE`). Third-party map: [`NOTICE.md`](NOTICE.md).  
 What must not be in git: [`docs/LEGAL.md`](docs/LEGAL.md).
 
-Termux emulator sources in Atlas are **GPLv3**. PocketBoard is **not**
-shipped. microG / OpenEUICC APKs are fetched at build time.
+Termux emulator sources in Atlas are **GPLv3**. microG / OpenEUICC APKs
+are fetched at build time.

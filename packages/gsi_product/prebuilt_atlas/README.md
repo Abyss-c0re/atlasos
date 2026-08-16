@@ -13,7 +13,7 @@
 **Not in Atlas ROM image:**
 
 - Proprietary / third-party CLIs (e.g. user installers) — supported if the user installs them later (`curl` + CA + redirects work)
-- **HW keyboard / keylayout / PocketBoard / TitanKey** — product keyboard track, out of Atlas scope
+- **HW keyboard / keylayout / TitanKey** — product keyboard track, out of Atlas scope
 
 ## Build rootfs essentials
 

@@ -41,12 +41,6 @@ links:
     role: pad_runtime
     upload: never
 
-  pocket_board:
-    url: https://github.com/SinuXVR/pocket-board
-    license: GPL-3.0
-    role: ime
-    upload: never
-
   openeuicc:
     url: https://gitea.angry.im/PeterCxy/OpenEUICC
     license: GPL-3.0

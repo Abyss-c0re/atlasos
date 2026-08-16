@@ -308,7 +308,7 @@ public final class TerminalView extends View {
             if (mClient.shouldEnforceCharBasedInput()) {
                 // Termux stock: VISIBLE_PASSWORD | NO_SUGGESTIONS (no TYPE_CLASS_TEXT).
                 // Adding MULTI_LINE / CLASS_TEXT caused odd IME behavior; keep Termux match
-                // for PocketBoard + Titan HW (char-based avoids TYPE_NULL newline-per-key).
+                // Titan HW IME (char-based avoids TYPE_NULL newline-per-key).
                 outAttrs.inputType = InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
                     | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
             } else {

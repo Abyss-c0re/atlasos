@@ -1,6 +1,6 @@
 // Atlas — terminal KEY + hybrid Debian plane (MisterZtr GSI product).
 // Scope: APK + hybrid scripts + optional rootfs seed path. No proprietary CLIs.
-// Out of scope: HW keyboard / keylayout / PocketBoard (product keyboard track).
+// Out of scope: HW keyboard / keylayout (product keyboard track).
 // Stage: ./scripts/misterztr/stage_gsi_product.sh → vendor/titanus2/prebuilts/atlas
 // SoT: apps/titan_atlas · packages/titan_atlas
 

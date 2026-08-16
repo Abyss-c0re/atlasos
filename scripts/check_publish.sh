@@ -57,7 +57,6 @@ EOF
 
 [ -f NOTICE.md ] && ok "NOTICE.md" || bad "missing NOTICE.md"
 [ -f apps/titan_atlas/src/com/termux/LICENSE ] && ok "Termux GPLv3" || bad "Termux sources without LICENSE"
-[ -f third_party/pocket-board/LICENSE ] && ok "PocketBoard LICENSE" || bad "PocketBoard without LICENSE"
 [ -f third_party/LICENSES/XTERMJS-MIT.txt ] && ok "xterm.js MIT" || bad "missing xterm.js notice"
 [ -f third_party/LICENSES/DEJAVU.txt ] && ok "DejaVu notice" || bad "missing DejaVu notice"
 

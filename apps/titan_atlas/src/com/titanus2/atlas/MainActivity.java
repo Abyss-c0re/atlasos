@@ -173,7 +173,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         termView.setFocusableInTouchMode(true);
         // Clip terminal drawing to its slot — never paint under the key panel.
         termView.setClipToOutline(true);
-        // Critical: typing must not flash PocketBoard every keypress
+        // Critical: typing must not flash the IME every keypress
         setShowSoftInputOnFocus(termView, false);
         // weight=1 → terminal ends exactly where the extra-key panel begins
         LinearLayout.LayoutParams termLp = new LinearLayout.LayoutParams(

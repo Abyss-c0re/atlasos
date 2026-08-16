@@ -24,19 +24,16 @@ map. It is not legal advice.
 | `apps/titan_atlas/assets/term/xterm*.js` | [@xterm/xterm](https://github.com/xtermjs/xterm.js) 5.5.0 | MIT — `third_party/LICENSES/XTERMJS-MIT.txt` |
 | `apps/titan_atlas/assets/fonts/DejaVuSansMono.ttf` | DejaVu Fonts | Bitstream Vera / Arev — `third_party/LICENSES/DEJAVU.txt` |
 | `apps/titan_atlas/assets/ssl/cacert.pem` | Mozilla CA | MPL-2.0 — `third_party/LICENSES/CACERT-MPL.txt` |
-| `third_party/pocket-board/` | [SinuXVR/pocket-board](https://github.com/SinuXVR/pocket-board) | **GPLv3** — `third_party/pocket-board/LICENSE` |
-| `titan2-touchpadd` (fetched) | [Abyss-c0re/titan2-touchpadd](https://github.com/Abyss-c0re/titan2-touchpadd) (PeterGSI upstream) | Upstream license — fetch, do not commit ELF |
+| `titan2-touchpadd` (fetched) | [Abyss-c0re/titan2-touchpadd](https://github.com/Abyss-c0re/titan2-touchpadd) (PeterGSI original) | Upstream license — fetch, do not commit ELF |
 | `third_party/openeuicc/` | [PeterCxy/OpenEUICC](https://gitea.angry.im/PeterCxy/OpenEUICC) | **GPLv3** (APK not committed) |
 | `apps/titan_fm/` | Apache-2.0 wrapper | `apps/titan_fm/LICENSE` |
 | `apps/titan_nanobot/` | project license | `apps/titan_nanobot/LICENSE` |
-| `third_party/pocket-board/gradle/wrapper/gradle-wrapper.jar` | Gradle | Apache-2.0 |
 
 ## Combined works
 
 - A **Titan Atlas APK** that includes `com.termux` sources is a combined work
   with GPLv3 Termux code. Distribute that APK under GPLv3 (or do not ship
   those files in the APK).
-- **PocketBoard** remains GPLv3. Do not relicense it as MIT.
 - **OpenEUICC** remains GPLv3 when you fetch and ship the APK.
 
 Our MIT grant does **not** apply to those components.
