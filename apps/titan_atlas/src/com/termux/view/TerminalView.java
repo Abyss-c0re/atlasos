@@ -368,7 +368,7 @@ public final class TerminalView extends View {
                     mClient.logInfo(LOG_TAG, "IME: deleteSurroundingText(" + leftLength + ", " + rightLength + ")");
                 }
                 // One physical backspace gesture → one erase.
-                // PocketBoard/Samsung may send leftLength >> 1; never spam.
+                // Some IMEs send leftLength >> 1; never spam.
                 // Route through onKeyDown so client + KeyHandler stay the single path.
                 int n = leftLength <= 0 ? 1 : 1;
                 KeyEvent down = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL);
@@ -686,7 +686,7 @@ public final class TerminalView extends View {
                However, this breaks it on devices where it works out of the box. */
             return onKeyDown(keyCode, event);
         }
-        // Titan HW + PocketBoard: take specials before IME can swallow/corrupt them
+        // Titan HW: take specials before IME can swallow/corrupt them
         // (Del → garbage, Enter after Ctrl-C ignored, Ctrl letter dropped).
         // Shift must also be pre-IME so AtlasTermClient can track phys hold / one-shot
         // before letter events (sticky Shift kill T-013).
