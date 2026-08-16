@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.88 (588) — 2026-08-16T10:46Z
+
+- About: product pad fork URL (submodule).
+
+---
+
 ## 15.87 (587) — 2026-08-16T10:09Z
 
 - About: credits match CREDITS.md.
