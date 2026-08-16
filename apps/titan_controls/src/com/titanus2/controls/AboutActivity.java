@@ -52,8 +52,6 @@ public class AboutActivity extends Activity {
             "https://github.com/phhusson");
         link(root, "PeterGSI touchpadd", "pad → uinput mouse",
             "https://gitea.angry.im/PeterGSI/titan2-touchpadd");
-        link(root, "SinuXVR PocketBoard", "GPL-3.0 IME",
-            "https://github.com/SinuXVR/pocket-board");
         link(root, "PeterCxy OpenEUICC", "GPL-3.0 eSIM",
             "https://gitea.angry.im/PeterCxy/OpenEUICC");
         link(root, "Termux", "GPLv3 terminal emulator",

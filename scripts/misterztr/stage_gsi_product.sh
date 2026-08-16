@@ -64,13 +64,7 @@ for c in \
   "$SRC_APPS/CubeContact.apk"; do
   [ -f "$c" ] && CUBE_APK="$c" && break
 done
-# PocketBoard default IME (EN+RU) — third_party/pocket-board or staged pull APK
-POCKET_APK=""
-for c in \
-  "$SRC_APPS/PocketBoard.apk" \
-  "$ROOT/out/titan_kb_pull_20260808/apk/PocketBoard.apk"; do
-  [ -f "$c" ] && POCKET_APK="$c" && break
-done
+# PocketBoard is not a ROM package — do not stage.
 HWKB_APK=""
 for c in \
   "$SRC_APPS/HwKeyboardLayouts.apk" \
@@ -97,7 +91,6 @@ else
   [ -n "$CTRL_APK" ] || die "missing TitanControls.apk"
   [ -n "$USB_APK" ] || die "missing TitanUsbHid.apk"
   [ -n "$CUBE_APK" ] || die "missing CubeContact.apk"
-  [ -n "$POCKET_APK" ] || die "missing PocketBoard.apk (stage from Titan pull or build third_party/pocket-board)"
 fi
 # HwKeyboardLayouts optional but recommended for RU system layout picker
 if [ -z "$HWKB_APK" ]; then
@@ -159,7 +152,7 @@ if [ -n "$CTRL_APK" ] && [ -n "$USB_APK" ] && [ -n "$CUBE_APK" ]; then
     [ -f "$c" ] && LUCI_APK="$c" && break
   done
   [ -n "$LUCI_APK" ] && stage_file "$LUCI_APK" "$DEST_APPS/TitanLuci.apk"
-  [ -n "$POCKET_APK" ] && stage_file "$POCKET_APK" "$DEST_APPS/PocketBoard.apk"
+  rm -f "$DEST_APPS/PocketBoard.apk" 2>/dev/null || true
   [ -n "$HWKB_APK" ] && stage_file "$HWKB_APK" "$DEST_APPS/HwKeyboardLayouts.apk"
   stage_file "$CTRL_PRIV" "$DEST_APPS/privapp-permissions-com.titanus2.controls.xml"
   stage_file "$USB_PRIV" "$DEST_APPS/privapp-permissions-com.titanus2.usbhid.xml"

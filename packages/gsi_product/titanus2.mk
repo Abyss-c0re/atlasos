@@ -24,7 +24,6 @@ PRODUCT_PACKAGES += \
     TitanControls \
     TitanUsbHid \
     CubeContact \
-    PocketBoard \
     HwKeyboardLayouts \
     privapp-permissions-com.titanus2.controls.xml \
     privapp-permissions-com.titanus2.usbhid.xml \

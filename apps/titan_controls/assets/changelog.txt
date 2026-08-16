@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.87-no-pocketboard (587) — 2026-08-16T10:09Z
+
+- About: PocketBoard is not a ROM package (removed from credits).
+
+---
+
 ## 15.86-about (586) — 2026-08-16T10:02Z
 
 - About: AtlasOS build, repo link, Abyss-c0re / NexusCore / Hive / Grok agents, third-party projects.

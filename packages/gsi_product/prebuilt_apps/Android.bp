@@ -59,19 +59,7 @@ android_app_import {
     },
 }
 
-// Default QWERTY IME (EN+RU Titan maps) — SinuXVR PocketBoard.
-// Source: third_party/pocket-board · tip SoT APK until PRODUCT_PACKAGES build-from-source.
-// Presigned: upstream release key; product may re-sign later.
-android_app_import {
-    name: "PocketBoard",
-    apk: "PocketBoard.apk",
-    // targetSdk>=30 presigned: Soong must not re-align/re-sign (wrecks v2 sig).
-    presigned: true,
-    preprocessed: true,
-    dex_preopt: {
-        enabled: false,
-    },
-}
+// PocketBoard is not an AtlasOS ROM package (sideload / keyboard track only).
 
 // System HW keyboard layout pack (Russian .kcm for layout picker).
 android_app_import {

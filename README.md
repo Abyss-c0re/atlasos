@@ -67,5 +67,6 @@ What must not be in git: [`docs/LEGAL.md`](docs/LEGAL.md).
 ./scripts/check_publish.sh    # must pass before a public push
 ```
 
-PocketBoard and Termux emulator sources are **GPLv3** (not MIT). microG / OpenEUICC
-APKs are fetched at build time, not committed. Unihertz firmware is never in this repo.
+Termux emulator sources are **GPLv3** (not MIT). PocketBoard is **not** an AtlasOS
+ROM package (optional sideload). microG / OpenEUICC APKs are fetched at build
+time, not committed. Unihertz firmware is never in this repo.

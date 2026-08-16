@@ -186,46 +186,20 @@ heal_soft_ime() {
   return 0
 }
 
-# Product default IME: PocketBoard (EN+RU Titan maps) when present.
-# Fallback: AOSP LatinIME. Never force Pastiera. Do not steal Gboard if user set it
-# (only heal empty/null or known-broken empty).
-# SoT: docs/project/ATLAS_HYBRID_ROM.md · third_party/pocket-board (SinuXVR)
+# PocketBoard is not a ROM package. Empty IME → LatinIME. Leave any user IME.
 heal_default_ime() {
   command -v pm >/dev/null 2>&1 || return 0
   command -v settings >/dev/null 2>&1 || return 0
-  POCKET_IME='com.sinux.pocketboard/.PocketBoardIME'
-  # subtypes 1=en_US 2=ru BB Passport (method.xml) — match Titan pull enabled_input_methods
-  POCKET_ENABLED='com.sinux.pocketboard/.PocketBoardIME;1;2'
   LATIN_IME='com.android.inputmethod.latin/.LatinIME'
   settings put system show_key_presses 0 2>/dev/null || true
   settings put secure show_key_presses 0 2>/dev/null || true
   heal_soft_ime
   heal_long_press
   cur=`settings get secure default_input_method 2>/dev/null | tr -d '\r'`
-  # Already PocketBoard — ensure EN+RU subtypes and exit
-  case "$cur" in
-    *sinux.pocketboard*|*PocketBoard*)
-      pm enable com.sinux.pocketboard 2>/dev/null || true
-      ime enable "$POCKET_IME" 2>/dev/null || true
-      settings put secure enabled_input_methods "$POCKET_ENABLED" 2>/dev/null || true
-      return 0
-      ;;
-  esac
-  # Non-empty foreign IME (Gboard etc.) — leave alone
   case "$cur" in
     ''|null|NULL) ;;
     *) return 0 ;;
   esac
-  # Empty default: prefer PocketBoard product, else LatinIME
-  if pm path com.sinux.pocketboard >/dev/null 2>&1; then
-    pm enable com.sinux.pocketboard 2>/dev/null || true
-    ime enable "$POCKET_IME" 2>/dev/null || true
-    ime set "$POCKET_IME" 2>/dev/null || true
-    settings put secure enabled_input_methods "$POCKET_ENABLED" 2>/dev/null || true
-    settings put secure default_input_method "$POCKET_IME" 2>/dev/null || true
-    log "pocketboard default IME (en+ru; empty IME healed)"
-    return 0
-  fi
   if pm path com.android.inputmethod.latin >/dev/null 2>&1; then
     pm enable com.android.inputmethod.latin 2>/dev/null || true
     pm enable com.android.inputmethod.latin.auto_generated_rro_product__ 2>/dev/null || true
@@ -233,7 +207,7 @@ heal_default_ime() {
     ime set "$LATIN_IME" 2>/dev/null || true
     settings put secure enabled_input_methods "$LATIN_IME" 2>/dev/null || true
     settings put secure default_input_method "$LATIN_IME" 2>/dev/null || true
-    log "latinime_product default (no PocketBoard; empty IME healed)"
+    log "latinime_product default (empty IME healed)"
   fi
   return 0
 }

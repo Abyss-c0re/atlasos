@@ -11,7 +11,7 @@ hardware, stock firmware, or LineageOS.
 | [LineageOS](https://lineageos.org/) | Platform |
 | [phhusson](https://github.com/phhusson) / Treble | GSI / `phh-on-boot` baseline |
 | [PeterGSI/titan2-touchpadd](https://gitea.angry.im/PeterGSI/titan2-touchpadd) | Keyboard-surface → uinput mouse |
-| [SinuXVR/pocket-board](https://github.com/SinuXVR/pocket-board) (GPL-3.0) | Hardware-keyboard IME |
+| [SinuXVR/pocket-board](https://github.com/SinuXVR/pocket-board) (GPL-3.0) | Optional sideload IME — **not** an AtlasOS ROM package |
 | [OpenEUICC](https://openeuicc.com/) (GPL-3.0) | Privileged eSIM LPA |
 | [agreenbhm/Unihertz-Titan-2-LineageOS](https://github.com/agreenbhm/Unihertz-Titan-2-LineageOS) | Early Titan 2 GSI packaging |
 | Unihertz | Device + stock vendor (your copy; not redistributed) |

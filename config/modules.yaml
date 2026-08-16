@@ -16,7 +16,9 @@ modules:
     status: vendored
     reusable: true
     overlay: overlays/pocket-board
-    note: In-tree includes Titan XML maps. Sync fetches upstream; does not wipe overlay.
+    note: >
+      Not an AtlasOS ROM package. Optional keyboard-track / sideload only.
+      Sync fetches upstream; does not wipe overlay.
 
   - name: titan2-touchpadd
     role: pad / mouse daemon

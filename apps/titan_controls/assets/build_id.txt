@@ -1,4 +1,4 @@
-versionName=15.86-about
-versionCode=586
-built_utc=2026-08-16T10:02Z
+versionName=15.87-no-pocketboard
+versionCode=587
+built_utc=2026-08-16T10:09Z
 allow_root=0

@@ -21,7 +21,7 @@ You compile those locally.
 |---------|--------|----------------|
 | MisterZtr GSI recipe | https://github.com/MisterZtr/LineageOS_gsi | no (clone) |
 | LineageOS | https://github.com/LineageOS | no (repo sync) |
-| PocketBoard | https://github.com/SinuXVR/pocket-board | vendored sources (`third_party/pocket-board`) |
+| PocketBoard | https://github.com/SinuXVR/pocket-board | **Not in the ROM.** Optional sideload. Sources may sit in `third_party/` for keyboard-track work only. |
 | titan2-touchpadd | https://github.com/Abyss-c0re/titan2-touchpadd | overlay + patches; ELF rebuilt |
 | OpenEUICC | https://gitea.angry.im/PeterCxy/OpenEUICC | fetch APK |
 | nanobot (models) | https://github.com/Abyss-c0re/nanobot | **published separately** |
