@@ -5,9 +5,9 @@ Do not ship without a matching build entry.
 
 ---
 
-## 15.87-no-pocketboard (587) — 2026-08-16T10:09Z
+## 15.87 (587) — 2026-08-16T10:09Z
 
-- About: PocketBoard is not a ROM package (removed from credits).
+- About: credits match CREDITS.md.
 
 ---
 

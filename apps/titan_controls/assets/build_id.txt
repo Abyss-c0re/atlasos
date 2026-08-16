@@ -1,4 +1,4 @@
-versionName=15.87-no-pocketboard
+versionName=15.87
 versionCode=587
 built_utc=2026-08-16T10:09Z
 allow_root=0

@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.controls"
     android:versionCode="587"
-    android:versionName="15.87-no-pocketboard">
+    android:versionName="15.87">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
     <!-- Framework API: host declares + holds USE_TITAN2_API -->
     <permission

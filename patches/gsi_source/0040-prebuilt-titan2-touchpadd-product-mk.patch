@@ -14,7 +14,7 @@ new file mode 100644
 index 0000000..1111111
 --- /dev/null
 +++ b/titanus2.mk
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,90 @@
 +# Titan 2 product packages — compiled into MisterZtr GSI (not hybrid inject).
 +# Staged into MISTERZTR_TREE by scripts/misterztr/stage_gsi_product.sh
 +# SoT: docs/project/OPTIMIZE_SOURCE_PRODUCT.md · SOURCE_PRODUCT.md
@@ -34,7 +34,6 @@ index 0000000..1111111
 +    TitanControls \
 +    TitanUsbHid \
 +    CubeContact \
-+    PocketBoard \
 +    HwKeyboardLayouts \
 +    privapp-permissions-com.titanus2.controls.xml \
 +    privapp-permissions-com.titanus2.usbhid.xml \
