@@ -1,0 +1,109 @@
+# project:packages/apps/ExactCalculator
+# Titan two-line: do not scale/translate the result into the formula slot.
+# 0101 only fitted formula text; onResult still blew short numbers (666) to
+# formulaMax/resultSize and left the bottoms over the keypad after an operator.
+diff --git a/res/layout/display_two_line.xml b/res/layout/display_two_line.xml
+--- a/res/layout/display_two_line.xml
++++ b/res/layout/display_two_line.xml
+@@ -1,4 +1,6 @@
+         android:layout_width="match_parent"
+         android:layout_height="0dp"
+         android:layout_weight="1"
++        android:clipChildren="true"
++        android:clipToPadding="true"
+         android:orientation="vertical">
+diff --git a/res/values/dimens.xml b/res/values/dimens.xml
+--- a/res/values/dimens.xml
++++ b/res/values/dimens.xml
+@@ -18,16 +18,16 @@
+     <dimen name="formula_padding_bottom">8dip</dimen>
+     <dimen name="formula_padding_start">16dip</dimen>
+     <dimen name="formula_padding_end">16dip</dimen>
+-    <dimen name="formula_min_textsize">20dip</dimen>
+-    <dimen name="formula_max_textsize">36dip</dimen>
+-    <dimen name="formula_step_textsize">4dip</dimen>
++    <dimen name="formula_min_textsize">16dip</dimen>
++    <dimen name="formula_max_textsize">24dip</dimen>
++    <dimen name="formula_step_textsize">2dip</dimen>
+ 
+     <!-- Dimens for display result. -->
+     <dimen name="result_padding_top">4dip</dimen>
+     <dimen name="result_padding_bottom">12dip</dimen>
+     <dimen name="result_padding_start">16dip</dimen>
+     <dimen name="result_padding_end">16dip</dimen>
+-    <dimen name="result_textsize">22dip</dimen>
++    <dimen name="result_textsize">20dip</dimen>
+diff --git a/src/com/android/calculator2/Calculator.java b/src/com/android/calculator2/Calculator.java
+--- a/src/com/android/calculator2/Calculator.java
++++ b/src/com/android/calculator2/Calculator.java
+@@ -1,43 +1,43 @@
+     private void onResult(boolean resultWasPreserved) {
+-        // Calculate the textSize that would be used to display the result in the formula.
+-        // For scrollable results just use the minimum textSize to maximize the number of digits
+-        // that are visible on screen.
++        if (resultWasPreserved) {
++            mEvaluator.represerve();
++        } else {
++            mEvaluator.preserve(Evaluator.MAIN_INDEX, true);
++        }
++
++        // Two-line (Titan portrait): formula and result already have their own
++        // slots. Scaling the result into the formula slot (stock Lollipop
++        // transition) blew short numbers (666) to 1.6× and left the bottoms
++        // painted over the keypad after an operator.
++        if (!mIsOneLine) {
++            mResultText.setScaleX(1.0f);
++            mResultText.setScaleY(1.0f);
++            mResultText.setTranslationX(0.0f);
++            mResultText.setTranslationY(0.0f);
++            mFormulaContainer.setTranslationY(0.0f);
++            setState(CalculatorState.RESULT);
++            return;
++        }
++
++        // One-line only: move result into the formula slot, never scale UP.
+         float textSize = mFormulaText.getMinimumTextSize();
+         if (!mResultText.isScrollable()) {
+             textSize = mFormulaText.getVariableTextSize(mResultText.getText().toString());
+         }
++        float resultScale = textSize / mResultText.getTextSize();
++        if (!(resultScale > 0f) || resultScale > 1f) {
++            resultScale = 1f;
++        }
+ 
+-        // Scale the result to match the calculated textSize, minimizing the jump-cut transition
+-        // when a result is reused in a subsequent expression.
+-        final float resultScale = textSize / mResultText.getTextSize();
+-
+-        // Set the result's pivot to match its gravity.
+         mResultText.setPivotX(mResultText.getWidth() - mResultText.getPaddingRight());
+         mResultText.setPivotY(mResultText.getHeight() - mResultText.getPaddingBottom());
+ 
+-        // Calculate the necessary translations so the result takes the place of the formula and
+-        // the formula moves off the top of the screen.
+         final float resultTranslationY = (mFormulaContainer.getBottom() - mResultText.getBottom())
+                 - (mFormulaText.getPaddingBottom() - mResultText.getPaddingBottom());
+-        float formulaTranslationY = -mFormulaContainer.getBottom();
+-        if (mIsOneLine) {
+-            // Position the result text.
+-            mResultText.setY(mResultText.getBottom());
+-            formulaTranslationY = -(findViewById(R.id.toolbar).getBottom()
+-                    + mFormulaContainer.getBottom());
+-        }
++        float formulaTranslationY = -(findViewById(R.id.toolbar).getBottom()
++                + mFormulaContainer.getBottom());
+ 
+-        // Change the result's textColor to match the formula.
+         final int formulaTextColor = mFormulaText.getCurrentTextColor();
+-
+-        if (resultWasPreserved) {
+-            // Result was previously addded to history.
+-            mEvaluator.represerve();
+-        } else {
+-            // Add current result to history.
+-            mEvaluator.preserve(Evaluator.MAIN_INDEX, true);
+-        }
+-
+         mResultText.setScaleX(resultScale);
+         mResultText.setScaleY(resultScale);
+         mResultText.setTranslationY(resultTranslationY);

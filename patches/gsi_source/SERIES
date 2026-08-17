@@ -92,6 +92,9 @@
 # Titan square display: result/formula fit slot height.
 0101-calculator-display-fit-height.patch
 
+# Two-line: never scale result into formula (666 blow-up after operator).
+0103-calculator-no-result-scale-blowup.patch
+
 # project:treble_app
 # Lab-proven Misc BT defaults (mediatek + sysbta + disable LE APCF).
 # Seed SharedPreferences once; never restamp if the user later edits Misc.
