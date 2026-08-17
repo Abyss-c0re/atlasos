@@ -202,6 +202,46 @@ cam_block() {
   fi
 }
 
+# HI847S (id 2) is only ADDed if Aperture is on aux.packagelist *and*
+# camerahalserver starts after that stamp. Never dumpsys-gate (hangs).
+# Privacy ON (nodes 000): stamp persist only — do not bounce HAL.
+# Privacy OFF: stamp + one HAL bounce so 0+1+2+3 all publish.
+_AUX_PKGS="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
+_AUX_PUB_TS=0
+aux_cam_stamp() {
+  setprop camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
+  setprop vendor.camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
+  setprop persist.camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
+  setprop persist.vendor.camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
+  setprop persist.vendor.camera.privapp.list org.lineageos.aperture 2>/dev/null || true
+}
+aux_cam_nodes_blocked() {
+  mode=$(ls -l /dev/video0 2>/dev/null | cut -c1-10)
+  case "$mode" in c---------*|c---*---*|'') return 0 ;; esac
+  return 1
+}
+# $1=force — skip 20s debounce (privacy OFF edge).
+aux_cam_publish() {
+  aux_cam_stamp
+  if aux_cam_nodes_blocked; then
+    log "aux stamp only (privacy fail-closed — all cameras off)"
+    return 0
+  fi
+  now=$(date +%s 2>/dev/null || echo 0)
+  case "$now" in ''|*[!0-9]*) now=0 ;; esac
+  if [ "${1:-}" != "force" ] && [ "$now" -gt 0 ] && [ "$_AUX_PUB_TS" -gt 0 ]; then
+    age=$((now - _AUX_PUB_TS))
+    [ "$age" -ge 0 ] && [ "$age" -lt 20 ] && return 0
+  fi
+  _AUX_PUB_TS=$now
+  setprop ctl.restart camerahalserver 2>/dev/null || true
+  setprop ctl.restart cameraserver 2>/dev/null || true
+  usleep 200000 2>/dev/null || sleep 0.2 2>/dev/null || true
+  restore_camera_nodes
+  aux_cam_stamp
+  log "aux published HAL bounce (HI847S + main)"
+}
+
 cam_allow() {
   restore_camera_nodes
   # HAL crash-loops on 000 nodes and stays empty after chmod unless bounced.
@@ -371,15 +411,18 @@ last_cam=0
 if [ "$_rc" = "0" ]; then
   cam_block
   last_cam=1
+  aux_cam_stamp
   log "boot CAM blocked (linux fail-closed rc=$_rc)"
 elif [ "$_rc" = "2" ]; then
   # Still unreadable: do NOT leave 000. Re-check next ticks.
   cam_allow
   last_cam=0
+  aux_cam_publish force
   log "boot CAM allow (SPM unread — do not strand video nodes)"
 else
   cam_allow
   last_cam=0
+  aux_cam_publish force
   log "boot CAM allowed (SPM OFF)"
 fi
 privacy_mic_on
@@ -394,7 +437,7 @@ else
   log "boot MIC allowed"
 fi
 
-log "titan2-sensor-privacy ONLINE v24 (no strand 000 when toggle allows)"
+log "titan2-sensor-privacy ONLINE v25 (aux publish on allow; fail-closed skips HAL)"
 seed_qs_tiles
 TICK=0
 [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 200000 ] && : >"$LOG"
@@ -413,8 +456,8 @@ while true; do
     : >"$_sp_wake" 2>/dev/null || true
     chmod 666 "$_sp_wake" 2>/dev/null || true
     case "$_w" in
-      cam_block) cam_block; last_cam=1 ;;
-      cam_allow) cam_allow; last_cam=0 ;;
+      cam_block) cam_block; last_cam=1; aux_cam_stamp ;;
+      cam_allow) cam_allow; last_cam=0; aux_cam_publish force ;;
       mic_block) mic_block 2>/dev/null || true; last_mic=1 ;;
       mic_allow) mic_allow 2>/dev/null || true; last_mic=0 ;;
     esac
@@ -430,6 +473,7 @@ while true; do
       mic_allow
       last_cam=0
       last_mic=0
+      aux_cam_publish force
       touch "${MARKER}.idle" 2>/dev/null
     fi
     torch_bridge_tick
@@ -463,13 +507,15 @@ while true; do
     fi
   else
     if [ "$last_cam" = "1" ]; then
-      log "CAM allow — chmod 660 instant"
+      log "CAM allow — chmod 660 instant + publish all lenses"
       cam_allow
+      aux_cam_publish force
     else
       # Privacy OFF: keep nodes open. Re-heal leftover 000 every tick.
       if ! cam_nodes_open; then
         log "CAM re-allow — nodes still 000 while toggle allowed"
         cam_allow
+        aux_cam_publish
       fi
     fi
   fi

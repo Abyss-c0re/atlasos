@@ -127,11 +127,9 @@ setprop ctl.start titan2-display 2>/dev/null || true
 # Agui stock trackpad OFF by default (pad-agent sets 1 only for trackpad|mouse).
 setprop persist.sys.agui.touchpad_function 0 2>/dev/null
 
-# Titan 2: HI847S (cam 2) stays hidden unless Aperture is on the aux
-# packagelist. TrebleApp Misc "Expose Aux cameras" wrote token "nothing"
-# on every start and restarted cameraserver — that wins a 40s restamp.
-# Stamp, wait for boot_completed + TrebleApp, stamp again, re-enumerate
-# once if CameraService still has no device 2. 0105 stops the write.
+# Titan 2: stamp Aperture onto aux packagelist. HAL bounce is owned by
+# titan2-sensor-privacy v25 (privacy OFF → all lenses; ON → no bounce).
+# Never dumpsys media.camera here — it hangs and skips the stamp.
 _titan2_aux_pkgs="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
 _titan2_stamp_aux() {
   setprop camera.aux.packagelist "$_titan2_aux_pkgs" 2>/dev/null || true
@@ -139,9 +137,6 @@ _titan2_stamp_aux() {
   setprop persist.camera.aux.packagelist "$_titan2_aux_pkgs" 2>/dev/null || true
   setprop persist.vendor.camera.aux.packagelist "$_titan2_aux_pkgs" 2>/dev/null || true
   setprop persist.vendor.camera.privapp.list org.lineageos.aperture 2>/dev/null || true
-}
-_titan2_aux_has_id2() {
-  dumpsys media.camera 2>/dev/null | grep -q 'Device 2 maps'
 }
 _titan2_stamp_aux
 (
@@ -151,15 +146,7 @@ _titan2_stamp_aux
     sleep 5
     _i=$((_i + 1))
   done
-  sleep 10
   _titan2_stamp_aux
-  if ! _titan2_aux_has_id2; then
-    # HAL already enumerated under token nothing — cameraserver alone is not enough.
-    setprop ctl.restart camerahalserver 2>/dev/null || true
-    setprop ctl.restart cameraserver 2>/dev/null || true
-    sleep 8
-    _titan2_stamp_aux
-  fi
 ) &
 
 # --- stock camera prefer (WITH_STOCK_CAMERA product face) ---

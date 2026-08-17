@@ -265,9 +265,8 @@ agui_follow_pad() {
   esac
 }
 
-# HI847S (cam 2) is SYSTEM_CAMERA. TrebleApp wrote aux.packagelist=nothing
-# on start (0105 stops that). Late stamp + one cameraserver restart if id 2
-# was never ADDed.
+# HI847S stamp only. HAL bounce is titan2-sensor-privacy v25 (honors
+# camera privacy). Never dumpsys media.camera — hang skips the stamp.
 stamp_aux_cam() {
   _pkgs="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
   setprop camera.aux.packagelist "$_pkgs" 2>/dev/null || true
@@ -275,14 +274,6 @@ stamp_aux_cam() {
   setprop persist.camera.aux.packagelist "$_pkgs" 2>/dev/null || true
   setprop persist.vendor.camera.aux.packagelist "$_pkgs" 2>/dev/null || true
   setprop persist.vendor.camera.privapp.list org.lineageos.aperture 2>/dev/null || true
-}
-stamp_aux_cam_heal() {
-  stamp_aux_cam
-  dumpsys media.camera 2>/dev/null | grep -q 'Device 2 maps' && return 0
-  setprop ctl.restart camerahalserver 2>/dev/null || true
-  setprop ctl.restart cameraserver 2>/dev/null || true
-  sleep 8
-  stamp_aux_cam
 }
 
 # --- late: pin pad QS tile (SystemUI may own/overwrite early) ---
@@ -404,7 +395,7 @@ case "$PHASE" in
     exit 0
     ;;
   late|qs)
-    stamp_aux_cam_heal
+    stamp_aux_cam
     heal_long_press
     heal_power_menu
     seed_qs_pad
