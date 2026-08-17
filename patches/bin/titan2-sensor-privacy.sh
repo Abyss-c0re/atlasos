@@ -438,17 +438,23 @@ if [ "$_rc" = "0" ]; then
   aux_cam_stamp
   log "boot CAM blocked (linux fail-closed rc=$_rc)"
 elif [ "$_rc" = "2" ]; then
-  # Still unreadable: do NOT leave 000. Re-check next ticks.
   cam_allow
   last_cam=0
-  aux_cam_publish force
+  aux_cam_stamp
   log "boot CAM allow (SPM unread — do not strand video nodes)"
 else
   cam_allow
   last_cam=0
-  aux_cam_publish force
+  aux_cam_stamp
   log "boot CAM allowed (SPM OFF)"
 fi
+# Recycle CameraService after first enum. Immediate publish at boot-allow
+# is a no-op (ADD already 0+1). +25s matches the adb sequence that ADDs 2+3.
+# Privacy ON (nodes 000) → publish stamps only.
+(
+  sleep 25
+  aux_cam_publish force
+) &
 privacy_mic_on
 _rcm=$?
 if [ "$_rcm" = "0" ] || [ "$_rcm" = "2" ]; then
@@ -461,7 +467,7 @@ else
   log "boot MIC allowed"
 fi
 
-log "titan2-sensor-privacy ONLINE v29 (init stop-start HAL; privacy-off only)"
+log "titan2-sensor-privacy ONLINE v30 (init recycle +25s after boot; privacy-off only)"
 seed_qs_tiles
 TICK=0
 [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 200000 ] && : >"$LOG"
