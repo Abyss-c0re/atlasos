@@ -237,15 +237,16 @@ aux_cam_publish() {
     age=$((now - _AUX_PUB_TS))
     [ "$age" -ge 0 ] && [ "$age" -lt 20 ] && return 0
   fi
-  # First HAL enum wins and hides id 2. Wait until both services are
-  # actually running, let that enum finish, then bounce with stamp set.
+  # First HAL enum hides id 2. Wait until both services are running,
+  # let that enum finish, bounce with stamp set. Second bounce +25s
+  # in case the first still raced (v25 same-second miss).
   _w=0
   while [ "$_w" -lt 40 ]; do
     _aux_svc_up && break
     sleep 1
     _w=$((_w + 1))
   done
-  sleep 5
+  sleep 12
   aux_cam_stamp
   _AUX_PUB_TS=$(date +%s 2>/dev/null || echo 0)
   setprop ctl.restart camerahalserver 2>/dev/null || true
@@ -259,6 +260,17 @@ aux_cam_publish() {
   restore_camera_nodes
   aux_cam_stamp
   log "aux published HAL bounce after svc-up (HI847S + main)"
+  (
+    sleep 25
+    aux_cam_nodes_blocked && exit 0
+    aux_cam_stamp
+    setprop ctl.restart camerahalserver 2>/dev/null || true
+    setprop ctl.restart cameraserver 2>/dev/null || true
+    sleep 4
+    restore_camera_nodes
+    aux_cam_stamp
+    log "aux published HAL bounce +25s belt"
+  ) &
 }
 
 cam_allow() {
@@ -456,7 +468,7 @@ else
   log "boot MIC allowed"
 fi
 
-log "titan2-sensor-privacy ONLINE v26 (aux bounce after HAL up; privacy-off only)"
+log "titan2-sensor-privacy ONLINE v27 (bounce after HAL up +25s; privacy-off only)"
 seed_qs_tiles
 TICK=0
 [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 200000 ] && : >"$LOG"
