@@ -16,3 +16,13 @@ on property:dev.bootcomplete=1
 # Belt kill-switch must still run once to restore leftover 000 nodes.
 on property:persist.titan2.privacy_belt=*
     start titan2-sensor-privacy
+
+# HI847S: shell setprop ctl.restart/ctl.stop from this service does not
+# recycle CameraService (lab T2031Z). Init stop/start does.
+on property:sys.titan2.aux_pub=1
+    stop cameraserver
+    stop camerahalserver
+on property:sys.titan2.aux_pub=2
+    start camerahalserver
+on property:sys.titan2.aux_pub=3
+    start cameraserver

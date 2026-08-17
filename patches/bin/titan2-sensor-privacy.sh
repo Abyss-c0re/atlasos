@@ -247,16 +247,13 @@ aux_cam_publish() {
   sleep 8
   aux_cam_stamp
   _AUX_PUB_TS=$(date +%s 2>/dev/null || echo 0)
-  # ctl.restart races: HAL and CameraService come up together and
-  # ADD only 0+1. Lab: stop both, stamp, start HAL, then cameraserver
-  # → ADD 0,1,2,3. Privacy ON never reaches here (nodes 000).
-  setprop ctl.stop cameraserver 2>/dev/null || true
-  setprop ctl.stop camerahalserver 2>/dev/null || true
+  # Init stop/start — this service's ctl.stop does not recycle CameraService.
+  setprop sys.titan2.aux_pub 1
   sleep 2
   aux_cam_stamp
-  setprop ctl.start camerahalserver 2>/dev/null || true
+  setprop sys.titan2.aux_pub 2
   sleep 2
-  setprop ctl.start cameraserver 2>/dev/null || true
+  setprop sys.titan2.aux_pub 3
   _w=0
   while [ "$_w" -lt 20 ]; do
     _aux_svc_up && break
@@ -265,7 +262,8 @@ aux_cam_publish() {
   done
   restore_camera_nodes
   aux_cam_stamp
-  log "aux published HAL stop-start (HI847S + main)"
+  setprop sys.titan2.aux_pub 0
+  log "aux published init stop-start (HI847S + main)"
 }
 
 cam_allow() {
@@ -463,7 +461,7 @@ else
   log "boot MIC allowed"
 fi
 
-log "titan2-sensor-privacy ONLINE v28 (stop-start HAL; privacy-off only)"
+log "titan2-sensor-privacy ONLINE v29 (init stop-start HAL; privacy-off only)"
 seed_qs_tiles
 TICK=0
 [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 200000 ] && : >"$LOG"
