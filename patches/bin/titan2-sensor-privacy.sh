@@ -244,15 +244,18 @@ aux_cam_publish() {
     sleep 1
     _w=$((_w + 1))
   done
-  sleep 8
   aux_cam_stamp
   _AUX_PUB_TS=$(date +%s 2>/dev/null || echo 0)
-  # Init stop/start — this service's ctl.stop does not recycle CameraService.
+  # Init recycles CameraService. 5s fully down — 2s left HAL mid-teardown
+  # and ADD 0+1 only. Init also writes the volatile aux list (SELinux).
   setprop sys.titan2.aux_pub 1
-  sleep 2
+  sleep 5
+  hs=$(getprop init.svc.camerahalserver | tr -d '\r')
+  cs=$(getprop init.svc.cameraserver | tr -d '\r')
+  log "aux after stop hal=$hs cam=$cs"
   aux_cam_stamp
   setprop sys.titan2.aux_pub 2
-  sleep 2
+  sleep 3
   setprop sys.titan2.aux_pub 3
   _w=0
   while [ "$_w" -lt 20 ]; do
@@ -263,7 +266,7 @@ aux_cam_publish() {
   restore_camera_nodes
   aux_cam_stamp
   setprop sys.titan2.aux_pub 0
-  log "aux published init stop-start (HI847S + main)"
+  log "aux published init recycle (HI847S + main)"
 }
 
 cam_allow() {
@@ -448,11 +451,12 @@ else
   aux_cam_stamp
   log "boot CAM allowed (SPM OFF)"
 fi
-# Recycle CameraService after first enum. Immediate publish at boot-allow
-# is a no-op (ADD already 0+1). +25s matches the adb sequence that ADDs 2+3.
-# Privacy ON (nodes 000) → publish stamps only.
+# Recycle after first enum has finished. +30s is the adb-proven window.
+# +70s belt if the first recycle still ADDs only 0+1.
 (
-  sleep 25
+  sleep 30
+  aux_cam_publish force
+  sleep 40
   aux_cam_publish force
 ) &
 privacy_mic_on
@@ -467,7 +471,7 @@ else
   log "boot MIC allowed"
 fi
 
-log "titan2-sensor-privacy ONLINE v30 (init recycle +25s after boot; privacy-off only)"
+log "titan2-sensor-privacy ONLINE v31 (init recycle 5s down +30s/+70s; privacy-off only)"
 seed_qs_tiles
 TICK=0
 [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 200000 ] && : >"$LOG"

@@ -22,6 +22,8 @@ on property:persist.titan2.privacy_belt=*
 on property:sys.titan2.aux_pub=1
     stop cameraserver
     stop camerahalserver
+    setprop camera.aux.packagelist org.lineageos.aperture,org.lineageos.aperture.lenslauncher
+    setprop vendor.camera.aux.packagelist org.lineageos.aperture,org.lineageos.aperture.lenslauncher
 on property:sys.titan2.aux_pub=2
     start camerahalserver
 on property:sys.titan2.aux_pub=3
