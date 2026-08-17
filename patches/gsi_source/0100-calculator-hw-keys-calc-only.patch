@@ -1,0 +1,310 @@
+# project:packages/apps/ExactCalculator
+# Titan HW keyboard: printed numpad WER/SDF/XCV/Q + operators; Enter is equals.
+diff --git a/res/layout/display_one_line.xml b/res/layout/display_one_line.xml
+index aa0a234..e9ffe5c 100644
+--- a/res/layout/display_one_line.xml
++++ b/res/layout/display_one_line.xml
+@@ -9,7 +9,7 @@
+     android:layout_width="match_parent"
+     android:layout_height="match_parent"
+     android:background="@drawable/rounded_bottom"
+-    android:clipChildren="false"
++    android:clipChildren="true"
+     android:orientation="vertical">
+ 
+     <include layout="@layout/toolbar" />
+diff --git a/src/com/android/calculator2/Calculator.java b/src/com/android/calculator2/Calculator.java
+index 6551570..d57a3bd 100644
+--- a/src/com/android/calculator2/Calculator.java
++++ b/src/com/android/calculator2/Calculator.java
+@@ -530,9 +530,12 @@ public class Calculator extends AppCompatActivity
+         moveTaskToBack(true);
+     }
+ 
+-    @Override
+-    public boolean onKeyUp(int keyCode, KeyEvent event) {
+-        // Allow the system to handle special key codes (e.g. "BACK" or "DPAD").
++    /**
++     * Hardware keyboard on Titan: letters used to land as red unprocessed
++     * junk and overflow the formula (clipChildren=false on one-line).
++     * Accept only digits and calculator symbols. Enter is equals.
++     */
++    private static boolean isSystemOrNavKey(int keyCode) {
+         switch (keyCode) {
+             case KeyEvent.KEYCODE_BACK:
+             case KeyEvent.KEYCODE_ESCAPE:
+@@ -540,49 +543,238 @@ public class Calculator extends AppCompatActivity
+             case KeyEvent.KEYCODE_DPAD_DOWN:
+             case KeyEvent.KEYCODE_DPAD_LEFT:
+             case KeyEvent.KEYCODE_DPAD_RIGHT:
+-                return super.onKeyUp(keyCode, event);
++            case KeyEvent.KEYCODE_HOME:
++            case KeyEvent.KEYCODE_APP_SWITCH:
++            case KeyEvent.KEYCODE_MENU:
++            case KeyEvent.KEYCODE_VOLUME_UP:
++            case KeyEvent.KEYCODE_VOLUME_DOWN:
++            case KeyEvent.KEYCODE_VOLUME_MUTE:
++            case KeyEvent.KEYCODE_POWER:
++            case KeyEvent.KEYCODE_CAMERA:
++            case KeyEvent.KEYCODE_FOCUS:
++            case KeyEvent.KEYCODE_SHIFT_LEFT:
++            case KeyEvent.KEYCODE_SHIFT_RIGHT:
++            case KeyEvent.KEYCODE_ALT_LEFT:
++            case KeyEvent.KEYCODE_ALT_RIGHT:
++            case KeyEvent.KEYCODE_CTRL_LEFT:
++            case KeyEvent.KEYCODE_CTRL_RIGHT:
++            case KeyEvent.KEYCODE_META_LEFT:
++            case KeyEvent.KEYCODE_META_RIGHT:
++            case KeyEvent.KEYCODE_CAPS_LOCK:
++            case KeyEvent.KEYCODE_NUM_LOCK:
++            case KeyEvent.KEYCODE_SYM:
++            case KeyEvent.KEYCODE_FUNCTION:
++            case KeyEvent.KEYCODE_PICTSYMBOLS:
++                return true;
++            default:
++                return false;
+         }
++    }
+ 
+-        // Stop the action mode or context menu if it's showing.
+-        stopActionModeOrContextMenu();
+-
+-        // Always cancel unrequested in-progress evaluation of the main expression, so that
+-        // we don't have to worry about subsequent asynchronous completion.
+-        // Requested in-progress evaluations are handled below.
+-        cancelUnrequested();
++    private static boolean isCalcHwSymbol(int id) {
++        return id == R.id.digit_0 || id == R.id.digit_1 || id == R.id.digit_2
++                || id == R.id.digit_3 || id == R.id.digit_4 || id == R.id.digit_5
++                || id == R.id.digit_6 || id == R.id.digit_7 || id == R.id.digit_8
++                || id == R.id.digit_9 || id == R.id.dec_point
++                || id == R.id.op_add || id == R.id.op_sub
++                || id == R.id.op_mul || id == R.id.op_div
++                || id == R.id.op_pow || id == R.id.op_fact || id == R.id.op_pct
++                || id == R.id.lparen || id == R.id.rparen;
++    }
+ 
++    /**
++     * Titan 2 printed cluster (TitanKey.kcm number: / ralt:), no Sym required:
++     *   W E R     1 2 3     T Y     ( )
++     *   S D F     4 5 6     G J     * +
++     *   X C V     7 8 9     U O     - /
++     *   Q         0         B Z     . !
++     */
++    private static int titanPrintedCalcKey(int keyCode) {
+         switch (keyCode) {
+-            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+-            case KeyEvent.KEYCODE_ENTER:
+-            case KeyEvent.KEYCODE_DPAD_CENTER:
+-                onEquals();
+-                return true;
+-            case KeyEvent.KEYCODE_DEL:
+-                onDelete();
+-                return true;
+-            case KeyEvent.KEYCODE_CLEAR:
+-                onClear();
+-                return true;
+-            default:
+-                cancelIfEvaluating(false);
+-                final int raw = event.getKeyCharacterMap().get(keyCode, event.getMetaState());
+-                if ((raw & KeyCharacterMap.COMBINING_ACCENT) != 0) {
+-                    return true; // discard
+-                }
+-                // Try to discard non-printing characters and the like.
+-                // The user will have to explicitly delete other junk that gets past us.
+-                if (Character.isIdentifierIgnorable(raw) || Character.isWhitespace(raw)) {
+-                    return true;
++            case KeyEvent.KEYCODE_W: return R.id.digit_1;
++            case KeyEvent.KEYCODE_E: return R.id.digit_2;
++            case KeyEvent.KEYCODE_R: return R.id.digit_3;
++            case KeyEvent.KEYCODE_S: return R.id.digit_4;
++            case KeyEvent.KEYCODE_D: return R.id.digit_5;
++            case KeyEvent.KEYCODE_F: return R.id.digit_6;
++            case KeyEvent.KEYCODE_X: return R.id.digit_7;
++            case KeyEvent.KEYCODE_C: return R.id.digit_8;
++            case KeyEvent.KEYCODE_V: return R.id.digit_9;
++            case KeyEvent.KEYCODE_Q: return R.id.digit_0;
++            case KeyEvent.KEYCODE_G: return R.id.op_mul;
++            case KeyEvent.KEYCODE_J: return R.id.op_add;
++            case KeyEvent.KEYCODE_U: return R.id.op_sub;
++            case KeyEvent.KEYCODE_O: return R.id.op_div;
++            case KeyEvent.KEYCODE_T: return R.id.lparen;
++            case KeyEvent.KEYCODE_Y: return R.id.rparen;
++            case KeyEvent.KEYCODE_B: return R.id.dec_point;
++            case KeyEvent.KEYCODE_Z: return R.id.op_fact;
++            default: return View.NO_ID;
++        }
++    }
++
++    /** Button id for a calc digit/symbol, or {@link View#NO_ID}. */
++    private static int calcButtonForHwKey(int keyCode, KeyEvent event) {
++        // KCM number: field (Titan printed numpad). Do this before unicode
++        // letters, or W/E/R… are swallowed as 'w'/'e'/'r'.
++        final KeyCharacterMap kcm = event.getKeyCharacterMap();
++        if (kcm != null) {
++            final char number = kcm.getNumber(keyCode);
++            if (number != 0) {
++                final int nid = KeyMaps.keyForChar(number);
++                if (isCalcHwSymbol(nid)) {
++                    return nid;
+                 }
+-                char c = (char) raw;
+-                if (c == '=') {
+-                    onEquals();
+-                } else {
+-                    addChars(String.valueOf(c), true);
+-                    redisplayAfterFormulaChange();
++            }
++        }
++        final int printed = titanPrintedCalcKey(keyCode);
++        if (printed != View.NO_ID) {
++            return printed;
++        }
++        final int raw = event.getUnicodeChar();
++        if (raw != 0 && (raw & KeyCharacterMap.COMBINING_ACCENT) == 0) {
++            final char c = (char) raw;
++            if (c != '=') {
++                final int id = KeyMaps.keyForChar(c);
++                if (isCalcHwSymbol(id)) {
++                    return id;
+                 }
+-                return true;
++            }
+         }
++        switch (keyCode) {
++            case KeyEvent.KEYCODE_0:
++            case KeyEvent.KEYCODE_NUMPAD_0:
++                return R.id.digit_0;
++            case KeyEvent.KEYCODE_1:
++            case KeyEvent.KEYCODE_NUMPAD_1:
++                return R.id.digit_1;
++            case KeyEvent.KEYCODE_2:
++            case KeyEvent.KEYCODE_NUMPAD_2:
++                return R.id.digit_2;
++            case KeyEvent.KEYCODE_3:
++            case KeyEvent.KEYCODE_NUMPAD_3:
++                return R.id.digit_3;
++            case KeyEvent.KEYCODE_4:
++            case KeyEvent.KEYCODE_NUMPAD_4:
++                return R.id.digit_4;
++            case KeyEvent.KEYCODE_5:
++            case KeyEvent.KEYCODE_NUMPAD_5:
++                return R.id.digit_5;
++            case KeyEvent.KEYCODE_6:
++            case KeyEvent.KEYCODE_NUMPAD_6:
++                return R.id.digit_6;
++            case KeyEvent.KEYCODE_7:
++            case KeyEvent.KEYCODE_NUMPAD_7:
++                return R.id.digit_7;
++            case KeyEvent.KEYCODE_8:
++            case KeyEvent.KEYCODE_NUMPAD_8:
++                return R.id.digit_8;
++            case KeyEvent.KEYCODE_9:
++            case KeyEvent.KEYCODE_NUMPAD_9:
++                return R.id.digit_9;
++            case KeyEvent.KEYCODE_NUMPAD_ADD:
++            case KeyEvent.KEYCODE_PLUS:
++                return R.id.op_add;
++            case KeyEvent.KEYCODE_NUMPAD_SUBTRACT:
++            case KeyEvent.KEYCODE_MINUS:
++                return R.id.op_sub;
++            case KeyEvent.KEYCODE_NUMPAD_MULTIPLY:
++            case KeyEvent.KEYCODE_STAR:
++                return R.id.op_mul;
++            case KeyEvent.KEYCODE_NUMPAD_DIVIDE:
++            case KeyEvent.KEYCODE_SLASH:
++                return R.id.op_div;
++            case KeyEvent.KEYCODE_NUMPAD_DOT:
++            case KeyEvent.KEYCODE_PERIOD:
++            case KeyEvent.KEYCODE_COMMA:
++                return R.id.dec_point;
++            case KeyEvent.KEYCODE_NUMPAD_LEFT_PAREN:
++                return R.id.lparen;
++            case KeyEvent.KEYCODE_NUMPAD_RIGHT_PAREN:
++                return R.id.rparen;
++            default:
++                return View.NO_ID;
++        }
++    }
++
++    private static boolean isEqualsKey(int keyCode, KeyEvent event) {
++        if (keyCode == KeyEvent.KEYCODE_ENTER
++                || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
++                || keyCode == KeyEvent.KEYCODE_DPAD_CENTER
++                || keyCode == KeyEvent.KEYCODE_EQUALS
++                || keyCode == KeyEvent.KEYCODE_NUMPAD_EQUALS) {
++            return true;
++        }
++        final int raw = event.getUnicodeChar();
++        return raw != 0 && (raw & KeyCharacterMap.COMBINING_ACCENT) == 0
++                && (char) raw == '=';
++    }
++
++    /**
++     * @return true if the event is fully handled (do not dispatch further)
++     */
++    private boolean handleHwCalcKey(KeyEvent event) {
++        final int keyCode = event.getKeyCode();
++        if (isSystemOrNavKey(keyCode) || event.isSystem()) {
++            return false;
++        }
++        final boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
++        if (event.getAction() == KeyEvent.ACTION_UP) {
++            // Consumed on down (including repeats). Swallow so IME cannot insert letters.
++            return true;
++        }
++        if (!down) {
++            return false;
++        }
++
++        if (isEqualsKey(keyCode, event)) {
++            if (event.getRepeatCount() == 0) {
++                stopActionModeOrContextMenu();
++                cancelUnrequested();
++                onEquals();
++            }
++            return true;
++        }
++        if (keyCode == KeyEvent.KEYCODE_DEL || keyCode == KeyEvent.KEYCODE_FORWARD_DEL) {
++            stopActionModeOrContextMenu();
++            cancelUnrequested();
++            onDelete();
++            return true;
++        }
++        if (keyCode == KeyEvent.KEYCODE_CLEAR) {
++            stopActionModeOrContextMenu();
++            cancelUnrequested();
++            onClear();
++            return true;
++        }
++
++        final int id = calcButtonForHwKey(keyCode, event);
++        if (id != View.NO_ID) {
++            stopActionModeOrContextMenu();
++            cancelUnrequested();
++            cancelIfEvaluating(false);
++            addExplicitKeyToExpr(id);
++            redisplayAfterFormulaChange();
++            return true;
++        }
++        // Letter / other printing key: swallow. Do not add unprocessed junk.
++        return true;
++    }
++
++    @Override
++    public boolean dispatchKeyEvent(KeyEvent event) {
++        if (handleHwCalcKey(event)) {
++            return true;
++        }
++        return super.dispatchKeyEvent(event);
++    }
++
++    @Override
++    public boolean onKeyUp(int keyCode, KeyEvent event) {
++        if (isSystemOrNavKey(keyCode)) {
++            return super.onKeyUp(keyCode, event);
++        }
++        return true;
+     }
+ 
+     /**
