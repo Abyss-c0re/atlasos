@@ -265,14 +265,24 @@ agui_follow_pad() {
   esac
 }
 
-# HI847S (cam 2) is SYSTEM_CAMERA. Vendor writes aux.packagelist=nothing
-# after boot — late restamp so Aperture keeps the second rear lens.
+# HI847S (cam 2) is SYSTEM_CAMERA. TrebleApp wrote aux.packagelist=nothing
+# on start (0105 stops that). Late stamp + one cameraserver restart if id 2
+# was never ADDed.
 stamp_aux_cam() {
   _pkgs="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
   setprop camera.aux.packagelist "$_pkgs" 2>/dev/null || true
   setprop vendor.camera.aux.packagelist "$_pkgs" 2>/dev/null || true
   setprop persist.camera.aux.packagelist "$_pkgs" 2>/dev/null || true
   setprop persist.vendor.camera.aux.packagelist "$_pkgs" 2>/dev/null || true
+  setprop persist.vendor.camera.privapp.list org.lineageos.aperture 2>/dev/null || true
+}
+stamp_aux_cam_heal() {
+  stamp_aux_cam
+  dumpsys media.camera 2>/dev/null | grep -q 'Device 2 maps' && return 0
+  setprop ctl.restart camerahalserver 2>/dev/null || true
+  setprop ctl.restart cameraserver 2>/dev/null || true
+  sleep 8
+  stamp_aux_cam
 }
 
 # --- late: pin pad QS tile (SystemUI may own/overwrite early) ---
@@ -394,7 +404,7 @@ case "$PHASE" in
     exit 0
     ;;
   late|qs)
-    stamp_aux_cam
+    stamp_aux_cam_heal
     heal_long_press
     heal_power_menu
     seed_qs_pad

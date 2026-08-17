@@ -1,0 +1,23 @@
+diff --git a/app/src/main/java/me/phh/treble/app/Misc.kt b/app/src/main/java/me/phh/treble/app/Misc.kt
+@@ -99,16 +99,16 @@
+             MiscSettings.multiCameras -> {
+                 val value = sp.getBoolean(key, false)
+ 
+                 safeSetprop("persist.sys.phh.include_all_cameras", if(value) "true" else "false")
+-                if (value ||
+-                        SystemProperties.get("vendor.camera.aux.packagelist", null) == null ||
+-                        SystemProperties.get("camera.aux.packagelist", null) == null) {
+-                    safeSetprop("vendor.camera.aux.packagelist", if (value) "nothing" else null)
+-                    safeSetprop("camera.aux.packagelist", if (value) "nothing" else null)
+-                    safeSetprop("ctl.restart", "vendor.camera-provider-2-4")
+-                    safeSetprop("ctl.restart", "camera-provider-2-4")
+-                    safeSetprop("ctl.restart", "cameraserver")
+-                }
++                // Titan 2: token "nothing" hides HI847S (cam 2) at HAL enum.
++                // include_all_cameras is the real expose (CameraProviderManager).
++                // Aux packagelist is product-owned (Aperture). Do not clobber or
++                // restart cameraserver on every TrebleApp start.
++                Log.d("PHH", "include_all_cameras=$value (aux packagelist untouched)")
+             }
+             MiscSettings.forceCamera2APIHAL3 -> {
+                 val value = sp.getBoolean(key, false)

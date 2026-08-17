@@ -102,3 +102,6 @@
 # Lab-proven Misc BT defaults (mediatek + sysbta + disable LE APCF).
 # Seed SharedPreferences once; never restamp if the user later edits Misc.
 0102-trebleapp-bt-defaults-seed-once.patch
+
+# Expose Aux sets include_all_cameras only. Token "nothing" hid HI847S.
+0105-trebleapp-never-aux-nothing.patch
