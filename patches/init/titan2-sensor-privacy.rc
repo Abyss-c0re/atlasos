@@ -6,10 +6,13 @@ service titan2-sensor-privacy /system/bin/titan2-sensor-privacy.sh
     class late_start
     user root
     group root system media audio camera
-    disabled
 
 on property:sys.boot_completed=1
     start titan2-sensor-privacy
 
 on property:dev.bootcomplete=1
+    start titan2-sensor-privacy
+
+# Belt kill-switch must still run once to restore leftover 000 nodes.
+on property:persist.titan2.privacy_belt=*
     start titan2-sensor-privacy

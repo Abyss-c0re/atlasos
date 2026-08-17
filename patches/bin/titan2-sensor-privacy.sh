@@ -204,9 +204,13 @@ cam_block() {
 
 cam_allow() {
   restore_camera_nodes
-  if ! pidof camerahalserver >/dev/null 2>&1; then
-    start camerahalserver 2>/dev/null || true
-  fi
+  # HAL crash-loops on 000 nodes and stays empty after chmod unless bounced.
+  hs=$(getprop init.svc.camerahalserver 2>/dev/null | tr -d '\r')
+  case "$hs" in
+    restarting|stopped|'')
+      start camerahalserver 2>/dev/null || true
+      ;;
+  esac
   if ! pidof cameraserver >/dev/null 2>&1; then
     start cameraserver 2>/dev/null || true
   fi
@@ -351,15 +355,28 @@ done
 echo $$ >"$PIDF" 2>/dev/null || true
 chmod 666 "$PIDF" 2>/dev/null || true
 
-# Boot: fail-closed first — never open nodes before desire known
+# Boot: wait for SensorPrivacy dumpsys before fail-closed.
+# Unreadable SPM (rc=2) used to chmod 000 /dev/video* and then die —
+# toggle later said allowed, HAL crash-looped, CameraService devices=0.
+i=0
+while [ $i -lt 15 ]; do
+  refresh_desire
+  [ "$SP_OK" = "1" ] && break
+  i=$((i + 1)); sleep 1
+done
 refresh_desire
 privacy_cam_on
 _rc=$?
 last_cam=0
-if [ "$_rc" = "0" ] || [ "$_rc" = "2" ]; then
+if [ "$_rc" = "0" ]; then
   cam_block
   last_cam=1
   log "boot CAM blocked (linux fail-closed rc=$_rc)"
+elif [ "$_rc" = "2" ]; then
+  # Still unreadable: do NOT leave 000. Re-check next ticks.
+  cam_allow
+  last_cam=0
+  log "boot CAM allow (SPM unread — do not strand video nodes)"
 else
   cam_allow
   last_cam=0
@@ -377,7 +394,7 @@ else
   log "boot MIC allowed"
 fi
 
-log "titan2-sensor-privacy ONLINE v23 (INTERVAL_S=1 steady + sp_wake impulse; no 20Hz dumpsys heat)"
+log "titan2-sensor-privacy ONLINE v24 (no strand 000 when toggle allows)"
 seed_qs_tiles
 TICK=0
 [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 200000 ] && : >"$LOG"
@@ -406,8 +423,9 @@ while true; do
     usleep 20000 2>/dev/null || sleep 0.02
   fi
   if ! belt_enabled; then
-    if [ "$last_cam" = "1" ] || [ "$last_mic" = "1" ] || [ ! -f "${MARKER}.idle" ]; then
-      log "belt DISABLED — allow cam+mic"
+    if [ "$last_cam" = "1" ] || [ "$last_mic" = "1" ] \
+        || [ ! -f "${MARKER}.idle" ] || ! cam_nodes_open; then
+      log "belt DISABLED — allow cam+mic (restore leftover 000)"
       cam_allow
       mic_allow
       last_cam=0
@@ -448,11 +466,10 @@ while true; do
       log "CAM allow — chmod 660 instant"
       cam_allow
     else
-      # Privacy OFF: keep nodes open. Never fuser/kill clients.
-      if [ $((TICK % 5)) -eq 0 ]; then
-        case "$(ls -l /dev/video0 2>/dev/null | cut -c1-10)" in
-          c---------*|c---*---*) restore_camera_nodes ;;
-        esac
+      # Privacy OFF: keep nodes open. Re-heal leftover 000 every tick.
+      if ! cam_nodes_open; then
+        log "CAM re-allow — nodes still 000 while toggle allowed"
+        cam_allow
       fi
     fi
   fi
