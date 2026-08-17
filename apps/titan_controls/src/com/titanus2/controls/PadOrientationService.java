@@ -104,8 +104,14 @@ public class PadOrientationService extends Service {
             }
         } catch (Exception ignored) {}
         if (r < Surface.ROTATION_0 || r > Surface.ROTATION_270) r = 0;
-        if (r == last) return;
+        String want = String.valueOf(r);
+        if (r == last) {
+            // Heal pad-apply clobber (old reader treated 1/2/3 as 0).
+            String cur = AgentBridge.get(this, AgentBridge.PAD_ROTATION, "0");
+            if (cur != null) cur = cur.trim();
+            if (want.equals(cur)) return;
+        }
         last = r;
-        AgentBridge.put(this, AgentBridge.PAD_ROTATION, String.valueOf(r));
+        AgentBridge.put(this, AgentBridge.PAD_ROTATION, want);
     }
 }

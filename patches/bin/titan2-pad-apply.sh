@@ -18,7 +18,7 @@ PAD_STATUS=$ST/titan2_pad_status
 TP_LOG=$ST/titan2_touchpadd.log
 CARET_STATUS=$ST/titan2_caret_status
 APPLY_LAST=$ST/titan2_pad_apply_last
-PAD_APPLY_VER=2.214-no-clobber-mode
+PAD_APPLY_VER=2.215-rot-0-3
 
 # Prefer GSI/system binary (Phase 1.5 SoT); tip only for lab iteration.
 TOUCHPADD=/system/bin/titan2-touchpadd
@@ -90,9 +90,17 @@ read_pad_top_row_only() {
 read_pad_follow_orient() {
   case "`read_first titan2_pad_follow_orient`" in 0|false|off|OFF|no|NO) echo 0;; *) echo 1;; esac
 }
+# Surface rotation 0..3 (PadOrientationService / Controls). 90/180/270 = alias.
+# Never treat 1/2/3 as invalid — that wrote 0 over landscape and killed follow.
 read_pad_rotation() {
   v=`read_first titan2_pad_rotation`
-  case "$v" in 0|90|180|270) echo "$v";; *) echo 0;; esac
+  case "$v" in
+    0|1|2|3) echo "$v" ;;
+    90) echo 1 ;;
+    180) echo 2 ;;
+    270) echo 3 ;;
+    *) echo 0 ;;
+  esac
 }
 read_sub_flip_x() {
   case "`read_first titan2_sub_touch_flip_x`" in 0|false|off|OFF) echo 0;; *) echo 1;; esac

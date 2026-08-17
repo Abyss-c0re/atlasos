@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.14 (614) — 2026-08-17T10:01Z
+
+- Follow-orient: accept Surface rotation 0-3. Stop pad-apply writing 0 over landscape.
+
+---
+
 ## 16.13 (613) — 2026-08-17T09:47Z
 
 - Chords: 2 or 3 keys. Hold together then release to capture. Longest match wins; a 2-key chord waits briefly if a 3-key chord extends it.
