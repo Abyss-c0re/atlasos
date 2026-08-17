@@ -184,8 +184,20 @@ if [ -f /vendor/bin/mtkmal ]; then
     # Incoming MT: binder thread ON. Do NOT set restart_ril=true on this SoC
     # (vndk.rc restarts vendor.ril-daemon-mtk and UICC apps drop).
     setprop persist.sys.phh.allow_binder_thread_on_incoming_calls 1 2>/dev/null || true
-    # NEVER set unsupported.commands=182 (mediatek/huawei) — corrupt/wipe risk.
-    setprop persist.sys.bt.unsupported.commands "" 2>/dev/null || true
+    # BT persist: TrebleApp Misc is SoT. Seed lab-proven defaults once;
+    # never restamp if the user later changes Misc (or persist already set).
+    _bt_seed=/data/misc/titan2/titan2_bt_defaults_seeded
+    if [ ! -f "$_bt_seed" ]; then
+      mkdir -p /data/misc/titan2 2>/dev/null || true
+      setprop persist.sys.bt.unsupported.commands 182 2>/dev/null || true
+      setprop persist.sys.bt.unsupported.ogfeatures "" 2>/dev/null || true
+      setprop persist.sys.bt.unsupported.lefeatures "" 2>/dev/null || true
+      setprop persist.sys.bt.unsupported.states "" 2>/dev/null || true
+      setprop persist.bluetooth.system_audio_hal.enabled true 2>/dev/null || true
+      setprop persist.sys.bt.le.disable_apcf_extended_features 1 2>/dev/null || true
+      echo 1 > "$_bt_seed" 2>/dev/null || true
+      chmod 666 "$_bt_seed" 2>/dev/null || true
+    fi
 fi
 
 if grep -qF android.hardware.boot /vendor/manifest.xml || grep -qF android.hardware.boot /vendor/etc/vintf/manifest.xml ;then

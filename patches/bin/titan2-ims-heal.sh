@@ -4,14 +4,15 @@
 # Invoked by pad-agent:
 #   action | sub_defaults | bind_all | auto_sub | props | version
 # Never downloads third-party IMS APKs.
-# props (2.172): IMS/telephony/BT setprop plane + apply_ims_action + status.
+# props (2.173): IMS/telephony setprop plane + apply_ims_action + status.
+# BT plane files apply only if present; missing = leave persist (TrebleApp SoT).
 # Agent still runs apply_dev_action + apply_subdisplay after props.
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
 IMS_STATUS=$ST/titan2_ims_status
 IMS_PROPS_STATE=$ST/titan2_ims_props_last
-IMS_VER=2.172-ims-props-peel
+IMS_VER=2.173-bt-noforce
 
 log() {
   echo "ims-heal: $*" >>"$ST/titan2_pad_agent.log" 2>/dev/null || true
@@ -82,9 +83,9 @@ _save_ims_props_state() {
   chmod 666 "$IMS_PROPS_STATE" 2>/dev/null || true
 }
 
-# Root applies IMS/telephony/BT props from Titan Controls (priv_app cannot setprop).
-# BT workaround mediatek/huawei (unsupported.commands=182) is BANNED — always scrub.
-# See docs/project/DANGEROUS_BT_WORKAROUND.md
+# Root applies IMS/telephony props from Titan Controls (priv_app cannot setprop).
+# BT persist is TrebleApp Misc SoT. This script does not write
+# persist.sys.bt.unsupported.* / sysbta / disable_apcf.
 apply_ims_props() {
   _load_ims_props_state
   mtk=`read_first titan2_ims_mtk`
@@ -180,50 +181,13 @@ apply_ims_props() {
     ;;
   esac
 
-  sysbta=`read_first titan2_bt_sysbta`; [ -n "$sysbta" ] || sysbta=0
-  case "$sysbta" in 1|true|on|ON)
-    [ "$LAST_BT_SYSBTA" = "1" ] || { setprop persist.bluetooth.system_audio_hal.enabled true 2>/dev/null || true; LAST_BT_SYSBTA=1; }
-    ;;
-  *)
-    [ "$LAST_BT_SYSBTA" = "0" ] || { setprop persist.bluetooth.system_audio_hal.enabled false 2>/dev/null || true; LAST_BT_SYSBTA=0; }
-    ;;
-  esac
-
-  apcf=`read_first titan2_bt_disable_apcf`; [ -n "$apcf" ] || apcf=0
-  case "$apcf" in 1|true|on|ON)
-    [ "$LAST_BT_APCF" = "1" ] || { setprop persist.sys.bt.le.disable_apcf_extended_features 1 2>/dev/null || true; LAST_BT_APCF=1; }
-    ;;
-  *)
-    [ "$LAST_BT_APCF" = "0" ] || { setprop persist.sys.bt.le.disable_apcf_extended_features 0 2>/dev/null || true; LAST_BT_APCF=0; }
-    ;;
-  esac
-
-  wa=`read_first titan2_bt_workaround`; [ -n "$wa" ] || wa=none
-  case "$wa" in
-    mediatek|huawei|mtk)
-      log "bt_workaround BANNED value=$wa (maps to none; clears unsupported.* props)"
-      wa=none
-      ;;
-    none|"") wa=none ;;
-    *)
-      log "bt_workaround unknown=$wa -> none"
-      wa=none
-      ;;
-  esac
-  if [ "$wa" != "$LAST_BT_WA" ] || [ -n "$(getprop persist.sys.bt.unsupported.commands 2>/dev/null)" ]; then
-    setprop persist.sys.bt.unsupported.commands "" 2>/dev/null || true
-    setprop persist.sys.bt.unsupported.ogfeatures "" 2>/dev/null || true
-    setprop persist.sys.bt.unsupported.lefeatures "" 2>/dev/null || true
-    setprop persist.sys.bt.unsupported.states "" 2>/dev/null || true
-    persist_ctrl titan2_bt_workaround none
-    LAST_BT_WA=none
-  fi
-
-  esco=`read_first titan2_bt_esco`; [ -n "$esco" ] || esco=0
-  case "$esco" in 0|8|16|24|32) ;; *) esco=0;; esac
-  if [ "$esco" != "$LAST_BT_ESCO" ]; then
-    setprop persist.sys.bt.esco_transport_unit_size "$esco" 2>/dev/null || true
-    LAST_BT_ESCO=$esco
+  esco=`read_first titan2_bt_esco`
+  if [ -n "$esco" ]; then
+    case "$esco" in 0|8|16|24|32) ;; *) esco=0;; esac
+    if [ "$esco" != "$LAST_BT_ESCO" ]; then
+      setprop persist.sys.bt.esco_transport_unit_size "$esco" 2>/dev/null || true
+      LAST_BT_ESCO=$esco
+    fi
   fi
 
   persist_ctrl titan2_ims_mtk "$LAST_IMS_MTK"
@@ -233,10 +197,6 @@ apply_ims_props() {
   persist_ctrl titan2_tel_disable_vci "$LAST_TEL_VCI"
   persist_ctrl titan2_tel_restart_ril "$LAST_TEL_RIL"
   persist_ctrl titan2_tel_patch_smsc "$LAST_TEL_SMSC"
-  persist_ctrl titan2_bt_sysbta "$LAST_BT_SYSBTA"
-  persist_ctrl titan2_bt_disable_apcf "$LAST_BT_APCF"
-  persist_ctrl titan2_bt_workaround "$LAST_BT_WA"
-  persist_ctrl titan2_bt_esco "$LAST_BT_ESCO"
 
   apply_ims_action
 

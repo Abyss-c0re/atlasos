@@ -133,7 +133,7 @@ public final class AgentBridge {
     public static final String TEL_PATCH_SMSC = "titan2_tel_patch_smsc";
     public static final String BT_SYSBTA = "titan2_bt_sysbta";
     public static final String BT_DISABLE_APCF = "titan2_bt_disable_apcf";
-    /** only "none" — mediatek/huawei banned (HCI unsupported.commands=182) */
+    /** TrebleApp Misc SoT. Plane file optional; heal honors only if present. */
     public static final String BT_WA = "titan2_bt_workaround";
     public static final String BT_ESCO = "titan2_bt_esco";                 // 0|8|16|24|32
 

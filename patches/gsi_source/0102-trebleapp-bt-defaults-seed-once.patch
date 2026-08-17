@@ -1,0 +1,65 @@
+diff --git a/app/src/main/java/me/phh/treble/app/Misc.kt b/app/src/main/java/me/phh/treble/app/Misc.kt
+@@ -162,7 +162,7 @@
+                 SystemProperties.set("persist.sys.phh.mainkeys", if (value) "1" else "0")
+             }
+             MiscSettings.bluetooth -> {
+-                val value = sp.getString(key, "none")
++                val value = sp.getString(key, "mediatek")
+                 android.util.Log.d("PHH", "Setting bluetooth workaround to $value")
+                 when (value) {
+                     "none" -> {
+@@ -216,7 +216,7 @@
+                 SystemProperties.set("persist.sys.phh.disable_fast_audio", if (value) "1" else "0")
+             }
+             MiscSettings.sysbta -> {
+-                val value = sp.getBoolean(key, false)
++                val value = sp.getBoolean(key, true)
+                 SystemProperties.set("persist.bluetooth.system_audio_hal.enabled", if (value) "true" else "false")
+             }
+             MiscSettings.noHwcomposer -> {
+@@ -415,7 +415,7 @@
+                 SystemProperties.set("persist.sys.phh.prefer_hw_codecs", if (value) "true" else "false")
+             }
+             MiscSettings.disableLeApcfExtended -> {
+-                val value = sp.getBoolean(key, false)
++                val value = sp.getBoolean(key, true)
+                 SystemProperties.set("persist.sys.bt.le.disable_apcf_extended_features", if (value) "1" else "0")
+             }
+             MiscSettings.treatVirtualSensorsAsReal -> {
+@@ -441,10 +441,20 @@
+         spListener.onSharedPreferenceChanged(sp, MiscSettings.forceCamera2APIHAL3)
+         if (! sp.contains(MiscSettings.headsetFix))
+             sp.edit().putBoolean(MiscSettings.headsetFix, HuaweiSettings.enabled()).commit()
+-        sp.edit().putBoolean(MiscSettings.sysbta, SystemProperties.getBoolean("persist.bluetooth.system_audio_hal.enabled", false)).apply()
++        // Titan 2 lab-proven Misc BT defaults. Seed prefs once; honor later user edits.
++        // Do not copy persist.bluetooth.system_audio_hal.enabled over the pref —
++        // a missing persist (false) would fight the seed every TrebleApp start.
++        if (!sp.contains(MiscSettings.bluetooth))
++            sp.edit().putString(MiscSettings.bluetooth, "mediatek").apply()
++        if (!sp.contains(MiscSettings.sysbta))
++            sp.edit().putBoolean(MiscSettings.sysbta, true).apply()
++        if (!sp.contains(MiscSettings.disableLeApcfExtended))
++            sp.edit().putBoolean(MiscSettings.disableLeApcfExtended, true).apply()
+         spListener.onSharedPreferenceChanged(sp, MiscSettings.headsetFix)
+         spListener.onSharedPreferenceChanged(sp, MiscSettings.bluetooth)
++        spListener.onSharedPreferenceChanged(sp, MiscSettings.sysbta)
++        spListener.onSharedPreferenceChanged(sp, MiscSettings.disableLeApcfExtended)
+         spListener.onSharedPreferenceChanged(sp, MiscSettings.displayFps)
+         spListener.onSharedPreferenceChanged(sp, MiscSettings.noHwcomposer)
+         spListener.onSharedPreferenceChanged(sp, MiscSettings.storageFUSE)
+         spListener.onSharedPreferenceChanged(sp, MiscSettings.dt2w)
+diff --git a/app/src/main/res/xml/pref_misc.xml b/app/src/main/res/xml/pref_misc.xml
+@@ -205,11 +205,11 @@
+             android:title="Use System Wide BT HAL" />
+         <SwitchPreference
+             android:key="key_misc_disable_le_apcfe"
+-            android:defaultValue="false"
++            android:defaultValue="true"
+             android:title="Disable LE APCF Extended features"
+             android:summary="Fix bluetooth crashing on some devices" />
+         <ListPreference
+-            android:defaultValue="0"
++            android:defaultValue="mediatek"
+             android:entries="@array/pref_misc_bluetooth"
+             android:entryValues="@array/pref_misc_bluetooth_values"
+             android:key="key_misc_bluetooth"

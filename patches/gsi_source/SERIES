@@ -91,3 +91,8 @@
 
 # Titan square display: result/formula fit slot height.
 0101-calculator-display-fit-height.patch
+
+# project:treble_app
+# Lab-proven Misc BT defaults (mediatek + sysbta + disable LE APCF).
+# Seed SharedPreferences once; never restamp if the user later edits Misc.
+0102-trebleapp-bt-defaults-seed-once.patch

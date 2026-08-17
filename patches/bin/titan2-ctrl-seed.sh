@@ -166,7 +166,7 @@ seed_agent_extras() {
     titan2_notif_period_ms titan2_notif_on_ms \
     titan2_ims_mtk titan2_ims_force_volte titan2_ims_binder \
     titan2_tel_force_5g titan2_tel_disable_vci titan2_tel_restart_ril titan2_tel_patch_smsc \
-    titan2_bt_sysbta titan2_bt_disable_apcf titan2_bt_workaround titan2_bt_esco; do
+    titan2_bt_esco; do
     if [ ! -s "$T2/$nm" ] && [ -f "$T2/${nm}_last" ]; then
       cp "$T2/${nm}_last" "$T2/$nm" 2>/dev/null || true
       chmod 666 "$T2/$nm" 2>/dev/null || true
@@ -194,7 +194,7 @@ seed_agent_extras() {
   fi
 
   for pair in "titan2_ims_mtk:1" "titan2_ims_force_volte:1" "titan2_ims_binder:1" \
-    "titan2_bt_workaround:none" "titan2_bt_sysbta:0" "titan2_tel_patch_smsc:1"; do
+    "titan2_tel_patch_smsc:1"; do
     nm=${pair%%:*}; val=${pair##*:}
     if [ ! -s "$T2/$nm" ]; then
       echo "$val" > "$T2/$nm" 2>/dev/null || true
@@ -214,21 +214,8 @@ seed_agent_extras() {
     fi
   done
 
-  # Scrub banned BT HCI blacklist (Treble mediatek/huawei WA) — sticky corruption ban
-  setprop persist.sys.bt.unsupported.commands "" 2>/dev/null || true
-  setprop persist.sys.bt.unsupported.ogfeatures "" 2>/dev/null || true
-  setprop persist.sys.bt.unsupported.lefeatures "" 2>/dev/null || true
-  setprop persist.sys.bt.unsupported.states "" 2>/dev/null || true
-  for d in "$T2" "$ST"; do
-    if [ -f "$d/titan2_bt_workaround" ]; then
-      cur=$(cat "$d/titan2_bt_workaround" 2>/dev/null | tr -d '\r\n')
-      case "$cur" in mediatek|huawei|mtk)
-        echo none > "$d/titan2_bt_workaround" 2>/dev/null || true
-        chmod 666 "$d/titan2_bt_workaround" 2>/dev/null || true
-        ;;
-      esac
-    fi
-  done
+  # BT persist is TrebleApp Misc SoT. Do not seed titan2_bt_* or scrub
+  # persist.sys.bt.unsupported.commands — that restamps user edits every boot.
 
   # KeyMap / specials / HID shells (create-if-missing; chmod always)
   # Defaults match KeyMapPrefs.factoryDefault — never seed home/recents on sides.
