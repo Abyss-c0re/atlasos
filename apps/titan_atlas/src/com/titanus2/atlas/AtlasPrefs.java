@@ -2,6 +2,7 @@ package com.titanus2.atlas;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.graphics.Color;
 
 /** Atlas host prefs (DeviceDefault settings surface — not Cube chrome). */
@@ -136,6 +137,32 @@ public final class AtlasPrefs {
         p(c).edit().putBoolean("privileged_hybrid", on).apply();
         // MainActivity restarts shell on resume so android↔debian applies without manual ↻
         requestSessionRestart(c);
+    }
+
+    /** Last seen display scale — used to restart PTY when the user changes DPI. */
+    public static boolean displayScaleChanged(Context c) {
+        Configuration cfg = c.getResources().getConfiguration();
+        int nowDpi = cfg.densityDpi;
+        float nowFs = cfg.fontScale;
+        int prevDpi = p(c).getInt("last_density_dpi", 0);
+        float prevFs = p(c).getFloat("last_font_scale", 0f);
+        if (prevDpi == 0 && prevFs == 0f) {
+            storeDisplayScale(c, nowDpi, nowFs);
+            return false;
+        }
+        return prevDpi != nowDpi || Math.abs(prevFs - nowFs) > 0.001f;
+    }
+
+    public static void storeDisplayScale(Context c) {
+        Configuration cfg = c.getResources().getConfiguration();
+        storeDisplayScale(c, cfg.densityDpi, cfg.fontScale);
+    }
+
+    public static void storeDisplayScale(Context c, int densityDpi, float fontScale) {
+        p(c).edit()
+            .putInt("last_density_dpi", densityDpi)
+            .putFloat("last_font_scale", fontScale)
+            .apply();
     }
 
     /** One-shot: MainActivity should rebuild the visible shell (mode switch / ensure). */

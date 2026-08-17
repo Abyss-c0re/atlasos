@@ -74,6 +74,10 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         if (AtlasPrefs.keepScreenOn(this)) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         }
+        // Seed scale so the first launch is not treated as a DPI change.
+        if (!AtlasPrefs.displayScaleChanged(this)) {
+            AtlasPrefs.storeDisplayScale(this);
+        }
         /*
          * Termux-known-good layout for Grok TUI:
          *   [chrome][terminal weight=1][extra-keys fixed] + SOFT_INPUT_ADJUST_RESIZE
@@ -271,6 +275,35 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
     }
 
     @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // Keep the live PTY. Only retarget font px + SIGWINCH the grid.
+        if (AtlasPrefs.displayScaleChanged(this)) {
+            applyDisplayScaleKeepSession();
+        }
+    }
+
+    /** New density/fontScale: same shell, new cell size. Never finishIfRunning. */
+    private void applyDisplayScaleKeepSession() {
+        AtlasPrefs.storeDisplayScale(this);
+        TermTheme.applyToView(this, termView, root);
+        if (termView != null) {
+            if (termFont != null) {
+                termView.setTypeface(termFont);
+            }
+            termView.post(() -> {
+                if (termView.getWidth() > 0 && termView.getHeight() > 0) {
+                    termView.updateSize();
+                }
+            });
+        }
+        if (extraKeys != null) extraKeys.applyTermChrome(this);
+        if (session != null) {
+            TermTheme.applyToSession(this, session, termView);
+        }
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         // Re-apply theme (user may have changed Settings)
@@ -296,6 +329,10 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         try {
             NativeBin.ensureShellProfile(this);
         } catch (Exception ignored) {
+        }
+        if (!AtlasPrefs.isAuthUiQuietPeriod(this)
+                && AtlasPrefs.displayScaleChanged(this)) {
+            applyDisplayScaleKeepSession();
         }
         // Returning from AuthPromptActivity (apt/sudo biometrics): NEVER rebuild PTY.
         // That was the "bio auth then shell reloads" product bug.
