@@ -1,0 +1,76 @@
+# project:packages/apps/ExactCalculator
+# Titan is sw640 (1440px @ 360dpi). Stock sw600dp tablet sizes (formula 128 /
+# result 72) are what overflowed after an operator. Match the phone dimens.
+diff --git a/res/values-sw600dp/dimens.xml b/res/values-sw600dp/dimens.xml
+--- a/res/values-sw600dp/dimens.xml
++++ b/res/values-sw600dp/dimens.xml
+@@ -6,21 +6,22 @@
+ <resources>
+     <dimen name="drag_handle_margin">16dp</dimen>
+ 
+-    <!-- Dimens for display formula. -->
+-    <dimen name="formula_padding_top">32dip</dimen>
+-    <dimen name="formula_padding_bottom">22dip</dimen>
+-    <dimen name="formula_padding_start">44dip</dimen>
+-    <dimen name="formula_padding_end">44dip</dimen>
+-    <dimen name="formula_min_textsize">48dip</dimen>
+-    <dimen name="formula_max_textsize">128dip</dimen>
+-    <dimen name="formula_step_textsize">8dip</dimen>
++    <!-- Titan is sw640. Tablet 128/72dp blow the display. -->
++    <dimen name="formula_padding_top">8dip</dimen>
++    <dimen name="formula_padding_bottom">8dip</dimen>
++    <dimen name="formula_padding_start">16dip</dimen>
++    <dimen name="formula_padding_end">16dip</dimen>
++    <dimen name="formula_min_textsize">16dip</dimen>
++    <dimen name="formula_max_textsize">24dip</dimen>
++    <dimen name="formula_step_textsize">2dip</dimen>
+ 
+     <!-- Dimens for display result. -->
+-    <dimen name="result_padding_top">22dip</dimen>
+-    <dimen name="result_padding_bottom">64dip</dimen>
+-    <dimen name="result_padding_start">44dip</dimen>
+-    <dimen name="result_padding_end">44dip</dimen>
+-    <dimen name="result_textsize">72dip</dimen>
++    <dimen name="result_padding_top">4dip</dimen>
++    <dimen name="result_padding_bottom">8dip</dimen>
++    <dimen name="result_padding_start">16dip</dimen>
++    <dimen name="result_padding_end">16dip</dimen>
++    <dimen name="result_textsize">20dip</dimen>
+ 
+     <!-- Pads -->
+     <dimen name="pads_horizontal_edge_padding">16dp</dimen>
+diff --git a/res/values-sw600dp-land/dimens.xml b/res/values-sw600dp-land/dimens.xml
+--- a/res/values-sw600dp-land/dimens.xml
++++ b/res/values-sw600dp-land/dimens.xml
+@@ -4,21 +4,21 @@
+      SPDX-License-Identifier: Apache-2.0
+ -->
+ <resources>
+     <!-- Dimens for display formula. -->
+-    <dimen name="formula_padding_top">32dip</dimen>
+-    <dimen name="formula_padding_bottom">22dip</dimen>
+-    <dimen name="formula_padding_start">44dip</dimen>
+-    <dimen name="formula_padding_end">44dip</dimen>
+-    <dimen name="formula_min_textsize">32dip</dimen>
+-    <dimen name="formula_max_textsize">128dip</dimen>
+-    <dimen name="formula_step_textsize">8dip</dimen>
++    <dimen name="formula_padding_top">6dip</dimen>
++    <dimen name="formula_padding_bottom">8dip</dimen>
++    <dimen name="formula_padding_start">16dip</dimen>
++    <dimen name="formula_padding_end">16dip</dimen>
++    <dimen name="formula_min_textsize">16dip</dimen>
++    <dimen name="formula_max_textsize">24dip</dimen>
++    <dimen name="formula_step_textsize">2dip</dimen>
+ 
+     <!-- Dimens for display result. -->
+-    <dimen name="result_padding_top">22dip</dimen>
+-    <dimen name="result_padding_bottom">44dip</dimen>
+-    <dimen name="result_padding_start">44dip</dimen>
+-    <dimen name="result_padding_end">44dip</dimen>
+-    <dimen name="result_textsize">72dip</dimen>
++    <dimen name="result_padding_top">4dip</dimen>
++    <dimen name="result_padding_bottom">8dip</dimen>
++    <dimen name="result_padding_start">16dip</dimen>
++    <dimen name="result_padding_end">16dip</dimen>
++    <dimen name="result_textsize">20dip</dimen>
+ </resources>

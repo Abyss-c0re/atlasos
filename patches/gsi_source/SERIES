@@ -95,6 +95,9 @@
 # Two-line: never scale result into formula (666 blow-up after operator).
 0103-calculator-no-result-scale-blowup.patch
 
+# Titan sw640 was taking tablet 128/72dp. Same sizes as phone dimens.
+0104-calculator-sw600dp-titan-sizes.patch
+
 # project:treble_app
 # Lab-proven Misc BT defaults (mediatek + sysbta + disable LE APCF).
 # Seed SharedPreferences once; never restamp if the user later edits Misc.
