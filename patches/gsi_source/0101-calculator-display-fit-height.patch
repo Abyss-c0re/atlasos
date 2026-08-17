@@ -1,0 +1,153 @@
+# project:packages/apps/ExactCalculator
+# Titan square: formula/result must fit display height, not only width.
+diff --git a/res/layout/display_two_line.xml b/res/layout/display_two_line.xml
+index f8e8b43..8fef289 100644
+--- a/res/layout/display_two_line.xml
++++ b/res/layout/display_two_line.xml
+@@ -9,6 +9,8 @@
+     android:layout_width="match_parent"
+     android:layout_height="match_parent"
+     android:background="@drawable/rounded_bottom"
++    android:clipChildren="true"
++    android:clipToPadding="true"
+     android:orientation="vertical">
+ 
+     <include layout="@layout/toolbar" />
+diff --git a/res/values-land/dimens.xml b/res/values-land/dimens.xml
+index 3afd14e..fe4e039 100644
+--- a/res/values-land/dimens.xml
++++ b/res/values-land/dimens.xml
+@@ -5,20 +5,20 @@
+ -->
+ <resources>
+     <!-- Dimens for display formula. -->
+-    <dimen name="formula_padding_top">8dip</dimen>
+-    <dimen name="formula_padding_bottom">28dip</dimen>
++    <dimen name="formula_padding_top">6dip</dimen>
++    <dimen name="formula_padding_bottom">10dip</dimen>
+     <dimen name="formula_padding_start">16dip</dimen>
+     <dimen name="formula_padding_end">16dip</dimen>
+-    <dimen name="formula_min_textsize">42dip</dimen>
+-    <dimen name="formula_max_textsize">56dip</dimen>
+-    <dimen name="formula_step_textsize">8dip</dimen>
++    <dimen name="formula_min_textsize">20dip</dimen>
++    <dimen name="formula_max_textsize">36dip</dimen>
++    <dimen name="formula_step_textsize">4dip</dimen>
+ 
+     <!-- Dimens for display result. -->
+-    <dimen name="result_padding_top">8dip</dimen>
+-    <dimen name="result_padding_bottom">28dip</dimen>
++    <dimen name="result_padding_top">4dip</dimen>
++    <dimen name="result_padding_bottom">10dip</dimen>
+     <dimen name="result_padding_start">16dip</dimen>
+     <dimen name="result_padding_end">16dip</dimen>
+-    <dimen name="result_textsize">42dip</dimen>
++    <dimen name="result_textsize">22dip</dimen>
+ 
+     <!-- Pads -->
+     <dimen name="pads_horizontal_edge_padding">8dp</dimen>
+diff --git a/res/values/dimens.xml b/res/values/dimens.xml
+index 0fd3098..2893871 100644
+--- a/res/values/dimens.xml
++++ b/res/values/dimens.xml
+@@ -14,20 +14,20 @@
+     <dimen name="display_corner_radius">16dp</dimen>
+ 
+     <!-- Dimens for display formula. -->
+-    <dimen name="formula_padding_top">16dip</dimen>
++    <dimen name="formula_padding_top">8dip</dimen>
+     <dimen name="formula_padding_bottom">8dip</dimen>
+     <dimen name="formula_padding_start">16dip</dimen>
+     <dimen name="formula_padding_end">16dip</dimen>
+-    <dimen name="formula_min_textsize">32dip</dimen>
+-    <dimen name="formula_max_textsize">48dip</dimen>
+-    <dimen name="formula_step_textsize">8dip</dimen>
++    <dimen name="formula_min_textsize">20dip</dimen>
++    <dimen name="formula_max_textsize">36dip</dimen>
++    <dimen name="formula_step_textsize">4dip</dimen>
+ 
+     <!-- Dimens for display result. -->
+-    <dimen name="result_padding_top">8dip</dimen>
+-    <dimen name="result_padding_bottom">32dip</dimen>
++    <dimen name="result_padding_top">4dip</dimen>
++    <dimen name="result_padding_bottom">12dip</dimen>
+     <dimen name="result_padding_start">16dip</dimen>
+     <dimen name="result_padding_end">16dip</dimen>
+-    <dimen name="result_textsize">32dip</dimen>
++    <dimen name="result_textsize">22dip</dimen>
+ 
+     <!-- Pads -->
+     <dimen name="pads_horizontal_edge_padding">8dp</dimen>
+diff --git a/res/values/ratios.xml b/res/values/ratios.xml
+index 0995ba8..8de6adb 100644
+--- a/res/values/ratios.xml
++++ b/res/values/ratios.xml
+@@ -5,9 +5,9 @@
+ -->
+ <resources>
+     <!-- layout_display_ratio + layout_pads_ratio = 1 -->
+-    <item type="dimen" format="float" name="layout_display_ratio">0.3</item>
++    <item type="dimen" format="float" name="layout_display_ratio">0.36</item>
+     <!-- layout_pads_ratio = layout_advanced_pad_ratio + layout_input_pad_ratio -->
+-    <item type="dimen" format="float" name="layout_pads_ratio">0.7</item>
+-    <item type="dimen" format="float" name="layout_advanced_pad_ratio">0.2</item>
+-    <item type="dimen" format="float" name="layout_input_pad_ratio">0.5</item>
++    <item type="dimen" format="float" name="layout_pads_ratio">0.64</item>
++    <item type="dimen" format="float" name="layout_advanced_pad_ratio">0.18</item>
++    <item type="dimen" format="float" name="layout_input_pad_ratio">0.46</item>
+ </resources>
+diff --git a/src/com/android/calculator2/CalculatorFormula.java b/src/com/android/calculator2/CalculatorFormula.java
+index c302d8b..4b93249 100644
+--- a/src/com/android/calculator2/CalculatorFormula.java
++++ b/src/com/android/calculator2/CalculatorFormula.java
+@@ -10,6 +10,7 @@ import android.content.ClipData;
+ import android.content.ClipboardManager;
+ import android.content.Context;
+ import android.content.res.TypedArray;
++import android.graphics.Paint;
+ import android.graphics.Rect;
+ import android.os.Build;
+ import android.text.Layout;
+@@ -44,6 +45,7 @@ public class CalculatorFormula extends AlignedTextView implements MenuItem.OnMen
+     private final ClipboardManager mClipboardManager;
+ 
+     private int mWidthConstraint = -1;
++    private int mHeightConstraint = -1;
+     private ActionMode mActionMode;
+     private ActionMode.Callback mPasteActionModeCallback;
+     private ContextMenu mContextMenu;
+@@ -97,9 +99,11 @@ public class CalculatorFormula extends AlignedTextView implements MenuItem.OnMen
+             setMinimumWidth(width);
+         }
+ 
+-        // Re-calculate our textSize based on new width.
++        // Re-calculate our textSize based on new width and height.
+         mWidthConstraint = MeasureSpec.getSize(widthMeasureSpec)
+                 - getPaddingLeft() - getPaddingRight();
++        mHeightConstraint = MeasureSpec.getSize(heightMeasureSpec)
++                - getPaddingTop() - getPaddingBottom();
+         final float textSize = getVariableTextSize(getText());
+         if (getTextSize() != textSize) {
+             setTextSizeInternal(TypedValue.COMPLEX_UNIT_PX, textSize, false /* notifyListener */);
+@@ -160,13 +164,20 @@ public class CalculatorFormula extends AlignedTextView implements MenuItem.OnMen
+         // Capture current paint state.
+         mTempPaint.set(getPaint());
+ 
+-        // Step through increasing text sizes until the text would no longer fit.
++        // Step through increasing text sizes until the text would no longer fit
++        // in width *or* the formula/result slot height (Titan square display).
+         float lastFitTextSize = mMinimumTextSize;
+         while (lastFitTextSize < mMaximumTextSize) {
+             mTempPaint.setTextSize(Math.min(lastFitTextSize + mStepTextSize, mMaximumTextSize));
+             if (Layout.getDesiredWidth(text, mTempPaint) > mWidthConstraint) {
+                 break;
+             }
++            if (mHeightConstraint > 0) {
++                final Paint.FontMetrics fm = mTempPaint.getFontMetrics();
++                if (fm.descent - fm.ascent > mHeightConstraint) {
++                    break;
++                }
++            }
+             lastFitTextSize = mTempPaint.getTextSize();
+         }
+ 

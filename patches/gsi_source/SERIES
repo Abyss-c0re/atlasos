@@ -88,3 +88,6 @@
 # project:packages/apps/ExactCalculator
 # Titan printed numpad (WER/SDF/XCV/Q) + G* J+ U- O/ T( Y) B. Z!; Enter = equals.
 0100-calculator-hw-keys-calc-only.patch
+
+# Titan square display: result/formula fit slot height.
+0101-calculator-display-fit-height.patch
