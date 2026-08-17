@@ -76,6 +76,17 @@ public final class KeyboardLed {
         return wrote > 0;
     }
 
+    /** After a11y rebind / install: republish want + bump idle clock. */
+    public static void wakeOnBind(Context ctx) {
+        if (ctx == null) return;
+        try { AgentBridge.bumpKeyActivity(ctx); } catch (Exception ignored) {}
+        Integer lv = getRequestedLevel(ctx);
+        int n = lv != null ? lv : DEFAULT_LEVEL;
+        if (n < 1) n = DEFAULT_LEVEL;
+        try { AgentBridge.put(ctx, AgentBridge.LED_LEVEL, Integer.toString(n)); } catch (Exception ignored) {}
+        writeName(ctx, REQUEST_FILE, Integer.toString(n));
+    }
+
     /** @return null on success */
     public static String setLevel(Context ctx, int level) {
         if (level < 0) level = 0;

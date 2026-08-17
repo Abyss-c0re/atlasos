@@ -5,6 +5,112 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.13 (613) — 2026-08-17T09:47Z
+
+- Chords: 2 or 3 keys. Hold together then release to capture. Longest match wins; a 2-key chord waits briefly if a 3-key chord extends it.
+
+---
+
+## 16.12 (612) — 2026-08-17T09:39Z
+
+- Alt+letter chords: capture and fire even when a11y has scan 0 or Alt is only a modifier bit.
+
+---
+
+## 16.11 (611) — 2026-08-17T09:16Z
+
+- Act as key remaps a physical key (no short/long split). Mouse left/right/middle follow hold so you can drag-select. Double tap stays a separate type.
+
+---
+
+## 16.10 (610) — 2026-08-17T08:58Z
+
+### rebuild 2026-08-17T08:59Z · 16.10 (610)
+
+- KeyCapture cannot swallow nav unless Keys is open. Disarm + wake keypad LED on a11y bind.
+
+
+- KeyCapture cannot swallow nav unless Keys is open. Disarm + wake keypad LED on a11y bind.
+
+---
+
+## 16.09 (609) — 2026-08-17T08:56Z
+
+- Chords record two keys held together. Scan 0 ignored. Singles still fire when pressed alone.
+
+---
+
+## 16.08 (608) — 2026-08-17T08:50Z
+
+- Chord capture uses the same side-rail identity as remaps. Ignore mtk-kpd CAMERA scan 0; wait for gpio/ff_key.
+
+---
+
+## 16.07 (607) — 2026-08-17T08:43Z
+
+- Nav SoT is KeyMapPrefs slots only. key-watch KEY_FIREs the published action; no hardcoded home/recents fallback.
+
+---
+
+## 16.06 (606) — 2026-08-17T08:39Z
+
+- Nav hard-guard: pair chords only track saved-pair members. key-watch yields when Controls a11y is listed (install must not starve TitanKey).
+
+---
+
+## 16.05 (605) — 2026-08-17T05:48Z
+
+- Identify side/Alt when EventHub scan is 0 so chords save. Block single shortcuts only after a pair is detected.
+
+---
+
+## 16.04 (604) — 2026-08-17T05:43Z
+
+- Generic key+key chords (neither single shortcut fires). Keys → Chords. Restore keypad LED on activity.
+
+---
+
+## 16.03 (603) — 2026-08-17T05:34Z
+
+- Recents follows Controls map (long=overview GLOBAL_ACTION_RECENTS). Drop residual Home on release (closes overview). Never toggleRecentApps.
+
+---
+
+## 16.02 (602) — 2026-08-17T05:29Z
+
+- do not walk a11y tree on mouse click (wedged Back/Recents when IME on rear Cube).
+
+---
+
+## 16.01 (601) — 2026-08-17T05:25Z
+
+- mouse:left/right click immediately at cursor (do not wait for pad-agent 2s heat sleep).
+
+---
+
+## 16.00 (600) — 2026-08-17T05:19Z
+
+### rebuild 2026-08-17T05:19Z · 16.00 (600)
+
+- mouse:left/right click at the pad pointer (evdev BTN on titan2-virtual-mouse).
+
+
+- mouse:left/right click at the pad pointer (evdev BTN on titan2-virtual-mouse). Stop clicking the focused node.
+
+---
+
+## 15.99 (599) — 2026-08-17T05:02Z
+
+- mouse:left/right use a11y click (injected SOURCE_MOUSE was dropped). Pair with touchpadd REL_WHEEL for Mouse Mode on Android.
+
+---
+
+## 15.98 (598) — 2026-08-17T04:57Z
+
+- Side keys mouse:scroll_* scroll the Android window via a11y (ACTION_SCROLL + swipe). Injected SOURCE_MOUSE wheel was accepted and dropped with no mouse device.
+
+---
+
 ## 15.97 (597) — 2026-08-17T00:20Z
 
 - Diagnostics: detect simswitch NVRAM split, MMTEL empty-caps theater, dual IMS APN flap, USP OP08 vs live SIM, silent SKIP_RINGING, hold missing. No test call.

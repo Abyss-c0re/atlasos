@@ -16,7 +16,8 @@ PRODUCT_PACKAGES += \
 # InputReader IDC — /system/usr/idc (not /system/etc). ignore = touchpadd owns pad.
 PRODUCT_COPY_FILES += \
     vendor/titanus2/prebuilts/titan2-touchpadd/touchPad.idc:$(TARGET_COPY_OUT_SYSTEM)/usr/idc/touchPad.idc \
-    vendor/titanus2/prebuilts/titan2-touchpadd/sub_touch.idc:$(TARGET_COPY_OUT_SYSTEM)/usr/idc/sub_touch.idc
+    vendor/titanus2/prebuilts/titan2-touchpadd/sub_touch.idc:$(TARGET_COPY_OUT_SYSTEM)/usr/idc/sub_touch.idc \
+    vendor/titanus2/prebuilts/titan2-touchpadd/titan2-virtual-mouse.idc:$(TARGET_COPY_OUT_SYSTEM)/usr/idc/titan2-virtual-mouse.idc
 
 # Phase 2 apps (prebuilt APKs + privapp XML). Staged by stage_gsi_product.sh.
 # Hybrid APK inject residual: WITH_CONTROLS/USB_HID/CUBE=0 (GSI has apps).

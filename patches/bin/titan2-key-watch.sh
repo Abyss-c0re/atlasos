@@ -5,7 +5,7 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-KW_VER=2.194-a11y-yield
+KW_VER=2.197-screen-on-never-getevent
 KW_STATUS=$ST/titan2_key_watch_status
 KW_PID=$ST/titan2_key_watch.pid
 KW_LOCK=$ST/titan2_key_watch.lock
@@ -97,8 +97,17 @@ _now_ms() {
 # LED stubs if keyled missing — home peel still works
 write_led() { :; }
 read_led_want() { echo "$DEFAULT_LED"; }
-screen_is_on() { return 0; }
-is_display_off() { return 1; }
+# debug.tracing.screen_state: 2|6 on, 1|3|4 off. Unknown → on (never steal TitanKey).
+_screen_on() {
+  _scr=`getprop debug.tracing.screen_state 2>/dev/null | tr -d '\r\n \t'`
+  case "$_scr" in
+    2|6) return 0 ;;
+    1|3|4) return 1 ;;
+  esac
+  return 0
+}
+screen_is_on() { _screen_on; }
+is_display_off() { _screen_on && return 1; return 0; }
 
 fire_key_action() { :; }
 
@@ -111,20 +120,18 @@ _parse_ev() {
   EV_TYP=$1; EV_CODE=$2; EV_VAL=$3
 }
 
+# Fire the exact Controls plane action (titan2_km_*). Do not rewrite to home/recents.
 _fire_nav() {
   act=`echo "$1" | tr -d '\r\n ' | awk '{print $1}'`
-  case "$act" in
-    home|homehome) act=home ;;
-    recents|recentsrecents|app_switch|appswitch) act=recents ;;
-    none|default|"") return 0 ;;
-  esac
+  case "$act" in none|default|"") return 0 ;; esac
   now=`_now_ms`
-  # Post-recents cool: drop residual HOME that closes overview (ghost short after long).
+  # After overview, skip the mapped Recents-key short (whatever Controls set).
   cool=`cat "$NAV_COOL_UNTIL_MS" 2>/dev/null | tr -d '\r\n \t'`
+  skip=`cat "$ST/titan2_nav_cool_skip" 2>/dev/null | tr -d '\r\n \t'`
   case "$cool" in ''|*[!0-9]*) cool=0 ;; esac
-  if [ "$act" = "home" ] && [ "$cool" -gt 0 ] 2>/dev/null; then
+  if [ -n "$skip" ] && [ "$act" = "$skip" ] && [ "$cool" -gt 0 ] 2>/dev/null; then
     if [ "$now" -lt "$cool" ] 2>/dev/null; then
-      log "nav cool skip home (post-recents) until=${cool} now=${now}"
+      log "nav cool skip mapped-short=$skip until=${cool} now=${now}"
       return 0
     fi
   fi
@@ -143,25 +150,20 @@ _fire_nav() {
   fi
   echo "$now" >"$NAV_LAST_MS" 2>/dev/null || true
   chmod 666 "$NAV_LAST_MS" 2>/dev/null || true
-  case "$act" in
-    home)
-      log "nav home KEY_FIRE (never keyevent 3 — no-op on this GSI)"
-      /system/bin/am broadcast -a com.titanus2.controls.KEY_FIRE \
-        --es action home --ei scan 580 >/dev/null 2>&1 \
-        || am broadcast -a com.titanus2.controls.KEY_FIRE \
-             --es action home --ei scan 580 >/dev/null 2>&1
-      ;;
-    recents)
-      cool_to=$((now + RECENTS_COOL_MS))
-      echo "$cool_to" >"$NAV_COOL_UNTIL_MS" 2>/dev/null || true
-      chmod 666 "$NAV_COOL_UNTIL_MS" 2>/dev/null || true
-      log "nav recents KEY_FIRE (never am RecentsActivity)"
-      /system/bin/am broadcast -a com.titanus2.controls.KEY_FIRE \
-        --es action recents --ei scan 580 >/dev/null 2>&1 \
-        || am broadcast -a com.titanus2.controls.KEY_FIRE \
-             --es action recents --ei scan 580 >/dev/null 2>&1
-      ;;
-  esac
+  if [ "$act" = "recents" ]; then
+    cool_to=$((now + RECENTS_COOL_MS))
+    echo "$cool_to" >"$NAV_COOL_UNTIL_MS" 2>/dev/null || true
+    chmod 666 "$NAV_COOL_UNTIL_MS" 2>/dev/null || true
+    short=`read_km titan2_km_recents_short`
+    short=`echo "$short" | awk '{print $1}' | tr -d '\r\n'`
+    echo "$short" >"$ST/titan2_nav_cool_skip" 2>/dev/null || true
+    chmod 666 "$ST/titan2_nav_cool_skip" 2>/dev/null || true
+  fi
+  log "nav KEY_FIRE act=$act (Controls plane, never 187 / RecentsActivity)"
+  /system/bin/am broadcast -a com.titanus2.controls.KEY_FIRE \
+    --es action "$act" --ei scan 580 >/dev/null 2>&1 \
+    || am broadcast -a com.titanus2.controls.KEY_FIRE \
+         --es action "$act" --ei scan 580 >/dev/null 2>&1
   if [ "$act" = "recents" ]; then
     sleep 0.45
   else
@@ -170,8 +172,18 @@ _fire_nav() {
   rmdir "$NAV_FIRE_LOCKD" 2>/dev/null || rm -rf "$NAV_FIRE_LOCKD" 2>/dev/null || true
 }
 
-# Plane 1 is a lie after force-stop / adb install (no onDestroy). Age >20s = dead.
+# Listed Controls a11y = live. File goes 0 on install onDestroy;
+# getevent on TitanKey then starves InputReader (dead Back/Recents).
+# TITAN_RECENTS_LAW: never getevent TitanKey while Key a11y is listed.
 _a11y_live_fresh() {
+  en=`settings get secure accessibility_enabled 2>/dev/null | tr -d '\r'`
+  svc=`settings get secure enabled_accessibility_services 2>/dev/null | tr -d '\r'`
+  case "$en" in 1|true|on)
+    case "$svc" in
+      *TrackpadAccessService*) return 0 ;;
+    esac
+    ;;
+  esac
   v=`read_km titan2_a11y_live`
   case "$v" in 1|true|on) ;; *) return 1 ;; esac
   mt=0
@@ -220,13 +232,11 @@ _recents_handle() {
     fi
     if [ "$held" -ge "$LONG_MS" ] 2>/dev/null; then
       act=`read_km titan2_km_recents_long`
-      act=`echo "$act" | awk '{print $1}' | tr -d '\r\n'`
-      case "$act" in ''|default) act=recents ;; esac
     else
       act=`read_km titan2_km_recents_short`
-      act=`echo "$act" | awk '{print $1}' | tr -d '\r\n'`
-      case "$act" in ''|default) act=home ;; esac
     fi
+    act=`echo "$act" | awk '{print $1}' | tr -d '\r\n'`
+    # Empty/default = Controls did not publish; do not invent home/recents.
     log "held=${held}ms → $act"
     _fire_nav "$act"
   fi
@@ -315,16 +325,23 @@ run_key_watch() {
   DEV=`discover_titankey`
   log "start ver=$KW_VER dev=$DEV LONG_MS=$LONG_MS"
   while true; do
-    # Bound a11y owns TitanKey. getevent here starves InputReader (load 18, dead keys).
+    # ROM: screen-on TitanKey is Controls a11y only. getevent starves
+    # InputReader (dead Back/Recents). adb install must not change that.
+    if _screen_on; then
+      log "screen on — yield TitanKey (no getevent)"
+      sleep 2
+      continue
+    fi
     if _a11y_live_fresh; then
       log "a11y live — yield TitanKey (no getevent)"
       sleep 2
       continue
     fi
     [ -e "$DEV" ] || { sleep 1; DEV=`discover_titankey`; continue; }
+    log "screen off — KEY_FIRE getevent $DEV"
     getevent "$DEV" 2>/dev/null | while read -r line; do
-      if _a11y_live_fresh; then
-        log "a11y became live — drop getevent"
+      if _screen_on || _a11y_live_fresh; then
+        log "screen/a11y live — drop getevent"
         break
       fi
       _handle_ev_line "$line"

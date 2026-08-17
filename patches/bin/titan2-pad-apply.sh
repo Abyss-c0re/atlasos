@@ -18,7 +18,7 @@ PAD_STATUS=$ST/titan2_pad_status
 TP_LOG=$ST/titan2_touchpadd.log
 CARET_STATUS=$ST/titan2_caret_status
 APPLY_LAST=$ST/titan2_pad_apply_last
-PAD_APPLY_VER=2.213-boot-preserve-click
+PAD_APPLY_VER=2.214-no-clobber-mode
 
 # Prefer GSI/system binary (Phase 1.5 SoT); tip only for lab iteration.
 TOUCHPADD=/system/bin/titan2-touchpadd
@@ -718,6 +718,7 @@ apply_pad() {
   fi
   LAST_CURSOR_PAUSE=0
   mode=`read_pad_mode`
+  want_mode=$mode
   click=`read_pad_click`
   follow=`read_pad_follow_orient`
   trc=`read_pad_top_row_cursor`
@@ -806,21 +807,22 @@ apply_pad() {
       fi
       ;;
   esac
-  LAST_PAD=$mode
+  # Controls / QS owns titan2_pad_mode. Never write it back — a slow
+  # trackpad apply after Off→Trackpad→Mouse would clobber mouse to trackpad.
+  now=`read_pad_mode`
+  if [ "$now" != "$want_mode" ]; then
+    log "apply stale want=$want_mode now=$now — do not LAST_PAD, caller reapplies"
+    chmod 666 "$PAD_STATUS" 2>/dev/null || true
+    return 2
+  fi
+  LAST_PAD=$now
   LAST_CLICK=$click
   LAST_FOLLOW=$follow
-  # 2.83: cheap plane mirror only — persist_ctrl/_last and setprop deferred
-  # (setprop can take 100ms+ under heat; do not block mode edge).
   write_if_changed "$ST/titan2_pad_follow_orient" "$follow"
-  write_if_changed "$ST/titan2_pad_mode" "$mode"
   write_if_changed "$ST/titan2_pad_click" "$click"
-  write_if_changed "$T2/titan2_pad_mode" "$mode"
   write_if_changed "$T2/titan2_pad_click" "$click"
   write_if_changed "$T2/titan2_pad_follow_orient" "$follow"
-  chmod 666 $T2/titan2_pad_mode $ST/titan2_pad_mode 2>/dev/null || true
   chmod 666 "$PAD_STATUS" 2>/dev/null || true
-  # 2.86: no setprop/dumpsys on pad hot path — only plane files + status.
-  # Agui prop / rotation refresh live in the rare main-loop belt.
 }
 
 
@@ -874,7 +876,13 @@ cmd=${1:-apply}
 case "$cmd" in
   apply|pad|"")
     apply_pad
+    _rc=$?
     _after
+    # QS Off→Trackpad→Mouse: first apply saw trackpad; plane is now mouse.
+    if [ "$_rc" = "2" ]; then
+      apply_pad
+      _after
+    fi
     ;;
   boot_safe|boot)
     boot_pad_safe

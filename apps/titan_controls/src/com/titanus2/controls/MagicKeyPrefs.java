@@ -183,6 +183,9 @@ public final class MagicKeyPrefs {
 
     public static String scanLabel(int scan) {
         int c = KeyMapPrefs.canonicalizeScan(scan);
+        if (KeyMapPrefs.isChordKeyCodeId(c)) {
+            return keyCodeLabel(KeyMapPrefs.keyCodeFromChordId(c));
+        }
         switch (c) {
             case KeyMapPrefs.SCAN_SIDE_FUNC: return "Side button · bottom";
             case KeyMapPrefs.SCAN_SIDE_FUNC2: return "Side button · top";
@@ -192,7 +195,26 @@ public final class MagicKeyPrefs {
             case KeyMapPrefs.SCAN_SYM: return "Sym";
             case KeyMapPrefs.SCAN_ALT: return "Alt";
             case 0: return "unset";
-            default: return "scan " + c;
+            default:
+                String letter = evdevLetter(c);
+                return letter != null ? letter : ("scan " + c);
+        }
+    }
+
+    /** Linux evdev KEY_* on TitanKey (US). */
+    private static String evdevLetter(int scan) {
+        switch (scan) {
+            case 16: return "Q"; case 17: return "W"; case 18: return "E";
+            case 19: return "R"; case 20: return "T"; case 21: return "Y";
+            case 22: return "U"; case 23: return "I"; case 24: return "O";
+            case 25: return "P";
+            case 30: return "A"; case 31: return "S"; case 32: return "D";
+            case 33: return "F"; case 34: return "G"; case 35: return "H";
+            case 36: return "J"; case 37: return "K"; case 38: return "L";
+            case 44: return "Z"; case 45: return "X"; case 46: return "C";
+            case 47: return "V"; case 48: return "B"; case 49: return "N";
+            case 50: return "M";
+            default: return null;
         }
     }
 

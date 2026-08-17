@@ -3,7 +3,6 @@ package com.titanus2.controls;
 import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
 import android.provider.Settings;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
@@ -182,53 +181,8 @@ public final class ImeHwPrefs {
             }
             Settings.System.putInt(ctx.getContentResolver(), "show_key_presses", 0);
         } catch (Exception ignored) {}
-        // Do NOT force-hide IME selector / status-bar switcher — user must be
-        // able to pick Gboard / Pastiera / any IME without product thrash.
-        // Empty default only: ensure LatinIME exists as a usable fallback.
-        try {
-            String def = Settings.Secure.getString(ctx.getContentResolver(),
-                Settings.Secure.DEFAULT_INPUT_METHOD);
-            boolean empty = def == null || def.isEmpty()
-                || "null".equalsIgnoreCase(def);
-            if (empty) {
-                enablePackageUser(ctx, LATIN_IME_PACKAGE);
-                enablePackageUser(ctx, LATIN_IME_RRO);
-                String enabled = Settings.Secure.getString(ctx.getContentResolver(),
-                    Settings.Secure.ENABLED_INPUT_METHODS);
-                if (enabled == null || enabled.isEmpty()
-                        || "null".equalsIgnoreCase(enabled)) {
-                    Settings.Secure.putString(ctx.getContentResolver(),
-                        Settings.Secure.ENABLED_INPUT_METHODS, LATIN_IME);
-                } else if (!enabled.contains(LATIN_IME_PACKAGE)) {
-                    // Keep user list; append LatinIME as optional fallback.
-                    Settings.Secure.putString(ctx.getContentResolver(),
-                        Settings.Secure.ENABLED_INPUT_METHODS,
-                        enabled + ":" + LATIN_IME);
-                }
-                Settings.Secure.putString(ctx.getContentResolver(),
-                    Settings.Secure.DEFAULT_INPUT_METHOD, LATIN_IME);
-            }
-            // Non-empty default = user (or system) choice — leave alone.
-        } catch (Exception ignored) {}
-    }
-
-    private static void enablePackageUser(Context ctx, String pkg) {
-        if (pkg == null || pkg.isEmpty()) return;
-        try {
-            PackageManager pm = ctx.getPackageManager();
-            if (pm == null) return;
-            try {
-                pm.getPackageInfo(pkg, 0);
-            } catch (PackageManager.NameNotFoundException e) {
-                return;
-            }
-            int state = pm.getApplicationEnabledSetting(pkg);
-            if (state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
-                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
-                pm.setApplicationEnabledSetting(pkg,
-                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED, 0);
-            }
-        } catch (Exception ignored) {}
+        // Never write default_input_method or enabled_input_methods.
+        // PocketBoard / Gboard / LatinIME is the human's Settings choice.
     }
 
     /** Dismiss soft IME if a window token is available. */

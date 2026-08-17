@@ -23,7 +23,8 @@ import com.titanus2.controls.ui.UiKit;
 /**
  * Keys settings — assign hardware shortcuts without firing them.
  *
- * Flow: Add → press key → choose short/long/double → choose action.
+ * Flow: Add → press key → Act as key (remap, no short/long split) /
+ * short / long / double tap / layout modifier.
  * Hold modifier: one key held + another key → action.
  * While this screen is open, remaps are suspended (identify only).
  * <p>
@@ -34,6 +35,7 @@ public class KeyMapActivity extends Activity {
     private KeyMapPrefs prefs;
     private MagicKeyPrefs magic;
     private KeyMapProfiles profiles;
+    private PairChordPrefs pairChords;
 
     private TextView accessState;
     private UiKit.Toggle accessToggle;
@@ -44,9 +46,11 @@ public class KeyMapActivity extends Activity {
     private TextView holdState;
     private TextView addShortcutBtn;
     private TextView addHoldBtn;
+    private TextView addPairBtn;
     private LinearLayout shortcutList;
     private LinearLayout profileList;
     private LinearLayout holdList;
+    private LinearLayout pairList;
     private TextView charSymBtn, charFnBtn, charAltBtn, charPickBtn;
     private TextView fnCtrlBtn, fnStockBtn;
     private TextView methInjectBtn, methKcmBtn;
@@ -54,7 +58,7 @@ public class KeyMapActivity extends Activity {
     private TextView hostLayoutState;
     private TextView bLaySpecials, bLayArrows, bLayOff;
 
-    private enum CaptureKind { NONE, SHORTCUT, HOLD_KEY, HOLD_CHORD, SPECIALS_KEY }
+    private enum CaptureKind { NONE, SHORTCUT, HOLD_KEY, HOLD_CHORD, SPECIALS_KEY, PAIR }
     private CaptureKind captureKind = CaptureKind.NONE;
 
     private final Handler h = new Handler(Looper.getMainLooper());
@@ -65,6 +69,7 @@ public class KeyMapActivity extends Activity {
         prefs = new KeyMapPrefs(this);
         magic = new MagicKeyPrefs(this);
         profiles = new KeyMapProfiles(this);
+        pairChords = new PairChordPrefs(this);
 
         ScrollView sc = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
@@ -110,7 +115,7 @@ public class KeyMapActivity extends Activity {
             startActivity(new Intent(this,
                 com.titanus2.controls.layouts.CustomLayoutsActivity.class)));
         TextView kbHint = UiKit.mono(root);
-        kbHint.setText("S Specials · A Arrows · O Off · L layouts · N Add · H hold · C chord · P app · Esc");
+        kbHint.setText("S Specials · A Arrows · O Off · L layouts · N Add · C chord · H hold · P app · Esc");
 
         // ---- Key roles (Fn→Ctrl; OS specials = Sym/Alt/Fn) ----
         UiKit.section(root, "Key roles");
@@ -159,8 +164,20 @@ public class KeyMapActivity extends Activity {
         root.addView(profileList);
         UiKit.button(root, "Add app", this::startAddProfile);
 
-        // ---- Hold modifier ----
-        UiKit.section(root, "Hold + key");
+        // ---- Pair chords (any two keys, no dedicated modifier) ----
+        UiKit.section(root, "Chords");
+        TextView pairHint = UiKit.stateLine(root);
+        pairHint.setText("Hold 2 or 3 keys together, then release. Alone, each key keeps its own mapping.");
+        pairHint.setTextColor(UiKit.mutedColor(this));
+        pairList = new LinearLayout(this);
+        pairList.setOrientation(LinearLayout.VERTICAL);
+        root.addView(pairList);
+        LinearLayout pairRow = UiKit.row(root);
+        addPairBtn = UiKit.flexButton(pairRow, "Add", this::startAddPairChord);
+        UiKit.flexButton(pairRow, "Clear", this::clearPairChords);
+
+        // ---- Hold modifier (legacy: one dedicated hold key) ----
+        UiKit.section(root, "Hold modifier");
         holdState = UiKit.summary(root);
         LinearLayout holdRow = UiKit.row(root);
         UiKit.flexButton(holdRow, "Set hold key", this::startSetHoldKey);
@@ -245,7 +262,7 @@ public class KeyMapActivity extends Activity {
                 startSetHoldKey();
                 return true;
             case KeyEvent.KEYCODE_C:
-                startAddHoldChord();
+                startAddPairChord();
                 return true;
             case KeyEvent.KEYCODE_P:
                 startAddProfile();
@@ -424,6 +441,7 @@ public class KeyMapActivity extends Activity {
         rebuildProfiles();
         rebuildHoldList();
         refreshHold();
+        rebuildPairList();
         refreshAccess();
         refreshScreenOff();
         refreshLayoutLabels();
@@ -479,6 +497,9 @@ public class KeyMapActivity extends Activity {
                 break;
             case HOLD_CHORD:
                 captureBanner.setText("Hold key is set — press the second key…");
+                break;
+            case PAIR:
+                captureBanner.setText("Hold 2 or 3 keys together, then release…");
                 break;
             case SPECIALS_KEY:
                 captureBanner.setText("Press the specials modifier key…");
@@ -697,6 +718,10 @@ public class KeyMapActivity extends Activity {
             addHoldBtn.setText("Add hold shortcut");
             UiKit.setSelected(addHoldBtn, false);
         }
+        if (addPairBtn != null) {
+            addPairBtn.setText("Add");
+            UiKit.setSelected(addPairBtn, false);
+        }
         refreshCaptureBanner();
     }
 
@@ -714,6 +739,10 @@ public class KeyMapActivity extends Activity {
                 addHoldBtn.setText("Add hold shortcut");
                 UiKit.setSelected(addHoldBtn, false);
             }
+            if (addPairBtn != null) {
+                addPairBtn.setText("Add");
+                UiKit.setSelected(addPairBtn, false);
+            }
             listener.onKey(scan, keyCode);
         }));
         refreshCaptureBanner();
@@ -726,6 +755,10 @@ public class KeyMapActivity extends Activity {
                 && addHoldBtn != null && kind == CaptureKind.HOLD_CHORD) {
             addHoldBtn.setText("Cancel");
             UiKit.setSelected(addHoldBtn, true);
+        }
+        if (kind == CaptureKind.PAIR && addPairBtn != null) {
+            addPairBtn.setText("Cancel");
+            UiKit.setSelected(addPairBtn, true);
         }
     }
 
@@ -773,6 +806,142 @@ public class KeyMapActivity extends Activity {
         armCapture(CaptureKind.HOLD_CHORD, this::onHoldChordKeyPressed);
     }
 
+    private void startAddPairChord() {
+        if (captureKind == CaptureKind.PAIR) {
+            cancelCapture();
+            return;
+        }
+        if (!AccessServiceHelper.isListed(this)) {
+            setKeyService(true);
+            if (!AccessServiceHelper.isListed(this)) return;
+        }
+        cancelCapture();
+        captureKind = CaptureKind.PAIR;
+        KeyCapture.armChord(ids -> h.post(() -> {
+            captureKind = CaptureKind.NONE;
+            refreshCaptureBanner();
+            if (addPairBtn != null) {
+                addPairBtn.setText("Add");
+                UiKit.setSelected(addPairBtn, false);
+            }
+            onChordCaptured(ids);
+        }));
+        refreshCaptureBanner();
+        h.postDelayed(captureTimeout, 15000);
+        if (addPairBtn != null) {
+            addPairBtn.setText("Cancel");
+            UiKit.setSelected(addPairBtn, true);
+        }
+    }
+
+    private static String chordTitle(int[] ids) {
+        if (ids == null || ids.length == 0) return "Chord";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ids.length; i++) {
+            if (i > 0) sb.append(" + ");
+            sb.append(MagicKeyPrefs.scanLabel(ids[i]));
+        }
+        return sb.toString();
+    }
+
+    private void onChordCaptured(int[] raw) {
+        h.removeCallbacks(captureTimeout);
+        int[] ids = PairChordPrefs.norm(raw);
+        if (ids.length < 2 || ids.length > PairChordPrefs.MAX) {
+            android.widget.Toast.makeText(this, "Hold 2 or 3 different keys together",
+                android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final int[] saved = ids;
+        String title = chordTitle(saved);
+        KeyActionPicker.show(this, title, true, false, null, false,
+            new KeyActionPicker.Listener() {
+                @Override public void onPicked(String action) {
+                    pairChords.set(saved, action);
+                    rebuildPairList();
+                }
+                @Override public void onPickApp() {
+                    pickAppForChord(saved);
+                }
+                @Override public void onRemove() {}
+                @Override public void onLayoutModifier(String layoutId) {
+                    pairChords.set(saved, KeyMapPrefs.layoutHoldAction(layoutId));
+                    rebuildPairList();
+                }
+            });
+    }
+
+    private void pickAppForChord(int[] ids) {
+        PackageManager pm = getPackageManager();
+        Intent main = new Intent(Intent.ACTION_MAIN);
+        main.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<ResolveInfo> apps = pm.queryIntentActivities(main, 0);
+        Collections.sort(apps, (x, y) -> x.loadLabel(pm).toString()
+            .compareToIgnoreCase(y.loadLabel(pm).toString()));
+        List<String> labels = new ArrayList<>();
+        List<String> pkgs = new ArrayList<>();
+        for (ResolveInfo ri : apps) {
+            labels.add(ri.loadLabel(pm).toString());
+            pkgs.add(ri.activityInfo.packageName);
+        }
+        new AlertDialog.Builder(this)
+            .setTitle("App")
+            .setItems(labels.toArray(new String[0]), (d, which) -> {
+                pairChords.set(ids, KeyMapPrefs.ACT_APP_PREFIX + pkgs.get(which));
+                rebuildPairList();
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
+    private void clearPairChords() {
+        for (PairChordPrefs.Entry e : new ArrayList<>(pairChords.list())) {
+            pairChords.remove(e);
+        }
+        rebuildPairList();
+    }
+
+    private void rebuildPairList() {
+        if (pairList == null) return;
+        pairList.removeAllViews();
+        List<PairChordPrefs.Entry> rows = pairChords.list();
+        if (rows.isEmpty()) {
+            TextView empty = UiKit.stateLine(pairList);
+            empty.setText("none — Add, then hold 2 or 3 keys");
+            empty.setTextColor(UiKit.mutedColor(this));
+            return;
+        }
+        for (PairChordPrefs.Entry e : rows) {
+            String title = chordTitle(e.ids());
+            String sub = KeyMapPrefs.actionLabel(e.action);
+            final PairChordPrefs.Entry row = e;
+            TextView tv = UiKit.listRow(pairList, title, sub, () -> {
+                KeyActionPicker.show(this, title, true, true, null, false,
+                    new KeyActionPicker.Listener() {
+                        @Override public void onPicked(String action) {
+                            pairChords.set(row.ids(), action);
+                            rebuildPairList();
+                        }
+                        @Override public void onPickApp() { pickAppForChord(row.ids()); }
+                        @Override public void onRemove() {
+                            pairChords.remove(row);
+                            rebuildPairList();
+                        }
+                        @Override public void onLayoutModifier(String layoutId) {
+                            pairChords.set(row.ids(),
+                                KeyMapPrefs.layoutHoldAction(layoutId));
+                            rebuildPairList();
+                        }
+                    });
+            });
+            tv.setOnLongClickListener(v -> {
+                pairChords.remove(row);
+                rebuildPairList();
+                return true;
+            });
+        }
+    }
+
     private void onShortcutKeyPressed(int scan, int keyCode) {
         h.removeCallbacks(captureTimeout);
         int c = KeyMapPrefs.canonicalizeScan(scan);
@@ -790,8 +959,40 @@ public class KeyMapActivity extends Activity {
         if (KeyMapPrefs.isCharModScan(this, c)) {
             name = name + " (specials key)";
         }
+        if (prefs.isActAsKeyScan(c)) {
+            new AlertDialog.Builder(this)
+                .setTitle(name)
+                .setItems(new String[] {
+                    "Change key…",
+                    "Double tap…",
+                    "Remove remap"
+                }, (d, which) -> {
+                    if (which == 0) {
+                        pickActAsKey(c);
+                    } else if (which == 1) {
+                        KeyMapPrefs.Slot slot = KeyMapPrefs.slotByScan(
+                            c, KeyMapPrefs.Press.DOUBLE);
+                        if (slot != null) {
+                            pickAction(slot.id, false, 0, 0, KeyMapPrefs.Press.DOUBLE);
+                        }
+                    } else {
+                        prefs.assignActAsKey(c, KeyMapPrefs.ACT_NONE);
+                        KeyMapPrefs.Slot sh = KeyMapPrefs.slotByScan(
+                            c, KeyMapPrefs.Press.SHORT);
+                        if (sh != null) prefs.removeSlot(sh.id);
+                        prefs.publishToAgent(this);
+                        rebuildShortcuts();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+            return;
+        }
         String[] presses = new String[] {
-            "Short press", "Long press", "Double press",
+            "Act as key…",
+            "Short press",
+            "Long press",
+            "Double tap",
             "Layout modifier (hold + toggle)"
         };
         KeyMapPrefs.Press[] kinds = new KeyMapPrefs.Press[] {
@@ -800,17 +1001,38 @@ public class KeyMapActivity extends Activity {
         new AlertDialog.Builder(this)
             .setTitle(name)
             .setItems(presses, (d, which) -> {
-                if (which == 3) {
-                    // Full layout-modifier mode: pick layout, short=none
+                if (which == 0) {
+                    pickActAsKey(c);
+                    return;
+                }
+                if (which == 4) {
                     pickLayoutModifierForScan(c);
                     return;
                 }
-                KeyMapPrefs.Slot slot = KeyMapPrefs.slotByScan(c, kinds[which]);
+                KeyMapPrefs.Slot slot = KeyMapPrefs.slotByScan(c, kinds[which - 1]);
                 if (slot == null) return;
-                pickAction(slot.id, false, 0, 0, kinds[which]);
+                pickAction(slot.id, false, 0, 0, kinds[which - 1]);
             })
             .setNegativeButton("Cancel", null)
             .show();
+    }
+
+    private void pickActAsKey(int scan) {
+        KeyActionPicker.showActAsKey(this, MagicKeyPrefs.scanLabel(scan),
+            new KeyActionPicker.Listener() {
+                @Override public void onPicked(String action) {
+                    if (!KeyMapPrefs.isActAsKeyAction(action)) return;
+                    prefs.assignActAsKey(scan, action);
+                    prefs.publishToAgent(KeyMapActivity.this);
+                    try {
+                        new TempKeyMapStack(KeyMapActivity.this)
+                            .refreshSilenceIfActive(KeyMapActivity.this, prefs, null);
+                    } catch (Exception ignored) {}
+                    rebuildShortcuts();
+                    refreshLayoutLabels();
+                }
+                @Override public void onPickApp() {}
+            });
     }
 
     private void pickLayoutModifierForScan(int scan) {
@@ -1024,8 +1246,8 @@ public class KeyMapActivity extends Activity {
         }
     }
 
-    private static String pressLabel(KeyMapPrefs.Slot slot) {
-        return KeyMapPrefs.keyPressLabel(slot);
+    private String pressLabel(KeyMapPrefs.Slot slot) {
+        return prefs.slotPressLabel(slot);
     }
 
     private String formatSlotAction(String slotId) {
@@ -1038,6 +1260,31 @@ public class KeyMapActivity extends Activity {
     }
 
     private void editSlot(KeyMapPrefs.Slot slot) {
+        if (slot.press == KeyMapPrefs.Press.SHORT
+                && KeyMapPrefs.isActAsKeyAction(prefs.getAction(slot.id))) {
+            new AlertDialog.Builder(this)
+                .setTitle(formatSlotAction(slot.id) + "  ·  " + pressLabel(slot))
+                .setItems(new String[] {
+                    "Change key…",
+                    "Double tap…",
+                    "Remove"
+                }, (d, which) -> {
+                    if (which == 0) {
+                        pickActAsKey(slot.scan);
+                    } else if (which == 1) {
+                        KeyMapPrefs.Slot dbl = KeyMapPrefs.slotByScan(
+                            slot.scan, KeyMapPrefs.Press.DOUBLE);
+                        if (dbl != null) {
+                            pickAction(dbl.id, false, 0, 0, KeyMapPrefs.Press.DOUBLE);
+                        }
+                    } else {
+                        confirmRemoveSlot(slot);
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+            return;
+        }
         boolean factory = prefs.isFactoryDefault(slot.id);
         String[] items = factory
             ? new String[] { "Change action…", "Remove" }
@@ -1146,6 +1393,27 @@ public class KeyMapActivity extends Activity {
             rebuildHoldList();
             refreshHold();
         } else if (slotId != null) {
+            if (KeyMapPrefs.isActAsKeyAction(action)) {
+                KeyMapPrefs.Slot found = null;
+                for (KeyMapPrefs.Slot x : KeyMapPrefs.SLOTS) {
+                    if (x.id.equals(slotId)) { found = x; break; }
+                }
+                if (found != null && found.press != KeyMapPrefs.Press.DOUBLE) {
+                    prefs.assignActAsKey(found.scan, action);
+                    if (appLabel != null) {
+                        KeyMapPrefs.Slot sh = KeyMapPrefs.slotByScan(
+                            found.scan, KeyMapPrefs.Press.SHORT);
+                        if (sh != null) prefs.setAppLabel(sh.id, appLabel);
+                    }
+                    prefs.publishToAgent(this);
+                    try {
+                        new TempKeyMapStack(this).refreshSilenceIfActive(this, prefs, null);
+                    } catch (Exception ignored) {}
+                    rebuildShortcuts();
+                    refreshLayoutLabels();
+                    return;
+                }
+            }
             prefs.setAction(slotId, action);
             if (appLabel != null) prefs.setAppLabel(slotId, appLabel);
             else if (!action.startsWith(KeyMapPrefs.ACT_APP_PREFIX)) {

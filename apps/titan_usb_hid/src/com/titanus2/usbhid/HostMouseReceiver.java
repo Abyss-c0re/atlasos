@@ -128,7 +128,8 @@ public class HostMouseReceiver extends BroadcastReceiver {
             intent.getIntExtra("buttons", 1));
         boolean tap = intent.getBooleanExtra(Titan2ApiContract.EXTRA_MOUSE_TAP,
             intent.getBooleanExtra("tap", true));
-        if (buttons <= 0) buttons = 1;
+        // tap=false + buttons=0 is a real release (act-as-key hold).
+        if (tap && buttons <= 0) buttons = 1;
         long nowM = SystemClock.uptimeMillis();
         if (buttons == sLastMouseButtons && (nowM - sLastMouseAt) < DEDUPE_MS) {
             Log.w(TAG, "dedupe host mouse buttons=" + buttons

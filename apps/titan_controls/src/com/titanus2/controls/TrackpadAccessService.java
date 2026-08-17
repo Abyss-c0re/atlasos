@@ -239,6 +239,19 @@ public class TrackpadAccessService extends AccessibilityService {
     private boolean magicHeld;
     private boolean magicUsedChord;
     private final Set<Integer> magicChordKeys = new HashSet<>();
+    /** Physical scans currently down (pair / triple chords). */
+    private final Set<Integer> pairDown = new HashSet<>();
+    /** Scans that already fired a chord this press — no single shortcut. */
+    private final Set<Integer> pairConsumed = new HashSet<>();
+    /** Swallowed as chord prefix / fire — must eat matching UP. */
+    private final Set<Integer> pairSwallowed = new HashSet<>();
+    private Runnable chordWait;
+    private String chordWaitAct;
+    private int[] chordWaitIds;
+    private static final long CHORD_WAIT_MS = 280L;
+    /** Short is mouse:left/right/middle — button follows physical hold. */
+    private final Set<Integer> mouseBtnHeld = new HashSet<>();
+    private PairChordPrefs pairChords;
     /** 12.77: specials key held for inject method (Sym/Alt → letter → glyph). */
     private boolean specialsInjectHeld;
     /** 13.01: uptime when Sym inject armed — auto-clear if UP missed (dead HW kb). */
@@ -446,6 +459,10 @@ public class TrackpadAccessService extends AccessibilityService {
             | AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED
             | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED;
         setServiceInfo(info);
+
+        // Install/rebind must not leave chord-capture armed (same process as Keys).
+        try { KeyCapture.disarm(); } catch (Exception ignored) {}
+        try { KeyboardLed.wakeOnBind(this); } catch (Exception ignored) {}
 
         // 12.60 B1: pad-agent screen-on side fallback uses this plane
         try { AgentBridge.put(this, AgentBridge.A11Y_LIVE, "1"); } catch (Exception ignored) {}
@@ -902,6 +919,42 @@ public class TrackpadAccessService extends AccessibilityService {
         magicHeld = false;
         magicUsedChord = false;
         magicChordKeys.clear();
+        cancelChordWait();
+        pairDown.clear();
+        pairConsumed.clear();
+        pairSwallowed.clear();
+        releaseHeldMouseButtons();
+    }
+
+    private String shortActionForScan(KeyMapPrefs prefs, int scan) {
+        KeyMapPrefs.Slot sl = KeyMapPrefs.slotByScan(scan, KeyMapPrefs.Press.SHORT);
+        if (sl == null) return null;
+        String sa = sideSafeAction(scan, effectiveAction(prefs, sl.id));
+        if (sa != null && KeyMapPrefs.ACT_DEFAULT.equals(sa)) {
+            sa = KeyMapPrefs.factoryDefault(sl.id);
+        }
+        return sa;
+    }
+
+    private void releaseHeldMouseButtons() {
+        if (mouseBtnHeld.isEmpty()) return;
+        Integer[] scans = mouseBtnHeld.toArray(new Integer[0]);
+        mouseBtnHeld.clear();
+        KeyMapPrefs kp = new KeyMapPrefs(this);
+        for (Integer sc : scans) {
+            if (sc == null) continue;
+            try {
+                String ma = shortActionForScan(kp, sc);
+                if (!KeyMapPrefs.isActAsKeyAction(ma)) {
+                    KeyMapPrefs.Slot ls = KeyMapPrefs.slotByScan(sc, KeyMapPrefs.Press.LONG);
+                    ma = ls != null
+                        ? sideSafeAction(sc, effectiveAction(kp, ls.id)) : null;
+                }
+                if (KeyMapPrefs.isActAsKeyAction(ma)) {
+                    KeyActions.mouseButton(this, ma, false);
+                }
+            } catch (Exception ignored) {}
+        }
     }
 
     private android.content.BroadcastReceiver screenBridge;
@@ -1118,15 +1171,87 @@ public class TrackpadAccessService extends AccessibilityService {
             if (rawScan <= 0) rawScan = scan;
         }
 
+        // Same side-rail identity remaps already use (gpio 250 / ff_key 249).
+        // Capture must not run before this — mtk-kpd CAMERA (scan 0) is first
+        // and is not a side key. Offering it made chords "unset".
+        boolean sideKey = KeyMapPrefs.isSideScan(scan) || KeyMapPrefs.isSideScan(rawScan)
+            || isSideInputDevice(event);
+        if (sideKey) {
+            scan = KeyMapPrefs.canonicalizeScan(
+                KeyMapPrefs.isSideScan(scan) ? scan : rawScan);
+            if (scan <= 0 || !KeyMapPrefs.isSideScan(scan)) {
+                if (KeyMapPrefs.isSideScan(rawScan)) {
+                    scan = KeyMapPrefs.canonicalizeScan(rawScan);
+                }
+            }
+        }
+
+        // Chord identity: Linux scan, or 10000+keyCode when a11y has scan 0.
+        final int chordId = KeyMapPrefs.chordId(scan, keyCode);
+
         // ---- Keys settings open / capture: identify only, never act ----
         if (KeyCapture.blockActions()) {
             clearPendingRemaps();
             HostLayoutController.endHoldAll();
             layoutHeldScans.clear();
             if (action == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                KeyCapture.offer(rawScan > 0 ? rawScan : scan, keyCode);
+                // Alt+letter often arrives as one letter event with ALT_ON
+                // (no separate Alt DOWN). Seed the modifier first.
+                int metaScan = KeyMapPrefs.metaChordScan(event.getMetaState());
+                if (metaScan > 0 && metaScan != chordId) {
+                    KeyCapture.offerDown(metaScan, 0);
+                }
+                if (chordId > 0) {
+                    KeyCapture.offerDown(chordId, keyCode);
+                }
+            } else if (action == KeyEvent.ACTION_UP && chordId > 0) {
+                KeyCapture.offerUp(chordId);
             }
             return true;
+        }
+
+        if (pairChords == null) pairChords = new PairChordPrefs(this);
+        // Chords: only keys that belong to a saved 2- or 3-key set. Never put
+        // Back/Recents (158/580) in pairDown unless the human mapped them
+        // in a chord. TITAN_RECENTS_LAW — do not swallow nav on a miss.
+        boolean pairMember = chordId > 0 && (pairChords.involves(chordId)
+            || pairChords.involvesMeta(chordId, event.getMetaState()));
+        if (pairMember && action == KeyEvent.ACTION_DOWN
+                && event.getRepeatCount() == 0) {
+            java.util.HashSet<Integer> held = new java.util.HashSet<>(pairDown);
+            held.add(chordId);
+            int meta = KeyMapPrefs.metaChordScan(event.getMetaState());
+            if (meta > 0) held.add(meta);
+            PairChordPrefs.Hit hit = pairChords.bestHit(chordId, held);
+            if (hit != null && hit.size() == 3) {
+                fireChord(hit.action, hit.ids);
+                return true;
+            }
+            if (hit != null && hit.size() == 2) {
+                if (pairChords.extendsToTriple(hit.ids)) {
+                    pairDown.add(chordId);
+                    pairSwallowed.add(chordId);
+                    scheduleChordWait(hit);
+                    return true;
+                }
+                fireChord(hit.action, hit.ids);
+                return true;
+            }
+            pairDown.add(chordId);
+            if (pairChords.isPrefixOfTriple(held)) {
+                pairSwallowed.add(chordId);
+                return true;
+            }
+        } else if (pairMember && action == KeyEvent.ACTION_UP) {
+            pairDown.remove(chordId);
+            if (chordWait != null && chordWaitIds != null && containsId(chordWaitIds, chordId)) {
+                firePendingChord();
+            }
+            pairConsumed.remove(chordId);
+            if (pairSwallowed.remove(chordId)) {
+                cancelPairPending(chordId);
+                return true;
+            }
         }
 
         // 13.15 COEXIST: Sym inject MUST run before idle OS-letter fast path.
@@ -1235,23 +1360,7 @@ public class TrackpadAccessService extends AccessibilityService {
             }
         }
 
-        // Side buttons (gpio_key-func / ff_key / mtk-kpd): always swallow so
-        // system never gets Home/Recents/CAMERA. pad-agent getevent owns the
-        // screen-off KEY_FIRE path; when agent/Magisk is missing (post-wipe),
-        // a11y must still run short/long/double remaps for screen-on use.
-        // Factory: bottom long=specials hold, double=specials toggle; top = arrows.
-        boolean sideKey = KeyMapPrefs.isSideScan(scan) || KeyMapPrefs.isSideScan(rawScan)
-            || isSideInputDevice(event);
-        if (sideKey) {
-            scan = KeyMapPrefs.canonicalizeScan(
-                KeyMapPrefs.isSideScan(scan) ? scan : rawScan);
-            // 13.09: if scan still unknown but device is side rail, keep side ownership
-            if (scan <= 0 || !KeyMapPrefs.isSideScan(scan)) {
-                if (KeyMapPrefs.isSideScan(rawScan)) {
-                    scan = KeyMapPrefs.canonicalizeScan(rawScan);
-                }
-            }
-        }
+        // Side identity already applied above (same gpio/ff_key path as remaps).
         // B1: stock mtk-kpd maps 249/250 → KEYCODE_CAMERA; bare CAMERA (no side
         // scan) is never a product key on Titan — only mis-mapped sides.
         if (keyCode == KeyEvent.KEYCODE_CAMERA && !sideKey) {
@@ -1421,6 +1530,15 @@ public class TrackpadAccessService extends AccessibilityService {
                 return true;
             }
 
+            String shortActNow = shortActionForScan(prefs, scan);
+            if (KeyMapPrefs.isActAsKeyAction(shortActNow)) {
+                downAt.put(scan, now);
+                longFired.put(scan, true);
+                mouseBtnHeld.add(scan);
+                KeyActions.mouseButton(this, shortActNow, true);
+                return true;
+            }
+
             downAt.put(scan, now);
             longFired.put(scan, false);
             Runnable old = longTasks.remove(scan);
@@ -1445,6 +1563,9 @@ public class TrackpadAccessService extends AccessibilityService {
                 longFired.put(sc, true);
                 if (layoutHold) {
                     HostLayoutController.beginHold(TrackpadAccessService.this, sc, longAct);
+                } else if (KeyMapPrefs.isActAsKeyAction(longAct)) {
+                    mouseBtnHeld.add(sc);
+                    KeyActions.mouseButton(TrackpadAccessService.this, longAct, true);
                 } else {
                     KeyActions.run(TrackpadAccessService.this, longAct);
                 }
@@ -1455,6 +1576,36 @@ public class TrackpadAccessService extends AccessibilityService {
         }
 
         if (action == KeyEvent.ACTION_UP) {
+            if (mouseBtnHeld.remove(scan)) {
+                Runnable heldTask = longTasks.remove(scan);
+                if (heldTask != null) h.removeCallbacks(heldTask);
+                downAt.remove(scan);
+                longFired.remove(scan);
+                HostLayoutController.endHold(scan);
+                try {
+                    String ma = shortActionForScan(prefs, scan);
+                    if (!KeyMapPrefs.isActAsKeyAction(ma)) {
+                        KeyMapPrefs.Slot ls = KeyMapPrefs.slotByScan(
+                            scan, KeyMapPrefs.Press.LONG);
+                        ma = ls != null
+                            ? sideSafeAction(scan, effectiveAction(prefs, ls.id))
+                            : null;
+                    }
+                    if (KeyMapPrefs.isActAsKeyAction(ma)) {
+                        KeyActions.mouseButton(this, ma, false);
+                    }
+                    KeyMapPrefs.Slot dblSlot = KeyMapPrefs.slotByScan(
+                        scan, KeyMapPrefs.Press.DOUBLE);
+                    String da = dblSlot != null
+                        ? sideSafeAction(scan, effectiveAction(prefs, dblSlot.id))
+                        : null;
+                    if (da != null && !KeyMapPrefs.ACT_DEFAULT.equals(da)
+                            && !KeyMapPrefs.ACT_NONE.equals(da)) {
+                        lastShortUp.put(scan, SystemClock.uptimeMillis());
+                    }
+                } catch (Exception ignored) {}
+                return true;
+            }
             Runnable old = longTasks.remove(scan);
             if (old != null) h.removeCallbacks(old);
             downAt.remove(scan);
@@ -1472,10 +1623,10 @@ public class TrackpadAccessService extends AccessibilityService {
                     KeyMapPrefs.Slot shortSlot = KeyMapPrefs.slotByScan(sc, KeyMapPrefs.Press.SHORT);
                     if (shortSlot == null) return;
                     String sa = sideSafeAction(sc, effectiveAction(prefs2, shortSlot.id));
-                    // Product: back_short factory is ACT_BACK. If still ACT_DEFAULT
-                    // (legacy prefs), use stockShortFallback so Back/Recents fire.
+                    // ACT_DEFAULT → KeyMapPrefs.factoryDefault (Controls SoT).
                     if (sa != null && KeyMapPrefs.ACT_DEFAULT.equals(sa)) {
-                        sa = stockShortFallback(sc);
+                        KeyMapPrefs.Slot sl = KeyMapPrefs.slotByScan(sc, KeyMapPrefs.Press.SHORT);
+                        if (sl != null) sa = KeyMapPrefs.factoryDefault(sl.id);
                     }
                     if (sa != null && !KeyMapPrefs.ACT_NONE.equals(sa)
                             && !KeyMapPrefs.ACT_DEFAULT.equals(sa)) {
@@ -1525,9 +1676,77 @@ public class TrackpadAccessService extends AccessibilityService {
         return true;
     }
 
-    private static boolean hasStockFallback(int scan) {
-        String f = stockShortFallback(scan);
-        return f != null && !KeyMapPrefs.ACT_NONE.equals(f) && !KeyMapPrefs.ACT_DEFAULT.equals(f);
+    private static boolean containsId(int[] ids, int id) {
+        if (ids == null) return false;
+        int c = KeyMapPrefs.canonicalizeScan(id);
+        for (int x : ids) {
+            if (KeyMapPrefs.canonicalizeScan(x) == c) return true;
+        }
+        return false;
+    }
+
+    private void cancelChordWait() {
+        if (chordWait != null) {
+            h.removeCallbacks(chordWait);
+            chordWait = null;
+        }
+        chordWaitAct = null;
+        chordWaitIds = null;
+    }
+
+    private void scheduleChordWait(PairChordPrefs.Hit hit) {
+        cancelChordWait();
+        if (hit == null || hit.action == null) return;
+        chordWaitAct = hit.action;
+        chordWaitIds = hit.ids;
+        chordWait = () -> {
+            String act = chordWaitAct;
+            int[] ids = chordWaitIds;
+            chordWait = null;
+            chordWaitAct = null;
+            chordWaitIds = null;
+            if (act != null && ids != null) fireChord(act, ids);
+        };
+        h.postDelayed(chordWait, CHORD_WAIT_MS);
+    }
+
+    private void firePendingChord() {
+        String act = chordWaitAct;
+        int[] ids = chordWaitIds;
+        cancelChordWait();
+        if (act != null && ids != null) fireChord(act, ids);
+    }
+
+    private void fireChord(String act, int[] ids) {
+        cancelChordWait();
+        if (act == null || ids == null) return;
+        for (int id : ids) {
+            pairConsumed.add(id);
+            pairSwallowed.add(id);
+            pairDown.add(id);
+            cancelPairPending(id);
+        }
+        KeyActions.run(this, act);
+    }
+
+    private void cancelPairPending(int scan) {
+        Runnable lg = longTasks.remove(scan);
+        if (lg != null) h.removeCallbacks(lg);
+        Runnable sh = shortPending.remove(scan);
+        if (sh != null) h.removeCallbacks(sh);
+        downAt.remove(scan);
+        longFired.put(scan, true);
+        lastShortUp.remove(scan);
+        if (mouseBtnHeld.remove(scan)) {
+            try {
+                KeyMapPrefs kp = new KeyMapPrefs(this);
+                KeyMapPrefs.Slot ms = KeyMapPrefs.slotByScan(scan, KeyMapPrefs.Press.SHORT);
+                String ma = ms != null ? effectiveAction(kp, ms.id) : null;
+                if (KeyMapPrefs.isMouseButtonAction(ma)) {
+                    KeyActions.mouseButton(this, ma, false);
+                }
+            } catch (Exception ignored) {}
+        }
     }
 
     private void fireMagicTap(int scan) {
@@ -1540,7 +1759,9 @@ public class TrackpadAccessService extends AccessibilityService {
         KeyMapPrefs.Slot shortSlot = KeyMapPrefs.slotByScan(scan, KeyMapPrefs.Press.SHORT);
         if (shortSlot == null) return;
         String sa = sideSafeAction(scan, effectiveAction(prefs, shortSlot.id));
-        if (sa != null && KeyMapPrefs.ACT_DEFAULT.equals(sa)) sa = stockShortFallback(scan);
+        if (sa != null && KeyMapPrefs.ACT_DEFAULT.equals(sa) && shortSlot != null) {
+            sa = KeyMapPrefs.factoryDefault(shortSlot.id);
+        }
         if (sa != null && !KeyMapPrefs.ACT_NONE.equals(sa)
                 && !KeyMapPrefs.ACT_DEFAULT.equals(sa)) {
             KeyActions.run(this, sa);
@@ -1607,18 +1828,6 @@ public class TrackpadAccessService extends AccessibilityService {
         TrackpadPrefs prefs = new TrackpadPrefs(this);
         if (!TrackpadPrefs.MODE_WHITELIST.equals(prefs.getMode())) return;
         TrackpadPolicy.apply(this, pkg);
-    }
-
-    /**
-     * Short-press when the slot still says {@link KeyMapPrefs#ACT_DEFAULT}.
-     * Back / Recents only. Fn is layout (Ctrl) or user shortcut — no stock Home.
-     */
-    private static String stockShortFallback(int scan) {
-        switch (KeyMapPrefs.canonicalizeScan(scan)) {
-            case KeyMapPrefs.SCAN_BACK: return KeyMapPrefs.ACT_BACK;
-            case KeyMapPrefs.SCAN_APP_SWITCH: return KeyMapPrefs.ACT_HOME;
-            default: return KeyMapPrefs.ACT_NONE;
-        }
     }
 
     /**
@@ -1990,6 +2199,9 @@ public class TrackpadAccessService extends AccessibilityService {
         magicHeld = false;
         magicUsedChord = false;
         try { magicChordKeys.clear(); } catch (Exception ignored) {}
+        try { pairDown.clear(); pairConsumed.clear(); pairSwallowed.clear(); } catch (Exception ignored) {}
+        try { cancelChordWait(); } catch (Exception ignored) {}
+        try { releaseHeldMouseButtons(); } catch (Exception ignored) {}
         // 12.61: do NOT clear a11y_live here — interrupt is not destroy; clearing
         // made pad-agent KEY_FIRE sides while a11y still ran (dual Specials).
     }
@@ -2012,6 +2224,9 @@ public class TrackpadAccessService extends AccessibilityService {
         magicHeld = false;
         magicUsedChord = false;
         try { magicChordKeys.clear(); } catch (Exception ignored) {}
+        try { pairDown.clear(); pairConsumed.clear(); pairSwallowed.clear(); } catch (Exception ignored) {}
+        try { cancelChordWait(); } catch (Exception ignored) {}
+        try { releaseHeldMouseButtons(); } catch (Exception ignored) {}
         try { KeyActions.clearAgentKeyQueue(this); } catch (Exception ignored) {}
         try { AgentBridge.put(this, AgentBridge.A11Y_LIVE, "0"); } catch (Exception ignored) {}
         instance = null;

@@ -80,3 +80,7 @@
 # did not cut MTK speech ADC (own-voice echo on speaker). Analog cut
 # is titan2-sensor-privacy.sh tinymix ADC_L_Mux=Idle (vendor path).
 # # 0098-audio-mic-privacy-disconnects-input-only.patch
+
+# project:treble_app
+# Desktop mode NPE + skip titan2 uinput (subdisplay looks like 2nd screen).
+0099-trebleapp-desktop-skip-titan-uinput.patch

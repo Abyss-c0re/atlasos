@@ -1050,7 +1050,7 @@ _mirror_host_layout_stable() {
 _run_plane_heal() { _peel_run titan2-plane-heal.sh plane-heal "$@"; }
 _heal_ghost_host_layout_phone() { _run_plane_heal ghost_host; }
 _ensure_long_press_regl() { _run_plane_heal long_press; }
-_ensure_latinime_product_ime() { _run_plane_heal latinime; }
+_ensure_latinime_product_ime() { :; }
 _heal_sensor_qs_tiles() { _run_plane_heal sensor_qs; }
 _allow_dim_belt() { _peel_run titan2-cool-park.sh cool-park allow_dim; }
 _put_wallpaper_dim_settings_only() { _peel_run titan2-cool-park.sh cool-park dim_settings; }

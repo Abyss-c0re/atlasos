@@ -6,13 +6,13 @@
 #   sensor_qs    — strip Titan privacy QS; keep stock cam/mic toggles
 #   long_press   — pin secure long_press_timeout=400 (heal 2800 poison)
 #   soft_ime     — show_ime_with_hard_keyboard policy vs HID grab
-#   latinime     — empty default IME → AOSP LatinIME (never ban Pastiera)
-#   boot         — long_press + soft_ime + latinime (agent claim path)
+#   latinime     — no-op (user IME sacred; do not pin LatinIME)
+#   boot         — long_press + soft_ime only
 #   version
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-HEAL_VER=2.183-plane-heal-peel
+HEAL_VER=2.200-ime-hands-off
 
 log() {
   mkdir -p "$ST" 2>/dev/null || true
@@ -186,29 +186,12 @@ heal_soft_ime() {
   return 0
 }
 
-# Empty IME → LatinIME. Leave any user IME.
+# IME selection is the user's. Never ime set / never wipe enabled_input_methods.
 heal_default_ime() {
-  command -v pm >/dev/null 2>&1 || return 0
-  command -v settings >/dev/null 2>&1 || return 0
-  LATIN_IME='com.android.inputmethod.latin/.LatinIME'
   settings put system show_key_presses 0 2>/dev/null || true
   settings put secure show_key_presses 0 2>/dev/null || true
   heal_soft_ime
   heal_long_press
-  cur=`settings get secure default_input_method 2>/dev/null | tr -d '\r'`
-  case "$cur" in
-    ''|null|NULL) ;;
-    *) return 0 ;;
-  esac
-  if pm path com.android.inputmethod.latin >/dev/null 2>&1; then
-    pm enable com.android.inputmethod.latin 2>/dev/null || true
-    pm enable com.android.inputmethod.latin.auto_generated_rro_product__ 2>/dev/null || true
-    ime enable "$LATIN_IME" 2>/dev/null || true
-    ime set "$LATIN_IME" 2>/dev/null || true
-    settings put secure enabled_input_methods "$LATIN_IME" 2>/dev/null || true
-    settings put secure default_input_method "$LATIN_IME" 2>/dev/null || true
-    log "latinime_product default (empty IME healed)"
-  fi
   return 0
 }
 

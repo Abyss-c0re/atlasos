@@ -6,13 +6,97 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-KI_VER=2.179-keycode-inject-peel
+KI_VER=2.199-mouse-hold
 KI_STATUS=$ST/titan2_keycode_inject_status
 KI_PID=$ST/titan2_keycode_drain.pid
 
 log() {
   mkdir -p "$ST" 2>/dev/null || true
   { echo "keycode-inject: $*" >>"$ST/titan2_pad_agent.log"; } 2>/dev/null || true
+}
+
+# BTN_LEFT=272 BTN_RIGHT=273 BTN_MIDDLE=274 on titan2-virtual-mouse (pad pointer).
+# $1 = 1|2|4|left|right|middle|272|273|274
+# $2 = d|u|down|up|empty (empty = pulse click)
+_emit_virtual_mouse_btn() {
+  which=272
+  case "$1" in
+    2|right|RIGHT|273) which=273 ;;
+    4|middle|MIDDLE|274) which=274 ;;
+    1|left|LEFT|272|'') which=272 ;;
+    1d|1D) which=272; set -- 1 d ;;
+    2d|2D) which=273; set -- 2 d ;;
+    4d|4D) which=274; set -- 4 d ;;
+    1u|1U) which=272; set -- 1 u ;;
+    2u|2U) which=273; set -- 2 u ;;
+    4u|4U) which=274; set -- 4 u ;;
+  esac
+  ev=""
+  for n in /sys/class/input/event*/device/name; do
+    [ -f "$n" ] || continue
+    nm=`cat "$n" 2>/dev/null | tr -d '\r\n'`
+    case "$nm" in
+      titan2-virtual-mouse|titan2-orient-mouse)
+        ev=/dev/input/`basename "$(dirname "$(dirname "$n")")"`
+        break
+        ;;
+    esac
+  done
+  [ -n "$ev" ] && [ -e "$ev" ] || {
+    log "mouse btn: no titan2-virtual-mouse evdev"
+    return 1
+  }
+  edge=`printf '%s' "${2-}" | tr 'A-Z' 'a-z'`
+  case "$edge" in
+    d|down)
+      sendevent "$ev" 1 $which 1
+      sendevent "$ev" 0 0 0
+      log "mouse btn $which DOWN → $ev"
+      ;;
+    u|up)
+      sendevent "$ev" 1 $which 0
+      sendevent "$ev" 0 0 0
+      log "mouse btn $which UP → $ev"
+      ;;
+    *)
+      sendevent "$ev" 1 $which 1
+      sendevent "$ev" 0 0 0
+      sendevent "$ev" 1 $which 0
+      sendevent "$ev" 0 0 0
+      log "mouse btn $1 pulse → $ev code=$which"
+      ;;
+  esac
+  return 0
+}
+
+_drain_mouse_btn_q() {
+  did=0
+  for f in \
+    "$ST/titan2_mouse_btn_q" \
+    "$T2/titan2_mouse_btn_q" \
+    /data/local/tmp/titan2_mouse_btn_q
+  do
+    [ -s "$f" ] || continue
+    while IFS= read -r ml || [ -n "$ml" ]; do
+      ml=`printf '%s' "$ml" | tr -d '\r'`
+      [ -n "$ml" ] || continue
+      set -- $ml
+      code="$1"
+      val="$2"
+      case "$code" in
+        272|273|274) ;;
+        *) continue ;;
+      esac
+      case "$val" in
+        1|d|down) _emit_virtual_mouse_btn "$code" d ;;
+        0|u|up) _emit_virtual_mouse_btn "$code" u ;;
+        *) continue ;;
+      esac
+      did=1
+    done < "$f"
+    : > "$f" 2>/dev/null || true
+  done
+  [ "$did" = "1" ]
 }
 
 
@@ -24,7 +108,9 @@ _ensure_keycode_inject_shells() {
     "$T2/titan2_keycode_inject" \
     /data/local/tmp/titan2_keycode_wake \
     "$ST/titan2_keycode_wake" \
-    "$T2/titan2_keycode_wake"
+    "$T2/titan2_keycode_wake" \
+    "$ST/titan2_mouse_btn_q" \
+    "$T2/titan2_mouse_btn_q"
   do
     [ -f "$f" ] || { : > "$f" 2>/dev/null || true; }
     chmod 666 "$f" 2>/dev/null || true
@@ -47,7 +133,10 @@ _keycode_inject_pending() {
   for f in \
     /data/local/tmp/titan2_keycode_wake \
     "$ST/titan2_keycode_wake" \
-    "$T2/titan2_keycode_wake"
+    "$T2/titan2_keycode_wake" \
+    "$ST/titan2_mouse_btn_q" \
+    "$T2/titan2_mouse_btn_q" \
+    /data/local/tmp/titan2_mouse_btn_q
   do
     [ -s "$f" ] && return 0
   done
@@ -69,6 +158,7 @@ drain_keycode_inject() {
   _inj_lock="$ST/titan2_keycode_inject.lock"
   (
     flock -n 9 || exit 1
+    _drain_mouse_btn_q && { exit 0; }
     did=0
     line=""
     used=""
@@ -135,6 +225,13 @@ drain_keycode_inject() {
             || /system/bin/input keycombination $rest 2>/dev/null || true
         fi
         ;;
+      m\ *|M\ *)
+        # m 1 [d|u] — BTN on titan2-virtual-mouse. d/u = hold; bare = pulse.
+        rest=${line#* }
+        rest=`printf '%s' "$rest" | tr -d '\r\n' | tr '\t' ' ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'`
+        set -- $rest
+        _emit_virtual_mouse_btn "${1-}" "${2-}"
+        ;;
       *)
         case "$line" in ''|*[!0-9]*) exit 1 ;; esac
         input keyevent "$line" 2>/dev/null \
@@ -194,7 +291,9 @@ run_inject_drain() {
         inotifywait -qq -t 1 -e modify,close_write,create,moved_to \
           "$ST/titan2_keycode_inject" "$T2/titan2_keycode_inject" \
           /data/local/tmp/titan2_keycode_wake \
-          "$ST/titan2_keycode_wake" 2>/dev/null || true
+          "$ST/titan2_keycode_wake" \
+          "$ST/titan2_mouse_btn_q" "$T2/titan2_mouse_btn_q" \
+          /data/local/tmp/titan2_mouse_btn_q 2>/dev/null || true
       else
         if [ $((empty_streak % 8)) -eq 1 ] 2>/dev/null || [ -z "${_drain_heat_c:-}" ]; then
           _drain_heat_c=0
@@ -203,21 +302,9 @@ run_inject_drain() {
           case "$_dl" in ''|*[!0-9]*) _dl=0 ;; esac
           [ "$_dl" -ge 8 ] 2>/dev/null && _drain_heat_c=1
         fi
-        if [ "${_drain_heat_c:-0}" = "1" ] && [ "$empty_streak" -gt 10 ] 2>/dev/null; then
-          if command -v usleep >/dev/null 2>&1; then usleep 2000000; else sleep 2; fi
-        elif [ "$empty_streak" -gt 200 ] 2>/dev/null; then
-          if command -v usleep >/dev/null 2>&1; then usleep 500000; else sleep 0.5; fi
-        elif [ "$empty_streak" -gt 80 ] 2>/dev/null; then
-          if command -v usleep >/dev/null 2>&1; then usleep 250000; else sleep 0.25; fi
-        elif [ "$empty_streak" -gt 40 ] 2>/dev/null; then
-          if command -v usleep >/dev/null 2>&1; then usleep 100000; else sleep 0.1; fi
-        elif [ "$empty_streak" -gt 20 ] 2>/dev/null; then
-          if command -v usleep >/dev/null 2>&1; then usleep 32000; else sleep 0.03; fi
-        elif [ "$empty_streak" -gt 5 ] 2>/dev/null; then
-          if command -v usleep >/dev/null 2>&1; then usleep 20000; else sleep 0.02; fi
-        else
-          if command -v usleep >/dev/null 2>&1; then usleep 12000; else sleep 0.02; fi
-        fi
+        # Input (mouse:left/right) cannot wait on the 2s heat sleep.
+        # Cap idle at 20ms even when loadavg is high.
+        if command -v usleep >/dev/null 2>&1; then usleep 20000; else sleep 0.02; fi
       fi
     fi
   done

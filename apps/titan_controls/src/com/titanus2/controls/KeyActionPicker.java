@@ -56,6 +56,12 @@ public final class KeyActionPicker {
         List<String> labels = new ArrayList<>();
         List<Runnable> actions = new ArrayList<>();
 
+        if (!chord && pressKind != KeyMapPrefs.Press.DOUBLE) {
+            labels.add("Act as key…");
+            actions.add(() -> showActAsKey(activity, rootTitle, chord,
+                allowRemove, pressKind, banChrome, listener));
+        }
+
         labels.add("Phone · navigation…");
         actions.add(() -> showGroup(activity, rootTitle, "Navigation",
             KeyMapPrefs.GROUP_NAV, chord, allowRemove, pressKind, banChrome, listener));
@@ -105,6 +111,25 @@ public final class KeyActionPicker {
             })
             .setNegativeButton("Cancel", null)
             .show();
+    }
+
+    /**
+     * Remap: pick the key/button this physical key becomes.
+     * Short vs long is not a choice — the remap follows the press.
+     */
+    public static void showActAsKey(Activity activity, String rootTitle,
+                                    Listener listener) {
+        showActAsKey(activity, rootTitle, false, false, null, false, listener);
+    }
+
+    public static void showActAsKey(Activity activity, String rootTitle,
+                                    boolean chord, boolean allowRemove,
+                                    KeyMapPrefs.Press pressKind,
+                                    boolean banSideChrome, Listener listener) {
+        if (activity == null || listener == null) return;
+        showGroup(activity, rootTitle == null ? "Act as key" : rootTitle,
+            "Act as key", KeyMapPrefs.GROUP_ACT_AS_KEY, chord, allowRemove,
+            pressKind, banSideChrome, listener);
     }
 
     /**

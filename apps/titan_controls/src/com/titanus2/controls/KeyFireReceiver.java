@@ -194,6 +194,9 @@ public class KeyFireReceiver extends BroadcastReceiver {
             } else if (ACT_HOST_LAYOUT.equals(action)) {
                 // Specials/arrows letter keys while display off (+ physical mods)
                 HostLayoutController.handleLinuxScan(app, scan, down, meta);
+            } else if (KeyMapPrefs.isMouseButtonAction(action)
+                    && intent.hasExtra(EXTRA_DOWN)) {
+                KeyActions.mouseButton(app, action, down);
             } else {
                 KeyActions.run(app, action);
             }

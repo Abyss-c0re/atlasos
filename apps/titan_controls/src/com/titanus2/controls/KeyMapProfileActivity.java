@@ -571,19 +571,64 @@ public class KeyMapProfileActivity extends Activity {
             return;
         }
         String name = MagicKeyPrefs.scanLabel(c);
-        String[] presses = new String[] { "Short press", "Long press", "Double press" };
+        String shortOv = null;
+        KeyMapPrefs.Slot sh0 = KeyMapPrefs.slotByScan(c, KeyMapPrefs.Press.SHORT);
+        if (sh0 != null) shortOv = profiles.getOverride(pkg, sh0.id);
+        if (KeyMapPrefs.isActAsKeyAction(shortOv)) {
+            new AlertDialog.Builder(this)
+                .setTitle(name)
+                .setItems(new String[] {
+                    "Change key…",
+                    "Double tap…",
+                    "Remove remap"
+                }, (d, which) -> {
+                    if (which == 0) {
+                        pickActAsKey(c);
+                    } else if (which == 1) {
+                        KeyMapPrefs.Slot slot = KeyMapPrefs.slotByScan(
+                            c, KeyMapPrefs.Press.DOUBLE);
+                        if (slot != null) pickSlotAction(slot);
+                    } else {
+                        profiles.assignActAsKey(pkg, c, KeyMapPrefs.ACT_NONE);
+                        afterProfileChange();
+                        rebuild();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+            return;
+        }
+        String[] presses = new String[] {
+            "Act as key…", "Short press", "Long press", "Double tap"
+        };
         KeyMapPrefs.Press[] kinds = new KeyMapPrefs.Press[] {
             KeyMapPrefs.Press.SHORT, KeyMapPrefs.Press.LONG, KeyMapPrefs.Press.DOUBLE
         };
         new AlertDialog.Builder(this)
             .setTitle(name)
             .setItems(presses, (d, which) -> {
-                KeyMapPrefs.Slot slot = KeyMapPrefs.slotByScan(c, kinds[which]);
+                if (which == 0) {
+                    pickActAsKey(c);
+                    return;
+                }
+                KeyMapPrefs.Slot slot = KeyMapPrefs.slotByScan(c, kinds[which - 1]);
                 if (slot == null) return;
                 pickSlotAction(slot);
             })
             .setNegativeButton("Cancel", null)
             .show();
+    }
+
+    private void pickActAsKey(int scan) {
+        KeyActionPicker.showActAsKey(this, MagicKeyPrefs.scanLabel(scan),
+            new KeyActionPicker.Listener() {
+                @Override public void onPicked(String action) {
+                    profiles.assignActAsKey(pkg, scan, action);
+                    afterProfileChange();
+                    rebuild();
+                }
+                @Override public void onPickApp() {}
+            });
     }
 
     private void onHoldChordKey(int scan, int keyCode) {
@@ -640,7 +685,12 @@ public class KeyMapProfileActivity extends Activity {
         KeyActionPicker.show(this, KeyMapPrefs.keyPressLabel(slot), false, true,
             slot.press, new KeyActionPicker.Listener() {
                 @Override public void onPicked(String action) {
-                    profiles.setOverride(pkg, slot.id, action);
+                    if (KeyMapPrefs.isActAsKeyAction(action)
+                            && slot.press != KeyMapPrefs.Press.DOUBLE) {
+                        profiles.assignActAsKey(pkg, slot.scan, action);
+                    } else {
+                        profiles.setOverride(pkg, slot.id, action);
+                    }
                     afterProfileChange();
                     rebuild();
                 }

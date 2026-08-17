@@ -1,7 +1,9 @@
 package com.titanus2.controls;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.GestureDescription;
 import android.content.ComponentName;
+import android.graphics.Path;
 import android.content.Context;
 import android.content.Intent;
 import android.hardware.camera2.CameraAccessException;
@@ -17,6 +19,7 @@ import android.telecom.TelecomManager;
 import android.view.InputDevice;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Toast;
 import com.titanus2.controls.subdisplay.SubDisplayPrefs;
 import com.titanus2.controls.subdisplay.SubDisplayService;
@@ -37,6 +40,9 @@ public final class KeyActions {
     public static void run(Context ctx, String action) {
         if (action == null || KeyMapPrefs.ACT_DEFAULT.equals(action)) return;
         if (KeyMapPrefs.ACT_NONE.equals(action)) return;
+        // After overview (ACT_RECENTS), skip whatever Controls mapped as
+        // Recents-key short — not a hardcoded Home.
+        if (mappedShortBlocked(action)) return;
         AccessibilityService svc = (ctx instanceof AccessibilityService)
             ? (AccessibilityService) ctx : TrackpadAccessService.get();
         Context app = ctx.getApplicationContext();
@@ -83,13 +89,12 @@ public final class KeyActions {
                     }
                     break;
                 case KeyMapPrefs.ACT_RECENTS:
-                    // Never inject KEYCODE_APP_SWITCH: Quickstep quick-switch.
-                    // Prefer a11y GLOBAL_ACTION_RECENTS. Do not also call
-                    // toggleRecentApps (dual fire opens then closes overview).
+                    // Controls map long-Recents: GLOBAL_ACTION_RECENTS only.
+                    // Never 187. Never RecentsActivity. Never toggleRecentApps
+                    // (that is a toggle — release / dual fire closes overview).
+                    armOverviewCool(ctx);
                     if (svc != null) {
                         global(ctx, svc, AccessibilityService.GLOBAL_ACTION_RECENTS);
-                    } else {
-                        statusBar(ctx, "toggleRecentApps");
                     }
                     break;
                 case KeyMapPrefs.ACT_NOTIFICATIONS:
@@ -181,6 +186,51 @@ public final class KeyActions {
                 toast(ctx, "Action failed: " + e.getMessage());
             }
         }
+    }
+
+    /** After ACT_RECENTS, skip the Recents-key short mapping (Controls SoT). */
+    private static final long RECENTS_COOL_MS = 1100L;
+    private static volatile long recentsCoolUntilElapsed;
+    private static volatile String recentsCoolSkipAction;
+
+    private static void armOverviewCool(Context ctx) {
+        recentsCoolUntilElapsed = SystemClock.elapsedRealtime() + RECENTS_COOL_MS;
+        recentsCoolSkipAction = KeyMapPrefs.factoryDefault("recents_short");
+        try {
+            if (ctx != null) {
+                KeyMapPrefs kp = new KeyMapPrefs(ctx);
+                recentsCoolSkipAction = kp.getAction("recents_short");
+            }
+        } catch (Exception ignored) {}
+        long wall = System.currentTimeMillis() + RECENTS_COOL_MS;
+        byte[] data = (Long.toString(wall) + "\n")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        for (String path : new String[] {
+                "/data/local/tmp/titan2_nav_cool_until_ms",
+                "/data/misc/titan2/titan2_nav_cool_until_ms" }) {
+            try {
+                java.io.File f = new java.io.File(path);
+                java.io.File p = f.getParentFile();
+                if (p != null && !p.exists()) p.mkdirs();
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(f, false)) {
+                    fos.write(data);
+                }
+                break;
+            } catch (Exception ignored) {}
+        }
+        try {
+            String skip = recentsCoolSkipAction == null ? "" : recentsCoolSkipAction;
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(
+                "/data/local/tmp/titan2_nav_cool_skip", false);
+            fos.write((skip + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            fos.close();
+        } catch (Exception ignored) {}
+    }
+
+    private static boolean mappedShortBlocked(String action) {
+        if (action == null || recentsCoolSkipAction == null) return false;
+        if (SystemClock.elapsedRealtime() >= recentsCoolUntilElapsed) return false;
+        return action.equals(recentsCoolSkipAction);
     }
 
     private static void global(Context ctx, AccessibilityService svc, int action) {
@@ -323,7 +373,7 @@ public final class KeyActions {
                 stampRemote(ctx, action);
                 return;
             }
-            // Session off: phone click only (no REMOTE_INPUT cold-start).
+            // Session off: pulse (KEY_FIRE without hold). Held keys use mouseButton().
             injectMouseTap(ctx, buttons);
             stampRemote(ctx, action);
             return;
@@ -734,53 +784,114 @@ public final class KeyActions {
     }
 
     /**
-     * Phone mouse wheel when HID / touchpadd are off. Prefer SOURCE_MOUSE
-     * ACTION_SCROLL so the focused window actually scrolls. Page keys only
-     * if inject is denied.
+     * Phone mouse wheel when HID is off. Injected SOURCE_MOUSE ACTION_SCROLL
+     * is accepted then dropped (no mouse InputDevice / no hover). Use a11y
+     * ACTION_SCROLL_* on the focused window, then a swipe gesture.
      */
     private static void injectPhoneScroll(Context ctx, int wheel) {
         if (wheel == 0) return;
         int n = Math.min(15, Math.abs(wheel));
-        float dir = wheel > 0 ? 1f : -1f;
-        boolean ok = false;
-        try {
-            InputManager im = (InputManager) ctx.getSystemService(Context.INPUT_SERVICE);
-            Method m = InputManager.class.getMethod("injectInputEvent",
-                android.view.InputEvent.class, int.class);
-            android.util.DisplayMetrics dm = ctx.getResources().getDisplayMetrics();
-            float x = dm.widthPixels / 2f;
-            float y = dm.heightPixels / 2f;
-            android.view.MotionEvent.PointerProperties pp =
-                new android.view.MotionEvent.PointerProperties();
-            pp.id = 0;
-            pp.toolType = android.view.MotionEvent.TOOL_TYPE_MOUSE;
+        boolean up = wheel > 0;
+        AccessibilityService svc = (ctx instanceof AccessibilityService)
+            ? (AccessibilityService) ctx : TrackpadAccessService.get();
+        if (svc != null) {
+            boolean any = false;
             for (int i = 0; i < n; i++) {
-                long now = SystemClock.uptimeMillis();
-                android.view.MotionEvent.PointerCoords pc =
-                    new android.view.MotionEvent.PointerCoords();
-                pc.x = x;
-                pc.y = y;
-                pc.pressure = 1f;
-                pc.size = 1f;
-                pc.setAxisValue(android.view.MotionEvent.AXIS_VSCROLL, dir);
-                android.view.MotionEvent ev = android.view.MotionEvent.obtain(
-                    now, now, android.view.MotionEvent.ACTION_SCROLL,
-                    1,
-                    new android.view.MotionEvent.PointerProperties[]{pp},
-                    new android.view.MotionEvent.PointerCoords[]{pc},
-                    0, 0, 1f, 1f, 0, 0,
-                    InputDevice.SOURCE_MOUSE, 0);
-                Object r = m.invoke(im, ev, 0);
-                ev.recycle();
-                ok = !(r instanceof Boolean) || (Boolean) r;
-                if (!ok) break;
+                if (a11yScrollNode(svc, up)) any = true;
             }
-        } catch (Exception e) {
-            ok = false;
+            if (any) return;
+            if (a11ySwipeScroll(svc, up, n)) return;
         }
-        if (ok) return;
-        int code = wheel > 0 ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
+        int code = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
         for (int i = 0; i < n; i++) injectKeyCode(ctx, code);
+    }
+
+    /** wheel-up = BACKWARD (content down); wheel-down = FORWARD. */
+    private static boolean a11yScrollNode(AccessibilityService svc, boolean up) {
+        int act = up
+            ? AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            : AccessibilityNodeInfo.ACTION_SCROLL_FORWARD;
+        AccessibilityNodeInfo focus = null;
+        try {
+            focus = svc.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+            if (focus == null) focus = svc.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY);
+            for (AccessibilityNodeInfo p = focus; p != null; ) {
+                if (nodeCanScroll(p, act) && p.performAction(act)) return true;
+                AccessibilityNodeInfo parent = p.getParent();
+                if (p != focus) p.recycle();
+                p = parent;
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (focus != null) try { focus.recycle(); } catch (Exception ignored) {}
+        }
+        AccessibilityNodeInfo root = null;
+        try {
+            root = svc.getRootInActiveWindow();
+            AccessibilityNodeInfo hit = findScrollable(root, act);
+            if (hit != null) {
+                boolean ok = hit.performAction(act);
+                hit.recycle();
+                return ok;
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (root != null) try { root.recycle(); } catch (Exception ignored) {}
+        }
+        return false;
+    }
+
+    private static boolean nodeCanScroll(AccessibilityNodeInfo n, int act) {
+        if (n == null || !n.isScrollable()) return false;
+        if ((n.getActions() & act) != 0) return true;
+        try {
+            java.util.List<AccessibilityNodeInfo.AccessibilityAction> list = n.getActionList();
+            if (list == null) return true;
+            for (int i = 0; i < list.size(); i++) {
+                AccessibilityNodeInfo.AccessibilityAction a = list.get(i);
+                if (a != null && a.getId() == act) return true;
+            }
+        } catch (Exception ignored) {}
+        return n.isScrollable();
+    }
+
+    private static AccessibilityNodeInfo findScrollable(AccessibilityNodeInfo n, int act) {
+        if (n == null) return null;
+        if (nodeCanScroll(n, act)) return AccessibilityNodeInfo.obtain(n);
+        int count = n.getChildCount();
+        for (int i = 0; i < count; i++) {
+            AccessibilityNodeInfo c = n.getChild(i);
+            if (c == null) continue;
+            AccessibilityNodeInfo hit = findScrollable(c, act);
+            c.recycle();
+            if (hit != null) return hit;
+        }
+        return null;
+    }
+
+    /** Finger-drag: swipe down = scroll up; swipe up = scroll down. */
+    private static boolean a11ySwipeScroll(AccessibilityService svc, boolean up, int notches) {
+        try {
+            android.util.DisplayMetrics dm = svc.getResources().getDisplayMetrics();
+            float x = dm.widthPixels / 2f;
+            float mid = dm.heightPixels / 2f;
+            float span = Math.max(120f, dm.heightPixels * 0.18f);
+            Path path = new Path();
+            if (up) {
+                path.moveTo(x, mid - span / 2f);
+                path.lineTo(x, mid + span / 2f);
+            } else {
+                path.moveTo(x, mid + span / 2f);
+                path.lineTo(x, mid - span / 2f);
+            }
+            long dur = Math.min(220L, 80L + 20L * notches);
+            GestureDescription.StrokeDescription stroke =
+                new GestureDescription.StrokeDescription(path, 0, dur);
+            GestureDescription gest = new GestureDescription.Builder().addStroke(stroke).build();
+            return svc.dispatchGesture(gest, null, null);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static final class HostChord {
@@ -1002,69 +1113,237 @@ public final class KeyActions {
         return true; // older stubs
     }
 
-    /** Best-effort local mouse button for apps that stream phone input (Moonlight). */
+    /**
+     * Physical key mapped to mouse:left/right/middle — button follows hold.
+     */
+    public static void mouseButton(Context ctx, String action, boolean pressed) {
+        if (!KeyMapPrefs.isMouseButtonAction(action)) return;
+        int buttons = mouseButtonsFromAction(action);
+        if (buttons == 0) return;
+        if (HostLayoutController.isHidSessionLive(ctx)) {
+            broadcastRemote(ctx, action,
+                com.titanus2.api.Titan2ApiContract.KIND_MOUSE,
+                pressed ? buttons : 0, false, 0, 0, 0, 0);
+            stampRemote(ctx, action);
+            return;
+        }
+        applyMouseButton(ctx, buttons, pressed);
+        stampRemote(ctx, action);
+    }
+
+    /**
+     * Local click when HID is off. Must hit the pad pointer immediately.
+     * Never walk the a11y node tree here (IME can be on the rear Cube; that
+     * wedged onKeyEvent and killed Back/Recents). Gesture + evdev only.
+     */
     private static void injectMouseTap(Context ctx, int buttons) {
+        if (buttons == 0) buttons = 1;
+        float[] xy = cursorXy(ctx);
+        InputDevice mouse = findPadMouse();
+        if (xy != null && injectPadMouseButton(ctx, mouse, xy[0], xy[1], buttons)) {
+            return;
+        }
+        AccessibilityService svc = (ctx instanceof AccessibilityService)
+            ? (AccessibilityService) ctx : TrackpadAccessService.get();
+        if (xy != null && svc != null) {
+            if (a11yTapAt(svc, xy[0], xy[1], (buttons & 2) != 0)) return;
+        }
+        queuePadMouseBtn(ctx, buttons);
+    }
+
+    private static InputDevice findPadMouse() {
+        int[] ids = InputDevice.getDeviceIds();
+        if (ids == null) return null;
+        InputDevice named = null;
+        InputDevice anyTitan = null;
+        for (int id : ids) {
+            InputDevice d = InputDevice.getDevice(id);
+            if (d == null) continue;
+            String n = d.getName();
+            if (n == null) continue;
+            if ("titan2-virtual-mouse".equals(n) || "titan2-orient-mouse".equals(n)) {
+                named = d;
+                break;
+            }
+            if (n.startsWith("titan2-")
+                    && (d.getSources() & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE) {
+                anyTitan = d;
+            }
+        }
+        return named != null ? named : anyTitan;
+    }
+
+    /** Logical display 0 cursor. Null if no pointer (do not invent screen center). */
+    private static float[] cursorXy(Context ctx) {
+        try {
+            InputManager im = (InputManager) ctx.getSystemService(Context.INPUT_SERVICE);
+            Method m = InputManager.class.getMethod("getCursorPosition", int.class);
+            Object p = m.invoke(im, 0);
+            if (p instanceof android.graphics.PointF) {
+                android.graphics.PointF pf = (android.graphics.PointF) p;
+                if (!Float.isNaN(pf.x) && !Float.isNaN(pf.y)) {
+                    return new float[] { pf.x, pf.y };
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private static boolean injectPadMouseButton(Context ctx, InputDevice mouse,
+                                                float x, float y, int buttons) {
+        if (mouse == null) return false;
         try {
             InputManager im = (InputManager) ctx.getSystemService(Context.INPUT_SERVICE);
             Method m = InputManager.class.getMethod("injectInputEvent",
                 android.view.InputEvent.class, int.class);
             long now = SystemClock.uptimeMillis();
-            int toolType = android.view.MotionEvent.TOOL_TYPE_MOUSE;
-            // Center of default display — remote apps often ignore coords for button-only
-            android.util.DisplayMetrics dm = ctx.getResources().getDisplayMetrics();
-            float x = dm.widthPixels / 2f;
-            float y = dm.heightPixels / 2f;
             int androidButtons = 0;
             if ((buttons & 1) != 0) androidButtons |= android.view.MotionEvent.BUTTON_PRIMARY;
             if ((buttons & 2) != 0) androidButtons |= android.view.MotionEvent.BUTTON_SECONDARY;
             if ((buttons & 4) != 0) androidButtons |= android.view.MotionEvent.BUTTON_TERTIARY;
-            android.view.MotionEvent.PointerProperties pp = new android.view.MotionEvent.PointerProperties();
+            android.view.MotionEvent.PointerProperties pp =
+                new android.view.MotionEvent.PointerProperties();
             pp.id = 0;
-            pp.toolType = toolType;
-            android.view.MotionEvent.PointerCoords pc = new android.view.MotionEvent.PointerCoords();
+            pp.toolType = android.view.MotionEvent.TOOL_TYPE_MOUSE;
+            android.view.MotionEvent.PointerCoords pc =
+                new android.view.MotionEvent.PointerCoords();
             pc.x = x;
             pc.y = y;
             pc.pressure = 1f;
             pc.size = 1f;
-            int downAction = android.view.MotionEvent.ACTION_DOWN;
-            int upAction = android.view.MotionEvent.ACTION_UP;
-            if (Build.VERSION.SDK_INT >= 23) {
-                // Prefer button press/release when available
-                try {
-                    android.view.MotionEvent down = android.view.MotionEvent.obtain(
-                        now, now, android.view.MotionEvent.ACTION_BUTTON_PRESS,
-                        1, new android.view.MotionEvent.PointerProperties[]{pp},
-                        new android.view.MotionEvent.PointerCoords[]{pc},
-                        0, androidButtons, 1f, 1f, 0, 0,
-                        InputDevice.SOURCE_MOUSE, 0);
-                    android.view.MotionEvent up = android.view.MotionEvent.obtain(
-                        now, now + 20, android.view.MotionEvent.ACTION_BUTTON_RELEASE,
-                        1, new android.view.MotionEvent.PointerProperties[]{pp},
-                        new android.view.MotionEvent.PointerCoords[]{pc},
-                        0, 0, 1f, 1f, 0, 0,
-                        InputDevice.SOURCE_MOUSE, 0);
-                    m.invoke(im, down, 0);
-                    m.invoke(im, up, 0);
-                    down.recycle();
-                    up.recycle();
-                    return;
-                } catch (Exception ignored) {}
-            }
+            int devId = mouse.getId();
+            int src = InputDevice.SOURCE_MOUSE;
             android.view.MotionEvent down = android.view.MotionEvent.obtain(
-                now, now, downAction, 1,
-                new android.view.MotionEvent.PointerProperties[]{pp},
-                new android.view.MotionEvent.PointerCoords[]{pc},
-                0, androidButtons, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0);
+                now, now, android.view.MotionEvent.ACTION_DOWN, 1,
+                new android.view.MotionEvent.PointerProperties[] { pp },
+                new android.view.MotionEvent.PointerCoords[] { pc },
+                0, androidButtons, 1f, 1f, devId, 0, src, 0);
             android.view.MotionEvent up = android.view.MotionEvent.obtain(
-                now, now + 20, upAction, 1,
-                new android.view.MotionEvent.PointerProperties[]{pp},
-                new android.view.MotionEvent.PointerCoords[]{pc},
-                0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0);
-            m.invoke(im, down, 0);
-            m.invoke(im, up, 0);
+                now, now + 20, android.view.MotionEvent.ACTION_UP, 1,
+                new android.view.MotionEvent.PointerProperties[] { pp },
+                new android.view.MotionEvent.PointerCoords[] { pc },
+                0, 0, 1f, 1f, devId, 0, src, 0);
+            boolean ok = invokeInjectMotion(m, im, down, 0);
+            invokeInjectMotion(m, im, up, 0);
             down.recycle();
             up.recycle();
+            return ok;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static void applyMouseButton(Context ctx, int buttons, boolean pressed) {
+        if (!writeMouseBtnEdge(ctx, buttons, pressed)) {
+            queuePadMouseBtn(ctx, buttons, pressed ? "d" : "u");
+        }
+        InputDevice mouse = findPadMouse();
+        float[] xy = cursorXy(ctx);
+        if (xy == null || mouse == null) return;
+        try {
+            InputManager im = (InputManager) ctx.getSystemService(Context.INPUT_SERVICE);
+            Method m = InputManager.class.getMethod("injectInputEvent",
+                android.view.InputEvent.class, int.class);
+            long now = SystemClock.uptimeMillis();
+            int androidButtons = 0;
+            if (pressed) {
+                if ((buttons & 1) != 0) androidButtons |= android.view.MotionEvent.BUTTON_PRIMARY;
+                if ((buttons & 2) != 0) androidButtons |= android.view.MotionEvent.BUTTON_SECONDARY;
+                if ((buttons & 4) != 0) androidButtons |= android.view.MotionEvent.BUTTON_TERTIARY;
+            }
+            android.view.MotionEvent.PointerProperties pp =
+                new android.view.MotionEvent.PointerProperties();
+            pp.id = 0;
+            pp.toolType = android.view.MotionEvent.TOOL_TYPE_MOUSE;
+            android.view.MotionEvent.PointerCoords pc =
+                new android.view.MotionEvent.PointerCoords();
+            pc.x = xy[0];
+            pc.y = xy[1];
+            pc.pressure = pressed ? 1f : 0f;
+            pc.size = 1f;
+            int act = pressed
+                ? android.view.MotionEvent.ACTION_DOWN
+                : android.view.MotionEvent.ACTION_UP;
+            android.view.MotionEvent ev = android.view.MotionEvent.obtain(
+                now, now, act, 1,
+                new android.view.MotionEvent.PointerProperties[] { pp },
+                new android.view.MotionEvent.PointerCoords[] { pc },
+                0, androidButtons, 1f, 1f, mouse.getId(), 0,
+                InputDevice.SOURCE_MOUSE, 0);
+            invokeInjectMotion(m, im, ev, 0);
+            ev.recycle();
         } catch (Exception ignored) {}
+    }
+
+    private static boolean invokeInjectMotion(Method m, InputManager im,
+                                              android.view.MotionEvent ev, int mode)
+            throws Exception {
+        Object r = m.invoke(im, ev, mode);
+        if (r instanceof Boolean) return (Boolean) r;
+        return true;
+    }
+
+    /**
+     * Append BTN edge so a tap (down then up before drain) cannot overwrite
+     * the down. Drain consumes every line. code = 272/273/274, value = 0|1.
+     */
+    private static boolean writeMouseBtnEdge(Context ctx, int buttons, boolean pressed) {
+        int code = 272;
+        if ((buttons & 2) != 0) code = 273;
+        else if ((buttons & 4) != 0) code = 274;
+        String line = code + " " + (pressed ? "1" : "0") + "\n";
+        byte[] data = line.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        boolean wrote = false;
+        for (String path : new String[] {
+                "/data/local/tmp/titan2_mouse_btn_q",
+                "/data/misc/titan2/titan2_mouse_btn_q"
+        }) {
+            try {
+                java.io.File f = new java.io.File(path);
+                java.io.File parent = f.getParentFile();
+                if (parent != null && !parent.exists()) parent.mkdirs();
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(f, true)) {
+                    fos.write(data);
+                }
+                wrote = true;
+                break;
+            } catch (Exception ignored) {}
+        }
+        try {
+            java.io.File wake = new java.io.File("/data/local/tmp/titan2_keycode_wake");
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(wake, false)) {
+                fos.write('1');
+            }
+        } catch (Exception ignored) {}
+        return wrote;
+    }
+
+    /** pad-agent {@code m 1|2|4} → sendevent BTN_* on titan2-virtual-mouse. */
+    private static boolean queuePadMouseBtn(Context ctx, int buttons) {
+        return queuePadMouseBtn(ctx, buttons, null);
+    }
+
+    private static boolean queuePadMouseBtn(Context ctx, int buttons, String edge) {
+        int spec = 1;
+        if ((buttons & 2) != 0) spec = 2;
+        else if ((buttons & 4) != 0) spec = 4;
+        if (edge == null || edge.isEmpty()) return writeAgentKeyQueue(ctx, "m " + spec);
+        return writeAgentKeyQueue(ctx, "m " + spec + " " + edge);
+    }
+
+    private static boolean a11yTapAt(AccessibilityService svc, float x, float y,
+                                     boolean secondary) {
+        if (secondary) return false;
+        try {
+            Path path = new Path();
+            path.moveTo(x, y);
+            GestureDescription.StrokeDescription stroke =
+                new GestureDescription.StrokeDescription(path, 0, 40);
+            GestureDescription gest = new GestureDescription.Builder().addStroke(stroke).build();
+            return svc.dispatchGesture(gest, null, null);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static void broadcastRemote(Context ctx, String action, String kind,

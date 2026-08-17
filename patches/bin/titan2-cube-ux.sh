@@ -2,7 +2,7 @@
 # Hybrid ROM-wide Cube UX — night OLED + selectable cyan glow (no square RROs).
 # Geometry: square chrome RROs DROPPED 2026-07-21 (FGS pill NPE + mangled Settings).
 # Product: night/cyan via theme seed only — never re-enable Titan*Square* overlays.
-# Called from titan2-display. Version: 13 (user IME sacred — no sole-LatinIME wipe)
+# Called from titan2-display. Version: 14 (never pin IME — PocketBoard/user choice)
 # Glow/mode from Controls Look (ThemePrefs) when set:
 #   settings global titan2_ui_accent_argb  (hex without #, e.g. ff00e5ff or 00E5FF)
 #   settings global titan2_ui_day_night    day | night | auto
@@ -110,35 +110,10 @@ _put_soft_ime_product() {
   unset _s _g _want _cur
 }
 _put_soft_ime_product
-LATIN_IME='com.android.inputmethod.latin/.LatinIME'
 # FB-IN-3: Secure long_press is ALL UI long-holds — AOSP 400; never 2800 poison
 settings put secure long_press_timeout 400 2>/dev/null || true
-# User IME choice is sacred (2026-08-03).
-# Never wipe enabled_input_methods / force default to LatinIME every boot —
-# that made Settings → Keyboard selection auto-revert to stock AOSP.
-# Only heal when default is empty/broken AND LatinIME is installed.
-pm enable com.android.inputmethod.latin >/dev/null 2>&1 || true
-pm enable com.android.inputmethod.latin.auto_generated_rro_product__ >/dev/null 2>&1 || true
-_cur_ime=$(settings get secure default_input_method 2>/dev/null | tr -d '\r')
-case "$_cur_ime" in
-  ''|null|NULL)
-    if pm path com.android.inputmethod.latin >/dev/null 2>&1; then
-      ime enable "$LATIN_IME" >/dev/null 2>&1 || true
-      ime set "$LATIN_IME" >/dev/null 2>&1 || true
-      _en=$(settings get secure enabled_input_methods 2>/dev/null | tr -d '\r')
-      case "$_en" in
-        ''|null|NULL) settings put secure enabled_input_methods "$LATIN_IME" 2>/dev/null || true ;;
-        *inputmethod.latin*) ;;
-        *) settings put secure enabled_input_methods "${_en}:${LATIN_IME}" 2>/dev/null || true ;;
-      esac
-      settings put secure default_input_method "$LATIN_IME" 2>/dev/null || true
-      logm "ime_heal empty→LatinIME"
-    fi
-    ;;
-  *)
-    logm "ime_keep user=$_cur_ime"
-    ;;
-esac
+# User IME is sacred. Do not ime set, do not wipe enabled_input_methods,
+# do not pin LatinIME over PocketBoard / Gboard / anything the human installed.
 unset _cur_ime _en
 
 # Product Keys a11y — release has no titan2-dev-adb. Without this, sides/specials

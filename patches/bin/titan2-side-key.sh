@@ -8,7 +8,7 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-SIDE_VER=2.174-side-key-peel
+SIDE_VER=2.199-mouse-hold
 SIDE_STATUS=$ST/titan2_side_key_status
 SIDE_PID=$ST/titan2_side_key.pid
 
@@ -286,6 +286,16 @@ _side_handle_key() {
     fi
     echo "$now_ms" > "$dfile" 2>/dev/null || true
     rm -f "$hfile" "$ST/titan2_side_dbl_arm_$code" 2>/dev/null || true
+    # Act-as-key mouse: follow physical hold (down now, up on release).
+    short_now=`read_km titan2_km_${pref}_short`
+    short_now=`_side_sanitize_act "$pref" short "$short_now"`
+    case "$short_now" in
+      mouse:left|mouse:right|mouse:middle)
+        echo "$short_now" > "$ST/titan2_side_mouse_$code" 2>/dev/null || true
+        fire_key_action_scan "$short_now" "$scan_dec" 1
+        return 0
+        ;;
+    esac
     long_act=`read_km titan2_km_${pref}_long`
     long_act=`_side_sanitize_act "$pref" long "$long_act"`
     case "$long_act" in
@@ -303,6 +313,16 @@ _side_handle_key() {
   elif [ "$val" = "0" ] || [ "$val" = "00000000" ]; then
     dms=`cat "$dfile" 2>/dev/null | tr -d '\r\n '`
     rm -f "$dfile" 2>/dev/null || true
+    if [ -f "$ST/titan2_side_mouse_$code" ]; then
+      mact=`cat "$ST/titan2_side_mouse_$code" 2>/dev/null | tr -d '\r\n '`
+      rm -f "$ST/titan2_side_mouse_$code" "$hfile" 2>/dev/null || true
+      case "$mact" in
+        mouse:left|mouse:right|mouse:middle)
+          fire_key_action_scan "$mact" "$scan_dec" 0
+          ;;
+      esac
+      return 0
+    fi
     # Double already fired on second DOWN — ignore this UP
     if [ -f "$ST/titan2_side_dbl_arm_$code" ]; then
       rm -f "$ST/titan2_side_dbl_arm_$code" "$hfile" 2>/dev/null || true

@@ -141,6 +141,52 @@ public final class KeyMapPrefs {
      * Assign layout-modifier mode on a physical key: long = hold, double = toggle,
      * short = none (disables other shortcut kinds for that scan).
      */
+    /**
+     * Bind a whole-key remap (act as key). Long is forced none so the UI
+     * cannot split short vs long. Double tap is left alone.
+     */
+    public void assignActAsKey(int scan, String action) {
+        if (action == null || ACT_NONE.equals(action) || ACT_DEFAULT.equals(action)) {
+            int c = canonicalizeScan(scan);
+            Slot sh = slotByScan(c, Press.SHORT);
+            Slot lo = slotByScan(c, Press.LONG);
+            SharedPreferences.Editor ed = p.edit();
+            if (sh != null) {
+                ed.putString("slot_" + sh.id, ACT_NONE);
+                ed.remove("slot_" + sh.id + "_label");
+            }
+            if (lo != null) {
+                ed.putString("slot_" + lo.id, ACT_NONE);
+                ed.remove("slot_" + lo.id + "_label");
+            }
+            ed.apply();
+            return;
+        }
+        if (!isActAsKeyAction(action)) return;
+        int c = canonicalizeScan(scan);
+        Slot sh = slotByScan(c, Press.SHORT);
+        Slot lo = slotByScan(c, Press.LONG);
+        SharedPreferences.Editor ed = p.edit();
+        if (sh != null) {
+            String a = action;
+            if (isSideSlotId(sh.id) && isSystemChromeAction(a)) {
+                a = factoryDefault(sh.id);
+            }
+            ed.putString("slot_" + sh.id, a);
+            ed.remove("slot_" + sh.id + "_label");
+        }
+        if (lo != null) {
+            ed.putString("slot_" + lo.id, ACT_NONE);
+            ed.remove("slot_" + lo.id + "_label");
+        }
+        ed.apply();
+    }
+
+    public boolean isActAsKeyScan(int scan) {
+        Slot sh = slotByScan(canonicalizeScan(scan), Press.SHORT);
+        return sh != null && isActAsKeyAction(getAction(sh.id));
+    }
+
     public void assignLayoutModifier(int scan, String layoutId) {
         int c = canonicalizeScan(scan);
         Slot sh = slotByScan(c, Press.SHORT);
@@ -226,9 +272,9 @@ public final class KeyMapPrefs {
         { ACT_ANSWER_CALL, "Answer call" },
         { ACT_END_CALL, "End call" },
         { ACT_MUTE, "Mute / unmute" },
-        { ACT_MOUSE_LEFT, "Left click" },
-        { ACT_MOUSE_RIGHT, "Right click" },
-        { ACT_MOUSE_MIDDLE, "Middle click" },
+        { ACT_MOUSE_LEFT, "Left mouse button" },
+        { ACT_MOUSE_RIGHT, "Right mouse button" },
+        { ACT_MOUSE_MIDDLE, "Middle mouse button" },
         { ACT_MOUSE_SCROLL_UP, "Scroll up" },
         { ACT_MOUSE_SCROLL_DOWN, "Scroll down" },
         { ACT_HOST_PREFIX + "up", "Arrow up" },
@@ -296,16 +342,20 @@ public final class KeyMapPrefs {
         { ACT_MUTE, "Mute / unmute" },
     };
     /**
-     * Mouse pointer — valid on sides and any remap. HID session sends the
-     * guest wheel; without HID / touchpadd, Android gets a real mouse wheel
-     * (not Page Up/Down).
+     * Remap: physical key <em>is</em> this key/button for the whole press.
+     * No short/long split — follow down/up. Double tap stays a separate type.
      */
+    public static final String[][] GROUP_ACT_AS_KEY = new String[][] {
+        { ACT_MOUSE_LEFT, "Left mouse button" },
+        { ACT_MOUSE_RIGHT, "Right mouse button" },
+        { ACT_MOUSE_MIDDLE, "Middle mouse button" },
+    };
     public static final String[][] GROUP_POINTER = new String[][] {
         { ACT_MOUSE_SCROLL_UP, "Scroll up" },
         { ACT_MOUSE_SCROLL_DOWN, "Scroll down" },
-        { ACT_MOUSE_LEFT, "Left click" },
-        { ACT_MOUSE_RIGHT, "Right click" },
-        { ACT_MOUSE_MIDDLE, "Middle click" },
+        { ACT_MOUSE_LEFT, "Left mouse button" },
+        { ACT_MOUSE_RIGHT, "Right mouse button" },
+        { ACT_MOUSE_MIDDLE, "Middle mouse button" },
     };
     /**
      * Computer — clicks & keys for the machine you are controlling
@@ -314,9 +364,9 @@ public final class KeyMapPrefs {
     public static final String[][] GROUP_COMPUTER = new String[][] {
         { ACT_MOUSE_SCROLL_UP, "Scroll up" },
         { ACT_MOUSE_SCROLL_DOWN, "Scroll down" },
-        { ACT_MOUSE_LEFT, "Left click" },
-        { ACT_MOUSE_RIGHT, "Right click" },
-        { ACT_MOUSE_MIDDLE, "Middle click" },
+        { ACT_MOUSE_LEFT, "Left mouse button" },
+        { ACT_MOUSE_RIGHT, "Right mouse button" },
+        { ACT_MOUSE_MIDDLE, "Middle mouse button" },
         { ACT_HOST_PREFIX + "up", "Arrow up" },
         { ACT_HOST_PREFIX + "down", "Arrow down" },
         { ACT_HOST_PREFIX + "left", "Arrow left" },
@@ -395,6 +445,22 @@ public final class KeyMapPrefs {
 
     public static boolean isMouseAction(String action) {
         return action != null && action.startsWith(ACT_MOUSE_PREFIX);
+    }
+
+    /** Left/right/middle — follow physical key hold. Scroll is still a pulse. */
+    public static boolean isMouseButtonAction(String action) {
+        return ACT_MOUSE_LEFT.equals(action)
+            || ACT_MOUSE_RIGHT.equals(action)
+            || ACT_MOUSE_MIDDLE.equals(action);
+    }
+
+    /**
+     * Act-as-key remap: the physical key <em>is</em> this button/key.
+     * Short and long are not separate — down/up follow the hardware press.
+     * Double tap is still allowed on the same scan.
+     */
+    public static boolean isActAsKeyAction(String action) {
+        return isMouseButtonAction(action);
     }
 
     public static boolean isHostAction(String action) {
@@ -577,6 +643,14 @@ public final class KeyMapPrefs {
     public void setAction(String slotId, String action) {
         if (isSideSlotId(slotId) && isSystemChromeAction(action)) {
             action = factoryDefault(slotId);
+        }
+        if (isActAsKeyAction(action) && slotId != null) {
+            for (Slot s : SLOTS) {
+                if (s.id.equals(slotId) && s.press != Press.DOUBLE) {
+                    assignActAsKey(s.scan, action);
+                    return;
+                }
+            }
         }
         p.edit().putString("slot_" + slotId, action == null ? ACT_DEFAULT : action).apply();
     }
@@ -960,13 +1034,18 @@ public final class KeyMapPrefs {
             layoutScans.add(c);
             rows.add(new ShortcutRow(c, id, loOut, dbOut));
         }
-        // Non-layout shortcuts (short/long/double that are not layout actions)
+        // Non-layout shortcuts (short/long/double that are not layout actions).
+        // Act-as-key remaps occupy short; long is blocked — do not list it.
         for (Slot s : SLOTS) {
             int c = canonicalizeScan(s.scan);
             if (layoutScans.contains(c)) continue;
             String act = getAction(s.id);
             if (ACT_NONE.equals(act) || ACT_DEFAULT.equals(act)) continue;
             if (layoutHoldId(act) != null || layoutToggleId(act) != null) continue;
+            if (s.press == Press.LONG) {
+                Slot sh = slotByScan(c, Press.SHORT);
+                if (sh != null && isActAsKeyAction(getAction(sh.id))) continue;
+            }
             rows.add(new ShortcutRow(s));
         }
         return rows;
@@ -1012,10 +1091,19 @@ public final class KeyMapPrefs {
         String pr;
         switch (slot.press) {
             case LONG: pr = "long press"; break;
-            case DOUBLE: pr = "double press"; break;
+            case DOUBLE: pr = "double tap"; break;
             default: pr = "press"; break;
         }
         return key + " · " + pr;
+    }
+
+    /** Same as {@link #keyPressLabel} but “act as key” when short is a remap. */
+    public String slotPressLabel(Slot slot) {
+        if (slot != null && slot.press == Press.SHORT
+                && isActAsKeyAction(getAction(slot.id))) {
+            return keyPressLabel(slot).replace(" · press", " · act as key");
+        }
+        return keyPressLabel(slot);
     }
 
     /** Remove shortcut: do nothing on that press (user can re-add later). */
@@ -1051,9 +1139,9 @@ public final class KeyMapPrefs {
         }
         if (isMouseAction(action)) {
             switch (action) {
-                case ACT_MOUSE_LEFT: return "Left click";
-                case ACT_MOUSE_RIGHT: return "Right click";
-                case ACT_MOUSE_MIDDLE: return "Middle click";
+                case ACT_MOUSE_LEFT: return "Left mouse button";
+                case ACT_MOUSE_RIGHT: return "Right mouse button";
+                case ACT_MOUSE_MIDDLE: return "Middle mouse button";
                 case ACT_MOUSE_SCROLL_UP: return "Scroll up";
                 case ACT_MOUSE_SCROLL_DOWN: return "Scroll down";
                 default:
@@ -1135,6 +1223,49 @@ public final class KeyMapPrefs {
         if (scan == SCAN_FN_ALT) return SCAN_FN;
         if (scan == SCAN_SYM_ALT) return SCAN_SYM;
         return scan;
+    }
+
+    /**
+     * Chord / capture identity. Prefer Linux scan. When a11y delivers
+     * scan 0 (letters often), use {@code 10000 + keyCode} so Alt+letter
+     * can be saved and matched. Never collide with Titan scans (≤580).
+     */
+    public static final int CHORD_KEYCODE_BASE = 10_000;
+
+    public static int chordId(int scan, int keyCode) {
+        // Letters/digits: always keyCode so scan-0 a11y and TitanKey evdev match.
+        if (isLetterOrDigitKeyCode(keyCode)) {
+            return CHORD_KEYCODE_BASE + keyCode;
+        }
+        int c = canonicalizeScan(scan);
+        if (c > 0) return c;
+        if (keyCode > 0 && keyCode != android.view.KeyEvent.KEYCODE_UNKNOWN) {
+            return CHORD_KEYCODE_BASE + keyCode;
+        }
+        return 0;
+    }
+
+    public static boolean isLetterOrDigitKeyCode(int keyCode) {
+        return (keyCode >= android.view.KeyEvent.KEYCODE_A
+                && keyCode <= android.view.KeyEvent.KEYCODE_Z)
+            || (keyCode >= android.view.KeyEvent.KEYCODE_0
+                && keyCode <= android.view.KeyEvent.KEYCODE_9);
+    }
+
+    public static boolean isChordKeyCodeId(int id) {
+        return id >= CHORD_KEYCODE_BASE;
+    }
+
+    public static int keyCodeFromChordId(int id) {
+        return isChordKeyCodeId(id) ? id - CHORD_KEYCODE_BASE : 0;
+    }
+
+    /** Implied partner scan from KeyEvent meta (Alt/Sym/Ctrl). 0 if none. */
+    public static int metaChordScan(int metaState) {
+        if ((metaState & android.view.KeyEvent.META_ALT_ON) != 0) return SCAN_ALT;
+        if ((metaState & android.view.KeyEvent.META_SYM_ON) != 0) return SCAN_SYM;
+        if ((metaState & android.view.KeyEvent.META_CTRL_ON) != 0) return SCAN_FN;
+        return 0;
     }
 
     public static boolean isManagedScan(int scan) {

@@ -14,7 +14,7 @@ LAST_FILE=$ST/titan2_keyled_last_written
 ACTIVITY=$ST/titan2_key_activity
 DEFAULT_LED=3
 DEFAULT_TO=30
-KEYLED_VER=2.197-plane-persist
+KEYLED_VER=2.198-evdev-activity
 
 _read_line_file() {
   f="$1"
@@ -457,8 +457,67 @@ apply_notif_pattern() {
 }
 
 
+# ROM: bump key-activity from evdev (no grab). Does not own nav — key-watch
+# must not getevent TitanKey while the screen is on. APK install must not
+# be required to keep the keypad light alive.
+_led_discover() {
+  for want in TitanKey gpio_key-func ff_key; do
+    for d in /sys/class/input/input*; do
+      [ -e "$d/name" ] || continue
+      n=`cat "$d/name" 2>/dev/null` || continue
+      [ "$n" = "$want" ] || continue
+      for e in "$d"/event*; do
+        [ -e "$e" ] || continue
+        echo "/dev/input/$(basename "$e")"
+      done
+    done
+  done
+}
+
+_led_bump_act() {
+  n=`date +%s 2>/dev/null` || return 0
+  echo "$n" >"$ACTIVITY" 2>/dev/null || true
+  echo "$n" >"$T2/titan2_key_activity" 2>/dev/null || true
+}
+
+_led_input_watch_one() {
+  dev="$1"
+  [ -e "$dev" ] || return 0
+  getevent "$dev" 2>/dev/null | while read -r _line; do
+    _led_bump_act
+  done
+}
+
+_ensure_led_input_watch() {
+  pidf=$ST/titan2_keyled_inwatch.pid
+  op=`cat "$pidf" 2>/dev/null | tr -d '\r\n '`
+  case "$op" in
+    ''|*[!0-9]*) ;;
+    *)
+      if kill -0 "$op" 2>/dev/null; then
+        if grep -a -F -q "titan2-keyled-write" "/proc/$op/cmdline" 2>/dev/null \
+            || grep -a -F -q "getevent" "/proc/$op/cmdline" 2>/dev/null; then
+          return 0
+        fi
+      fi
+      ;;
+  esac
+  (
+    while true; do
+      for dev in `_led_discover`; do
+        _led_input_watch_one "$dev" &
+      done
+      wait
+      sleep 1
+    done
+  ) >/dev/null 2>&1 &
+  echo $! >"$pidf" 2>/dev/null || true
+  chmod 666 "$pidf" 2>/dev/null || true
+}
+
 # Dedicated notif LED engine (2.192 peel from pad-agent). Idle cheaply when feature off.
 notif_engine_loop() {
+  _ensure_led_input_watch
   while true; do
     if apply_notif_pattern; then
       if command -v usleep >/dev/null 2>&1; then

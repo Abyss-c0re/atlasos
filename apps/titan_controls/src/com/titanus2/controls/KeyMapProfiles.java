@@ -161,6 +161,21 @@ public final class KeyMapProfiles {
         setOverride(pkg, slotId, null);
     }
 
+    /** Per-app act-as-key remap: short = action, long = none. Double left alone. */
+    public void assignActAsKey(String pkg, int scan, String action) {
+        KeyMapPrefs.Slot sh = KeyMapPrefs.slotByScan(scan, KeyMapPrefs.Press.SHORT);
+        KeyMapPrefs.Slot lo = KeyMapPrefs.slotByScan(scan, KeyMapPrefs.Press.LONG);
+        if (action == null || KeyMapPrefs.ACT_NONE.equals(action)
+                || KeyMapPrefs.ACT_DEFAULT.equals(action)) {
+            if (sh != null) setOverride(pkg, sh.id, KeyMapPrefs.ACT_NONE);
+            if (lo != null) setOverride(pkg, lo.id, KeyMapPrefs.ACT_NONE);
+            return;
+        }
+        if (!KeyMapPrefs.isActAsKeyAction(action)) return;
+        if (sh != null) setOverride(pkg, sh.id, action);
+        if (lo != null) setOverride(pkg, lo.id, KeyMapPrefs.ACT_NONE);
+    }
+
     /**
      * Per-app specials method: {@code inject} | {@code kcm} | {@code null}/empty = inherit global.
      */
@@ -259,8 +274,17 @@ public final class KeyMapProfiles {
             int c = KeyMapPrefs.canonicalizeScan(s.scan);
             if (layoutScans.contains(c)) continue;
             String act = slots.optString(s.id, null);
+            if (act == null || act.isEmpty()
+                    || KeyMapPrefs.ACT_NONE.equals(act)
+                    || KeyMapPrefs.ACT_DEFAULT.equals(act)) continue;
             if (KeyMapPrefs.layoutHoldId(act) != null
                     || KeyMapPrefs.layoutToggleId(act) != null) continue;
+            if (s.press == KeyMapPrefs.Press.LONG) {
+                KeyMapPrefs.Slot sh = KeyMapPrefs.slotByScan(c, KeyMapPrefs.Press.SHORT);
+                String shAct = (sh != null && slots.has(sh.id))
+                    ? slots.optString(sh.id, null) : null;
+                if (KeyMapPrefs.isActAsKeyAction(shAct)) continue;
+            }
             rows.add(new KeyMapPrefs.ShortcutRow(s));
         }
         return rows;
