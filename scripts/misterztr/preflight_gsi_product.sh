@@ -46,14 +46,15 @@ CUBE="${ROOT}/apps/cube_contact/CubeContact.apk"
 if [ -f "$CTRL" ]; then
   v=$(apk_ver "$CTRL" || true)
   case " $v " in
-    *" 540 15.38"*|*" 540 "*) ok "TitanControls tip $v" ;;
+    *" 614 16.14"*|*" 614 "*) ok "TitanControls tip $v" ;;
     *)
-      # accept any >=540 with 15.x product Controls (15.38…15.63+ privacy line)
+      # accept any ≥614 with 16.x (16.14 pad-orient + chords + act-as-key)
+      # or leftover ≥540 / 15.x only if 16.x APK is missing (should not ship)
       code=${v%% *}; name=${v#* }
-      if [ -n "$code" ] && [ "$code" -ge 540 ] 2>/dev/null && [[ "$name" == 15.* ]]; then
+      if [ -n "$code" ] && [ "$code" -ge 614 ] 2>/dev/null && [[ "$name" == 16.* ]]; then
         ok "TitanControls tip $v"
       else
-        bad "TitanControls tip want ≥540/15.* got '$v' ($CTRL)"
+        bad "TitanControls tip want ≥614/16.* got '$v' ($CTRL)"
       fi
       ;;
   esac
@@ -105,9 +106,12 @@ fi
 
 # --- pad-apply / peels ---
 PA="${ROOT}/patches/bin/titan2-pad-apply.sh"
-grep -q '2.213-boot-preserve-click' "$PA" 2>/dev/null \
-  && ok "pad-apply 2.213-boot-preserve-click" \
-  || bad "pad-apply not 2.213"
+grep -q '2.215-rot-0-3' "$PA" 2>/dev/null \
+  && ok "pad-apply 2.215-rot-0-3" \
+  || bad "pad-apply not 2.215-rot-0-3 (Surface 0..3 follow-orient)"
+[ -f "${ROOT}/packages/gsi_product/prebuilt_touchpadd/titan2-virtual-mouse.idc" ] \
+  && ok "titan2-virtual-mouse.idc present" \
+  || bad "missing titan2-virtual-mouse.idc"
 
 SP="${ROOT}/patches/bin/titan2-sensor-privacy.sh"
 grep -qE 'Hostless_Spk|_is_protected_capture' "$SP" 2>/dev/null \

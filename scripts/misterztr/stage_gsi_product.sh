@@ -37,8 +37,10 @@ fi
 [ -f "$SRC_TP/titan2-touchpadd.rc" ] || die "missing rc"
 IDC_PAD="$SRC_TP/touchPad.idc"
 IDC_SUB="$SRC_TP/sub_touch.idc"
+IDC_MOUSE="$SRC_TP/titan2-virtual-mouse.idc"
 [ -f "$IDC_PAD" ] || die "missing touchPad.idc"
 [ -f "$IDC_SUB" ] || die "missing sub_touch.idc"
+[ -f "$IDC_MOUSE" ] || die "missing titan2-virtual-mouse.idc (titanus2.mk PRODUCT_COPY_FILES)"
 [ -f "$SRC_PROD/titanus2.mk" ] || die "missing $SRC_PROD/titanus2.mk"
 [ -f "$SRC_APPS/Android.bp" ] || die "missing $SRC_APPS/Android.bp (Phase 2)"
 
@@ -128,6 +130,7 @@ stage_file "$SRC_TP/Android.bp" "$DEST_PRE/Android.bp"
 stage_file "$SRC_TP/titan2-touchpadd.rc" "$DEST_PRE/titan2-touchpadd.rc"
 stage_file "$IDC_PAD" "$DEST_PRE/touchPad.idc"
 stage_file "$IDC_SUB" "$DEST_PRE/sub_touch.idc"
+stage_file "$IDC_MOUSE" "$DEST_PRE/titan2-virtual-mouse.idc"
 
 # Phase 2 apps
 if [ -n "$CTRL_APK" ] && [ -n "$USB_APK" ] && [ -n "$CUBE_APK" ]; then
@@ -202,6 +205,9 @@ titan2-cool-park.sh
 titan2-ui-plane.sh
 titan2-pad-apply.sh
 titan2-ctrl-seed.sh
+titan2-ims-simswitch-early.sh
+titan2-ims-simswitch-hold.sh
+titan2-ims-diag.sh
 titan2-sensor-privacy.sh
 titan2-fw
 titan2-fw.sh
