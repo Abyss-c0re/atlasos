@@ -162,8 +162,19 @@ ims_active_slot() {
 
 # MTK 4G/IMS capability is 1-indexed persist.vendor.radio.simswitch.
 # Voice SIM on slot 1 with simswitch=1 → ImsService createMmTelFeature returns
-# null IInterface (listener "unused"). Align persist only — do not restart
-# modem here (ril restart can drop UICC). Next reboot applies.
+# null IInterface (listener "unused"). vendor persist ignores plain setprop;
+# use resetprop_phh. Do not restart RIL (UICC drop). Modem reads this at boot.
+ims_set_vendor_prop() {
+  _k=$1; _v=$2
+  if [ -x /system/bin/resetprop_phh ]; then
+    /system/bin/resetprop_phh "$_k" "$_v" 2>/dev/null || true
+  elif [ -x /data/adb/ksu/bin/resetprop ]; then
+    /data/adb/ksu/bin/resetprop "$_k" "$_v" 2>/dev/null || true
+  else
+    setprop "$_k" "$_v" 2>/dev/null || true
+  fi
+}
+
 ims_align_simswitch() {
   _slot=`ims_active_slot`
   case "$_slot" in
@@ -171,11 +182,17 @@ ims_align_simswitch() {
     *) return 0 ;;
   esac
   _cur=`getprop persist.vendor.radio.simswitch 2>/dev/null | tr -d '\r\n '`
-  [ "$_cur" = "$_want" ] && return 0
-  logt "simswitch $_cur -> $_want (voice slot $_slot). reboot to apply; not restart-modem"
-  setprop persist.vendor.radio.simswitch "$_want" 2>/dev/null || true
-  setprop persist.vendor.radio.c_capability_slot "$_want" 2>/dev/null || true
+  logt "simswitch $_cur -> $_want (voice slot $_slot). reboot applies modem cap; no ril restart"
+  ims_set_vendor_prop persist.vendor.radio.simswitch "$_want"
+  ims_set_vendor_prop persist.vendor.radio.c_capability_slot "$_want"
   setprop persist.radio.simswitch "$_want" 2>/dev/null || true
+  setprop persist.radio.titan2_simswitch "$_want" 2>/dev/null || true
+  mkdir -p /data/misc/titan2 2>/dev/null || true
+  echo "$_want" > /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
+  chmod 666 /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
+  mkdir -p /data/unencrypted 2>/dev/null || true
+  echo "$_want" > /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
+  chmod 644 /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
 }
 
 # Resolve live subId (never leave multi_sim at -1 when a US/TMO row exists).
@@ -339,6 +356,8 @@ if [ -n "$NUM" ] && [ ${#NUM} -ge 5 ]; then
   # MCC first 3 digits; MNC remainder (2 or 3) — never ${NUM%??}
   MCC=$(echo "$NUM" | cut -c1-3)
   MNC=$(echo "$NUM" | cut -c4-)
+  # Dual IMS APNs (PHH IMS + Titan IMS) flap the bearer and unbind ImsService.
+  # Never keep both. Prefer an existing ims row (PHH). Titan IMS is last resort.
   content delete --uri content://telephony/carriers \
     --where "name='Titan IMS' AND numeric='$NUM'" 2>/dev/null || true
   if ! content query --uri content://telephony/carriers \

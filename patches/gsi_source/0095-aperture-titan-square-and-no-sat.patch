@@ -1,0 +1,917 @@
+# project:packages/apps/Aperture
+# Titan 2: 1:1 fullscreen default, HI847S lens, OEM video sizes/fps, SAT 3 ignored.
+diff --git a/app/Android.bp b/app/Android.bp
+index b24f014..445d252 100644
+--- a/app/Android.bp
++++ b/app/Android.bp
+@@ -16,6 +16,7 @@ android_app {
+ 
+     sdk_version: "36",
+     product_specific: true,
++    privileged: true,
+ 
+     overrides: ["Camera2"],
+ 
+@@ -26,6 +27,7 @@ android_app {
+         "ApertureLensLauncher",
+         "initial-package-stopped-states-org.lineageos.aperture",
+         "preinstalled-packages-org.lineageos.aperture",
++        "privapp-permissions-org.lineageos.aperture",
+     ],
+ 
+     static_libs: [
+@@ -87,3 +89,11 @@ prebuilt_etc {
+     src: "preinstalled-packages-org.lineageos.aperture.xml",
+     filename_from_src: true,
+ }
++
++prebuilt_etc {
++    name: "privapp-permissions-org.lineageos.aperture",
++    product_specific: true,
++    sub_dir: "permissions",
++    src: "privapp-permissions-org.lineageos.aperture.xml",
++    filename_from_src: true,
++}
+diff --git a/app/privapp-permissions-org.lineageos.aperture.xml b/app/privapp-permissions-org.lineageos.aperture.xml
+new file mode 100644
+index 0000000..7b805f9
+--- /dev/null
++++ b/app/privapp-permissions-org.lineageos.aperture.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++     SPDX-FileCopyrightText: AtlasOS / Titan 2
++     SPDX-License-Identifier: Apache-2.0
++-->
++<permissions>
++    <privapp-permissions package="org.lineageos.aperture">
++        <permission name="android.permission.SYSTEM_CAMERA" />
++    </privapp-permissions>
++</permissions>
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 639a85e..90bc843 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -18,6 +18,7 @@
+     <uses-permission
+         android:name="android.permission.CAMERA"
+         tools:ignore="PermissionImpliesUnsupportedChromeOsHardware" />
++    <uses-permission android:name="android.permission.SYSTEM_CAMERA" />
+     <uses-permission
+         android:name="android.permission.READ_EXTERNAL_STORAGE"
+         android:maxSdkVersion="28" />
+diff --git a/app/src/main/java/org/lineageos/aperture/ApertureApplication.kt b/app/src/main/java/org/lineageos/aperture/ApertureApplication.kt
+index d64c48a..a211b03 100644
+--- a/app/src/main/java/org/lineageos/aperture/ApertureApplication.kt
++++ b/app/src/main/java/org/lineageos/aperture/ApertureApplication.kt
+@@ -7,6 +7,8 @@ package org.lineageos.aperture
+ 
+ import android.annotation.SuppressLint
+ import android.app.Application
++import android.hardware.camera2.CameraManager
++import android.util.Log
+ import androidx.camera.camera2.internal.CameraCompatibilityFilter
+ import com.google.android.material.color.DynamicColors
+ import kotlinx.coroutines.MainScope
+@@ -34,5 +36,14 @@ class ApertureApplication : Application() {
+         CameraCompatibilityFilter.setBackwardCompatibleCameraIds(
+             overlaysRepository.backwardCompatibleCameraIds.asList()
+         )
++
++        runCatching {
++            val ids = getSystemService(CameraManager::class.java).cameraIdList
++            Log.i(TAG, "Camera2 ids=${ids.joinToString()}")
++        }.onFailure { Log.w(TAG, "Camera2 enum failed", it) }
++    }
++
++    companion object {
++        private const val TAG = "TitanCam"
+     }
+ }
+diff --git a/app/src/main/java/org/lineageos/aperture/CameraActivity.kt b/app/src/main/java/org/lineageos/aperture/CameraActivity.kt
+index edae6e0..539c433 100644
+--- a/app/src/main/java/org/lineageos/aperture/CameraActivity.kt
++++ b/app/src/main/java/org/lineageos/aperture/CameraActivity.kt
+@@ -43,11 +43,8 @@ import androidx.camera.core.AspectRatio
+ import androidx.camera.core.ExperimentalZeroShutterLag
+ import androidx.camera.core.ImageCapture
+ import androidx.camera.core.MirrorMode
+-import androidx.camera.core.resolutionselector.AspectRatioStrategy
+-import androidx.camera.core.resolutionselector.ResolutionSelector
+ import androidx.camera.extensions.ExtensionMode
+ import androidx.camera.video.Quality
+-import androidx.camera.video.QualitySelector
+ import androidx.camera.video.VideoRecordEvent
+ import androidx.camera.view.CameraController
+ import androidx.camera.view.PreviewView
+@@ -682,6 +679,17 @@ open class CameraActivity : AppCompatActivity(R.layout.activity_camera) {
+                         }
+ 
+                         is Event.PhotoCaptureStatus.ImageSaved -> {
++                            if (org.lineageos.aperture.utils.TitanAspect.isSquare(
++                                    viewModel.photoAspectRatio.value
++                                )
++                            ) {
++                                event.output.savedUri?.let { uri ->
++                                    runCatching {
++                                        org.lineageos.aperture.utils.TitanAspect
++                                            .cropSavedJpegToSquare(contentResolver, uri)
++                                    }
++                                }
++                            }
+                             if (!viewModel.inSingleCaptureMode.value) {
+                                 onCapturedMedia(event.output.savedUri)
+                             } else {
+@@ -718,7 +726,8 @@ open class CameraActivity : AppCompatActivity(R.layout.activity_camera) {
+                 secondaryTopBarLayout.isVisible = false
+ 
+                 // Update secondary top bar buttons
+-                aspectRatioButton.isVisible = cameraMode != CameraMode.VIDEO
++                applyTitanViewFinderScale()
++                aspectRatioButton.isVisible = cameraMode != CameraMode.QR
+                 videoQualityButton.isVisible = cameraMode == CameraMode.VIDEO
+                 videoFrameRateButton.isVisible = cameraMode == CameraMode.VIDEO
+                 videoDynamicRangeButton.isVisible = cameraMode == CameraMode.VIDEO
+@@ -1160,9 +1169,12 @@ open class CameraActivity : AppCompatActivity(R.layout.activity_camera) {
+                     when (photoAspectRatio) {
+                         AspectRatio.RATIO_4_3 -> R.string.aspect_ratio_4_3
+                         AspectRatio.RATIO_16_9 -> R.string.aspect_ratio_16_9
++                        org.lineageos.aperture.utils.TitanAspect.RATIO_1_1 ->
++                            R.string.aspect_ratio_1_1
+                         else -> throw Exception("Unknown aspect ratio $photoAspectRatio")
+                     }
+                 )
++                applyTitanViewFinderScale()
+             }
+         }
+ 
+@@ -1452,6 +1464,18 @@ open class CameraActivity : AppCompatActivity(R.layout.activity_camera) {
+         }
+     }
+ 
++    /** Titan 2 is 1440². 1:1 and video fill the panel; 4:3/16:9 stay letterboxed. */
++    private fun applyTitanViewFinderScale() {
++        val square = org.lineageos.aperture.utils.TitanAspect.isSquare(
++            viewModel.photoAspectRatio.value
++        )
++        viewFinder.scaleType = if (square) {
++            PreviewView.ScaleType.FILL_CENTER
++        } else {
++            PreviewView.ScaleType.FIT_CENTER
++        }
++    }
++
+     /**
+      * Rebind cameraProvider use cases
+      */
+@@ -1519,22 +1543,15 @@ open class CameraActivity : AppCompatActivity(R.layout.activity_camera) {
+                     PhotoOutputFormat.RAW_JPEG -> ImageCapture.OUTPUT_FORMAT_RAW_JPEG
+                 }
+ 
++                viewModel.cameraController.previewResolutionSelector =
++                    org.lineageos.aperture.utils.TitanAspect.previewResolutionSelector(
++                        cameraConfiguration.photoAspectRatio,
++                    )
+                 viewModel.cameraController.imageCaptureResolutionSelector =
+-                    ResolutionSelector.Builder()
+-                        .setAspectRatioStrategy(
+-                            AspectRatioStrategy(
+-                                cameraConfiguration.photoAspectRatio,
+-                                AspectRatioStrategy.FALLBACK_RULE_AUTO,
+-                            )
+-                        )
+-                        .setAllowedResolutionMode(
+-                            if (cameraConfiguration.enableHighResolution) {
+-                                ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE
+-                            } else {
+-                                ResolutionSelector.PREFER_CAPTURE_RATE_OVER_HIGHER_RESOLUTION
+-                            }
+-                        )
+-                        .build()
++                    org.lineageos.aperture.utils.TitanAspect.photoResolutionSelector(
++                        cameraConfiguration.photoAspectRatio,
++                        cameraConfiguration.enableHighResolution,
++                    )
+ 
+                 CameraController.IMAGE_CAPTURE
+             }
+@@ -1561,9 +1578,20 @@ open class CameraActivity : AppCompatActivity(R.layout.activity_camera) {
+                     "Video dynamic range not supported with the requested video quality"
+                 }
+ 
+-                // Set the quality
+-                viewModel.cameraController.videoCaptureQualitySelector =
+-                    QualitySelector.from(cameraConfiguration.videoQuality)
++                // OEM records 1920×1080 / 3840×2160 (and square 1440² via
++                // Agui profiles CameraX cannot name). A square preview
++                // ResolutionFilter + FHD QualitySelector produced garbage
++                // encodes (368×1080). Preview stays 16:9; finder is
++                // FILL_CENTER; 1:1 files are a center-crop of the HAL size.
++                viewModel.cameraController.previewResolutionSelector =
++                    org.lineageos.aperture.utils.TitanAspect.previewResolutionSelector(
++                        AspectRatio.RATIO_16_9,
++                    )
++                org.lineageos.aperture.utils.TitanVideo.applyToController(
++                    viewModel.cameraController,
++                    cameraConfiguration.videoQuality,
++                    cameraConfiguration.videoFrameRate,
++                )
+ 
+                 // Set the dynamic range
+                 viewModel.cameraController.videoCaptureDynamicRange =
+diff --git a/app/src/main/java/org/lineageos/aperture/models/CameraConfiguration.kt b/app/src/main/java/org/lineageos/aperture/models/CameraConfiguration.kt
+index f9bfe1d..dfdd610 100644
+--- a/app/src/main/java/org/lineageos/aperture/models/CameraConfiguration.kt
++++ b/app/src/main/java/org/lineageos/aperture/models/CameraConfiguration.kt
+@@ -96,6 +96,7 @@ sealed interface CameraConfiguration {
+      * @param videoDynamicRange The [VideoDynamicRange] to use
+      * @param videoMirrorMode The [VideoMirrorMode] to use
+      * @param enableVideoStabilization Whether to enable video stabilization or not
++     * @param videoAspectRatio Finder + saved-file aspect (1:1 crops OEM 16:9)
+      */
+     data class Video(
+         override val camera: Camera,
+@@ -105,6 +106,7 @@ sealed interface CameraConfiguration {
+         val videoDynamicRange: VideoDynamicRange,
+         val videoMirrorMode: VideoMirrorMode,
+         val enableVideoStabilization: Boolean,
++        val videoAspectRatio: Int,
+     ) : CameraConfiguration {
+         override val cameraMode = CameraMode.VIDEO
+         override val extensionMode = ExtensionMode.NONE
+diff --git a/app/src/main/java/org/lineageos/aperture/repositories/CameraRepository.kt b/app/src/main/java/org/lineageos/aperture/repositories/CameraRepository.kt
+index e47ac48..0d89da1 100644
+--- a/app/src/main/java/org/lineageos/aperture/repositories/CameraRepository.kt
++++ b/app/src/main/java/org/lineageos/aperture/repositories/CameraRepository.kt
+@@ -151,6 +151,7 @@ class CameraRepository(
+         private val mainCameraIds = setOf(
+             "0",
+             "1",
++            "2", // Titan 2 HI847S back aux — own lens, not SAT 3
+         )
+     }
+ }
+diff --git a/app/src/main/java/org/lineageos/aperture/repositories/PreferencesRepository.kt b/app/src/main/java/org/lineageos/aperture/repositories/PreferencesRepository.kt
+index 5cabc85..b3a575f 100644
+--- a/app/src/main/java/org/lineageos/aperture/repositories/PreferencesRepository.kt
++++ b/app/src/main/java/org/lineageos/aperture/repositories/PreferencesRepository.kt
+@@ -225,7 +225,7 @@ class PreferencesRepository(
+      * Desired [FrameRate] for videos.
+      */
+     val videoFrameRate = enumPreference(
+-        key = "video_framerate",
++        key = "video_framerate_titan",
+         defaultValue = null,
+         enumMapper = { it: FrameRate? -> it?.value },
+     ).asPreferenceHolder()
+@@ -257,11 +257,12 @@ class PreferencesRepository(
+      * Desired [AspectRatio] for photos.
+      */
+     val photoAspectRatio = enumPreference<Int, String>(
+-        key = "aspect_ratio",
+-        defaultValue = AspectRatio.RATIO_4_3,
++        key = "aspect_ratio_titan",
++        defaultValue = org.lineageos.aperture.utils.TitanAspect.RATIO_1_1,
+         enumToPreferenceValue = mapOf(
+             AspectRatio.RATIO_4_3 to "4_3",
+             AspectRatio.RATIO_16_9 to "16_9",
++            org.lineageos.aperture.utils.TitanAspect.RATIO_1_1 to "1_1",
+         ),
+     ).asPreferenceHolder()
+ 
+diff --git a/app/src/main/java/org/lineageos/aperture/utils/TitanAspect.kt b/app/src/main/java/org/lineageos/aperture/utils/TitanAspect.kt
+new file mode 100644
+index 0000000..c1a50cd
+--- /dev/null
++++ b/app/src/main/java/org/lineageos/aperture/utils/TitanAspect.kt
+@@ -0,0 +1,95 @@
++/*
++ * SPDX-FileCopyrightText: AtlasOS / Titan 2
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++package org.lineageos.aperture.utils
++
++import android.content.ContentResolver
++import android.graphics.Bitmap
++import android.graphics.BitmapFactory
++import android.net.Uri
++import androidx.camera.core.AspectRatio
++import androidx.camera.core.resolutionselector.AspectRatioStrategy
++import androidx.camera.core.resolutionselector.ResolutionSelector
++import kotlin.math.min
++
++/**
++ * CameraX AspectRatio is 4:3 / 16:9 only. Titan 2 HAL still advertises
++ * native square JPEGs (main: 3504² / 3000² / 1440²). Prefer those; if
++ * CameraX still delivers 4:3, center-crop the saved file.
++ */
++object TitanAspect {
++    const val RATIO_1_1 = 11
++
++    fun isSquare(ratio: Int) = ratio == RATIO_1_1
++
++    fun captureRatio(ratio: Int): Int =
++        if (isSquare(ratio)) AspectRatio.RATIO_4_3 else ratio
++
++    /** Preview stream: prefer a native square (1440² on Titan) so FILL_CENTER is 1:1. */
++    fun previewResolutionSelector(ratio: Int): ResolutionSelector {
++        val builder = ResolutionSelector.Builder()
++            .setAllowedResolutionMode(
++                ResolutionSelector.PREFER_CAPTURE_RATE_OVER_HIGHER_RESOLUTION
++            )
++            .setAspectRatioStrategy(
++                AspectRatioStrategy(
++                    captureRatio(ratio),
++                    AspectRatioStrategy.FALLBACK_RULE_AUTO,
++                )
++            )
++        if (isSquare(ratio)) {
++            builder.setResolutionFilter { supportedSizes, _ ->
++                val squares = supportedSizes.filter { it.width == it.height }
++                    .sortedByDescending { it.width.toLong() * it.height }
++                (if (squares.isNotEmpty()) squares else supportedSizes).toMutableList()
++            }
++        }
++        return builder.build()
++    }
++
++    fun photoResolutionSelector(ratio: Int, highResolution: Boolean): ResolutionSelector {
++        val builder = ResolutionSelector.Builder()
++            .setAllowedResolutionMode(
++                if (highResolution) {
++                    ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE
++                } else {
++                    ResolutionSelector.PREFER_CAPTURE_RATE_OVER_HIGHER_RESOLUTION
++                }
++            )
++            .setAspectRatioStrategy(
++                AspectRatioStrategy(
++                    captureRatio(ratio),
++                    AspectRatioStrategy.FALLBACK_RULE_AUTO,
++                )
++            )
++        if (isSquare(ratio)) {
++            builder.setResolutionFilter { supportedSizes, _ ->
++                val squares = supportedSizes.filter { it.width == it.height }
++                (if (squares.isNotEmpty()) squares else supportedSizes)
++                    .sortedByDescending { it.width.toLong() * it.height }
++                    .toMutableList()
++            }
++        }
++        return builder.build()
++    }
++
++    fun cropSavedJpegToSquare(resolver: ContentResolver, uri: Uri) {
++        val input = resolver.openInputStream(uri) ?: return
++        val src = input.use { BitmapFactory.decodeStream(it) } ?: return
++        val side = min(src.width, src.height)
++        if (side <= 0 || (src.width == side && src.height == side)) {
++            src.recycle()
++            return
++        }
++        val x = (src.width - side) / 2
++        val y = (src.height - side) / 2
++        val sq = Bitmap.createBitmap(src, x, y, side, side)
++        src.recycle()
++        resolver.openOutputStream(uri, "wt")?.use { out ->
++            sq.compress(Bitmap.CompressFormat.JPEG, 95, out)
++        }
++        sq.recycle()
++    }
++}
+diff --git a/app/src/main/java/org/lineageos/aperture/utils/TitanVideo.kt b/app/src/main/java/org/lineageos/aperture/utils/TitanVideo.kt
+new file mode 100644
+index 0000000..5ff1960
+--- /dev/null
++++ b/app/src/main/java/org/lineageos/aperture/utils/TitanVideo.kt
+@@ -0,0 +1,361 @@
++/*
++ * SPDX-FileCopyrightText: AtlasOS / Titan 2
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++package org.lineageos.aperture.utils
++
++import android.content.ContentResolver
++import android.content.ContentValues
++import android.media.MediaCodec
++import android.media.MediaCodecInfo
++import android.media.MediaExtractor
++import android.media.MediaFormat
++import android.media.MediaMetadataRetriever
++import android.media.MediaMuxer
++import android.net.Uri
++import android.provider.MediaStore
++import android.util.Log
++import android.util.Range
++import android.util.Size
++import androidx.camera.video.Quality
++import androidx.camera.video.QualitySelector
++import androidx.camera.view.CameraController
++import org.lineageos.aperture.models.FrameRate
++import java.io.File
++import java.nio.ByteBuffer
++import kotlin.math.min
++
++/**
++ * OEM ACamera2 + vendor media_profiles_V1_0.xml (back IMX766):
++ *   3840×2160 @ 30, 1920×1080 @ 30/60, 1280×720 @ 30/60, 640×480 @ 30.
++ * Square 720² / 1080² / 1440² are Agui CamcorderProfile 5000–5002 — not
++ * in GSI media_profiles, so CameraX Quality cannot encode them. 1:1 files
++ * are a center-crop of the matching 16:9 HAL encode (FHD→1080²).
++ *
++ * 368×1080 is not a HAL size. Square preview filter + FHD QualitySelector
++ * produced it. Video preview stays 16:9; finder is FILL_CENTER.
++ */
++object TitanVideo {
++    private const val TAG = "TitanVideo"
++    private const val TIMEOUT_US = 10_000L
++
++    fun oemSize(quality: Quality): Size = when (quality) {
++        Quality.UHD -> Size(3840, 2160)
++        Quality.FHD -> Size(1920, 1080)
++        Quality.HD -> Size(1280, 720)
++        Quality.SD -> Size(640, 480)
++        else -> Size(1920, 1080)
++    }
++
++    fun oemFrameRate(quality: Quality, requested: FrameRate?): FrameRate {
++        val want = requested ?: if (quality == Quality.UHD) FrameRate.FPS_30 else FrameRate.FPS_60
++        return if (quality == Quality.UHD && want.value > 30) FrameRate.FPS_30 else want
++    }
++
++    fun applyToController(
++        controller: CameraController,
++        quality: Quality,
++        frameRate: FrameRate?,
++    ) {
++        val fps = oemFrameRate(quality, frameRate)
++        controller.videoCaptureQualitySelector = QualitySelector.from(quality)
++        controller.videoCaptureTargetFrameRate = Range(fps.value, fps.value)
++    }
++
++    fun cropSavedVideoToSquare(resolver: ContentResolver, uri: Uri) {
++        val retriever = MediaMetadataRetriever()
++        val width: Int
++        val height: Int
++        try {
++            retriever.setDataSource(resolver.openFileDescriptor(uri, "r")?.fileDescriptor)
++            width = retriever.extractMetadata(
++                MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
++            )?.toIntOrNull() ?: 0
++            height = retriever.extractMetadata(
++                MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
++            )?.toIntOrNull() ?: 0
++        } catch (t: Throwable) {
++            Log.w(TAG, "retriever open failed", t)
++            return
++        } finally {
++            retriever.release()
++        }
++        val side = min(width, height)
++        if (side <= 0 || width == height) {
++            return
++        }
++        val cache = File.createTempFile("titan-sq-", ".mp4")
++        try {
++            resolver.openFileDescriptor(uri, "r")?.use { pfd ->
++                transcodeSquare(pfd.fileDescriptor, cache, width, height, side)
++            } ?: return
++            resolver.openOutputStream(uri, "wt")?.use { out ->
++                cache.inputStream().use { it.copyTo(out) }
++            } ?: return
++            val values = ContentValues().apply {
++                put(MediaStore.Video.Media.WIDTH, side)
++                put(MediaStore.Video.Media.HEIGHT, side)
++                put(MediaStore.MediaColumns.WIDTH, side)
++                put(MediaStore.MediaColumns.HEIGHT, side)
++            }
++            runCatching { resolver.update(uri, values, null, null) }
++            Log.i(TAG, "cropped $width x $height -> ${side}x$side")
++        } catch (t: Throwable) {
++            Log.w(TAG, "square crop failed, keeping ${width}x$height", t)
++        } finally {
++            cache.delete()
++        }
++    }
++
++    private fun transcodeSquare(
++        fd: java.io.FileDescriptor,
++        outFile: File,
++        width: Int,
++        height: Int,
++        side: Int,
++    ) {
++        val extractor = MediaExtractor()
++        extractor.setDataSource(fd)
++        var videoTrack = -1
++        var audioTrack = -1
++        var videoFormat: MediaFormat? = null
++        var audioFormat: MediaFormat? = null
++        for (i in 0 until extractor.trackCount) {
++            val format = extractor.getTrackFormat(i)
++            val mime = format.getString(MediaFormat.KEY_MIME).orEmpty()
++            when {
++                mime.startsWith("video/") && videoTrack < 0 -> {
++                    videoTrack = i
++                    videoFormat = format
++                }
++                mime.startsWith("audio/") && audioTrack < 0 -> {
++                    audioTrack = i
++                    audioFormat = format
++                }
++            }
++        }
++        val inFmt = videoFormat ?: error("no video track")
++        val mime = inFmt.getString(MediaFormat.KEY_MIME) ?: MediaFormat.MIMETYPE_VIDEO_AVC
++        val fps = if (inFmt.containsKey(MediaFormat.KEY_FRAME_RATE)) {
++            inFmt.getInteger(MediaFormat.KEY_FRAME_RATE).coerceAtLeast(24)
++        } else {
++            30
++        }
++        val rotation = if (inFmt.containsKey(MediaFormat.KEY_ROTATION)) {
++            inFmt.getInteger(MediaFormat.KEY_ROTATION)
++        } else {
++            0
++        }
++
++        val decoder = MediaCodec.createDecoderByType(mime)
++        decoder.configure(inFmt, null, null, 0)
++        decoder.start()
++
++        val encFmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, side, side)
++        encFmt.setInteger(
++            MediaFormat.KEY_COLOR_FORMAT,
++            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible,
++        )
++        encFmt.setInteger(MediaFormat.KEY_BIT_RATE, (side * side * 6).coerceAtLeast(4_000_000))
++        encFmt.setInteger(MediaFormat.KEY_FRAME_RATE, fps)
++        encFmt.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
++        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
++        encoder.configure(encFmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
++        encoder.start()
++
++        val muxer = MediaMuxer(outFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
++        muxer.setOrientationHint(rotation)
++        var muxerStarted = false
++        var encVideoTrack = -1
++        var encAudioTrack = -1
++        val xOff = (width - side) / 2
++        val yOff = (height - side) / 2
++
++        extractor.selectTrack(videoTrack)
++        val info = MediaCodec.BufferInfo()
++        val encInfo = MediaCodec.BufferInfo()
++        var inEos = false
++        var decEos = false
++        var encEos = false
++        var spins = 0
++        val yuv = ByteArray(side * side * 3 / 2)
++        while (!encEos && spins++ < 30_000) {
++            if (!inEos) {
++                val inIx = decoder.dequeueInputBuffer(TIMEOUT_US)
++                if (inIx >= 0) {
++                    val buf = decoder.getInputBuffer(inIx)!!
++                    val n = extractor.readSampleData(buf, 0)
++                    if (n < 0) {
++                        decoder.queueInputBuffer(
++                            inIx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM
++                        )
++                        inEos = true
++                    } else {
++                        decoder.queueInputBuffer(inIx, 0, n, extractor.sampleTime, 0)
++                        extractor.advance()
++                    }
++                }
++            }
++            if (!decEos) {
++                val outIx = decoder.dequeueOutputBuffer(info, TIMEOUT_US)
++                if (outIx >= 0) {
++                    val image = decoder.getOutputImage(outIx)
++                    if (image != null && info.size > 0) {
++                        cropYuv420(image, xOff, yOff, side, yuv)
++                        image.close()
++                        var queued = false
++                        while (!queued && !encEos) {
++                            drainEncoder(encoder, muxer, encInfo, { track ->
++                                encVideoTrack = track
++                                if (!muxerStarted) {
++                                    if (audioFormat != null) {
++                                        encAudioTrack = muxer.addTrack(audioFormat)
++                                    }
++                                    muxer.start()
++                                    muxerStarted = true
++                                }
++                            }, { encEos = true }, { encVideoTrack })
++                            val eIx = encoder.dequeueInputBuffer(TIMEOUT_US)
++                            if (eIx >= 0) {
++                                val eBuf = encoder.getInputBuffer(eIx)!!
++                                eBuf.clear()
++                                eBuf.put(yuv)
++                                val flags = if (info.flags and
++                                    MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
++                                ) {
++                                    MediaCodec.BUFFER_FLAG_END_OF_STREAM
++                                } else {
++                                    0
++                                }
++                                encoder.queueInputBuffer(
++                                    eIx, 0, yuv.size, info.presentationTimeUs, flags
++                                )
++                                queued = true
++                            }
++                        }
++                    } else {
++                        image?.close()
++                    }
++                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
++                        decEos = true
++                    }
++                    decoder.releaseOutputBuffer(outIx, false)
++                }
++            } else {
++                drainEncoder(encoder, muxer, encInfo, { track ->
++                    encVideoTrack = track
++                    if (!muxerStarted) {
++                        if (audioFormat != null) {
++                            encAudioTrack = muxer.addTrack(audioFormat)
++                        }
++                        muxer.start()
++                        muxerStarted = true
++                    }
++                }, { encEos = true }, { encVideoTrack })
++            }
++        }
++
++        if (audioTrack >= 0 && muxerStarted && encAudioTrack >= 0) {
++            extractor.unselectTrack(videoTrack)
++            extractor.selectTrack(audioTrack)
++            extractor.seekTo(0, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
++            val aBuf = ByteBuffer.allocate(64 * 1024)
++            val aInfo = MediaCodec.BufferInfo()
++            while (true) {
++                aBuf.clear()
++                val n = extractor.readSampleData(aBuf, 0)
++                if (n < 0) break
++                aInfo.offset = 0
++                aInfo.size = n
++                aInfo.presentationTimeUs = extractor.sampleTime
++                aInfo.flags = extractor.sampleFlags
++                muxer.writeSampleData(encAudioTrack, aBuf, aInfo)
++                extractor.advance()
++            }
++        }
++
++        encoder.stop()
++        encoder.release()
++        decoder.stop()
++        decoder.release()
++        muxer.stop()
++        muxer.release()
++        extractor.release()
++    }
++
++    private fun drainEncoder(
++        encoder: MediaCodec,
++        muxer: MediaMuxer,
++        info: MediaCodec.BufferInfo,
++        onFormat: (Int) -> Unit,
++        onEos: () -> Unit,
++        videoTrack: () -> Int,
++    ) {
++        while (true) {
++            val outIx = encoder.dequeueOutputBuffer(info, 0)
++            when {
++                outIx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
++                    onFormat(muxer.addTrack(encoder.outputFormat))
++                }
++                outIx >= 0 -> {
++                    val buf = encoder.getOutputBuffer(outIx)!!
++                    if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
++                        info.size = 0
++                    }
++                    val track = videoTrack()
++                    if (info.size > 0 && track >= 0) {
++                        buf.position(info.offset)
++                        buf.limit(info.offset + info.size)
++                        muxer.writeSampleData(track, buf, info)
++                    }
++                    encoder.releaseOutputBuffer(outIx, false)
++                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
++                        onEos()
++                        return
++                    }
++                }
++                else -> return
++            }
++        }
++    }
++
++    private fun cropYuv420(
++        image: android.media.Image,
++        xOff: Int,
++        yOff: Int,
++        side: Int,
++        out: ByteArray,
++    ) {
++        val yPlane = image.planes[0]
++        val uPlane = image.planes[1]
++        val vPlane = image.planes[2]
++        val yRow = yPlane.rowStride
++        val yPix = yPlane.pixelStride
++        val yBuf = yPlane.buffer
++        var o = 0
++        for (row in 0 until side) {
++            val y = yOff + row
++            for (col in 0 until side) {
++                val x = xOff + col
++                out[o++] = yBuf.get(y * yRow + x * yPix)
++            }
++        }
++        val uvSide = side / 2
++        val uRow = uPlane.rowStride
++        val uPix = uPlane.pixelStride
++        val vRow = vPlane.rowStride
++        val vPix = vPlane.pixelStride
++        val uBuf = uPlane.buffer
++        val vBuf = vPlane.buffer
++        // NV12: UV interleaved
++        for (row in 0 until uvSide) {
++            val y = yOff / 2 + row
++            for (col in 0 until uvSide) {
++                val x = xOff / 2 + col
++                out[o++] = uBuf.get(y * uRow + x * uPix)
++                out[o++] = vBuf.get(y * vRow + x * vPix)
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/org/lineageos/aperture/viewmodels/CameraViewModel.kt b/app/src/main/java/org/lineageos/aperture/viewmodels/CameraViewModel.kt
+index 9a59c3c..617356b 100644
+--- a/app/src/main/java/org/lineageos/aperture/viewmodels/CameraViewModel.kt
++++ b/app/src/main/java/org/lineageos/aperture/viewmodels/CameraViewModel.kt
+@@ -634,6 +634,7 @@ class CameraViewModel(application: Application) : ApertureViewModel(application)
+         .mapLatest { cameraConfiguration ->
+             when (cameraConfiguration) {
+                 is CameraConfiguration.Photo -> cameraConfiguration.photoAspectRatio
++                is CameraConfiguration.Video -> cameraConfiguration.videoAspectRatio
+                 else -> preferencesRepository.photoAspectRatio.value
+             }
+         }
+@@ -1217,6 +1218,19 @@ class CameraViewModel(application: Application) : ApertureViewModel(application)
+                                 LOG_TAG,
+                                 "Video capture succeeded: ${it.outputResults.outputUri}",
+                             )
++                            val square = org.lineageos.aperture.utils.TitanAspect.isSquare(
++                                preferencesRepository.photoAspectRatio.value
++                            )
++                            if (square) {
++                                runCatching {
++                                    org.lineageos.aperture.utils.TitanVideo.cropSavedVideoToSquare(
++                                        getApplication<Application>().contentResolver,
++                                        it.outputResults.outputUri,
++                                    )
++                                }.onFailure { err ->
++                                    Log.w(LOG_TAG, "1:1 video crop failed", err)
++                                }
++                            }
+ 
+                             if (!inSingleCaptureMode.value) {
+                                 mediaRepository.broadcastNewVideo(it.outputResults.outputUri)
+@@ -1403,20 +1417,30 @@ class CameraViewModel(application: Application) : ApertureViewModel(application)
+     /**
+      * Cycle the photo aspect ratio.
+      */
+-    fun cyclePhotoAspectRatio() =
+-        updateConfiguration<CameraConfiguration.Photo> { cameraConfiguration ->
+-            val newAspectRatio = when (cameraConfiguration.photoAspectRatio) {
+-                AspectRatio.RATIO_4_3 -> AspectRatio.RATIO_16_9
+-                AspectRatio.RATIO_16_9 -> AspectRatio.RATIO_4_3
+-                else -> AspectRatio.RATIO_4_3
++    fun cyclePhotoAspectRatio(): Boolean {
++        val current = _cameraConfiguration.value ?: return false
++        val currentAspect = when (current) {
++            is CameraConfiguration.Photo -> current.photoAspectRatio
++            is CameraConfiguration.Video -> current.videoAspectRatio
++            else -> preferencesRepository.photoAspectRatio.value
++        }
++        val newAspectRatio = when (currentAspect) {
++            AspectRatio.RATIO_4_3 -> AspectRatio.RATIO_16_9
++            AspectRatio.RATIO_16_9 -> org.lineageos.aperture.utils.TitanAspect.RATIO_1_1
++            org.lineageos.aperture.utils.TitanAspect.RATIO_1_1 -> AspectRatio.RATIO_4_3
++            else -> AspectRatio.RATIO_4_3
++        }
++        preferencesRepository.photoAspectRatio.value = newAspectRatio
++        return when (current) {
++            is CameraConfiguration.Photo -> updateConfiguration<CameraConfiguration.Photo> {
++                it.copy(photoAspectRatio = newAspectRatio)
+             }
+-
+-            preferencesRepository.photoAspectRatio.value = newAspectRatio
+-
+-            cameraConfiguration.copy(
+-                photoAspectRatio = newAspectRatio,
+-            )
++            is CameraConfiguration.Video -> updateConfiguration<CameraConfiguration.Video> {
++                it.copy(videoAspectRatio = newAspectRatio)
++            }
++            else -> false
+         }
++    }
+ 
+     /**
+      * Cycle the video quality.
+@@ -1708,7 +1732,8 @@ class CameraViewModel(application: Application) : ApertureViewModel(application)
+ 
+             val videoFrameRate = preferencesRepository.videoFrameRate.value.takeIf {
+                 videoQualityInfo.supportedFrameRates.contains(it)
+-            } ?: videoQualityInfo.supportedFrameRates.firstOrNull()
++            } ?: videoQualityInfo.supportedFrameRates.firstOrNull { it.value >= 60 }
++                ?: videoQualityInfo.supportedFrameRates.maxByOrNull { it.value }
+ 
+             val videoDynamicRange = preferencesRepository.videoDynamicRange.value.takeIf {
+                 videoQualityInfo.supportedDynamicRanges.contains(it)
+@@ -1724,6 +1749,7 @@ class CameraViewModel(application: Application) : ApertureViewModel(application)
+                 videoDynamicRange = videoDynamicRange,
+                 videoMirrorMode = preferencesRepository.videoMirrorMode.value,
+                 enableVideoStabilization = preferencesRepository.videoStabilization.value,
++                videoAspectRatio = preferencesRepository.photoAspectRatio.value,
+             )
+         }
+ 
+diff --git a/app/src/main/res/layout/activity_camera.xml b/app/src/main/res/layout/activity_camera.xml
+index d5f291f..89516fb 100644
+--- a/app/src/main/res/layout/activity_camera.xml
++++ b/app/src/main/res/layout/activity_camera.xml
+@@ -18,11 +18,11 @@
+         android:layout_width="0dp"
+         android:layout_height="0dp"
+         android:soundEffectsEnabled="false"
+-        app:layout_constraintBottom_toTopOf="@+id/secondaryBottomBarLayout"
++        app:layout_constraintBottom_toBottomOf="parent"
+         app:layout_constraintEnd_toEndOf="parent"
+         app:layout_constraintStart_toStartOf="parent"
+         app:layout_constraintTop_toTopOf="parent"
+-        app:scaleType="fitCenter" />
++        app:scaleType="fillCenter" />
+ 
+     <org.lineageos.aperture.ui.views.PreviewBlurView
+         android:id="@+id/previewBlurView"
+diff --git a/app/src/main/res/values/config.xml b/app/src/main/res/values/config.xml
+index 1920aa1..45c62d3 100644
+--- a/app/src/main/res/values/config.xml
++++ b/app/src/main/res/values/config.xml
+@@ -4,12 +4,13 @@
+      SPDX-License-Identifier: Apache-2.0
+ -->
+ <resources>
+-    <!-- Enable auxiliary cameras selector. -->
+-    <bool name="config_enableAuxCameras">false</bool>
++    <!-- Titan 2: expose HI847S (id 2) as its own lens. SAT logical id 3 stays ignored. -->
++    <bool name="config_enableAuxCameras">true</bool>
+ 
+     <!-- List of ID of auxiliary cameras that must be ignored by the app. -->
+     <string-array name="config_ignoredAuxCameraIds">
+-        <!-- No camera is ignored by default. -->
++        <!-- Titan 2: ID 3 is MTK SAT logical (IMX766+HI847S). Dual-stream video ghosts. -->
++        <item>3</item>
+     </string-array>
+ 
+     <!-- Decide whether to ignore auxiliary cameras that
+@@ -26,7 +27,7 @@
+          here won't be excluded by CameraX. Please be sure to test all
+          modes exposed by the app with those cameras. -->
+     <string-array name="config_backwardCompatibleCameraIds">
+-        <!-- No camera is unignored by default. -->
++        <item>2</item>
+     </string-array>
+ 
+     <!-- An array of triplets made of (camera ID, qualities, frame rates).
+@@ -55,7 +56,13 @@
+              </string-array>
+     -->
+     <string-array name="config_additionalVideoConfigurations">
+-        <!-- No additional configuration is added by default. -->
++        <!-- OEM ACamera2: FHD/HD 30+60, 4K 30 only, square 720/1080/1440
++             are HAL PRIVATE sizes. CameraX Quality has no square bucket. -->
++        <item>0</item> <item>sd|hd|fhd</item> <item>60</item>
++        <item>0</item> <item>uhd</item> <item>30</item>
++        <item>0</item> <item>uhd</item> <item>-60</item>
++        <item>1</item> <item>sd|hd|fhd</item> <item>60</item>
++        <item>2</item> <item>sd|hd|fhd</item> <item>60</item>
+     </string-array>
+ 
+     <!-- An array of triplets made of (camera ID, approximate zoom ratio, exact zoom ratio).
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index f29f5c6..f74618d 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -27,6 +27,7 @@
+ 
+     <string name="aspect_ratio_4_3" translatable="false">4:3</string>
+     <string name="aspect_ratio_16_9" translatable="false">16:9</string>
++    <string name="aspect_ratio_1_1" translatable="false">1:1</string>
+ 
+     <string name="video_quality_sd" translatable="false">480p</string>
+     <string name="video_quality_hd" translatable="false">720p</string>

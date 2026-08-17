@@ -1,0 +1,88 @@
+# project:packages/services/Telecomm
+# PRIVACY §2: mic privacy ON must mute voice uplink. Unlock dialog is not a gate.
+diff --git a/src/com/android/server/telecom/CallsManager.java b/src/com/android/server/telecom/CallsManager.java
+index e5f9b0da9..b0708fe88 100644
+--- a/src/com/android/server/telecom/CallsManager.java
++++ b/src/com/android/server/telecom/CallsManager.java
+@@ -67,6 +67,7 @@ import android.content.pm.ResolveInfo;
+ import android.content.pm.UserInfo;
+ import android.graphics.Color;
+ import android.graphics.drawable.ColorDrawable;
++import android.hardware.SensorPrivacyManager;
+ import android.media.AudioManager;
+ import android.media.AudioSystem;
+ import android.media.MediaPlayer;
+@@ -692,6 +693,17 @@ public class CallsManager extends Call.ListenerBase
+ 
+         mContext = context;
+         mLock = lock;
++        // PRIVACY §2: mic software toggle must mute voice uplink, not just
++        // show SensorPrivacy "unlock microphone" theater (startOp is tracing).
++        SensorPrivacyManager spm = context.getSystemService(SensorPrivacyManager.class);
++        if (spm != null) {
++            spm.addSensorPrivacyListener(SensorPrivacyManager.Sensors.MICROPHONE,
++                    (sensor, enabled) -> {
++                        if (enabled) {
++                            mute(true);
++                        }
++                    });
++        }
+         mPhoneNumberUtilsAdapter = phoneNumberUtilsAdapter;
+         mPhoneAccountRegistrar = phoneAccountRegistrar;
+         mPhoneAccountRegistrar.addListener(mPhoneAccountListener);
+@@ -4497,9 +4509,23 @@ public class CallsManager extends Call.ListenerBase
+             Log.i(this, "Refusing to turn on mute because we're in an emergency call");
+             shouldMute = false;
+         }
++        // Human refused "unlock microphone" must stay silent. AOSP only
++        // shows the dialog (InCallController startOp is tracing).
++        if (!shouldMute && !isInEmergencyCall() && isMicrophonePrivacyEnabled()) {
++            Log.i(this, "Refusing unmute — microphone sensor privacy is ON");
++            shouldMute = true;
++        }
+         mCallAudioManager.mute(shouldMute);
+     }
+ 
++    private boolean isMicrophonePrivacyEnabled() {
++        SensorPrivacyManager spm = mContext.getSystemService(SensorPrivacyManager.class);
++        if (spm == null) {
++            return false;
++        }
++        return spm.areAnySensorPrivacyTogglesEnabled(SensorPrivacyManager.Sensors.MICROPHONE);
++    }
++
+     /**
+       * Called by the in-call UI to change the audio route, for example to change from earpiece to
+       * speaker phone.
+diff --git a/src/com/android/server/telecom/InCallController.java b/src/com/android/server/telecom/InCallController.java
+index c6e0fec93..f2ca78360 100644
+--- a/src/com/android/server/telecom/InCallController.java
++++ b/src/com/android/server/telecom/InCallController.java
+@@ -3350,6 +3350,14 @@ public class InCallController extends CallsManagerListenerBase implements
+             return;
+         }
+ 
++        // PRIVACY §2: incoming/outgoing with mictoggle ON must mute uplink
++        // before we even note the op. showSensorUseDialog is not a gate.
++        if (mIsTrackingManagedAliveCall && isMicrophonePrivacyEnabled()
++                && !isMuted()) {
++            Log.i(this, "mic privacy ON — forcing call mute (dialog is not a gate)");
++            mCallsManager.mute(true);
++            isMuted = true;
++        }
+         mIsCallUsingMicrophone = mIsTrackingManagedAliveCall && !isMuted
+                 && !isCarrierPrivilegedUsingMicDuringVoipCall();
+         if (wasUsingMicrophone != mIsCallUsingMicrophone) {
+@@ -3424,6 +3432,12 @@ public class InCallController extends CallsManagerListenerBase implements
+                 mCallIdMapper.getCalls().stream().anyMatch(Call::getIsVoipAudioMode);
+     }
+ 
++    private boolean isMicrophonePrivacyEnabled() {
++        return mSensorPrivacyManager != null
++                && mSensorPrivacyManager.areAnySensorPrivacyTogglesEnabled(
++                        SensorPrivacyManager.Sensors.MICROPHONE);
++    }
++
+     /**
+      * @return {@code true} if the audio is currently muted, {@code false} otherwise.
+      */

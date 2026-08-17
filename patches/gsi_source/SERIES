@@ -61,3 +61,22 @@
 0092-settings-keep-disabled-sim-in-list.patch
 0093-settings-disable-does-not-delete-sim.patch
 0094-settings-sim-tray-names-keep-listed.patch
+
+# project:packages/apps/Aperture
+# Titan 2: 1:1 fullscreen default photo+video, ignore SAT cam 3,
+# HI847S own lens (SYSTEM_CAMERA). Not on 20260816 export.
+0095-aperture-titan-square-and-no-sat.patch
+
+# project:frameworks/opt/telephony
+# Settings → SIMs → Calls is the only IMS tray switch (default voice).
+0096-telephony-ims-follows-settings-calls-sim.patch
+
+# project:packages/services/Telecomm
+# Mic privacy ON mutes voice uplink; refuse unmute until toggle off.
+0097-telecom-mic-privacy-mutes-call-uplink.patch
+
+# project:frameworks/base
+# WITHDRAWN 2026-08-17: DEVICE_IN_* UNAVAILABLE emptied Recorder and
+# did not cut MTK speech ADC (own-voice echo on speaker). Analog cut
+# is titan2-sensor-privacy.sh tinymix ADC_L_Mux=Idle (vendor path).
+# # 0098-audio-mic-privacy-disconnects-input-only.patch

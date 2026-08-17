@@ -90,6 +90,9 @@ PRODUCT_PACKAGES += \
     titan2-pad-apply.sh \
     titan2-ctrl-seed.sh \
     titan2-ims-setup.sh \
+    titan2-ims-simswitch-early.sh \
+    titan2-ims-simswitch-hold.sh \
+    titan2-ims-diag.sh \
     titan2-sensor-privacy.sh \
     titan2-fw \
     titan2-fw.sh \

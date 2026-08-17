@@ -1,0 +1,85 @@
+# project:frameworks/opt/telephony
+# Settings → SIMs → Calls is the only switch. MTK IMS tray follows default voice.
+diff --git a/src/java/com/android/internal/telephony/subscription/SubscriptionManagerService.java b/src/java/com/android/internal/telephony/subscription/SubscriptionManagerService.java
+index d2958252b0..c79e0548ae 100644
+--- a/src/java/com/android/internal/telephony/subscription/SubscriptionManagerService.java
++++ b/src/java/com/android/internal/telephony/subscription/SubscriptionManagerService.java
+@@ -106,6 +106,7 @@ import com.android.internal.telephony.TelephonyPermissions;
+ import com.android.internal.telephony.data.PhoneSwitcher;
+ import com.android.internal.telephony.euicc.EuiccController;
+ import com.android.internal.telephony.flags.FeatureFlags;
++import com.android.internal.telephony.ims.ImsResolver;
+ import com.android.internal.telephony.flags.Flags;
+ import com.android.internal.telephony.satellite.SatelliteController;
+ import com.android.internal.telephony.subscription.SubscriptionDatabaseManager.SubscriptionDatabaseManagerCallback;
+@@ -525,6 +526,8 @@ public class SubscriptionManagerService extends ISub.Stub {
+                     logl("Default voice subId changed from " + oldValue + " to " + newValue);
+                     Settings.Global.putInt(mContext.getContentResolver(),
+                             Settings.Global.MULTI_SIM_VOICE_CALL_SUBSCRIPTION, newValue);
++                    // Settings → SIMs → Calls. MTK IMS tray follows that pick.
++                    alignImsCapabilityToVoiceSub(newValue);
+                     return true;
+                 }
+                 return false;
+@@ -3123,6 +3126,9 @@ public class SubscriptionManagerService extends ISub.Stub {
+             }
+         }
+ 
++        if (isVoiceCapable) {
++            alignImsCapabilityToVoiceSub(getDefaultVoiceSubId());
++        }
+         if (mDefaultSubId.get() != subId) {
+             int phoneId = getPhoneId(subId);
+             logl("updateDefaultSubId: Default sub id updated from " + mDefaultSubId.get() + " to "
+@@ -3292,10 +3298,50 @@ public class SubscriptionManagerService extends ISub.Stub {
+         return getDefaultAsUser(userId, mDefaultVoiceSubId.get());
+     }
+ 
++    /**
++     * Settings → SIMs → Calls is the only IMS tray switch.
++     * persist.radio.titan2_simswitch is radio-owned SoT (1-indexed).
++     * Init titan2-ims-simswitch-early.sh resetprop's the vendor simswitch
++     * the phone process cannot write, then recreates the MMTEL binder.
++     */
++    private void alignImsCapabilityToVoiceSub(int subId) {
++        if (!SubscriptionManager.isValidSubscriptionId(subId)) {
++            return;
++        }
++        int slot = getSlotIndex(subId);
++        if (!SubscriptionManager.isValidSlotIndex(slot)) {
++            return;
++        }
++        String want = String.valueOf(slot + 1);
++        try {
++            // Radio-owned. Init watches this and applies vendor simswitch.
++            SystemProperties.set("persist.radio.titan2_simswitch", want);
++            SystemProperties.set("persist.radio.simswitch", want);
++            // Best-effort; vendor_radio_prop usually ignores phone setprop.
++            SystemProperties.set("persist.vendor.radio.simswitch", want);
++            SystemProperties.set("persist.vendor.radio.c_capability_slot", want);
++            log("alignImsCapabilityToVoiceSub: calls subId=" + subId
++                    + " slot=" + slot + " simswitch=" + want);
++        } catch (RuntimeException e) {
++            loge("alignImsCapabilityToVoiceSub failed: " + e);
++        }
++        // Recreate MMTEL on the Calls tray after SoT is written. Vendor
++        // simswitch may still be racing init resetprop; ImsService rebind
++        // after boot is handled by titan2-ims-simswitch-early.sh.
++        try {
++            ImsResolver resolver = ImsResolver.getInstance();
++            if (resolver != null) {
++                resolver.resetIms(slot);
++            }
++        } catch (RuntimeException e) {
++            loge("alignImsCapabilityToVoiceSub resetIms: " + e);
++        }
++    }
++
+     /**
+      * Set the default voice subscription id.
+      *
+-     * @param subId The default SMS subscription id.
++     * @param subId The default voice subscription id.
+      *
+      * @throws SecurityException if callers do not hold the required permission.
+      */

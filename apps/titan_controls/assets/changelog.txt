@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 15.97 (597) — 2026-08-17T00:20Z
+
+- Diagnostics: detect simswitch NVRAM split, MMTEL empty-caps theater, dual IMS APN flap, USP OP08 vs live SIM, silent SKIP_RINGING, hold missing. No test call.
+
+---
+
 ## 15.96 (596) — 2026-08-16T16:30Z
 
 - SIMs: SIM 1 / SIM 2 only. No carrier names. Settings 0094 keep-listed for next GSI.

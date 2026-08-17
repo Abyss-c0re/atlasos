@@ -7,9 +7,9 @@
 # Apply (Linux planes, kept APART):
 #   CAM ON  → chmod 000 /dev/video* + fuser openers + force-stop camera apps
 #   CAM OFF → chmod 660 instant
-#   MIC ON  → force-stop recorder apps (enhance mictoggle). NEVER chmod pcm*c
-#             (playback shares Hostless_Spk / FS19XX with capture on MTK).
-#   MIC OFF → heal capture nodes 660 only
+#   MIC ON  → ADC/PGA mux Idle + sidetone off (vendor audio_device.xml).
+#             NEVER chmod pcm*c (Hostless_Spk / FS19XX share capture with speaker).
+#   MIC OFF → heal PCM 660; HAL restores AIN0 on next record/call
 #   TORCH   → separate plane: flashlight_core sysfs, independent of video nodes.
 #             Never kill cameraserver/camerahalserver for privacy.
 #
@@ -35,18 +35,25 @@ belt_enabled() {
   case "$v" in 0|false|off|OFF) return 1 ;; *) return 0 ;; esac
 }
 
-AO_CACHE=""; AO_OK=0; SP_CACHE=""; SP_OK=0
+AO_CACHE=""; AO_OK=0; SP_CACHE=""; SP_OK=0; SP_TS=0
 
 refresh_desire() {
-  # Prefer dumpsys sensor_privacy (cheap enough at 1Hz).
+  # dumpsys sensor_privacy only — never dumpsys appops (12k + parse reheats load).
+  # Cache 2s: analog re-assert uses last mic bit; HAL re-plugs AIN on call start.
+  now=$(date +%s 2>/dev/null || echo 0)
+  case "$now" in ''|*[!0-9]*) now=0 ;; esac
+  if [ "$SP_OK" = "1" ] && [ "$now" -gt 0 ] && [ "$SP_TS" -gt 0 ]; then
+    age=$((now - SP_TS))
+    if [ "$age" -ge 0 ] && [ "$age" -lt 2 ]; then
+      return 0
+    fi
+  fi
   SP_CACHE=$(dumpsys sensor_privacy 2>/dev/null | head -c 4000)
   if echo "$SP_CACHE" | grep -q 'sensor='; then
-    SP_OK=1; AO_OK=0; AO_CACHE=""; return 0
+    SP_OK=1; AO_OK=0; AO_CACHE=""; SP_TS=$now; return 0
   fi
   SP_OK=0
-  AO_CACHE=$(dumpsys appops 2>/dev/null | head -c 12000 \
-    | sed 's/PHONE_CALL_CAMERA//g; s/PHONE_CALL_MICROPHONE//g; s/RECEIVE_SOUNDTRIGGER_AUDIO//g; s/RECEIVE_SANDBOX_TRIGGER_AUDIO//g')
-  if echo "$AO_CACHE" | grep -q 'Global restrictions'; then AO_OK=1; else AO_OK=0; fi
+  AO_OK=0
 }
 
 # sensor=2 CAMERA; state_type 1=privacy ON, 2=OFF
@@ -221,14 +228,48 @@ restore_mic_nodes() {
   fi
 }
 
-# Packages that may hold RECORD_AUDIO; skip telephony/system (OS handles call path).
+# Analog disconnect from vendor audio_device.xml (builtin_Mic_Mic1 turnoff).
+# ADC mux Idle = preamp unplugged. Sidetone Filter off = no local echo.
+# Re-assert every tick: speech HAL re-enables AIN0 on call start.
+# DAC / HPL / Ext_Speaker_Amp never touched.
+tinymix_bin() {
+  if [ -x /vendor/bin/tinymix ]; then echo /vendor/bin/tinymix
+  elif [ -x /system/bin/tinymix ]; then echo /system/bin/tinymix
+  else echo tinymix
+  fi
+}
+
+analog_mic_disconnect() {
+  MIX=$(tinymix_bin)
+  command -v "$MIX" >/dev/null 2>&1 || { log "MIC analog: no tinymix"; return 1; }
+  "$MIX" 'ADC_L_Mux' Idle >/dev/null 2>&1 || true
+  "$MIX" 'ADC_R_Mux' Idle >/dev/null 2>&1 || true
+  "$MIX" 'PGA_L_Mux' None >/dev/null 2>&1 || true
+  "$MIX" 'PGA_R_Mux' None >/dev/null 2>&1 || true
+  "$MIX" 'Sidetone Filter Switch' 0 >/dev/null 2>&1 || true
+}
+
+# vendor audio_device.xml builtin_Mic_DualMic turnon — analog must come back.
+# Recorder is Mic1 (ADC_L / AIN0). Call HAL DualMic-off leaves L Idle;
+# re-assert on every allow tick, not only the privacy edge.
+analog_mic_reconnect() {
+  MIX=$(tinymix_bin)
+  command -v "$MIX" >/dev/null 2>&1 || return 1
+  "$MIX" 'MISO0_MUX' UL1_CH1 >/dev/null 2>&1 || true
+  "$MIX" 'MISO1_MUX' UL1_CH2 >/dev/null 2>&1 || true
+  "$MIX" 'ADC_L_Mux' 'Left Preamplifier' >/dev/null 2>&1 || true
+  "$MIX" 'PGA_L_Mux' AIN0 >/dev/null 2>&1 || true
+  "$MIX" 'ADC_R_Mux' 'Right Preamplifier' >/dev/null 2>&1 || true
+  "$MIX" 'PGA_R_Mux' AIN2 >/dev/null 2>&1 || true
+  "$MIX" 'UL_SRC_MUX' AMIC >/dev/null 2>&1 || true
+  "$MIX" 'UL2_SRC_MUX' AMIC >/dev/null 2>&1 || true
+}
+
 # NEVER force-stop camera apps here — mic privacy must not kill camera preview
 # when cam privacy is OFF (heretic residual: aperture DIED every ~few seconds).
 mic_block() {
-  # Always heal PCM open so speaker path stays alive
   restore_mic_nodes
-  # Dedicated recorders / voice only — not camera, not browser, not messengers
-  # (SPM + AppOps own those; force-stop is last resort for sticky recorders).
+  analog_mic_disconnect
   for pkg in \
     org.lineageos.recorder com.android.soundrecorder \
     com.google.android.apps.recorder com.sec.android.app.voicenote \
@@ -236,11 +277,13 @@ mic_block() {
     am force-stop "$pkg" 2>/dev/null || true
   done
   restore_mic_nodes
-  log "MIC block — recorders only (no camera kill; pcm 660 speaker safe)"
+  log "MIC block — analog ADC Idle + sidetone off (pcm 660 speaker safe)"
 }
 
 mic_allow() {
   restore_mic_nodes
+  analog_mic_reconnect
+  log "MIC allow — ADC mux AIN0/AIN2 restored"
 }
 
 seed_qs_tiles() {
@@ -423,20 +466,21 @@ while true; do
   [ "$priv" = "1" ] && mic=1
 
   if [ "$mic" = "1" ]; then
+    # HAL re-plugs AIN0 on every speech/record start. Hold Idle while ON.
+    analog_mic_disconnect
     if [ "$last_mic" != "1" ]; then
-      log "MIC block — edge only (never periodic force-stop)"
+      log "MIC block — edge (recorders once)"
       mic_block
     else
-      # Steady: pcm heal only. Periodic force-stop was heresy — killed
-      # org.lineageos.aperture every few seconds while cam privacy OFF.
       restore_mic_nodes
     fi
   else
     if [ "$last_mic" = "1" ]; then
-      log "MIC allow — pcm heal only"
+      log "MIC allow — analog reconnect"
       mic_allow
     else
       restore_mic_nodes
+      analog_mic_reconnect
     fi
   fi
 

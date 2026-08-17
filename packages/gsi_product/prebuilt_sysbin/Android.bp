@@ -110,6 +110,21 @@ sh_binary {
     src: "titan2-ims-setup.sh",
 }
 
+sh_binary {
+    name: "titan2-ims-simswitch-early.sh",
+    src: "titan2-ims-simswitch-early.sh",
+}
+
+sh_binary {
+    name: "titan2-ims-simswitch-hold.sh",
+    src: "titan2-ims-simswitch-hold.sh",
+}
+
+sh_binary {
+    name: "titan2-ims-diag.sh",
+    src: "titan2-ims-diag.sh",
+}
+
 // Sensor privacy fail-closed (v13+): real mic Capture_* only; never Hostless_Spk_Init/FM.
 // SoT: patches/bin/titan2-sensor-privacy.sh · docs/project/SENSOR_PRIVACY_SYSTEM.md
 sh_binary {

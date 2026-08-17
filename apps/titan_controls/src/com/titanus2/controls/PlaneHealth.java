@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.Context;
 import android.os.Build;
 import android.os.SystemClock;
+import android.media.AudioManager;
 import android.provider.Settings;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionInfo;
@@ -165,17 +166,28 @@ public final class PlaneHealth {
             capsVoice = false;
         }
         boolean bound = phoneDump.contains("isBound=true");
-        boolean mmtelOk = !noIms && !nullIface && (mmtelVoice || capsVoice);
+        boolean emptyCaps = lastConn.contains("capabilities={ }")
+            || lastCaps.contains("capabilities={ }");
+        boolean mmtelOk = !noIms && !nullIface && (mmtelVoice || capsVoice) && !emptyCaps;
         r.calls.add(new Row("MMTEL voice", mmtelOk,
             (noIms ? "NO_IMS_SERVICE_CONFIGURED " : "")
                 + (nullIface ? "last binder=null IInterface " : "")
+                + (emptyCaps ? "READY empty caps " : "")
                 + (capsVoice ? "VOICE cap " : "no VOICE cap ")
                 + (mmtelVoice ? "isAvailable " : "")
                 + (bound ? "controller-bound" : "controller-unbound")));
+        if (emptyCaps && bound) {
+            r.calls.add(new Row("MMTEL theater", false,
+                "listener READY / capabilities={} — looks bound, Voice not advertised",
+                "HERESY"));
+        }
 
         String sw = prop("persist.vendor.radio.simswitch", "");
+        String t2 = prop("persist.radio.titan2_simswitch", "");
+        String radioSw = prop("persist.radio.simswitch", "");
+        String capSw = prop("persist.vendor.radio.c_capability_slot", "");
         boolean swOk = true;
-        String swDetail = "simswitch=" + sw;
+        String swDetail = "vendor=" + sw;
         if (voiceSlot >= 0) {
             int want = voiceSlot + 1;
             swOk = String.valueOf(want).equals(sw);
@@ -184,10 +196,93 @@ public final class PlaneHealth {
         }
         r.calls.add(new Row("IMS capability slot", swOk, swDetail));
 
+        boolean sotSplit = false;
+        if (!t2.isEmpty()) {
+            if (!t2.equals(sw)) sotSplit = true;
+            if (!radioSw.isEmpty() && !t2.equals(radioSw)) sotSplit = true;
+            if (!capSw.isEmpty() && !t2.equals(capSw)) sotSplit = true;
+        }
+        String sotDetail = "Calls=" + t2 + " vendor=" + sw
+            + " radio=" + radioSw + " cap=" + capSw;
+        if (sotSplit) {
+            r.calls.add(new Row("Calls tray vs vendor", false,
+                sotDetail + " — NVRAM reset tray 1 while Settings Calls stayed",
+                "HERESY"));
+            swOk = false;
+        } else {
+            r.calls.add(new Row("Calls tray vs vendor", true, sotDetail));
+        }
+
+        boolean holdAlive = procCmdContains("titan2-ims-simswitch-hold");
+        String holdPid = readFile("/data/local/tmp/titan2_ims_simswitch_hold.pid").trim();
+        if (!holdAlive && holdPid.matches("[0-9]+")) {
+            holdAlive = new File("/proc/" + holdPid).isDirectory();
+        }
+        r.calls.add(new Row("simswitch hold", holdAlive,
+            holdAlive ? ("pid=" + (holdPid.isEmpty() ? "live" : holdPid))
+                : "not running — vendor can drift to tray 1"));
+
+        String regDump = dump("telephony.registry", 200_000);
+        boolean phhIms = regDump.contains("[ApnSetting] PHH IMS");
+        boolean titanIms = regDump.contains("[ApnSetting] Titan IMS");
+        boolean imsLost = lastLine(regDump, "LOST_CONNECTION").toLowerCase().contains("ims");
+        if (phhIms && titanIms) {
+            r.calls.add(new Row("IMS APN", false,
+                "PHH IMS + Titan IMS both present — bearer flap",
+                "HERESY"));
+        } else if (imsLost) {
+            r.calls.add(new Row("IMS APN", false,
+                "IMS APN LOST_CONNECTION in registry",
+                "HERESY"));
+        } else {
+            r.calls.add(new Row("IMS APN", true,
+                phhIms ? "PHH IMS" : (titanIms ? "Titan IMS" : "no ims APN in registry"),
+                phhIms || titanIms ? "OK" : "INFO"));
+        }
+
+        String usp = prop("persist.vendor.mtk_usp_operator", "");
+        String simNum = prop("gsm.sim.operator.numeric", "");
+        String simAlpha = prop("gsm.sim.operator.alpha", "");
+        boolean tmoLive = simNum.contains("310240") || simNum.contains("310260");
+        boolean uspMismatch = "OP08".equals(usp) && !tmoLive && simNum.contains("246");
+        if (uspMismatch) {
+            r.calls.add(new Row("USP vs live SIM", false,
+                "usp=" + usp + " sim=" + simNum + " " + simAlpha
+                    + " — T-Mobile profile on non-TMO tray",
+                "HERESY"));
+        } else {
+            r.calls.add(new Row("USP vs live SIM", true,
+                "usp=" + usp + " sim=" + simNum + " " + simAlpha, "INFO"));
+        }
+
+        boolean ringAudible = true;
+        String ringDetail = "n/a";
+        try {
+            AudioManager audio = ctx.getSystemService(AudioManager.class);
+            if (audio != null) {
+                int mode = audio.getRingerMode();
+                int vol = audio.getStreamVolume(AudioManager.STREAM_RING);
+                ringAudible = mode == AudioManager.RINGER_MODE_NORMAL && vol > 0;
+                ringDetail = "mode=" + (mode == AudioManager.RINGER_MODE_NORMAL ? "normal"
+                    : mode == AudioManager.RINGER_MODE_VIBRATE ? "vibrate" : "silent")
+                    + " ringVol=" + vol;
+            }
+        } catch (Throwable ignored) {}
+        String skipRing = lastLine(dump("telecom", 120_000), "SKIP_RINGING");
+        if (!skipRing.isEmpty() && skipRing.contains("Inaudible")) {
+            r.calls.add(new Row("Ring audible", false,
+                ringDetail + " — last incoming SKIP_RINGING volume=0 (looks like incoming died)",
+                "HERESY"));
+        } else if (!ringAudible) {
+            r.calls.add(new Row("Ring audible", false, ringDetail, "HERESY"));
+        } else {
+            r.calls.add(new Row("Ring audible", true, ringDetail));
+        }
+
         boolean packetVoice = radioTech == 14 || radioTech == 20; // LTE / NR
         boolean incomingReady = !airplane && simLoaded && inService
             && (mmtelOk || (!packetVoice && inService))
-            && swOk;
+            && swOk && !sotSplit;
 
         if (disabled) {
             r.callsOk = true;
@@ -198,6 +293,8 @@ public final class PlaneHealth {
         r.callsOk = incomingReady;
         if (!inService || airplane || !simLoaded) {
             r.callsVerdict = "FAIL incoming — radio not in service";
+        } else if (sotSplit) {
+            r.callsVerdict = "FAIL incoming — Settings Calls vs vendor simswitch split";
         } else if (!mmtelOk && packetVoice) {
             r.callsVerdict = "FAIL incoming — LTE/NR and MMTEL has no VOICE";
         } else if (!swOk) {
@@ -434,6 +531,19 @@ public final class PlaneHealth {
             sb.append(a[i]);
         }
         return sb.toString();
+    }
+
+    private static boolean procCmdContains(String needle) {
+        if (needle == null || needle.isEmpty()) return false;
+        File proc = new File("/proc");
+        File[] kids = proc.listFiles();
+        if (kids == null) return false;
+        for (File k : kids) {
+            if (!k.getName().matches("[0-9]+")) continue;
+            String cmd = readFile(new File(k, "cmdline").getPath());
+            if (cmd != null && cmd.contains(needle)) return true;
+        }
+        return false;
     }
 
     private static int countProc(String name) {
