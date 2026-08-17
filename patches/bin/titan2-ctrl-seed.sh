@@ -265,6 +265,16 @@ agui_follow_pad() {
   esac
 }
 
+# HI847S (cam 2) is SYSTEM_CAMERA. Vendor writes aux.packagelist=nothing
+# after boot — late restamp so Aperture keeps the second rear lens.
+stamp_aux_cam() {
+  _pkgs="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
+  setprop camera.aux.packagelist "$_pkgs" 2>/dev/null || true
+  setprop vendor.camera.aux.packagelist "$_pkgs" 2>/dev/null || true
+  setprop persist.camera.aux.packagelist "$_pkgs" 2>/dev/null || true
+  setprop persist.vendor.camera.aux.packagelist "$_pkgs" 2>/dev/null || true
+}
+
 # --- late: pin pad QS tile (SystemUI may own/overwrite early) ---
 seed_qs_pad() {
   command -v settings >/dev/null 2>&1 || return 0
@@ -384,6 +394,7 @@ case "$PHASE" in
     exit 0
     ;;
   late|qs)
+    stamp_aux_cam
     heal_long_press
     heal_power_menu
     seed_qs_pad

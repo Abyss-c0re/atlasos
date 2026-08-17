@@ -127,6 +127,25 @@ setprop ctl.start titan2-display 2>/dev/null || true
 # Agui stock trackpad OFF by default (pad-agent sets 1 only for trackpad|mouse).
 setprop persist.sys.agui.touchpad_function 0 2>/dev/null
 
+# Titan 2: MTK hides HI847S (cam 2, SYSTEM_CAMERA) unless Aperture is on the
+# aux packagelist. Vendor init writes camera.aux.packagelist=nothing *after*
+# first boot props — restamp a few times so the second rear lens stays listed.
+_titan2_aux_pkgs="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
+_titan2_stamp_aux() {
+  setprop camera.aux.packagelist "$_titan2_aux_pkgs" 2>/dev/null || true
+  setprop vendor.camera.aux.packagelist "$_titan2_aux_pkgs" 2>/dev/null || true
+  setprop persist.camera.aux.packagelist "$_titan2_aux_pkgs" 2>/dev/null || true
+  setprop persist.vendor.camera.aux.packagelist "$_titan2_aux_pkgs" 2>/dev/null || true
+  setprop persist.vendor.camera.privapp.list org.lineageos.aperture 2>/dev/null || true
+}
+_titan2_stamp_aux
+(
+  for _s in 2 5 10 20 40; do
+    sleep "$_s"
+    _titan2_stamp_aux
+  done
+) &
+
 # --- stock camera prefer (WITH_STOCK_CAMERA product face) ---
 # Keep GSI Aperture on the image as fallback. Only disable it when OEM
 # ACamera2 is actually registered (never leave the drawer with zero cameras).
