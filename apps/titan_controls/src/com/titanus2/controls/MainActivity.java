@@ -63,8 +63,8 @@ public class MainActivity extends Activity {
     private final Handler h = new Handler(Looper.getMainLooper());
     private final Runnable tick = new Runnable() {
         @Override public void run() {
-            refresh();
-            h.postDelayed(this, 1200);
+            refreshChrome();
+            h.postDelayed(this, 2500);
         }
     };
 
@@ -119,9 +119,6 @@ public class MainActivity extends Activity {
         // Product IME: AOSP LatinIME (ImeHwPrefs). Accents: Letter variations
         // (default Off = a11y kills CharacterPicker on PICKER_SETS hold-repeat).
         // 15.30 restored kill after Pastiera purge; 15.31 restores hub intent.
-        try { KeyRepeatPrefs.syncFromSystem(this); } catch (Exception ignored) {}
-        try { ImeHwPrefs.applyHwTypingPolish(this); } catch (Exception ignored) {}
-        try { LetterVariationsPrefs.apply(this); } catch (Exception ignored) {}
         UiKit.toggle(sectionPad, "Key repeat",
             KeyRepeatPrefs.isEnabled(this),
             on -> KeyRepeatPrefs.setEnabled(this, on));
@@ -203,29 +200,38 @@ public class MainActivity extends Activity {
         kbHint.setText("K Keys · S Sub · N notif · W Wi‑Fi · T Tweaks · M SIMs · I diag · D Dev · G log · "
             + "0/1/2 pad · C tap · L light · O idle");
         setContentView(scroll);
-        // Inherit OS DeviceDefault theme (Cube is system-wide via cube-ux / RROs, not app paint)
-        seed();
-        reapply();
-        try { DebugPrefs.ensureDefaultOff(this); } catch (Exception ignored) {}
-        // Hide TrebleApp Settings tile — product entry is Tweaks wrap only.
-        try { TrebleAppBridge.hideFromSettings(this); } catch (Exception ignored) {}
-        // P0 Key a11y: re-assert after exclusive HID / wipe thrash
-        try { AccessServiceHelper.ensureDefaultEnabled(this); } catch (Exception ignored) {}
-        // FB-SEC-1: arm fail-closed kill (stock QS AppOps IGNORED → force-stop).
-        // MANAGE_SENSOR_PRIVACY may be denied on GSI updates — kill path uses FORCE_STOP.
-        try {
-            SensorPrivacyEnforcer.installStockToggleHook(this);
-            SensorPrivacyEnforcer.reassertBlockedSensors(this);
-            SensorQsDefaults.ensureDefaultTiles(this); // strip Titan privacy tile mess
-        } catch (Exception ignored) {}
-        refresh();
+        // First paint: pad/LED chrome only. Seed/heal/summaries after the frame.
+        refreshChrome();
         handleOpenIntent(getIntent());
-        // Land focus on first pad control so TAB/Enter work immediately.
         if (bOff != null) {
             bOff.post(() -> {
                 try { bOff.requestFocus(); } catch (Exception ignored) {}
             });
         }
+        h.post(this::afterFirstFrame);
+    }
+
+    /** Plane seed + destination summaries — never block setContentView. */
+    private void afterFirstFrame() {
+        if (isFinishing()) return;
+        try { seed(); } catch (Exception ignored) {}
+        try { reapply(); } catch (Exception ignored) {}
+        try { DebugPrefs.ensureDefaultOff(this); } catch (Exception ignored) {}
+        refreshChrome();
+        refreshSummaries();
+        h.post(this::deferredHeals);
+    }
+
+    /** A11y / privacy / Treble hide — after the hub is already visible. */
+    private void deferredHeals() {
+        if (isFinishing()) return;
+        try { TrebleAppBridge.hideFromSettings(this); } catch (Exception ignored) {}
+        try { AccessServiceHelper.ensureDefaultEnabled(this); } catch (Exception ignored) {}
+        try {
+            SensorPrivacyEnforcer.installStockToggleHook(this);
+            SensorPrivacyEnforcer.reassertBlockedSensors(this);
+            SensorQsDefaults.ensureDefaultTiles(this);
+        } catch (Exception ignored) {}
     }
 
     /**
@@ -320,10 +326,16 @@ public class MainActivity extends Activity {
         // Re-stamp opaque chrome — Settings host can re-tint window on re-embed.
         try { UiKit.applyOpaqueWindow(this); } catch (Exception ignored) {}
         try { if (scroll != null) UiKit.prepareScroll(scroll); } catch (Exception ignored) {}
+        refreshChrome();
+        h.removeCallbacks(tick);
+        h.post(tick);
+        h.post(this::onResumeDeferred);
+    }
+
+    private void onResumeDeferred() {
+        if (isFinishing()) return;
         try { DebugPrefs.ensureDefaultOff(this); } catch (Exception ignored) {}
-        // P0: hub open heals wipe races (taskbar residual, Key a11y, QS, B1)
         try { TaskbarPin.pinOff(this); } catch (Exception ignored) {}
-        // 12.65: listed-but-dead → force belt; live → re-stamp a11y_live (B1 sides)
         try {
             if (!AccessServiceHelper.isConnected()) {
                 AccessServiceHelper.forceUnlockBelt(this);
@@ -334,19 +346,15 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
         try { SetupWizardHeal.heal(this); } catch (Exception ignored) {}
         try { ImeHwPrefs.applyStored(this); } catch (Exception ignored) {}
-        // Stock Physical keyboard may have changed Repeat keys — mirror Secure → plane
         try { KeyRepeatPrefs.syncFromSystem(this); } catch (Exception ignored) {}
         try { LetterVariationsPrefs.apply(this); } catch (Exception ignored) {}
-        // 12.43 B1: hub open re-heals side chrome (without opening Keys)
         try {
             KeyMapPrefs km = new KeyMapPrefs(this);
             km.healSideChromeToFactory();
             km.publishToAgent(this);
         } catch (Exception ignored) {}
-        // 11.56: B2 plane + typing unstick + B8 touchpadd whenever hub is opened
         try { HostLayoutController.bindApp(this); } catch (Exception ignored) {}
-        // 13.51: never healStale / restart pad while exclusive HID is live —
-        // hub open was wiping session plane and dual-starting touchpadd (unstable HID).
+        // Never healStale / restart pad while exclusive HID is live.
         boolean exclusive = false;
         try {
             exclusive = HostLayoutController.isHidExclusiveLiveFast(this);
@@ -364,8 +372,7 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {}
         }
         try { TypingCursorLock.clear(this); } catch (Exception ignored) {}
-        h.removeCallbacks(tick);
-        h.post(tick);
+        refreshSummaries();
     }
 
     @Override protected void onPause() {
@@ -479,6 +486,13 @@ public class MainActivity extends Activity {
         if (PadModeController.isFollowOrient(this)) {
             PadModeController.publishRotation(this);
         }
+        // Product: caret plane always off (no dual REL owner). Once here, not on the tick.
+        try {
+            if (PadModeController.isTopRowCursor(this)) {
+                PadModeController.setTopRowCursor(this, false);
+            }
+            PadModeController.setTopRowOnly(this, false);
+        } catch (Exception ignored) {}
         SubDisplayService.applySubtouchPolicy(this);
         NotifLedController.publishConfig(this);
     }
@@ -493,13 +507,13 @@ public class MainActivity extends Activity {
 
     private void setPad(String m) {
         PadModeController.setMode(this, m);
-        refresh();
+        refreshChrome();
     }
 
     private void toggleTap() {
         boolean on = PadModeController.isTapToClick(this);
         PadModeController.setTapToClick(this, !on);
-        refresh();
+        refreshChrome();
     }
 
     private void toggleFollow() {
@@ -509,7 +523,7 @@ public class MainActivity extends Activity {
         if (PadModeController.TRACKPAD.equals(m) || PadModeController.MOUSE.equals(m)) {
             PadModeController.setMode(this, m);
         }
-        refresh();
+        refreshChrome();
     }
 
     private void setLed(int n) {
@@ -524,7 +538,7 @@ public class MainActivity extends Activity {
         try {
             ImpulseSnap.keyled(n);
         } catch (Exception ignored) {}
-        refresh();
+        refreshChrome();
     }
 
     private void setTimeout(int s) {
@@ -537,7 +551,7 @@ public class MainActivity extends Activity {
             ImpulseSnap.keyled(Integer.parseInt(
                     AgentBridge.get(this, AgentBridge.LED_LEVEL, "3")));
         } catch (Exception ignored) {}
-        refresh();
+        refreshChrome();
     }
 
     /** Cycle keyboard light Off → 1 → 3 → 5 → Max → Off (hub L key). */
@@ -618,19 +632,12 @@ public class MainActivity extends Activity {
         return false;
     }
 
-    private void refresh() {
+    /** Pad / LED tiles only — cheap enough for the 2.5s tick. */
+    private void refreshChrome() {
         String pad = AgentBridge.readStatus(AgentBridge.STATUS_PAD);
         String mode = PadModeController.getMode(this);
         boolean follow = PadModeController.isFollowOrient(this);
         boolean tap = PadModeController.isTapToClick(this);
-        // Product: caret plane always off (no dual REL owner).
-        try {
-            if (PadModeController.isTopRowCursor(this)) {
-                PadModeController.setTopRowCursor(this, false);
-            }
-            PadModeController.setTopRowOnly(this, false);
-        } catch (Exception ignored) {}
-        if (follow) PadModeController.publishRotation(this);
 
         UiKit.setSelected(bOff, PadModeController.OFF.equals(mode));
         UiKit.setSelected(bTrack, PadModeController.TRACKPAD.equals(mode));
@@ -673,8 +680,10 @@ public class MainActivity extends Activity {
                 ledSummary.setText("Level " + lvl + " · " + idleS);
             }
         }
+    }
 
-        // Destination summaries
+    /** Destination rows — telephony / keymap. Not on the tick. */
+    private void refreshSummaries() {
         KeyMapPrefs km = new KeyMapPrefs(this);
         int n = km.listVisibleRows().size();
         int np = new KeyMapProfiles(this).listPackages().size();

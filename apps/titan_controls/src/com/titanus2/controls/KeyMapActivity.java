@@ -196,16 +196,17 @@ public class KeyMapActivity extends Activity {
         addHoldBtn = UiKit.button(root, "Add hold shortcut", this::startAddHoldChord);
 
         setContentView(sc);
-
-        prefs.publishToAgent(this);
-        ensureLayoutDefaults();
-        rebuildAll();
-        // Land focus on Specials so TAB/Enter work without touch.
         if (bLaySpecials != null) {
             bLaySpecials.post(() -> {
                 try { bLaySpecials.requestFocus(); } catch (Exception ignored) {}
             });
         }
+        h.post(() -> {
+            if (isFinishing()) return;
+            try { prefs.publishToAgent(this); } catch (Exception ignored) {}
+            try { ensureLayoutDefaults(); } catch (Exception ignored) {}
+            rebuildAll();
+        });
     }
 
     /**
@@ -394,8 +395,14 @@ public class KeyMapActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        // P0 Key a11y: Keys screen re-assert after wipe / exclusive HID thrash
-        // 12.61: force full belt if listed-but-dead; else ensure + a11y_live reassert
+        KeyCapture.setUiOpen(true);
+        rebuildAll();
+        h.post(tick);
+        h.post(this::onResumeDeferred);
+    }
+
+    private void onResumeDeferred() {
+        if (isFinishing()) return;
         try {
             if (!AccessServiceHelper.isConnected()) {
                 AccessServiceHelper.forceUnlockBelt(this);
@@ -405,19 +412,16 @@ public class KeyMapActivity extends Activity {
             }
         } catch (Exception ignored) {}
         try { TaskbarPin.pinOff(this); } catch (Exception ignored) {}
-        // 12.42 B1: Keys open re-heals side chrome poison (wipe/old agent seed)
         try {
             KeyMapPrefs km = new KeyMapPrefs(this);
             km.healSideChromeToFactory();
             km.publishToAgent(this);
         } catch (Exception ignored) {}
-        // 11.58: B2 plane + typing unstick when opening Keys (side Specials path)
         try { HostLayoutController.bindApp(this); } catch (Exception ignored) {}
         try { HostLayoutController.healStaleHidPlane(this); } catch (Exception ignored) {}
         try { TypingCursorLock.clear(this); } catch (Exception ignored) {}
-        KeyCapture.setUiOpen(true);
-        rebuildAll();
-        h.post(tick);
+        refreshAccess();
+        refreshLayoutLabels();
     }
 
     @Override protected void onPause() {
@@ -432,7 +436,7 @@ public class KeyMapActivity extends Activity {
         @Override public void run() {
             refreshAccess();
             refreshLayoutLabels();
-            h.postDelayed(this, 600);
+            h.postDelayed(this, 1500);
         }
     };
 

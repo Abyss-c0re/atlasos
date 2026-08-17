@@ -4,7 +4,7 @@
     <color name="titan_day_bg">#FFFAFAFA</color>
     <color name="titan_day_text">#FF212121</color>
     <color name="titan_day_muted">#FF616161</color>
-    <color name="titan_day_accent">#FF00897B</color>
+    <color name="titan_day_accent">#FF5F5F5F</color>
     <style name="Theme.Titan.DayNight" parent="@android:style/Theme.DeviceDefault.DayNight">
         <item name="android:windowBackground">@color/titan_day_bg</item>
         <item name="android:colorBackground">@color/titan_day_bg</item>
@@ -13,6 +13,7 @@
         <item name="android:textColorPrimary">@color/titan_day_text</item>
         <item name="android:textColorSecondary">@color/titan_day_muted</item>
         <item name="android:colorAccent">@color/titan_day_accent</item>
+        <item name="android:colorControlActivated">@color/titan_day_accent</item>
         <item name="android:windowIsTranslucent">false</item>
         <item name="android:windowDisablePreview">true</item>
         <item name="android:windowAnimationStyle">@null</item>

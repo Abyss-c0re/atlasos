@@ -2,9 +2,9 @@
 <resources>
     <!-- 15.28: hard night solids. Translucent DeviceDefault bg → scroll ghosts. -->
     <color name="titan_night_bg">#FF121212</color>
-    <color name="titan_night_text">#FFF5F5F5</color>
-    <color name="titan_night_muted">#FFB0B0B0</color>
-    <color name="titan_night_accent">#FF26A69A</color>
+    <color name="titan_night_text">#FFE6E6E6</color>
+    <color name="titan_night_muted">#FF9E9E9E</color>
+    <color name="titan_night_accent">#FF9E9E9E</color>
     <style name="Theme.Titan.DayNight" parent="@android:style/Theme.DeviceDefault.DayNight">
         <item name="android:windowBackground">@color/titan_night_bg</item>
         <item name="android:colorBackground">@color/titan_night_bg</item>
@@ -13,6 +13,7 @@
         <item name="android:textColorPrimary">@color/titan_night_text</item>
         <item name="android:textColorSecondary">@color/titan_night_muted</item>
         <item name="android:colorAccent">@color/titan_night_accent</item>
+        <item name="android:colorControlActivated">@color/titan_night_accent</item>
         <item name="android:windowIsTranslucent">false</item>
         <item name="android:windowDisablePreview">true</item>
         <item name="android:windowAnimationStyle">@null</item>

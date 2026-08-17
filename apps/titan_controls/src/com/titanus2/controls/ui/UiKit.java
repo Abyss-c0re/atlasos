@@ -40,16 +40,17 @@ public final class UiKit {
     public static final int TILE = 0xFF1E1E1E;
     public static final int TILE_ON = 0xFF263238;
     public static final int BORDER = 0xFF424242;
-    public static final int BORDER_ON = 0xFF80CBC4;
+    public static final int BORDER_ON = 0xFF616161;
     /** Resolved at runtime from theme when possible; fallbacks for static fields. */
     public static final int TEXT = 0xFF212121;
-    public static final int TEXT_NIGHT = 0xFFF5F5F5;
+    public static final int TEXT_NIGHT = 0xFFE6E6E6;
     public static final int MUTED = 0xFF757575;
-    public static final int MUTED_NIGHT = 0xFFB0B0B0;
-    public static final int ACCENT = 0xFF26A69A;
-    public static final int LIVE = 0xFF26A69A;
-    public static final int WARN = 0xFFEF5350;
-    public static final int OK = 0xFF66BB6A;
+    public static final int MUTED_NIGHT = 0xFF9E9E9E;
+    /** Grey — never teal/cyan tile fill (PRODUCT_UX: match Settings). */
+    public static final int ACCENT = 0xFF9E9E9E;
+    public static final int LIVE = 0xFF9E9E9E;
+    public static final int WARN = 0xFFC62828;
+    public static final int OK = 0xFF558B2F;
 
     public static final int PAD_H = 14;
     public static final int PAD_V = 8;
@@ -481,23 +482,19 @@ public final class UiKit {
         tile.setTypeface(Typeface.SANS_SERIF, on ? Typeface.BOLD : Typeface.NORMAL);
         Context c = tile.getContext();
         if (on) {
-            // 15.28: solid filled segment — NO stroke (stroke = "odd frames over
-            // elements"). High-contrast text on accent for night visibility.
-            int accent = liveAccent(c);
+            // Selected = raised grey chip + primary text. No teal/cyan fill.
             GradientDrawable chip = new GradientDrawable();
             chip.setShape(GradientDrawable.RECTANGLE);
             chip.setCornerRadius(0f);
-            chip.setColor(accent);
+            chip.setColor(isNight(c) ? 0xFF2C2C2C : 0xFFD6D6D6);
             tile.setBackground(chip);
-            // Dark text on teal reads on both day/night.
-            tile.setTextColor(0xFF00332E);
-        } else {
             tile.setTextColor(textColor(c));
-            // Unselected: solid body + light ripple (no transparent hole).
+        } else {
+            tile.setTextColor(mutedColor(c));
             GradientDrawable idle = new GradientDrawable();
             idle.setShape(GradientDrawable.RECTANGLE);
             idle.setCornerRadius(0f);
-            idle.setColor(isNight(c) ? 0xFF1E1E1E : 0xFFE8E8E8);
+            idle.setColor(isNight(c) ? 0xFF1A1A1A : 0xFFECECEC);
             tile.setBackground(idle);
         }
     }
@@ -560,6 +557,23 @@ public final class UiKit {
         void onChanged(boolean on);
     }
 
+    /** Grey switch — do not inherit OS cyan/teal accent. */
+    private static void tintSwitchMuted(Switch sw, Context ctx) {
+        if (sw == null || ctx == null) return;
+        try {
+            int thumbOn = isNight(ctx) ? 0xFFBDBDBD : 0xFF616161;
+            int thumbOff = isNight(ctx) ? 0xFF757575 : 0xFF9E9E9E;
+            int trackOn = isNight(ctx) ? 0xFF424242 : 0xFFBDBDBD;
+            int trackOff = isNight(ctx) ? 0xFF2A2A2A : 0xFFE0E0E0;
+            int[][] st = new int[][]{
+                new int[]{android.R.attr.state_checked},
+                new int[]{-android.R.attr.state_checked}
+            };
+            sw.setThumbTintList(new ColorStateList(st, new int[]{thumbOn, thumbOff}));
+            sw.setTrackTintList(new ColorStateList(st, new int[]{trackOn, trackOff}));
+        } catch (Exception ignored) {}
+    }
+
     /** Material Switch row — label left, switch right. */
     public static Toggle toggle(LinearLayout root, String label, boolean initial,
                                 BoolListener listener) {
@@ -591,6 +605,7 @@ public final class UiKit {
 
         Switch sw = new Switch(ctx);
         sw.setChecked(initial);
+        tintSwitchMuted(sw, ctx);
         Toggle tgl = new Toggle(row, tv, sw, initial);
         tgl.listener = listener;
         sw.setOnCheckedChangeListener((buttonView, isChecked) -> tgl.apply(isChecked));

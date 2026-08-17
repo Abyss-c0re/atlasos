@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.15 (615) — 2026-08-17T15:36Z
+
+- Hub paints before seed/heal. Grey Settings chrome, no teal chips. Keys lists after first frame.
+
+---
+
 ## 16.14 (614) — 2026-08-17T10:01Z
 
 - Follow-orient: accept Surface rotation 0-3. Stop pad-apply writing 0 over landscape.
