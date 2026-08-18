@@ -356,6 +356,16 @@ if [ -n "$ATLAS_APK" ] && [ -f "$SRC_ATLAS/Android.bp" ]; then
       info "warn: missing Atlas system ELF $elf"
     fi
   done
+  # enterd launcher + init — Android.bp lists these; ELF alone does not start @atlasenter
+  for extra in atlas-enterd.sh atlas-enterd.rc; do
+    src=""
+    for c in "$SRC_ATLAS/$extra" "$ROOT/apps/titan_atlas/assets/bin/$extra"; do
+      [ -f "$c" ] && [ -s "$c" ] && src="$c" && break
+    done
+    [ -n "$src" ] || die "missing Atlas $extra"
+    stage_file "$src" "$DEST_ATLAS/$extra"
+    [ "$DRY" != "1" ] && [ "$extra" = "atlas-enterd.sh" ] && chmod 755 "$DEST_ATLAS/$extra" 2>/dev/null || true
+  done
   # Agent plane helpers (hybrid awareness / screencap nsenter)
   for h in atlas-agent-status.sh atlas-screencap.sh; do
     src=""
