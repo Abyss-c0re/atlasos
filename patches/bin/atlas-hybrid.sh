@@ -477,7 +477,9 @@ atlas_apply_android_dns() {
     /data/local/tmp/atlas-dns/resolv.conf
   do
     ddir=`dirname "$dest" 2>/dev/null`
-    mkdir -p "$ddir" 2>/dev/null || true
+    [ -n "$ddir" ] || continue
+    case "$ddir" in *$'\n'*|*Toybox*) continue ;; esac
+    safe_mkdir_p "$ddir" || continue
     [ -d "$ddir" ] || continue
     # Subshell so shell "can't create" never hits the PTY
     ( printf '%s\n' "$body" >"$dest" ) >/dev/null 2>&1 || true
@@ -904,11 +906,38 @@ umount_overlay() {
   fi
 }
 
+# Refuse mkdir of toybox/help text (empty dirname → junk name in $HOME).
+safe_mkdir_p() {
+  d="$1"
+  [ -n "$d" ] || return 1
+  case "$d" in
+    *$'\n'*|*Toybox*|*usage:*|*multicall*) return 1 ;;
+    .|..|./|../) return 1 ;;
+  esac
+  mkdir -p "$d" 2>/dev/null || return 1
+}
+
+# Drop plane-junk names left by Android dirname/help captured as mkdir.
+drop_hybrid_junk() {
+  for root in \
+    "${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}" \
+    /data/local/atlas-home/atlas \
+    "$MERGE/home/atlas" \
+    "$LP_MNT/home/atlas"
+  do
+    [ -n "$root" ] && [ -d "$root" ] || continue
+    find "$root" -maxdepth 1 \( -name 'Toybox*' -o -name 'usage:*' \) \
+      -exec rm -rf {} + 2>/dev/null || true
+    # Plane status is not user HOME
+    rm -f "$root/ATLAS_STATUS" "$root/ATLAS_PLANE.env" 2>/dev/null || true
+  done
+}
+
 bind_one() {
   src="$1"
   dst="$2"
   [ -e "$src" ] || return 0
-  mkdir -p "$dst" 2>/dev/null || true
+  safe_mkdir_p "$dst" || return 0
   if is_mounted "$dst"; then
     return 0
   fi
@@ -951,7 +980,6 @@ write_android_exec_helpers() {
   # Native wrap (same-name Android peers). Prefer /system/bin, then assets.
   _wrap=
   for w in /system/bin/atlas-android \
-    /data/data/com.titanus2.atlas/files/bin/atlas-android \
     "$d/atlas-android"; do
     [ -x "$w" ] && _wrap=$w && break
   done
@@ -1323,6 +1351,7 @@ bind_android() {
   is_mounted "$MERGE" || mount_overlay || return 1
   unbind_android_os_over_debian
   drop_user_home_promoted_to_usr
+  drop_hybrid_junk
 
   bind_one /dev "$MERGE/dev"
   # pts: NEVER inherit host ptmxmode=000 (dead Deb PTY / "broken debian").
@@ -1350,14 +1379,8 @@ bind_android() {
     # NEVER bind_rbind full /data → nests $ROOT inside merge (merge/data/local/atlas-hybrid/…)
     # and shadows Debian usrmerge (bin→usr/bin gone → "bin fail" / hybrid-down).
     # Bind only app + tmp planes Deb needs.
-    mkdir -p "$MERGE/data/data" "$MERGE/data/user/0" "$MERGE/data/local/tmp" \
-      "$MERGE/data/misc" 2>/dev/null || true
-    if [ -d /data/data/com.titanus2.atlas ]; then
-      bind_rbind /data/data/com.titanus2.atlas "$MERGE/data/data/com.titanus2.atlas"
-    fi
-    if [ -d /data/user/0/com.titanus2.atlas ]; then
-      bind_rbind /data/user/0/com.titanus2.atlas "$MERGE/data/user/0/com.titanus2.atlas"
-    fi
+    # Debian does not see Atlas CE. App wipe is not the Deb plane.
+    mkdir -p "$MERGE/data/local/tmp" "$MERGE/data/misc" 2>/dev/null || true
     if [ -d /data/local/tmp ]; then
       bind_one /data/local/tmp "$MERGE/data/local/tmp"
     fi
@@ -1411,9 +1434,7 @@ bind_android() {
     bind_one /proc "$MERGE/proc"
     bind_one /sys "$MERGE/sys"
     bind_android_os
-    mkdir -p "$MERGE/data/data/com.titanus2.atlas" "$MERGE/data/local/tmp" 2>/dev/null || true
-    [ -d /data/data/com.titanus2.atlas ] && \
-      bind_rbind /data/data/com.titanus2.atlas "$MERGE/data/data/com.titanus2.atlas"
+    mkdir -p "$MERGE/data/local/tmp" 2>/dev/null || true
     [ -d /data/local/tmp ] && bind_one /data/local/tmp "$MERGE/data/local/tmp"
   fi
   if [ ! -x "$MERGE/bin/bash" ] && [ ! -x "$MERGE/usr/bin/bash" ]; then
@@ -1572,7 +1593,8 @@ ensure_agent_elevate_gates() {
     "$MERGE/atlas-bin/sudo" "$MERGE/atlas-bin/su"
   do
     dir=`dirname "$dest"`
-    mkdir -p "$dir" 2>/dev/null || true
+    case "$dir" in ''|*$'\n'*|*Toybox*) continue ;; esac
+    safe_mkdir_p "$dir" || continue
     cat >"$dest" <<EOF
 #!/bin/sh
 # Atlas elevate gate → agent client (biometrics) → real setuid elevate
@@ -1709,13 +1731,10 @@ EOF
 # Not product-specific: any tool dropped under these dirs is on PATH in hybrid.
 # /data is bound into merge, so $HOME paths resolve live — links are for /atlas-bin peers.
 user_home_candidates() {
-  # Prefer product linux home (Deb curl installs), then ATLAS_HOME, then CE files
   for h in \
     "${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}" \
     /home/atlas \
-    "${ATLAS_HOME:-}" \
-    /data/data/com.titanus2.atlas/files \
-    /data/user/0/com.titanus2.atlas/files
+    /data/local/atlas-home/atlas
   do
     [ -n "$h" ] && [ -d "$h" ] && echo "$h" && return 0
   done
@@ -3310,7 +3329,9 @@ cmd_ensure() {
     unset ATLAS_FORCE_FSCK
     rm -f /data/local/tmp/atlas-hybrid-need-fsck 2>/dev/null || true
     heal_merge_essentials 2>/dev/null || true
-    if [ ! -x "$MERGE/system/bin/sh" ] && [ ! -d "$MERGE/system/bin" ]; then
+    # Never treat missing Android /system/bin as a reason to re-bind.
+    # Debian bash on merge is the enterable plane.
+    if [ ! -x "$MERGE/bin/bash" ] && [ ! -x "$MERGE/usr/bin/bash" ]; then
       bind_android 2>/dev/null || true
     fi
     heal_wipe_first_boot_perms 2>/dev/null || true

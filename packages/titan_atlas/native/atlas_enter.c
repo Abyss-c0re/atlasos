@@ -149,7 +149,14 @@ static int local_root_enter(uid_t drop, const char *home, int do_ensure) {
   setenv("LOGNAME", "atlas", 1);
   setenv("PS1", "debian:atlas:\\w\\$ ", 1);
   setenv("TERM", "xterm-256color", 1);
+  setenv("PATH",
+         "/home/atlas/bin:/home/atlas/.local/bin:"
+         "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+         1);
   unsetenv("LD_LIBRARY_PATH");
+  unsetenv("LD_PRELOAD");
+  unsetenv("ANDROID_ROOT");
+  unsetenv("ANDROID_DATA");
   if (setgid(drop) != 0 || setuid(drop) != 0) die(77, "drop failed");
   if (geteuid() == 0) die(77, "still root");
   const char *sh = access("/bin/bash", X_OK) == 0 ? "/bin/bash" : "/bin/sh";

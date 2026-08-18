@@ -773,48 +773,21 @@ log "dev_action=$act0"
       _remote_adb_dispatch apply
       ;;
     enterd_reload|atlas_enterd_reload|reload_enterd)
-      # Rootless tip: sole atlas-enterd = tip ELF (multi-listen abstract+TCP).
-      # Dual system+tip left Deb ENTER on abstract (old) + elevate on TCP — broken.
-      TIP=/data/local/tmp/atlas-enterd-tip
+      # ROM daemon only. Tip ELF is heresy (killed Deb → Atlas toybox fallback).
+      rm -f /data/local/tmp/atlas-enterd-tip /data/local/tmp/atlas-enterd-reload-request 2>/dev/null || true
       SYS=/system/bin/atlas-enterd
-      ED=$SYS
-      [ -x "$TIP" ] && ED=$TIP
-      if [ ! -x "$ED" ]; then
-        log "enterd_reload missing bin tip=$TIP sys=$SYS"
+      if [ ! -x "$SYS" ]; then
+        log "enterd_reload missing $SYS"
         exit 1
       fi
-      setprop ctl.stop atlas-enterd 2>/dev/null || true
-      # multi-pass kill: system service reparents / watch restarts under heat
-      _k=0
-      while [ "$_k" -lt 8 ]; do
-        for p in `pidof atlas-enterd 2>/dev/null`; do
-          kill -9 "$p" 2>/dev/null || true
-        done
-        # tip path basename may be atlas-enterd-tip
-        for p in `pidof atlas-enterd-tip 2>/dev/null`; do
-          kill -9 "$p" 2>/dev/null || true
-        done
-        sleep 0.15
-        _k=$((_k + 1))
-      done
-      sleep 0.2
-      "$ED" >>/data/local/tmp/atlas-enterd.log 2>&1 &
-      sleep 0.5
-      # prune any system enterd that raced back (keep tip only)
-      for p in `pidof atlas-enterd 2>/dev/null`; do
-        exe=`readlink /proc/$p/exe 2>/dev/null` || continue
-        case "$exe" in
-          *atlas-enterd-tip*) ;;
-          *) kill -9 "$p" 2>/dev/null || true ;;
-        esac
-      done
-      if pidof atlas-enterd >/dev/null 2>&1 || pidof atlas-enterd-tip >/dev/null 2>&1; then
-        log "enterd_reload OK ed=$ED"
-        echo "enterd_reload ok ed=$ED" >"$ST/titan2_enterd_reload_status" 2>/dev/null || true
+      setprop ctl.start atlas-enterd 2>/dev/null || true
+      sleep 0.3
+      if pidof atlas-enterd >/dev/null 2>&1; then
+        log "enterd_reload OK ed=$SYS"
+        echo "enterd_reload ok ed=$SYS" >"$ST/titan2_enterd_reload_status" 2>/dev/null || true
       else
-        log "enterd_reload FAIL ed=$ED"
-        echo "enterd_reload fail ed=$ED" >"$ST/titan2_enterd_reload_status" 2>/dev/null || true
-        setprop ctl.start atlas-enterd 2>/dev/null || true
+        log "enterd_reload FAIL ed=$SYS"
+        echo "enterd_reload fail ed=$SYS" >"$ST/titan2_enterd_reload_status" 2>/dev/null || true
         exit 1
       fi
       chmod 666 "$ST/titan2_enterd_reload_status" 2>/dev/null || true

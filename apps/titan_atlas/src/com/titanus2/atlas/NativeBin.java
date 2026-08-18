@@ -486,18 +486,23 @@ public final class NativeBin {
                 + "not Deb: screencap screenshot am pm\n"
                 + "policy: /var/lib/atlas-auth/policy\n"
                 + "reports: $HOME/reports/\n";
-        writeText(new File(home, "ATLAS_STATUS"), body);
-        writeText(new File(home, "ATLAS_PLANE.env"),
+        /* Plane files are not user HOME. Never write them into linux home. */
+        writeText(new File("/data/local/tmp/ATLAS_STATUS"), body);
+        writeText(new File("/data/local/tmp/ATLAS_PLANE.env"),
             "ATLAS_PLANE=" + plane + "\n"
                 + "ATLAS_MODE=" + mode + "\n"
                 + "ATLAS_HYBRID=" + (hybrid ? "1" : "0") + "\n"
                 + "ATLAS_SESSION=" + (hybrid ? "hybrid" : "atlas") + "\n"
-                + "HOME=" + homePath + "\n"
-                + "ATLAS_HOME=" + homePath + "\n"
+                + "HOME=" + NativeBin.LINUX_HOME + "\n"
+                + "ATLAS_HOME=" + NativeBin.LINUX_HOME + "\n"
                 + "ATLAS_BIN=" + binPath + "\n");
-        // Best-effort plane file (no su on main thread — hybrid enter writes as root)
         try {
             writeText(new File("/data/local/tmp/titan2_atlas_mode"), mode);
+        } catch (Exception ignored) {
+        }
+        /* Android app CE may keep a copy. Linux HOME must stay user files only. */
+        try {
+            writeText(new File(home, "ATLAS_STATUS"), body);
         } catch (Exception ignored) {
         }
     }
@@ -1083,7 +1088,7 @@ public final class NativeBin {
             "atlas_user_path() {\n"
                 + "  _p=\"\"\n"
                 + "  for _h in \"${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}\" "
-                + "\"${HOME:-}\" \"" + homePath + "\"; do\n"
+                + "\"${HOME:-}\"; do\n"
                 + "    [ -n \"$_h\" ] && [ -d \"$_h\" ] || continue\n"
                 + "    [ -d \"$_h/bin\" ] && _p=\"${_p:+$_p:}$_h/bin\"\n"
                 + "    [ -d \"$_h/.local/bin\" ] && _p=\"${_p:+$_p:}$_h/.local/bin\"\n"
@@ -1095,10 +1100,14 @@ public final class NativeBin {
                 + "  done\n"
                 + "  echo \"$_p\"\n"
                 + "}\n"
-                + "_UP=$(atlas_user_path)\n"
-                + "export PATH=\"${_UP:+$_UP:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:"
-                + "/sbin:/bin:/atlas-bin:/system/bin:/system_ext/bin:/product/bin:"
+                + "_UP=$(atlas_user_path)\n";
+        String pathAndroid = pathHelper
+                + "export PATH=\"${_UP:+$_UP:}/system/bin:/system_ext/bin:/product/bin:"
                 + "/system/xbin:/vendor/bin\"\n";
+        String pathDebian = pathHelper
+                + "# Debian + user only. Android /system on this PATH is heresy.\n"
+                + "export PATH=\"${_UP:+$_UP:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:"
+                + "/sbin:/bin\"\n";
         String body =
             "# Atlas auto PATH — do not remove (regenerated)\n"
                 + "# Universal: any curl install under $HOME/bin, .local/bin, or .*/bin → PATH\n"
@@ -1112,13 +1121,13 @@ public final class NativeBin {
                 + "export TERM=\"${TERM:-xterm-256color}\"\n"
                 + "export LANG=\"${LANG:-C.UTF-8}\"\n"
                 + "export COLORTERM=\"${COLORTERM:-truecolor}\"\n"
-                + pathHelper
+                + pathAndroid
                 + "mkdir -p \"$HOME/bin\" \"$HOME/.local/bin\" 2>/dev/null || true\n"
                 + "mkdir -p \"$ATLAS_LINUX_HOME/bin\" \"$ATLAS_LINUX_HOME/.local/bin\" "
                 + "2>/dev/null || true\n"
                 + "cd \"$HOME\" 2>/dev/null || true\n";
         writeText(new File(home, ".profile"), body);
-        // Deb plane profile (linux home) — same PATH helper, HOME = linux home
+        // Deb plane profile — linux home, Debian PATH only
         String bodyLinux =
             "# Atlas linux-home PATH (Deb plane) — regenerated\n"
                 + "export ATLAS_LINUX_HOME=\"" + linuxHomePath + "\"\n"
@@ -1128,7 +1137,7 @@ public final class NativeBin {
                 + "export ATLAS_AUTH_DIR=/var/lib/atlas-auth\n"
                 + "export ATLAS_AUTH_ON_LP=" + AUTH_ON_LP + "\n"
                 + "export NANOBOT_HOME=\"" + NANOBOT_HOME + "\"\n"
-                + pathHelper
+                + pathDebian
                 + "mkdir -p \"$HOME/bin\" \"$HOME/.local/bin\" 2>/dev/null || true\n"
                 + "cd \"$HOME\" 2>/dev/null || true\n";
         writeText(new File(lh, ".profile"), bodyLinux);

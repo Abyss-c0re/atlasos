@@ -36,7 +36,7 @@ CC="$TOOLCHAIN/bin/aarch64-linux-android${API}-clang"
 # Product package version (UI/tools). enterd has its own peel string — never stomp it
 # with 1.0.0 (lab 2026-08-13: VER=1.0.0 overwrote 1.2.4-enter-fast in product ship).
 VER="${ATLAS_VERSION:-1.0.0}"
-ENTERD_VER="${ATLAS_ENTERD_VERSION:-1.2.9-agent}"
+ENTERD_VER="${ATLAS_ENTERD_VERSION:-1.2.10-plane}"
 LPCTL_VER="${ATLAS_LPCTL_VERSION:-1.0.1-wipe-home}"
 echo "CC=$CC VER=$VER ENTERD_VER=$ENTERD_VER LPCTL_VER=$LPCTL_VER"
 

@@ -455,9 +455,9 @@ static void handle_elevate(int csock, uid_t peer, char *line) {
     {
       char path[1024];
       if (do_chroot) {
+        /* Debian PATH only. Android bins on this PATH is the toybox heresy. */
         snprintf(path, sizeof(path),
-                 "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:"
-                 "/system/bin:/system_ext/bin:/product/bin:/system/xbin:/vendor/bin");
+                 "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
       } else {
         snprintf(path, sizeof(path),
                  "/system/bin:/system_ext/bin:/product/bin:/system/xbin:/vendor/bin:"

@@ -5,10 +5,10 @@ set -f
 export PATH="/system/bin:/system/xbin:/system_ext/bin:/product/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 HOME="${HOME:-$ATLAS_HOME}"
-[ -z "$HOME" ] && HOME=/data/user/0/com.titanus2.atlas/files
+[ -z "$HOME" ] && HOME=/data/local/atlas-home/atlas
 OUT="${1:-}"
-# default: stdout + refresh $HOME/ATLAS_STATUS + /data/local/tmp
-ST_HOME="$HOME/ATLAS_STATUS"
+# Plane status is not user HOME.
+ST_HOME=/data/local/tmp/ATLAS_STATUS
 ST_TMP=/data/local/tmp/atlas_status.txt
 mkdir -p "$HOME/reports" 2>/dev/null || true
 
