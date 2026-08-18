@@ -49,6 +49,8 @@ PRODUCT_PACKAGES += \
     atlas-auth-askpass \
     atlas-enter \
     atlas-enterd \
+    atlas-enterd.sh \
+    atlas-enterd.rc \
     atlas-android \
     atlas-lpctl \
     atlas-agent-status \
@@ -119,7 +121,10 @@ PRODUCT_SYSTEM_PROPERTIES += \
     ro.titanus2.maintainer=Abyss-c0re \
     ro.atlasos.brand=AtlasOS \
     ro.atlasos.version=23.2 \
-    persist.sys.titan2.tether_ipv4=192.168.6.1/24
+    persist.sys.titan2.tether_ipv4=192.168.6.1/24 \
+    persist.sys.phh.include_all_cameras=true \
+    camera.aux.packagelist=org.lineageos.aperture,org.lineageos.aperture.lenslauncher \
+    vendor.camera.aux.packagelist=org.lineageos.aperture,org.lineageos.aperture.lenslauncher
 
 # Dated display id (AtlasOS-23.2-YYYYMMDD) — only here, never also in this file.
 -include device/phh/treble/atlasos_stamp.mk

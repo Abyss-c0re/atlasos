@@ -106,6 +106,19 @@ cc_prebuilt_binary {
     },
 }
 
+// Init launcher + rc — ELF alone does not start @atlasenter (T2138Z exit 79).
+sh_binary {
+    name: "atlas-enterd.sh",
+    src: "atlas-enterd.sh",
+}
+
+prebuilt_etc {
+    name: "atlas-enterd.rc",
+    src: "atlas-enterd.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}
+
 cc_prebuilt_binary {
     name: "atlas-android",
     srcs: ["atlas-android"],

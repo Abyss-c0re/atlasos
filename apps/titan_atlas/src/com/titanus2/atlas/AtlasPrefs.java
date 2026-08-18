@@ -123,14 +123,31 @@ public final class AtlasPrefs {
     }
 
     /**
-     * When true, new sessions prefer Debian hybrid plane (if enterable).
-     * Default <b>false</b> — product rootless-first: Android shell works without
-     * app su. Deb is opt-in (Settings / And↔Deb). System init may prepare mounts
-     * (not Deb session autostart). Kernel may stay rooted on lab; app must not
-     * require Superuser for open.
+     * When true, new sessions prefer Debian hybrid (if enterable).
+     * Clear-data wipes this pref. Missing key + surviving Deb / product ROM
+     * means ON — CE wipe must not look like Deb died.
+     * Stored false is an explicit opt-out and is honored.
      */
     public static boolean privilegedHybrid(Context c) {
-        return p(c).getBoolean("privileged_hybrid", false);
+        SharedPreferences sp = p(c);
+        if (!sp.contains("privileged_hybrid")) {
+            return NativeBin.debianRootPresent() || NativeBin.productHybridRom();
+        }
+        return sp.getBoolean("privileged_hybrid", false);
+    }
+
+    /**
+     * After Atlas Clear data: persist hybrid ON when Debian or the product
+     * ROM is still there so Settings and boot-kick match the live plane.
+     * No-op if the user already chose this CE lifetime.
+     */
+    public static boolean restoreHybridAfterCeWipe(Context c) {
+        SharedPreferences sp = p(c);
+        if (sp.contains("privileged_hybrid")) return false;
+        boolean on = NativeBin.debianRootPresent() || NativeBin.productHybridRom();
+        if (!on) return false;
+        sp.edit().putBoolean("privileged_hybrid", true).apply();
+        return true;
     }
 
     public static void setPrivilegedHybrid(Context c, boolean on) {

@@ -530,6 +530,23 @@ if [ "$want_hybrid" = "1" ]; then
         ;;
     esac
     export ATLAS_LINUX_HOME="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
+    # Overlay up is not Deb enter — atlas-enterd must listen first.
+    enterd_up() {
+      [ -S /data/local/tmp/atlas-enter.sock ] || [ -S /dev/socket/atlasenter ]
+    }
+    if ! enterd_up; then
+      setprop sys.atlas.enterd 1 2>/dev/null || true
+      setprop ctl.start atlas-enterd 2>/dev/null || true
+      setprop ctl.start atlas-hybrid-watch 2>/dev/null || true
+      setprop sys.atlas.hybrid 1 2>/dev/null || true
+      touch /data/local/tmp/atlas-enterd-reload-request 2>/dev/null || true
+      i=0
+      while [ "$i" -lt 20 ]; do
+        enterd_up && break
+        i=$((i + 1))
+        sleep 0.1
+      done
+    fi
     # --ensure once if still cold; enterd binds /home/atlas + user PATH
     if hybrid_ready; then
       exec "$ENTER" --uid "$DROP_UID" --home "$HOME" --no-ensure --

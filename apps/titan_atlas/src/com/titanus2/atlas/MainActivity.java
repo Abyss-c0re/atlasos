@@ -655,11 +655,52 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         }
 
         if (SessionHub.MODE_DEBIAN.equals(next) && !HybridEnsure.canEnterDeb()) {
-            SessionHub.setModeAt(i, SessionHub.MODE_ANDROID);
-            toast("Deb needs /system/bin/atlas-enter");
-            updateShellModeButton();
-            updateStrip("no-enter");
-            shellSwitchInFlight = false;
+            HybridEnsure.requestEnterd();
+            toast("starting enterd…");
+            updateStrip("enterd↓");
+            final int sessionIdxDown = i;
+            if (termView != null) {
+                termView.postDelayed(() -> {
+                    if (HybridEnsure.canEnterDeb()) {
+                        toast("→ Deb");
+                        shellSwitchInFlight = true;
+                        List<TerminalSession> sessions = SessionHub.sessions();
+                        if (sessionIdxDown >= 0 && sessionIdxDown < sessions.size()) {
+                            TerminalSession old = sessions.get(sessionIdxDown);
+                            if (old != null) {
+                                try { old.finishIfRunning(); } catch (Exception ignored) {}
+                            }
+                            try {
+                                TerminalSession s = createSession(SessionHub.MODE_DEBIAN);
+                                if (s != null) {
+                                    SessionHub.setSessionAt(sessionIdxDown, s);
+                                    attachVisibleSession();
+                                    updateStrip("switched");
+                                } else {
+                                    updateStrip("switch failed");
+                                }
+                            } finally {
+                                shellSwitchInFlight = false;
+                                updateShellModeButton();
+                            }
+                        } else {
+                            shellSwitchInFlight = false;
+                        }
+                    } else {
+                        SessionHub.setModeAt(sessionIdxDown, SessionHub.MODE_ANDROID);
+                        toast("enterd down — @atlasenter");
+                        updateStrip("enterd↓");
+                        updateShellModeButton();
+                        shellSwitchInFlight = false;
+                    }
+                }, 900);
+            } else {
+                SessionHub.setModeAt(i, SessionHub.MODE_ANDROID);
+                toast("enterd down — @atlasenter");
+                updateShellModeButton();
+                updateStrip("enterd↓");
+                shellSwitchInFlight = false;
+            }
             return;
         }
 
@@ -862,11 +903,12 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
                 startHybridReadyPoll();
             }
         } else if (wantDeb && hybridReady && !HybridEnsure.canEnterDeb()) {
+            HybridEnsure.requestEnterd();
             wantDeb = false;
             shellMode = SessionHub.MODE_ANDROID;
             strip.setText(AtlasUi.statusLine("ANDROID",
                 SessionHub.sessions().size() + 1,
-                SessionHub.sessions().size() + 1, null, "no-enter"));
+                SessionHub.sessions().size() + 1, null, "enterd↓"));
             strip.setTextColor(AtlasUi.chromeOnTerm(this));
         } else if (wantDeb && hybridReady) {
             androidFallbackPending = false;
@@ -874,11 +916,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         // Recompute after rootless fallback (must not keep hybrid env after wantDeb cleared)
         priv = wantDeb;
         hybridReady = NativeBin.hybridRootfsReady();
-        // LAW: auth on super LP (survives wipe). Heal before PTY env is fixed.
-        try {
-            NativeBin.healAuthDir(this);
-        } catch (Exception ignored) {
-        }
+        // Auth dir chmod only (no lpctl). Mount is AtlasApp background.
         File authLp = NativeBin.authDirLp();
         // Deb HOME = product linux home (not app CE — chdir denied after hybrid enter).
         // Android plane keeps CE files for app state.

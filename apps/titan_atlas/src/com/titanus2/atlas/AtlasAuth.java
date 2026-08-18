@@ -38,7 +38,8 @@ public final class AtlasAuth {
     private AtlasAuth() {}
 
     public static File authDir(Context c) {
-        NativeBin.ensureAuthPlaneOnLp(c);
+        // Never mount LP here — atlas-lpctl waitFor ANRs the splash if
+        // called from Application/Activity onCreate on the main thread.
         File d = NativeBin.authDirLp();
         //noinspection ResultOfMethodCallIgnored
         d.mkdirs();

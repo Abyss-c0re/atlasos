@@ -73,8 +73,9 @@ public final class SessionHub {
 
     /**
      * Default mode for a new session.
-     * Product: Android unless user opted into Deb <b>and</b> hybrid plane is ready.
-     * Never open Deb-by-default when overlay is down (rootless first-open).
+     * Product: Debian when hybrid is on <b>and</b> the plane is ready
+     * (including after Atlas Clear data — prefs restore from surviving Deb).
+     * Never open Deb-by-default when overlay is down.
      */
     public static String defaultModeFromPrefs(boolean privilegedHybrid) {
         if (!privilegedHybrid) return MODE_ANDROID;

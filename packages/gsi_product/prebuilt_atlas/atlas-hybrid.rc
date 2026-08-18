@@ -13,14 +13,24 @@ service atlas-hybrid-boot /system/bin/sh /system/bin/atlas-hybrid-boot.sh
     oneshot
     disabled
 
+# Keep atlas-enterd up even when atlas-enterd.rc is missing from the image.
+service atlas-hybrid-watch /system/bin/sh /system/bin/atlas-hybrid-watch.sh
+    class late_start
+    user root
+    group root system
+    disabled
+
 on property:sys.boot_completed=1
     start atlas-hybrid-boot
+    start atlas-hybrid-watch
 
 # App / tip / delayed boot re-request ensure without full reboot
 on property:sys.atlas.hybrid=1
     start atlas-hybrid-boot
+    start atlas-hybrid-watch
     setprop sys.atlas.hybrid 0
 
 # After first unlock some GSIs expose mapper late — second kick when user_0 appears
 on property:sys.user.0.ce_available=1
     start atlas-hybrid-boot
+    start atlas-hybrid-watch

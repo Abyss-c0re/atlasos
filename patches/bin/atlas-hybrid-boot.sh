@@ -116,7 +116,8 @@ chmod 644 "$LOG" 2>/dev/null || true
   }
   mount_atlas_linux_lp || true
 
-  # App may leave ensure-request after unlock; dirty flag after crash.
+  # App may leave ensure-request after unlock, Atlas Clear data, or crash.
+  # CE wipe must remount surviving Deb — never bootstrap / mke2fs.
   if [ -f /data/local/tmp/atlas-hybrid-need-fsck ] \
     || [ -f /data/local/tmp/atlas-hybrid-ensure-request ]; then
     export ATLAS_FORCE_FSCK=1
@@ -249,6 +250,40 @@ chmod 644 "$LOG" 2>/dev/null || true
   ) >/dev/null 2>&1 &
   echo "=== $(date) atlas-hybrid-boot done ok=$ok ==="
 } >>"$LOG" 2>&1 || true
+
+# Deb enter: overlay up is not enough — atlas-enterd must listen @atlasenter.
+# T2138Z shipped the ELF without atlas-enterd.rc; Deb tap then died exit 79.
+start_enterd() {
+  if pidof atlas-enterd >/dev/null 2>&1 \
+    || pidof atlas-enterd-tip >/dev/null 2>&1; then
+    echo "=== $(date) enterd already live ===" >>"$LOG" 2>/dev/null || true
+    return 0
+  fi
+  if [ -x /system/bin/atlas-hybrid-watch.sh ] \
+    && ! pidof atlas-hybrid-watch.sh >/dev/null 2>&1; then
+    echo "=== $(date) start atlas-hybrid-watch ===" >>"$LOG" 2>/dev/null || true
+    /system/bin/sh /system/bin/atlas-hybrid-watch.sh \
+      >>/data/local/tmp/atlas-hybrid-watch.log 2>&1 &
+    sleep 0.4
+  fi
+  if pidof atlas-enterd >/dev/null 2>&1 \
+    || pidof atlas-enterd-tip >/dev/null 2>&1; then
+    echo "=== $(date) enterd live via watch ===" >>"$LOG" 2>/dev/null || true
+    return 0
+  fi
+  if [ -x /system/bin/atlas-enterd.sh ]; then
+    /system/bin/atlas-enterd.sh >>/data/local/tmp/atlas-enterd.log 2>&1 &
+  elif [ -x /system/bin/atlas-enterd ]; then
+    /system/bin/atlas-enterd >>/data/local/tmp/atlas-enterd.log 2>&1 &
+  else
+    echo "=== $(date) no atlas-enterd ELF ===" >>"$LOG" 2>/dev/null || true
+    return 1
+  fi
+  sleep 0.3
+  echo "=== $(date) enterd pids=$(pidof atlas-enterd 2>/dev/null) ===" \
+    >>"$LOG" 2>/dev/null || true
+}
+start_enterd
 
 # Second-chance: if not ready, schedule one re-trigger via property (rc listens).
 # Avoid infinite loop — only once per boot via stamp.

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.atlas"
-    android:versionCode="142"
-    android:versionName="1.0.15-dpi-keep">
+    android:versionCode="147"
+    android:versionName="1.0.19-wipe-survive">
 
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
 

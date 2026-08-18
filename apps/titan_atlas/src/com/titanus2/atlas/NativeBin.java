@@ -84,28 +84,24 @@ public final class NativeBin {
             "/system/bin/atlas-lpctl mount",
         };
         for (String line : cmds) {
-            try {
-                Process p = new ProcessBuilder("sh", "-c", line)
-                    .redirectErrorStream(true).start();
-                p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS);
-            } catch (Exception ignored) {
-            }
+            runTimed(line.split(" "), 4);
             if (auth.isDirectory()) return;
         }
-        // hybrid script may mount LP
+        runTimed(new String[] { "/system/bin/sh", "/system/bin/atlas-hybrid.sh", "mount" }, 6);
+        runTimed(new String[] { "/system/bin/atlas-lpctl", "auth-ensure" }, 4);
+    }
+
+    private static void runTimed(String[] cmd, int timeoutSec) {
+        Process p = null;
         try {
-            Process p = new ProcessBuilder(
-                "/system/bin/sh", "/system/bin/atlas-hybrid.sh", "mount")
-                .redirectErrorStream(true).start();
-            p.waitFor(20, java.util.concurrent.TimeUnit.SECONDS);
+            p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+            if (!p.waitFor(timeoutSec, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+            }
         } catch (Exception ignored) {
-        }
-        try {
-            Process p = new ProcessBuilder(
-                "/system/bin/atlas-lpctl", "auth-ensure")
-                .redirectErrorStream(true).start();
-            p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception ignored) {
+            if (p != null) {
+                try { p.destroyForcibly(); } catch (Exception ignored2) {}
+            }
         }
     }
 
@@ -585,6 +581,46 @@ public final class NativeBin {
     }
 
     /**
+     * Debian root still on disk after Atlas CE wipe (Clear data).
+     * Overlay may be down; lower / LP identity is enough to restore Deb.
+     */
+    public static boolean debianRootPresent() {
+        for (String p : new String[] {
+            "/data/local/atlas-hybrid/merge/etc/os-release",
+            "/data/local/atlas-hybrid/lower/etc/os-release",
+            "/data/local/atlas-linux/etc/os-release",
+            "/data/local/atlas-hybrid/merge/etc/debian_version",
+            "/data/local/atlas-hybrid/lower/etc/debian_version",
+            "/data/local/atlas-linux/etc/debian_version",
+        }) {
+            File f = new File(p);
+            if (f.isFile() && f.length() > 0) return true;
+        }
+        File ready = new File("/data/local/tmp/atlas_hybrid.ready");
+        if (ready.isFile()) {
+            try {
+                java.io.BufferedReader br = new java.io.BufferedReader(
+                    new java.io.FileReader(ready));
+                try {
+                    String line = br.readLine();
+                    if (line != null && "1".equals(line.trim())) return true;
+                } finally {
+                    br.close();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return hybridOverlayMounted();
+    }
+
+    /** Product ROM ships atlas-hybrid / enterd — Deb is the product plane. */
+    public static boolean productHybridRom() {
+        return new File("/system/bin/atlas-hybrid.sh").isFile()
+            || new File("/system/bin/atlas-enterd").isFile()
+            || new File("/system/bin/atlas-enter").isFile();
+    }
+
+    /**
      * True if Debian plane is mounted for enter.
      * Product: overlay (legacy loop) <b>or</b> bind/ext4 of super {@code atlas_linux}
      * at merge / {@code /data/local/atlas-linux}.
@@ -890,7 +926,8 @@ public final class NativeBin {
      * req/ok/fail (same plane). Wipe-surviving.
      */
     public static void healAuthDir(Context c) {
-        ensureAuthPlaneOnLp(c);
+        // Never mount/lpctl here — createSession runs this on the UI thread
+        // and waitFor ANRs Atlas when the user taps Deb.
         File dir = authDirLp();
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();

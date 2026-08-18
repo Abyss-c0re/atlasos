@@ -171,8 +171,23 @@ bring_up_from_lp() {
   lp_dev_present || return 1
   lp_try_mount || return 1
   lp_root_ready || {
-    log "LP mounted but empty debian — leave for seed path"
-    return 1
+    seed=`find_rootfs_tarball`
+    if [ "${ATLAS_AUTO_BOOTSTRAP:-1}" = "1" ] && [ -n "$seed" ]; then
+      log "LP mounted but empty — extract seed onto atlas_linux (wipe-survive rehydrate)"
+      log "seed=$seed"
+      if tar -C "$LP_MNT" -xzf "$seed" 2>/dev/null \
+        || tar -C "$LP_MNT" -xf "$seed" 2>/dev/null; then
+        mkdir -p "$LP_MNT/var/lib/atlas-auth" 2>/dev/null || true
+        chmod 0777 "$LP_MNT/var/lib/atlas-auth" 2>/dev/null || true
+      else
+        log "LP seed extract failed"
+        return 1
+      fi
+    fi
+    lp_root_ready || {
+      log "LP mounted but empty debian — leave for seed path"
+      return 1
+    }
   }
 
   # Leave legacy loop offline so enterd uses LP merge

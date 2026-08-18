@@ -86,20 +86,56 @@ public final class HybridEnsure {
     }
 
     /**
-     * Product Deb enter path: atlas-enter client + atlas-enterd (init root).
-     * Prefer live socket; fall back to binaries present (daemon starts at boot).
+     * True only when atlas-enterd is listening.
+     * ELF presence is not the Deb plane — T2138Z shipped enterd without init
+     * and Deb tap died exit 79 (cannot connect @atlasenter).
      */
-    public static boolean systemEnterAvailable() {
+    public static boolean enterdListening() {
         try {
             if (new File("/data/local/tmp/atlas-enter.sock").exists()) return true;
             if (new File("/dev/socket/atlasenter").exists()) return true;
-            File client = new File("/system/bin/atlas-enter");
-            File daemon = new File("/system/bin/atlas-enterd");
-            return client.isFile() && client.canExecute()
-                && daemon.isFile() && daemon.canExecute();
-        } catch (Exception e) {
-            return false;
+        } catch (Exception ignored) {
         }
+        return false;
+    }
+
+    /**
+     * Product Deb enter path: live atlas-enterd socket only.
+     */
+    public static boolean systemEnterAvailable() {
+        return enterdListening();
+    }
+
+    /** Ask init / watch to start atlas-enterd (rootless UI bridge). */
+    public static boolean requestEnterd() {
+        try {
+            java.io.FileWriter w = new java.io.FileWriter(
+                "/data/local/tmp/atlas-enterd-reload-request", false);
+            w.write("ts=" + System.currentTimeMillis() + " src=app\n");
+            w.close();
+        } catch (Exception ignored) {
+        }
+        try {
+            new ProcessBuilder("/system/bin/setprop", "sys.atlas.enterd", "1")
+                .redirectErrorStream(true).start();
+        } catch (Exception ignored) {
+        }
+        try {
+            new ProcessBuilder("/system/bin/setprop", "ctl.start", "atlas-enterd")
+                .redirectErrorStream(true).start();
+        } catch (Exception ignored) {
+        }
+        try {
+            new ProcessBuilder("/system/bin/setprop", "ctl.start", "atlas-hybrid-watch")
+                .redirectErrorStream(true).start();
+        } catch (Exception ignored) {
+        }
+        try {
+            new ProcessBuilder("/system/bin/setprop", "sys.atlas.hybrid", "1")
+                .redirectErrorStream(true).start();
+        } catch (Exception ignored) {
+        }
+        return true;
     }
 
     /**
@@ -126,6 +162,7 @@ public final class HybridEnsure {
                 .redirectErrorStream(true).start();
         } catch (Exception ignored) {
         }
+        requestEnterd();
         return true;
     }
 
@@ -213,7 +250,9 @@ public final class HybridEnsure {
                 Thread.currentThread().interrupt();
             }
             try {
-                if (!AtlasPrefs.privilegedHybrid(app)) {
+                AtlasPrefs.restoreHybridAfterCeWipe(app);
+                if (!AtlasPrefs.privilegedHybrid(app)
+                        && !NativeBin.debianRootPresent()) {
                     Log.i(TAG, "boot kick skip — hybrid opt-out");
                     return;
                 }
@@ -253,9 +292,40 @@ public final class HybridEnsure {
      * Periodic heal from Authentication Agent FGS — recovers post-crash dirty flag
      * without requiring the user to open Atlas.
      */
+    /**
+     * First launch after Atlas Clear data (no reboot). Overlay / LP / home
+     * survived; CE prefs did not. Remount + enterd + live uid — never bootstrap.
+     */
+    public static void kickAfterCeWipe(Context c) {
+        if (c == null) return;
+        final Context app = c.getApplicationContext();
+        try {
+            java.io.FileWriter w = new java.io.FileWriter(
+                "/data/local/tmp/atlas-hybrid-ensure-request", false);
+            w.write("ts=" + System.currentTimeMillis() + " src=app-ce-wipe\n");
+            w.close();
+        } catch (Exception ignored) {
+        }
+        requestSystemEnsure();
+        requestEnterd();
+        ensureLiveUidAsync(app);
+        new Thread(() -> {
+            try {
+                Log.i(TAG, "ce-wipe kick — ensure surviving Deb");
+                runEnsureBlocking(app);
+                ensureLiveUid(app);
+                boolean ok = NativeBin.hybridRootfsReady();
+                Log.i(TAG, "ce-wipe kick done ready=" + ok
+                    + " enterd=" + enterdListening());
+            } catch (Exception e) {
+                Log.w(TAG, "ce-wipe kick failed: " + e.getMessage());
+            }
+        }, "atlas-ce-wipe-kick").start();
+    }
+
     public static void healthTick(Context c) {
         if (c == null) return;
-        if (!AtlasPrefs.privilegedHybrid(c)) return;
+        if (!AtlasPrefs.privilegedHybrid(c) && !NativeBin.debianRootPresent()) return;
         if (NativeBin.hybridRootfsReady()) return;
         // Product: never spam su from FGS when app cannot elevate
         if (!appCanElevate()) return;
