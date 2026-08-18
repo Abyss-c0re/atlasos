@@ -119,3 +119,9 @@
 # 2160p 1:1 = 2160×2160. Honor the quality button (do not force UHD on
 # every 1:1 bind). CameraX UHD injected when HAL lists 3840×2160.
 0109-aperture-oem-2160sq.patch
+
+# project:frameworks/base
+# Lockscreen Restart/Power: init may reject sys.shutdown.requested.
+# AOSP throw killed system_server → black screen. Persist is a hint;
+# sys.powerctl is the reboot. Do not die on the hint.
+0110-shutdown-persist-must-not-kill-system-server.patch

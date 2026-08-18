@@ -1,0 +1,25 @@
+# project:frameworks/base
+# Lockscreen Restart/Power must not kill system_server when init rejects
+# sys.shutdown.requested. That throw left a black screen (zygote restarting).
+diff --git a/services/core/java/com/android/server/power/ShutdownThread.java b/services/core/java/com/android/server/power/ShutdownThread.java
+index ec9e276c3190..df23a25b993f 100644
+--- a/services/core/java/com/android/server/power/ShutdownThread.java
++++ b/services/core/java/com/android/server/power/ShutdownThread.java
+@@ -442,7 +442,16 @@ public final class ShutdownThread extends Thread {
+         {
+             String reason = (sInstance.mReboot ? "1" : "0")
+                           + (sInstance.mReason != null ? sInstance.mReason : "");
+-            SystemProperties.set(SHUTDOWN_ACTION_PROPERTY, reason);
++            // Persist hint for init's shutdown watchdog. If init rejects the
++            // write, AOSP throws and kills system_server — lockscreen
++            // Restart/Power then leaves a black screen (zygote restarting,
++            // SurfaceFlinger still up). The real reboot is sys.powerctl later.
++            try {
++                SystemProperties.set(SHUTDOWN_ACTION_PROPERTY, reason);
++            } catch (RuntimeException e) {
++                Slog.e(TAG, "persist " + SHUTDOWN_ACTION_PROPERTY + "=" + reason
++                        + " failed — continue to powerctl", e);
++            }
+         }
+ 
+         sInstance.mProgressDialog = showShutdownDialog(context);
