@@ -259,6 +259,8 @@ start_enterd() {
     echo "=== $(date) enterd already live ===" >>"$LOG" 2>/dev/null || true
     return 0
   fi
+  # KEEP_DATA leaves a dead sock; KSU post-fs treated that as "up" (1217Z).
+  rm -f /data/local/tmp/atlas-enter.sock 2>/dev/null || true
   if [ -x /system/bin/atlas-hybrid-watch.sh ] \
     && ! pidof atlas-hybrid-watch.sh >/dev/null 2>&1; then
     echo "=== $(date) start atlas-hybrid-watch ===" >>"$LOG" 2>/dev/null || true

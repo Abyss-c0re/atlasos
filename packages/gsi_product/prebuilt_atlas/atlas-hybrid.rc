@@ -3,10 +3,10 @@
 # on Android plane; Deb enter still uses hybrid when plane is up.
 # SoT: packages/titan_atlas/scripts/atlas-hybrid.sh · atlas-hybrid-boot.sh
 
-# No seclabel u:r:su:s0 — rootless GSI often lacks su domain; service dies with
-# no log (lab post-wipe 2026-08-13: init.svc stopped, atlas-hybrid-service.log missing).
-# Match atlas-enterd: shell/root late_start without su seclabel → phhsu path works.
-service atlas-hybrid-boot /system/bin/sh /system/bin/atlas-hybrid-boot.sh
+# Direct exec like titan2-pad-agent. Do NOT use /system/bin/sh SCRIPT —
+# init refuses shell_exec (no domain transition from u:r:init:s0). 1217Z:
+# rc parsed, start failed, Deb never came up. Scripts must be phhsu_exec.
+service atlas-hybrid-boot /system/bin/atlas-hybrid-boot.sh
     class late_start
     user root
     group root system
@@ -14,7 +14,7 @@ service atlas-hybrid-boot /system/bin/sh /system/bin/atlas-hybrid-boot.sh
     disabled
 
 # Keep atlas-enterd up even when atlas-enterd.rc is missing from the image.
-service atlas-hybrid-watch /system/bin/sh /system/bin/atlas-hybrid-watch.sh
+service atlas-hybrid-watch /system/bin/atlas-hybrid-watch.sh
     class late_start
     user root
     group root system
