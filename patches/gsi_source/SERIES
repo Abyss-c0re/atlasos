@@ -125,3 +125,7 @@
 # AOSP throw killed system_server → black screen. Persist is a hint;
 # sys.powerctl is the reboot. Do not die on the hint.
 0110-shutdown-persist-must-not-kill-system-server.patch
+
+# Titan printed keyboard: HW Enter must submit the password. IME-on-bouncer
+# turned Enter into cancel (event != null, not IME_ACTION_DONE).
+0111-keyguard-hw-enter-submits-password.patch
