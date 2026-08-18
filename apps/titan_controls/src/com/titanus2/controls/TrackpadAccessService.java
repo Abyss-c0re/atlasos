@@ -1133,6 +1133,13 @@ public class TrackpadAccessService extends AccessibilityService {
             return false;
         }
 
+        // Credential surface (lockscreen PIN/password/pattern): stock KCM only.
+        // T-013 Shift-as-caps and remaps made Shift capitalize two letters and
+        // ate Enter so the human could not unlock. Pass every key through.
+        if (isCredentialSurface()) {
+            return false;
+        }
+
         AgentBridge.bumpKeyActivity(this);
 
         int rawScan = event.getScanCode();
@@ -2136,9 +2143,18 @@ public class TrackpadAccessService extends AccessibilityService {
         }
     }
 
-    /**
-     * Printable HW typing keys that dual-fire as multi-letter (not modifiers).
-     */
+    /** Keyguard / bouncer / password field — never remap Shift or Enter. */
+    private boolean isCredentialSurface() {
+        try {
+            android.app.KeyguardManager km =
+                (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+            if (km != null && (km.isKeyguardLocked() || km.isDeviceLocked())) {
+                return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
     private static boolean isIdlePhoneTypingLetter(int keyCode) {
         if (keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z) return true;
         if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) return true;
