@@ -6,17 +6,14 @@ import android.util.Log;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.InputStream;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Boot-time offline stack: engine + Gemma 3 270M + peer on local llama.
- * No Wi‑Fi required once model + engine are on device.
+ * Boot belt + optional user GGUF on userdata. Never reads /system models.
  */
 public final class OfflineBootstrap {
     private static final String TAG = "OfflineBootstrap";
     public static final String BUNDLED_MODEL = "gemma-3-270m-it-Q4_K_M.gguf";
-    public static final String SYSTEM_MODEL_DIR = "/system/etc/titan2/models";
     public static final String SHARED_MODEL_DIR = "/data/local/tmp/nanobot_models";
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
     private static volatile String LAST_STATUS = "idle";
@@ -189,50 +186,20 @@ public final class OfflineBootstrap {
         return null;
     }
 
-    /** Locate or stage bundled Gemma 3 270M. */
+    /**
+     * User-installed GGUF on userdata only. Never {@code /system} — GGUF is not ROM.
+     */
     public static File ensureBundledModel(Context c) {
-        // Already on shared path
         File shared = new File(SHARED_MODEL_DIR, BUNDLED_MODEL);
         if (LlamaManager.isComplete(shared)) return shared;
 
-        // System image path (ROM inject)
-        File sys = new File(SYSTEM_MODEL_DIR, BUNDLED_MODEL);
-        if (LlamaManager.isComplete(sys)) {
-            if (copyFile(sys, shared)) return shared;
-            return sys; // read-only path still usable by llama-server
-        }
-
-        // App files (if ever staged small models)
         File app = new File(c.getFilesDir(), "models/" + BUNDLED_MODEL);
         if (LlamaManager.isComplete(app)) return app;
 
-        // Any gemma*gguf on known dirs
         for (File f : LlamaManager.listLocalGguf(c)) {
-            String n = f.getName().toLowerCase();
-            if (n.contains("gemma") && n.contains("270") && LlamaManager.isComplete(f)) {
-                return f;
-            }
+            if (LlamaManager.isComplete(f)) return f;
         }
-        return LlamaManager.isComplete(shared) ? shared : null;
-    }
-
-    private static boolean copyFile(File src, File dst) {
-        try {
-            File parent = dst.getParentFile();
-            if (parent != null && !parent.exists()) parent.mkdirs();
-            byte[] buf = new byte[1024 * 256];
-            try (InputStream in = new FileInputStream(src);
-                 FileOutputStream out = new FileOutputStream(dst)) {
-                int n;
-                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-            }
-            //noinspection ResultOfMethodCallIgnored
-            dst.setReadable(true, false);
-            return dst.isFile() && dst.length() == src.length();
-        } catch (Exception e) {
-            Log.w(TAG, "copy model: " + e.getMessage());
-            return false;
-        }
+        return null;
     }
 
     public static void appendBootLog(Context c, String line) {

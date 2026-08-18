@@ -1,4 +1,4 @@
-# Offline Nanobot at boot (Gemma + llama + peer). No Wi‑Fi required.
+# Nanobot LAW belt at boot. Never starts GGUF/llama (not ROM).
 service titan2-offline-nanobot /system/bin/titan2-offline-nanobot.sh
     class late_start
     user root
