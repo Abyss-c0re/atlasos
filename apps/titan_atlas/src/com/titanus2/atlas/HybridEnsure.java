@@ -87,16 +87,54 @@ public final class HybridEnsure {
 
     /**
      * True only when atlas-enterd is listening.
-     * ELF presence is not the Deb plane — T2138Z shipped enterd without init
-     * and Deb tap died exit 79 (cannot connect @atlasenter).
+     * Product listen is abstract {@code @atlasenter}. Filesystem socks are extras.
+     * priv_app often cannot stat {@code /data/local/tmp/atlas-enter.sock}
+     * (SELinux) — treating that as "enterd down" forced Android toybox (1746Z).
      */
     public static boolean enterdListening() {
+        if (abstractEnterdListed()) return true;
         try {
-            if (new File("/data/local/tmp/atlas-enter.sock").exists()) return true;
             if (new File("/dev/socket/atlasenter").exists()) return true;
+            if (new File("/data/local/tmp/atlas-enter.sock").exists()) return true;
+        } catch (Exception ignored) {
+        }
+        return connectAbstractEnterd();
+    }
+
+    /** {@code /proc/net/unix} lists abstract sockets as {@code @atlasenter}. */
+    public static boolean abstractEnterdListed() {
+        try {
+            java.io.BufferedReader br = new java.io.BufferedReader(
+                new java.io.FileReader("/proc/net/unix"));
+            try {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    if (line.contains("@atlasenter")) return true;
+                }
+            } finally {
+                br.close();
+            }
         } catch (Exception ignored) {
         }
         return false;
+    }
+
+    /** Connect probe — last resort. Closes immediately; enterd child EOFs. */
+    public static boolean connectAbstractEnterd() {
+        android.net.LocalSocket s = null;
+        try {
+            s = new android.net.LocalSocket();
+            s.connect(new android.net.LocalSocketAddress(
+                "atlasenter", android.net.LocalSocketAddress.Namespace.ABSTRACT),
+                250);
+            return true;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (s != null) {
+                try { s.close(); } catch (Exception ignored) {}
+            }
+        }
     }
 
     /**
@@ -209,6 +247,9 @@ public final class HybridEnsure {
     /** True when Deb PTY can pivot (enter helper or lab su). */
     public static boolean canEnterDeb() {
         if (systemEnterAvailable()) return true;
+        // Product ROM: atlas-enter talks @atlasenter. Do not require a
+        // filesystem sock the app UID cannot stat.
+        if (new File("/system/bin/atlas-enter").isFile()) return true;
         for (String p : REAL_SU_PATHS) {
             try {
                 File f = new File(p);

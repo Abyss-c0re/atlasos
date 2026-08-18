@@ -13,8 +13,11 @@ log() { echo "atlas-hybrid-watch: $*" >>"$LOG" 2>/dev/null || true; }
 
 # LAW: Deb enter is the ROM daemon. Never prefer /data/local/tmp tip —
 # tip-prefer killed system enterd and Atlas fell back to Android toybox sh.
+# Init must own the process so ANDROID_SOCKET_atlasenter (/dev/socket) exists.
 enterd_live() {
-  pidof atlas-enterd >/dev/null 2>&1
+  pidof atlas-enterd >/dev/null 2>&1 \
+    || [ -S /dev/socket/atlasenter ] \
+    || grep -q '@atlasenter' /proc/net/unix 2>/dev/null
 }
 
 ensure_enterd() {
@@ -24,10 +27,17 @@ ensure_enterd() {
   if enterd_live; then
     return 0
   fi
-  log "start atlas-enterd ($ENTERD)"
+  log "ctl.start atlas-enterd"
+  setprop sys.atlas.enterd 1 2>/dev/null || true
   setprop ctl.start atlas-enterd 2>/dev/null || true
-  sleep 0.2
-  enterd_live && return 0
+  i=0
+  while [ "$i" -lt 20 ]; do
+    enterd_live && return 0
+    i=$((i + 1))
+    sleep 0.1
+  done
+  # Last resort only — no ANDROID_SOCKET. Abstract + fs sock still work.
+  log "init miss — exec $ENTERD"
   "$ENTERD" >>/data/local/tmp/atlas-enterd.log 2>&1 &
   sleep 0.2
 }

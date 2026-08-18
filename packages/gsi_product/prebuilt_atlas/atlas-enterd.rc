@@ -6,7 +6,6 @@ service atlas-enterd /system/bin/atlas-enterd.sh
     user root
     group root system
     socket atlasenter stream 0666 root system
-    disabled
 
 on property:sys.boot_completed=1
     start atlas-enterd

@@ -454,6 +454,7 @@ public final class NativeBin {
     public static void writePlaneStatus(Context c, boolean hybridWant, boolean hybridReady) {
         boolean hybrid = hybridWant && hybridReady;
         File home = home(c);
+        if (home == null) return;
         String mode = hybrid ? "debian" : "android";
         String plane = hybrid ? "hybrid" : "android";
         String homePath = home.getAbsolutePath();
@@ -477,7 +478,7 @@ public final class NativeBin {
                 + "atlas_sysbin=/system/bin\n"
                 + "reports_dir=" + homePath + "/reports\n"
                 + "status_file=" + homePath + "/ATLAS_STATUS\n"
-                + "plane_files=/data/local/tmp/titan2_atlas_mode /data/misc/titan2/\n"
+                + "plane_files=" + homePath + "/ATLAS_STATUS " + homePath + "/ATLAS_PLANE.env\n"
                 + "titan2_atlas_mode=" + mode + "\n"
                 + "=== BRIDGE ===\n"
                 + "Debian cannot see Android.\n"
@@ -486,24 +487,21 @@ public final class NativeBin {
                 + "not Deb: screencap screenshot am pm\n"
                 + "policy: /var/lib/atlas-auth/policy\n"
                 + "reports: $HOME/reports/\n";
-        /* Plane files are not user HOME. Never write them into linux home. */
-        writeText(new File("/data/local/tmp/ATLAS_STATUS"), body);
-        writeText(new File("/data/local/tmp/ATLAS_PLANE.env"),
-            "ATLAS_PLANE=" + plane + "\n"
-                + "ATLAS_MODE=" + mode + "\n"
-                + "ATLAS_HYBRID=" + (hybrid ? "1" : "0") + "\n"
-                + "ATLAS_SESSION=" + (hybrid ? "hybrid" : "atlas") + "\n"
-                + "HOME=" + NativeBin.LINUX_HOME + "\n"
-                + "ATLAS_HOME=" + NativeBin.LINUX_HOME + "\n"
-                + "ATLAS_BIN=" + binPath + "\n");
-        try {
-            writeText(new File("/data/local/tmp/titan2_atlas_mode"), mode);
-        } catch (Exception ignored) {
-        }
-        /* Android app CE may keep a copy. Linux HOME must stay user files only. */
+        /* Plane files are CE copies only. Never /data/local/tmp (priv_app
+         * EACCES) and never linux HOME (user files only). Init/enterd write
+         * agent-visible tmp status. */
+        if (home == null) return;
         try {
             writeText(new File(home, "ATLAS_STATUS"), body);
-        } catch (Exception ignored) {
+            writeText(new File(home, "ATLAS_PLANE.env"),
+                "ATLAS_PLANE=" + plane + "\n"
+                    + "ATLAS_MODE=" + mode + "\n"
+                    + "ATLAS_HYBRID=" + (hybrid ? "1" : "0") + "\n"
+                    + "ATLAS_SESSION=" + (hybrid ? "hybrid" : "atlas") + "\n"
+                    + "HOME=" + NativeBin.LINUX_HOME + "\n"
+                    + "ATLAS_HOME=" + NativeBin.LINUX_HOME + "\n"
+                    + "ATLAS_BIN=" + binPath + "\n");
+        } catch (Throwable ignored) {
         }
     }
 

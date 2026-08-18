@@ -532,7 +532,9 @@ if [ "$want_hybrid" = "1" ]; then
     export ATLAS_LINUX_HOME="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
     # Overlay up is not Deb enter — atlas-enterd must listen first.
     enterd_up() {
-      [ -S /data/local/tmp/atlas-enter.sock ] || [ -S /dev/socket/atlasenter ]
+      [ -S /dev/socket/atlasenter ] \
+        || grep -q '@atlasenter' /proc/net/unix 2>/dev/null \
+        || [ -S /data/local/tmp/atlas-enter.sock ]
     }
     if ! enterd_up; then
       setprop sys.atlas.enterd 1 2>/dev/null || true

@@ -34,7 +34,7 @@ import java.util.List;
  * Multi-session like Termux: + / prev / next / close; Exit leaves the app.
  */
 public class MainActivity extends Activity implements AtlasTermClient.Host {
-    public static final String VERSION = "1.0.8-sess";
+    public static final String VERSION = "1.0.20-enter";
     private static final int MAX_SESSIONS = 8;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -904,12 +904,17 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
             }
         } else if (wantDeb && hybridReady && !HybridEnsure.canEnterDeb()) {
             HybridEnsure.requestEnterd();
-            wantDeb = false;
-            shellMode = SessionHub.MODE_ANDROID;
-            strip.setText(AtlasUi.statusLine("ANDROID",
-                SessionHub.sessions().size() + 1,
-                SessionHub.sessions().size() + 1, null, "enterd↓"));
-            strip.setTextColor(AtlasUi.chromeOnTerm(this));
+            // atlas-net waits on @atlasenter. Do not demote to Android toybox
+            // because priv_app cannot stat the filesystem sock (1746Z).
+            if (!HybridEnsure.canEnterDeb()
+                    && !new File("/system/bin/atlas-enter").isFile()) {
+                wantDeb = false;
+                shellMode = SessionHub.MODE_ANDROID;
+                strip.setText(AtlasUi.statusLine("ANDROID",
+                    SessionHub.sessions().size() + 1,
+                    SessionHub.sessions().size() + 1, null, "enterd↓"));
+                strip.setTextColor(AtlasUi.chromeOnTerm(this));
+            }
         } else if (wantDeb && hybridReady) {
             androidFallbackPending = false;
         }

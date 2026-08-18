@@ -256,12 +256,26 @@ chmod 644 "$LOG" 2>/dev/null || true
 # T2138Z shipped the ELF without atlas-enterd.rc; Deb tap then died exit 79.
 start_enterd() {
   if pidof atlas-enterd >/dev/null 2>&1 \
-    || pidof atlas-enterd-tip >/dev/null 2>&1; then
+    || [ -S /dev/socket/atlasenter ] \
+    || grep -q '@atlasenter' /proc/net/unix 2>/dev/null; then
     echo "=== $(date) enterd already live ===" >>"$LOG" 2>/dev/null || true
     return 0
   fi
   # KEEP_DATA leaves a dead sock; KSU post-fs treated that as "up" (1217Z).
   rm -f /data/local/tmp/atlas-enter.sock 2>/dev/null || true
+  echo "=== $(date) ctl.start atlas-enterd ===" >>"$LOG" 2>/dev/null || true
+  setprop sys.atlas.enterd 1 2>/dev/null || true
+  setprop ctl.start atlas-enterd 2>/dev/null || true
+  w=0
+  while [ "$w" -lt 20 ]; do
+    if pidof atlas-enterd >/dev/null 2>&1 \
+      || [ -S /dev/socket/atlasenter ]; then
+      echo "=== $(date) enterd live via init ===" >>"$LOG" 2>/dev/null || true
+      return 0
+    fi
+    w=$((w + 1))
+    sleep 0.1
+  done
   if [ -x /system/bin/atlas-hybrid-watch.sh ] \
     && ! pidof atlas-hybrid-watch.sh >/dev/null 2>&1; then
     echo "=== $(date) start atlas-hybrid-watch ===" >>"$LOG" 2>/dev/null || true
@@ -270,10 +284,11 @@ start_enterd() {
     sleep 0.4
   fi
   if pidof atlas-enterd >/dev/null 2>&1 \
-    || pidof atlas-enterd-tip >/dev/null 2>&1; then
+    || [ -S /dev/socket/atlasenter ]; then
     echo "=== $(date) enterd live via watch ===" >>"$LOG" 2>/dev/null || true
     return 0
   fi
+  echo "=== $(date) init miss — exec enterd ELF ===" >>"$LOG" 2>/dev/null || true
   if [ -x /system/bin/atlas-enterd.sh ]; then
     /system/bin/atlas-enterd.sh >>/data/local/tmp/atlas-enterd.log 2>&1 &
   elif [ -x /system/bin/atlas-enterd ]; then
