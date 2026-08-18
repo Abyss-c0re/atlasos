@@ -37,6 +37,7 @@ FORCE_REPATCH=1 ./scripts/misterztr/apply_patches.sh
 | `0060-framework-force-software-sensor-toggles-cube` | **system_server** always supports software cam/mic (no vendor RRO win, no overlay thrash) |
 | `packages/gsi_product` belt `titan2-sensor-privacy` | Node fail-closed companion (PRODUCT_PACKAGES) |
 | `0095-aperture-titan-square-and-no-sat` | Aperture 1:1 + ignore SAT cam 3 + HI847S as own lens |
+| `0108-aperture-video-uhd-crop-1080` | 1:1 = OEM UHD 3840×2160 @ 30, crop file to 1080×1080 |
 
 **Banned:** MTK FrameworkResOverlay bind, Magisk privacy modules as product.
 

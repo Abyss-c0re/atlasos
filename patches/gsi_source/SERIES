@@ -105,3 +105,13 @@
 
 # Expose Aux sets include_all_cameras only. Token "nothing" hid HI847S.
 0105-trebleapp-never-aux-nothing.patch
+
+# Seed Expose Aux once so TrebleApp does not write include_all_cameras=false.
+0106-trebleapp-seed-aux-cameras-once.patch
+
+# project:packages/apps/Aperture
+# Aperture on-open: if privacy OFF and HI847S missing, wake the belt.
+0107-aperture-heal-aux-on-open.patch
+
+# OEM: no 1080×1080 / no 368×1080. 1:1 = UHD 3840×2160 @ 30 then crop 1080².
+0108-aperture-video-uhd-crop-1080.patch
