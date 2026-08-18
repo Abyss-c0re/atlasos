@@ -18,6 +18,9 @@
 #
 #   SHARED with Android (bind, not full /data rbind):
 #     /sdcard · /storage/emulated/0 → merge
+#     Android OS trees → merge/android/{system,vendor,product,apex}
+#     NEVER bind Android /system over Debian /system
+#       (ro Android image — Linux self-update writes into a brick)
 #     NEVER bind_rbind full /data (nests hybrid → bin fail)
 #
 # Architecture (NOT chroot-first):
@@ -25,8 +28,10 @@
 #   lower  = Debian 13 trixie rootfs (from ROM seed)
 #   upper  = writable layer (apt installs)
 #   work   = overlay workdir (same ext4)
-#   merge  = combined root + selective Android binds
+#   merge  = Debian root + kernel vfs + /android/* (not a mixed /system)
 #   enter  = enterd / pivot into merge
+#   HOME   = /data/local/atlas-home/atlas → /home/atlas
+#            never Atlas CE /data/data/com.titanus2.atlas/files
 #
 # Usage:
 #   atlas-hybrid.sh status|bootstrap|mount|umount|enter|run|destroy|ensure
@@ -97,7 +102,7 @@ UPPER="$ROOT/upper"
 WORK="$ROOT/work"
 MERGE="$ROOT/merge"
 MARKER="$ROOT/.atlas-hybrid"
-VER=7
+VER=8
 T2=/data/misc/titan2
 ST=/data/local/tmp
 BB="${ATLAS_BUSYBOX:-/data/adb/ksu/bin/busybox}"
@@ -1226,12 +1231,11 @@ case "${HOME:-}" in
     ;;
 esac
 export ATLAS_HOME="${ATLAS_HOME:-$HOME}"
-export ATLAS_SYSBIN="${ATLAS_SYSBIN:-/system/bin}"
-export ATLAS_BIN="${ATLAS_BIN:-$ATLAS_SYSBIN}"
-# Universal user-install PATH: $HOME/bin, .local/bin, every $HOME/.<name>/bin
-# (no tool-specific hardcodes — curl installers Just Work)
+export ATLAS_BIN="${ATLAS_BIN:-$HOME/bin}"
+# Debian + user-install PATH only. Android is /android/* via `android`.
+# Putting /system/bin on this PATH made Linux CLIs pick a ro Android prefix.
 _atlas_up=
-for _h in "$HOME" "$ATLAS_LINUX_HOME"; do
+for _h in "$HOME" "$ATLAS_LINUX_HOME" /home/atlas; do
   [ -n "$_h" ] && [ -d "$_h" ] || continue
   [ -d "$_h/bin" ] && _atlas_up="${_atlas_up:+$_atlas_up:}$_h/bin"
   [ -d "$_h/.local/bin" ] && _atlas_up="${_atlas_up:+$_atlas_up:}$_h/.local/bin"
@@ -1241,7 +1245,8 @@ for _h in "$HOME" "$ATLAS_LINUX_HOME"; do
     _atlas_up="${_atlas_up:+$_atlas_up:}$_d/bin"
   done
 done
-export PATH="${_atlas_up:+$_atlas_up:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/atlas-bin:${ATLAS_SYSBIN}:/system/xbin:/vendor/bin:/product/bin"
+export PATH="${_atlas_up:+$_atlas_up:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+unset ANDROID_ROOT ANDROID_DATA ANDROID_STORAGE 2>/dev/null || true
 unset _atlas_up _h _d
 export ATLAS_REPORTS="${HOME}/reports"
 if [ -n "${PS1:-}" ] && [ -z "${ATLAS_MOTD_SHOWN:-}" ]; then
@@ -1258,11 +1263,66 @@ EOF
 }
 
 
-# Live Android into merge so debian mode sees apps + binaries.
+# LAW: never overlay Android partitions onto Debian /system (or /vendor…).
+# KEEP_DATA leftovers from VER<=7 must be torn down on every ensure.
+unbind_android_os_over_debian() {
+  for d in \
+    "$MERGE/system" "$MERGE/vendor" "$MERGE/product" "$MERGE/system_ext" \
+    "$MERGE/apex" "$MERGE/linkerconfig" "$MERGE/bootstrap-apex" \
+    "$LP_MNT/system" "$LP_MNT/vendor" "$LP_MNT/product" "$LP_MNT/system_ext" \
+    "$LP_MNT/apex" "$LP_MNT/linkerconfig" "$LP_MNT/bootstrap-apex"
+  do
+    [ -n "$d" ] || continue
+    if is_mounted "$d" || grep -q " $d " /proc/mounts 2>/dev/null; then
+      umount -l "$d" 2>/dev/null || true
+    fi
+  done
+}
+
+# Android OS visible under /android/* only. Bridge: `android <cmd>`.
+bind_android_os() {
+  mkdir -p "$MERGE/android/system" "$MERGE/android/vendor" \
+    "$MERGE/android/product" "$MERGE/android/system_ext" \
+    "$MERGE/android/apex" 2>/dev/null || true
+  bind_one /system "$MERGE/android/system"
+  bind_one /vendor "$MERGE/android/vendor"
+  bind_one /product "$MERGE/android/product"
+  bind_one /system_ext "$MERGE/android/system_ext"
+  bind_rbind /apex "$MERGE/android/apex"
+  if [ -d /linkerconfig ]; then
+    mkdir -p "$MERGE/android/linkerconfig" 2>/dev/null || true
+    bind_rbind /linkerconfig "$MERGE/android/linkerconfig"
+  fi
+  if [ -d /bootstrap-apex ]; then
+    mkdir -p "$MERGE/android/bootstrap-apex" 2>/dev/null || true
+    bind_rbind /bootstrap-apex "$MERGE/android/bootstrap-apex"
+  fi
+}
+
+# User tools live on $HOME PATH. Root symlinks in /usr make self-update hit a
+# system path. Drop leftovers that point at linux home (any tool, not one CLI).
+drop_user_home_promoted_to_usr() {
+  for root in "$MERGE" "$LP_MNT"; do
+    [ -n "$root" ] && [ -d "$root/usr/local/bin" ] || continue
+    for f in "$root/usr/local/bin"/*; do
+      [ -L "$f" ] || continue
+      t=`readlink "$f" 2>/dev/null || true`
+      case "$t" in
+        /data/local/atlas-home/*|/home/atlas/*)
+          rm -f "$f" 2>/dev/null || true
+          ;;
+      esac
+    done
+  done
+}
+
+# Live kernel vfs + /android/* + selected /data. Debian /system stays Debian.
 bind_android() {
   storage=`plane_read titan2_atlas_storage shared`
   [ -d "$MERGE" ] || return 1
   is_mounted "$MERGE" || mount_overlay || return 1
+  unbind_android_os_over_debian
+  drop_user_home_promoted_to_usr
 
   bind_one /dev "$MERGE/dev"
   # pts: NEVER inherit host ptmxmode=000 (dead Deb PTY / "broken debian").
@@ -1282,20 +1342,7 @@ bind_android() {
   chmod 666 "$MERGE/dev/ptmx" "$MERGE/dev/pts/ptmx" 2>/dev/null || true
   bind_one /proc "$MERGE/proc"
   bind_one /sys "$MERGE/sys"
-  # Android OS + apps (same kernel)
-  bind_one /system "$MERGE/system"
-  bind_one /vendor "$MERGE/vendor"
-  bind_one /product "$MERGE/product"
-  bind_one /system_ext "$MERGE/system_ext"
-  # CRITICAL: apex must be rbind — linker64 lives under /apex/com.android.runtime
-  bind_rbind /apex "$MERGE/apex"
-  if [ -d /linkerconfig ]; then
-    bind_rbind /linkerconfig "$MERGE/linkerconfig"
-  fi
-  # Some GSIs keep bootstrap apex separately
-  if [ -d /bootstrap-apex ]; then
-    bind_rbind /bootstrap-apex "$MERGE/bootstrap-apex"
-  fi
+  bind_android_os
 
   if [ "$storage" = "shared" ]; then
     # Heal multi-user layout BEFORE bind so chroot sees a usable app HOME.
@@ -1363,11 +1410,7 @@ bind_android() {
     chmod 666 "$MERGE/dev/ptmx" "$MERGE/dev/pts/ptmx" 2>/dev/null || true
     bind_one /proc "$MERGE/proc"
     bind_one /sys "$MERGE/sys"
-    bind_one /system "$MERGE/system"
-    bind_one /vendor "$MERGE/vendor"
-    bind_one /product "$MERGE/product"
-    bind_one /system_ext "$MERGE/system_ext"
-    bind_rbind /apex "$MERGE/apex" 2>/dev/null || true
+    bind_android_os
     mkdir -p "$MERGE/data/data/com.titanus2.atlas" "$MERGE/data/local/tmp" 2>/dev/null || true
     [ -d /data/data/com.titanus2.atlas ] && \
       bind_rbind /data/data/com.titanus2.atlas "$MERGE/data/data/com.titanus2.atlas"
@@ -1508,17 +1551,12 @@ ensure_agent_elevate_gates() {
     fi
   done
 
-  # Agent client binary (Bionic). Prefer app extract; fall back to ROM system ELFs
-  # (hybrid inject puts atlas-sudo on /system/bin — works before CE unlock / first extract).
+  # Agent client is the ROM ELF. Never Atlas CE files (Settings wipe is not Debian).
   gate=""
   for c in \
-    "${ATLAS_BIN:-}/atlas-sudo" \
-    "${ATLAS_BIN:-}/sudo" \
-    /data/user/0/com.titanus2.atlas/files/bin/atlas-sudo \
-    /data/user/0/com.titanus2.atlas/files/bin/sudo \
-    /data/data/com.titanus2.atlas/files/bin/atlas-sudo \
     /system/bin/atlas-sudo \
-    /system/xbin/atlas-sudo
+    /system/xbin/atlas-sudo \
+    "${ATLAS_BIN:-}/atlas-sudo"
   do
     [ -n "$c" ] && [ -x "$c" ] && [ -f "$c" ] && gate=$c && break
   done
@@ -1654,40 +1692,8 @@ EOF
       done
     fi
   done
-  # --- Android: every bin name not owned by Debian → shim (android-exec) ---
-  # Visible as peers under /atlas-bin so `which screencap` works; one terminal.
-  mkdir -p "$dest" 2>/dev/null || true
-  for dir in /system/bin /system/xbin /product/bin /vendor/bin; do
-    [ -d "$dir" ] || continue
-    if has_bb; then
-      "$BB" find "$dir" -maxdepth 1 \( -type f -o -type l \) 2>/dev/null | while read -r f; do
-        [ -x "$f" ] || continue
-        b=${f##*/}
-        [ -n "$b" ] || continue
-        is_elevate_name "$b" && continue
-        is_android_ipc_name "$b" && continue
-        # Debian package wins on name clash (nano, curl, …)
-        if [ -e "$dest/$b" ] || [ -L "$dest/$b" ]; then
-          continue
-        fi
-        ln -sfn "$wrap" "$dest/$b" 2>/dev/null || true
-      done
-    else
-      for f in "$dir"/*; do
-        [ -e "$f" ] || continue
-        [ -d "$f" ] && continue
-        [ -x "$f" ] || continue
-        b=${f##*/}
-        is_elevate_name "$b" && continue
-        is_android_ipc_name "$b" && continue
-        if [ -e "$dest/$b" ] || [ -L "$dest/$b" ]; then
-          continue
-        fi
-        ln -sfn "$wrap" "$dest/$b" 2>/dev/null || true
-      done
-    fi
-  done
-  # Optional user CLIs on /data (~/.local/bin, …)
+  # Android bins are NOT Debian PATH names. Bridge: `android <cmd>`.
+  # Optional user CLIs stay on $HOME PATH (do not promote into /usr).
   link_user_cli_into_merge
   ensure_agent_elevate_gates
   n=0
@@ -1747,83 +1753,21 @@ is_atlas_reserved_bin() {
 # Expose user-installed tools into hybrid peers. PATH already covers $HOME dirs;
 # links make `which` under /atlas-bin work after ATLAS_RELINK.
 link_user_cli_into_merge() {
-  dest="$MERGE/usr/local/bin"
-  adest="$MERGE/atlas-bin"
-  mkdir -p "$dest" "$adest" 2>/dev/null || true
-  link_one_user() {
-    src="$1"
-    name="$2"
-    [ -n "$name" ] || name=`basename "$src"`
-    is_elevate_name "$name" && return 0
-    is_atlas_reserved_bin "$name" && return 0
-    [ -f "$src" ] || [ -L "$src" ] || return 0
-    # Follow symlink to real file for size check
-    real="$src"
-    if [ -L "$src" ]; then
-      t=`readlink -f "$src" 2>/dev/null || readlink "$src" 2>/dev/null || true`
-      [ -n "$t" ] && [ -e "$t" ] && real=$t
-    fi
-    [ -x "$src" ] || chmod 755 "$src" 2>/dev/null || true
-    [ -x "$src" ] || [ -x "$real" ] || return 0
-    ln -sfn "$src" "$dest/$name" 2>/dev/null || true
-    ln -sfn "$src" "$adest/$name" 2>/dev/null || true
-  }
-
-  # 1) Everything in standard user bin dirs
-  user_bin_dirs | while read -r dir; do
-    [ -d "$dir" ] || continue
-    for f in "$dir"/*; do
-      [ -e "$f" ] || continue
-      [ -d "$f" ] && continue
-      b=${f##*/}
-      link_one_user "$f" "$b"
-    done
-  done
-
-  # 2) Downloaded single ELFs (installers often leave tool-linux-aarch64 here)
-  h=`user_home_candidates`
-  if [ -n "$h" ]; then
-    for dldir in "$h"/.*/downloads "$h/downloads" /sdcard/Download /data/local/tmp; do
-      [ -d "$dldir" ] || continue
-      for f in "$dldir"/*; do
-        [ -f "$f" ] || continue
-        [ -d "$f" ] && continue
-        b=${f##*/}
-        is_elevate_name "$b" && continue
-        is_atlas_reserved_bin "$b" && continue
-        # skip archives / text
-        case "$b" in
-          *.tar|*.gz|*.tgz|*.zip|*.deb|*.apk|*.txt|*.md|*.json|*.toml|*.sh) continue ;;
-        esac
-        sz=`stat -c %s "$f" 2>/dev/null` || sz=0
-        [ "$sz" -ge 100000 ] || continue
-        [ -x "$f" ] || chmod 755 "$f" 2>/dev/null || true
-        [ -x "$f" ] || continue
-        # Prefer short name: foo-linux-aarch64 → foo when free
-        short=$b
-        case "$b" in
-          *-linux-aarch64) short=${b%-linux-aarch64} ;;
-          *-linux-arm64) short=${b%-linux-arm64} ;;
-          *_linux_aarch64) short=${b%_linux_aarch64} ;;
-          *_linux_arm64) short=${b%_linux_arm64} ;;
-        esac
-        [ -n "$short" ] || short=$b
-        if [ "$short" != "$b" ] && [ ! -e "$dest/$short" ] && [ ! -e "$adest/$short" ]; then
-          link_one_user "$f" "$short"
-        fi
-        link_one_user "$f" "$b"
-      done
-    done
-  fi
+  # PATH already scans $HOME/bin, .local/bin, ~/.*/bin.
+  # Never promote user ELFs into /usr or /atlas-bin (self-update hits a system path).
+  drop_user_home_promoted_to_usr
+  return 0
 }
 
 unbind_android() {
-  # recursive first (apex/linkerconfig rbind trees)
+  unbind_android_os_over_debian
   for d in \
-    "$MERGE/bootstrap-apex" "$MERGE/linkerconfig" "$MERGE/apex" \
+    "$MERGE/android/bootstrap-apex" "$MERGE/android/linkerconfig" \
+    "$MERGE/android/apex" "$MERGE/android/system_ext" \
+    "$MERGE/android/product" "$MERGE/android/vendor" "$MERGE/android/system" \
+    "$MERGE/android" \
     "$MERGE/data/local/tmp" "$MERGE/mnt" "$MERGE/storage" "$MERGE/sdcard" \
-    "$MERGE/data" "$MERGE/system_ext" \
-    "$MERGE/product" "$MERGE/vendor" "$MERGE/system" \
+    "$MERGE/data" \
     "$MERGE/dev/pts" "$MERGE/dev" "$MERGE/proc" "$MERGE/sys"
   do
     if is_mounted "$d" || grep -q " $d " /proc/mounts 2>/dev/null; then
@@ -1843,7 +1787,7 @@ ensure_admin_user() {
     uid=`stat -c %u /data/data/com.titanus2.atlas 2>/dev/null \
       || stat -c %u /data/user/0/com.titanus2.atlas 2>/dev/null || echo 10198`
   home="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
-  [ -d "$home" ] || home="${ATLAS_HOME:-/data/data/com.titanus2.atlas/files}"
+  [ -d "$home" ] || home=/home/atlas
   roots="$MERGE $LOWER"
   [ -d /data/local/atlas-linux/etc ] && roots="$roots /data/local/atlas-linux"
   for root in $roots; do
@@ -2669,10 +2613,6 @@ cmd_backup_load() {
       return 1
     }
   fi
-  if [ -f "$dest/ce-grok.tgz" ]; then
-    mkdir -p /data/data/com.titanus2.atlas/files
-    tar -C /data/data/com.titanus2.atlas/files -xzf "$dest/ce-grok.tgz" 2>/dev/null || true
-  fi
   uid=$(awk -F: -v n="$name" '$1==n {print $3; exit}' "$(atlas_user_pwfile)")
   [ -n "$uid" ] && chown -R "${uid}:${uid}" "$home" 2>/dev/null || true
   _bk_user="$name"
@@ -2899,11 +2839,9 @@ for _h in "$HOME" "$ATLAS_LINUX_HOME"; do
   done
 done
 # Debian first, then user installs, then agent bin. Never let $HOME/bin/apt shadow /usr/bin/apt.
-export PATH="/usr/local/sbin:/usr/local/bin:/atlas-bin:/usr/sbin:/usr/bin:/sbin:/bin${_USER_PATH:+:$_USER_PATH}${_AB:+:$_AB}:/system/bin:/system/xbin:/vendor/bin:/product/bin"
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${_USER_PATH:+:$_USER_PATH}${_AB:+:$_AB}"
 unset _USER_PATH _h _d
-export ANDROID_ROOT="${ANDROID_ROOT:-/system}"
-export ANDROID_DATA="${ANDROID_DATA:-/data}"
-export ANDROID_STORAGE="${ANDROID_STORAGE:-/storage}"
+unset ANDROID_ROOT ANDROID_DATA ANDROID_STORAGE 2>/dev/null || true
 export TMPDIR="${TMPDIR:-/tmp}"
 export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
 export SUDO_ASKPASS="${SUDO_ASKPASS:-${ATLAS_BIN:-}/atlas-auth-askpass}"
@@ -3521,7 +3459,12 @@ _atlas_pkg_real() {
 }
 
 _atlas_home_real() {
+  # Atlas APK CE files — Android app plane only. Not Debian HOME.
   echo "$(_atlas_pkg_real)/files"
+}
+
+_linux_home_real() {
+  echo "${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
 }
 
 # Fix multi-user path layout so Android ContextImpl getFilesDir works:
@@ -3650,51 +3593,27 @@ _enter_exec() {
     return 1
   fi
 
-  # Env for the admin shell inside Debian merge (PATH: agent · user · debian · android)
-  # Never trust HOME=/ or empty — agents report home=//bin when this breaks.
-  # Prefer /data/data (canonical). /data/user/0 is often unreadable (mode 700) for app UID.
-  _heal_atlas_user_layout
-  _AH=`_atlas_home_real`
-  case "${ATLAS_HOME:-${HOME:-}}" in
-    ""|"/"|"/root"|"/data") ;;
-    *)
-      # honor explicit HOME only if app-owned and exists
-      _cand="${ATLAS_HOME:-$HOME}"
-      if [ -d "$_cand" ]; then
-        _ou=`stat -c %u "$_cand" 2>/dev/null`
-        [ -n "$_ou" ] && [ "$_ou" != "0" ] && _AH="$_cand"
-      fi
-      ;;
-  esac
-  [ -d "$_AH" ] || _AH=/data/data/com.titanus2.atlas/files
-  _AB="${ATLAS_BIN:-$_AH/bin}"
-  case "$_AB" in
-    ""|"/bin"|"//bin") _AB="$_AH/bin" ;;
-  esac
-  mkdir -p "$_AH/bin" "$_AH/.local/bin" "$_AH/reports" "$_AH/etc" 2>/dev/null || true
-  # Heal root-owned HOME after crash/su thrash (admin drop must read .bash_* / write resolv).
-  # Symptom: Permission denied on $HOME/.bash_env + HOME/etc/resolv.conf → "android mode" feel.
-  _heal_atlas_home "$_AH" "$DROP"
-  # Re-resolve after heal (shadow may have been replaced)
-  _AH=`_atlas_home_real`
-  [ -d "$_AH" ] || _AH=/data/data/com.titanus2.atlas/files
-  _AB="$_AH/bin"
-  # PATH order (critical):
-  #  1) Debian real tools first (/usr/bin apt, nano) — never shadow with Android wrappers
-  #  2) user installs ($HOME/bin, .local/bin, any ~/.*/bin)
-  #  3) ATLAS_BIN — agent sudo/su only
-  #  4) Android system bins last
-  # NOTE: $HOME/bin has apt/apt-get wrappers for Android shell — must be AFTER /usr/bin
-  _USER_PATH="$_AH/.local/bin:$_AH/bin"
-  for _d in "$_AH"/.*; do
+  # Debian plane HOME is linux home (/home/atlas bind), never Atlas CE files.
+  bind_linux_home 2>/dev/null || true
+  _AH=/home/atlas
+  _HOST_HOME=`_linux_home_real`
+  [ -d "$_HOST_HOME" ] || mkdir -p "$_HOST_HOME" 2>/dev/null || true
+  mkdir -p "$_HOST_HOME/bin" "$_HOST_HOME/.local/bin" \
+    "$_HOST_HOME/reports" "$_HOST_HOME/etc" 2>/dev/null || true
+  _AB=/home/atlas/bin
+  _USER_PATH="/home/atlas/.local/bin:/home/atlas/bin"
+  for _d in "$_HOST_HOME"/.*; do
     [ -d "$_d/bin" ] || continue
     case "$_d" in */.local|*/.|*/..) continue ;; esac
-    _USER_PATH="$_USER_PATH:$_d/bin"
+    _bn=`basename "$_d"`
+    _USER_PATH="$_USER_PATH:/home/atlas/$_bn/bin"
   done
-  _PATH="/usr/local/sbin:/usr/local/bin:/atlas-bin:/usr/sbin:/usr/bin:/sbin:/bin:$_USER_PATH:$_AB:/system/bin:/system/xbin:/vendor/bin:/product/bin"
+  # Debian + user only. No /system/bin — that is Android (ro).
+  _PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$_USER_PATH:$_AB"
 
   export ATLAS_HYBRID=1 ATLAS_COMBINED=1
   export HOME="$_AH" ATLAS_HOME="$_AH" ATLAS_BIN="$_AB"
+  export ATLAS_LINUX_HOME="$_HOST_HOME"
   export ATLAS_AUTH_DIR="${ATLAS_AUTH_DIR:-${ATLAS_AUTH_ON_LP:-/data/local/atlas-linux/var/lib/atlas-auth}}"
   export SUDO_ASKPASS="${SUDO_ASKPASS:-$_AB/atlas-auth-askpass}"
   export USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas
@@ -3702,60 +3621,45 @@ _enter_exec() {
   export LANG="${LANG:-C.UTF-8}"
   export COLORTERM="${COLORTERM:-truecolor}"
   export PATH="$_PATH"
-  export ANDROID_ROOT=/system ANDROID_DATA=/data TMPDIR=/tmp
-  # Refresh DNS on every enter so VPN connect/disconnect is respected live
+  unset ANDROID_ROOT ANDROID_DATA ANDROID_STORAGE 2>/dev/null || true
+  export TMPDIR=/tmp
   atlas_apply_android_dns 2>/dev/null || true
-  export BASH_ENV="${BASH_ENV:-}"
-  # Only set BASH_ENV if admin can read it (else bash: Permission denied spam)
-  if [ -r "$_AH/.bash_env" ]; then
-    export BASH_ENV="$_AH/.bash_env"
-  else
-    unset BASH_ENV 2>/dev/null || true
-  fi
-  # CRITICAL: never set Debian LD_LIBRARY_PATH in hybrid shell (outer OR post-su).
-  # Hybrid PATH mixes Bionic Android bins (nanobot NDK, /system/bin/sh, am, …)
-  # with Debian glibc tools. If LD_LIBRARY_PATH points at /usr/lib/aarch64-linux-gnu,
-  # Bionic linker64 loads Debian libm.so / libc.so which are GNU *ld scripts*
-  # (text: "/* GNU ld script") → CANNOT LINK EXECUTABLE bad ELF magic (2f2a2047).
-  # Debian ld.so already searches /lib /usr/lib via conf — no LD_LIBRARY_PATH needed.
-  # Lab 2026-08-10 (su enter) + 2026-08-10 (mixed Bionic/Debian bins).
+  unset BASH_ENV 2>/dev/null || true
   unset LD_LIBRARY_PATH 2>/dev/null || true
   unset LD_PRELOAD 2>/dev/null || true
   [ -n "${SSL_CERT_FILE:-}" ] && export SSL_CERT_FILE
   [ -n "${SSL_CERT_DIR:-}" ] && export SSL_CERT_DIR
 
-  log "enter chroot+su admin=$DROP shell=$shrel"
+  log "enter chroot+debian-su admin=$DROP shell=$shrel home=$_AH"
 
-  # Prefer /data/data path (always present); /data/user/0 needs rbind (fixed above).
-  if [ ! -d "$_AH" ] && [ -d /data/data/com.titanus2.atlas/files ]; then
-    _AH=/data/data/com.titanus2.atlas/files
-    _AB=$_AH/bin
-  fi
-
-  # Env fragment for Debian shell *after* Bionic su has already linked.
-  # Keep LD_LIBRARY_PATH empty forever in hybrid admin shell.
   _DEB_ENV="
-      export HOME='$_AH' ATLAS_HOME='$_AH' ATLAS_BIN='$_AB'
+      export HOME='/home/atlas' ATLAS_HOME='/home/atlas' ATLAS_BIN='/home/atlas/bin'
       export ATLAS_HYBRID=1 ATLAS_COMBINED=1 ATLAS_ROLE=atlas USER=atlas LOGNAME=atlas
       export PATH='$_PATH'
       export ATLAS_AUTH_DIR='/var/lib/atlas-auth'
-      export SUDO_ASKPASS='$_AB/atlas-auth-askpass'
+      export SUDO_ASKPASS='/home/atlas/bin/atlas-auth-askpass'
       export TERM='${TERM:-xterm-256color}' LANG='${LANG:-C.UTF-8}' COLORTERM='${COLORTERM:-truecolor}'
-      export ANDROID_ROOT=/system ANDROID_DATA=/data TMPDIR=/tmp
-      unset LD_LIBRARY_PATH LD_PRELOAD 2>/dev/null || true
-      [ -f '$_AH/cacert.pem' ] && export SSL_CERT_FILE='$_AH/cacert.pem'
+      unset ANDROID_ROOT ANDROID_DATA ANDROID_STORAGE LD_LIBRARY_PATH LD_PRELOAD 2>/dev/null || true
+      export TMPDIR=/tmp
+      [ -f /home/atlas/cacert.pem ] && export SSL_CERT_FILE='/home/atlas/cacert.pem'
       unset BASH_ENV
   "
 
-  # KernelSU su resets PATH — always re-export hybrid env inside -c.
-  # Outer env must stay free of Debian LD_LIBRARY_PATH (see unset above).
-  # Login shell
+  # Host chroot + Debian su. Never /system/bin/su inside merge (needs Android /system).
+  DEB_SU=
+  [ -x "$MERGE/usr/bin/su" ] && DEB_SU=/usr/bin/su
+  [ -z "$DEB_SU" ] && [ -x "$MERGE/bin/su" ] && DEB_SU=/bin/su
+  if [ -n "$DEB_SU" ]; then
+    _IN="$DEB_SU -s $shrel atlas -c"
+  else
+    _IN="$shrel -c"
+  fi
+
   if [ "$#" -eq 0 ] || [ "$1" = "-l" ] || [ "$1" = "--login" ]; then
     exec env -u LD_LIBRARY_PATH -u LD_PRELOAD \
-      "$CHROOT" "$MERGE" /system/bin/su "$DROP" -s "$shrel" -c "
+      "$CHROOT" "$MERGE" $_IN "
       $_DEB_ENV
-      # Never start at / — cwd-keyed tools orphan history under /
-      cd '$_AH' 2>/dev/null || cd \"\$HOME\" 2>/dev/null || true
+      cd /home/atlas 2>/dev/null || true
       exec '$shrel' -l
     "
   fi
@@ -3764,13 +3668,13 @@ _enter_exec() {
     shift
     cmd="$*"
     exec env -u LD_LIBRARY_PATH -u LD_PRELOAD \
-      "$CHROOT" "$MERGE" /system/bin/su "$DROP" -s "$shrel" -c \
-      "$_DEB_ENV cd '$_AH' 2>/dev/null; $cmd"
+      "$CHROOT" "$MERGE" $_IN \
+      "$_DEB_ENV cd /home/atlas 2>/dev/null; $cmd"
   fi
 
   exec env -u LD_LIBRARY_PATH -u LD_PRELOAD \
-    "$CHROOT" "$MERGE" /system/bin/su "$DROP" -s "$shrel" -c \
-    "$_DEB_ENV cd '$_AH' 2>/dev/null; $*"
+    "$CHROOT" "$MERGE" $_IN \
+    "$_DEB_ENV cd /home/atlas 2>/dev/null; $*"
 }
 
 cmd_enter() {
@@ -3781,8 +3685,8 @@ cmd_enter() {
       DROP=`stat -c %u /data/data/com.titanus2.atlas 2>/dev/null \
         || stat -c %u /data/user/0/com.titanus2.atlas 2>/dev/null || true`
     fi
-    AH="${ATLAS_HOME:-${HOME:-/data/data/com.titanus2.atlas/files}}"
-    log "enter via /system/bin/atlas-enter drop=$DROP"
+    AH=/home/atlas
+    log "enter via /system/bin/atlas-enter drop=$DROP home=$AH"
     if [ -n "$DROP" ] && [ "$DROP" != "0" ]; then
       exec /system/bin/atlas-enter --uid "$DROP" --home "$AH" --ensure --
     fi

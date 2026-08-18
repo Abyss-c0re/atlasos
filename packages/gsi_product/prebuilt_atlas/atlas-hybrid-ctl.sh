@@ -13,8 +13,9 @@ SCRIPT=/system/bin/atlas-hybrid.sh
 LOG=/data/local/tmp/atlas-hybrid-service.log
 ST=/data/local/tmp/atlas_hybrid.status
 export ATLAS_AUTO_BOOTSTRAP="${ATLAS_AUTO_BOOTSTRAP:-1}"
-export HOME="${ATLAS_HOME:-/data/data/com.titanus2.atlas/files}"
+export HOME="${ATLAS_HOME:-/data/local/atlas-home/atlas}"
 export ATLAS_HOME="$HOME"
+export ATLAS_LINUX_HOME="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
 export ATLAS_HYBRID_SIZE_G="${ATLAS_HYBRID_SIZE_G:-8}"
 
 log() { echo "atlas-hybrid-ctl: $*" >>"$LOG" 2>/dev/null || true; }

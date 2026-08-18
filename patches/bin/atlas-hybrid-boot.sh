@@ -16,9 +16,10 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin:$PATH
 LOG=/data/local/tmp/atlas-hybrid-service.log
 SCRIPT=/system/bin/atlas-hybrid.sh
-# Default Atlas app home (admin identity)
-export HOME="${ATLAS_HOME:-/data/user/0/com.titanus2.atlas/files}"
+# Debian/linux home on userdata — never Atlas CE files.
+export HOME="${ATLAS_HOME:-/data/local/atlas-home/atlas}"
 export ATLAS_HOME="$HOME"
+export ATLAS_LINUX_HOME="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
 export ATLAS_HYBRID_SIZE_G="${ATLAS_HYBRID_SIZE_G:-8}"
 # Hybrid ROM: auto bootstrap when seed present
 export ATLAS_AUTO_BOOTSTRAP=1

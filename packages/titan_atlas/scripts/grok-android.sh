@@ -1,1 +1,0 @@
-../../gsi_product/prebuilt_atlas/grok-android.sh

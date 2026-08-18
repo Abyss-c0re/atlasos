@@ -117,7 +117,6 @@ PROT
 bin nanobot Nanobot peer (→ com.titanus2.nanobot)
 bin nanobot.real Nanobot engine (→ com.titanus2.nanobot)
 bin atlas Atlas hybrid (→ com.titanus2.atlas)
-bin grok Grok CLI (→ com.titanus2.atlas)
 bin adbd ADB daemon
 bin sshd SSH hybrid
 bin titan2-fw Firewall CLI
@@ -199,9 +198,6 @@ policy_resolve_bin_uid() {
       policy_resolve_uid com.titanus2.nanobot && return 0
       ;;
     atlas|atlas-auth|atlas-sudo)
-      policy_resolve_uid com.titanus2.atlas && return 0
-      ;;
-    grok|grok-android.sh)
       policy_resolve_uid com.titanus2.atlas && return 0
       ;;
     titan2-fw|titan2-fw.sh|titan2-fw-observe)
