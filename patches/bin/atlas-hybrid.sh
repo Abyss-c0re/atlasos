@@ -102,7 +102,7 @@ UPPER="$ROOT/upper"
 WORK="$ROOT/work"
 MERGE="$ROOT/merge"
 MARKER="$ROOT/.atlas-hybrid"
-VER=8
+VER=9
 T2=/data/misc/titan2
 ST=/data/local/tmp
 BB="${ATLAS_BUSYBOX:-/data/adb/ksu/bin/busybox}"
@@ -933,6 +933,20 @@ drop_hybrid_junk() {
   done
 }
 
+# OpenSSH client exits 255 if any ssh_config include is not root-owned.
+# LP seed keeps Android uid 1000 (system) on /etc/ssh — "SSH is broken".
+# systemd ssh-proxy drop-in is useless here (no systemd user@).
+heal_debian_ssh() {
+  etc="$MERGE/etc/ssh"
+  [ -d "$etc" ] || etc="$LP_MNT/etc/ssh"
+  [ -d "$etc" ] || return 0
+  rm -f "$etc/ssh_config.d/20-systemd-ssh-proxy.conf" 2>/dev/null || true
+  chown -R 0:0 "$etc" 2>/dev/null || true
+  chmod 755 "$etc" "$etc/ssh_config.d" 2>/dev/null || true
+  chmod 644 "$etc/ssh_config" 2>/dev/null || true
+  find "$etc/ssh_config.d" -type f -exec chmod 644 {} + 2>/dev/null || true
+}
+
 bind_one() {
   src="$1"
   dst="$2"
@@ -977,21 +991,53 @@ bind_rbind() {
 write_android_exec_helpers() {
   d="$MERGE/usr/local/libexec"
   mkdir -p "$d" "$MERGE/usr/local/bin" 2>/dev/null || true
-  # Native wrap (same-name Android peers). Prefer /system/bin, then assets.
-  _wrap=
-  for w in /system/bin/atlas-android \
-    "$d/atlas-android"; do
-    [ -x "$w" ] && _wrap=$w && break
-  done
-  if [ -n "$_wrap" ]; then
-    [ "$_wrap" = "$d/atlas-android" ] || cp -f "$_wrap" "$d/atlas-android" 2>/dev/null || true
-    chmod 755 "$d/atlas-android" 2>/dev/null || true
-    ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android" 2>/dev/null || true
-    ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android-exec" 2>/dev/null || true
-    ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android-run" 2>/dev/null || true
-    ln -sfn /usr/local/libexec/atlas-android "$d/atlas-android-exec" 2>/dev/null || true
-    # Seeing is current — do not symlink screencap to the auth wrap.
-    _sc=
+  # Debian client for enterd ELEVATE. Never plant the Bionic ELF here —
+  # after Android lives at /android/system the interp /system/bin/linker64
+  # is gone and `android` dies ENOENT (Grok 01a01703).
+  cat >"$d/atlas-android" <<'EOF'
+#!/bin/bash
+# Deb → enterd ELEVATE (Android plane). Not a Bionic ELF.
+set -f
+if [ $# -eq 0 ]; then
+  echo "usage: android <tool|path> [args…]" >&2
+  exit 2
+fi
+case "$1" in
+  /*) ;;
+  *) set -- "/system/bin/$1" "${@:2}" ;;
+esac
+cmd=""
+for a in "$@"; do
+  q=${a//\'/\'\\\'\'}
+  cmd="${cmd:+$cmd }'$q'"
+done
+exec 3<>/dev/tcp/127.0.0.1/17999 || {
+  echo "atlas-android: enterd not listening (127.0.0.1:17999)" >&2
+  exit 4
+}
+printf 'ELEVATE chroot=0\n%s\n' "$cmd" >&3
+code=4
+while IFS= read -r line <&3; do
+  case "$line" in
+    OK) continue ;;
+    ERR*) echo "atlas-android: $line" >&2; exec 3<&-; exit 3 ;;
+    *__ATLAS_EXIT__*)
+      code=${line##*__ATLAS_EXIT__ }
+      break
+      ;;
+    *) printf '%s\n' "$line" ;;
+  esac
+done
+exec 3<&-
+exit "${code:-0}"
+EOF
+  chmod 755 "$d/atlas-android" 2>/dev/null || true
+  ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android" 2>/dev/null || true
+  ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android-exec" 2>/dev/null || true
+  ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android-run" 2>/dev/null || true
+  ln -sfn /usr/local/libexec/atlas-android "$d/atlas-android-exec" 2>/dev/null || true
+  # Seeing is current — do not symlink screencap to the auth wrap.
+  _sc=
     for s in /system/bin/atlas-screencap \
       /data/data/com.titanus2.atlas/files/bin/atlas-screencap \
       /data/data/com.titanus2.atlas/files/bin/atlas-screencap.sh; do
@@ -1001,7 +1047,6 @@ write_android_exec_helpers() {
       cp -f "$_sc" "$MERGE/usr/local/bin/atlas-screencap" 2>/dev/null || true
       chmod 755 "$MERGE/usr/local/bin/atlas-screencap" 2>/dev/null || true
     fi
-  fi
   cat >"$d/atlas-android-exec" <<'EOF'
 #!/bin/sh
 # Run an Android (Bionic) binary from hybrid Debian root.
@@ -1200,8 +1245,8 @@ EOF
   # Same-name Android IPC wrappers first on PATH (/usr/local/bin).
   # Deb binderfs is empty — these must not be raw /system/bin ELFs.
   wrapbin="$MERGE/usr/local/libexec/atlas-android"
-  # ONE bridge name. Do not plant fake screencap/am peers — agents try those first.
-  if [ -x "$wrapbin" ] || [ -x /usr/local/libexec/atlas-android ]; then
+  # Keep the Debian enterd client. Never replace with Bionic ELF.
+  if [ -x "$wrapbin" ]; then
     ln -sfn /usr/local/libexec/atlas-android "$MERGE/usr/local/bin/android" 2>/dev/null || true
   fi
   cat >"$MERGE/usr/local/libexec/atlas-android-hint" <<'EOF'
@@ -1352,6 +1397,7 @@ bind_android() {
   unbind_android_os_over_debian
   drop_user_home_promoted_to_usr
   drop_hybrid_junk
+  heal_debian_ssh
 
   bind_one /dev "$MERGE/dev"
   # pts: NEVER inherit host ptmxmode=000 (dead Deb PTY / "broken debian").
@@ -1595,10 +1641,16 @@ ensure_agent_elevate_gates() {
     dir=`dirname "$dest"`
     case "$dir" in ''|*$'\n'*|*Toybox*) continue ;; esac
     safe_mkdir_p "$dir" || continue
-    cat >"$dest" <<EOF
+    cat >"$dest" <<'EOF'
 #!/bin/sh
-# Atlas elevate gate → agent client (biometrics) → real setuid elevate
-exec '$gate' "\$@"
+# Elevate via enterd (Deb cannot exec Bionic /system/bin/atlas-sudo).
+AND=/usr/local/libexec/atlas-android
+[ -x "$AND" ] || AND=/usr/local/bin/android
+if [ -x "$AND" ]; then
+  exec "$AND" /system/bin/atlas-sudo "$@"
+fi
+echo "atlas-sudo: android/enterd bridge missing" >&2
+exit 127
 EOF
     chmod 755 "$dest" 2>/dev/null || true
   done

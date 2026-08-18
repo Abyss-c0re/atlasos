@@ -780,8 +780,18 @@ static void handle_client(int csock, uid_t peer) {
     setenv("PROMPT_COMMAND", "", 1);
     setenv("TERM", "xterm-256color", 1);
     setenv("COLORTERM", "truecolor", 1);
-    setenv("ANDROID_ROOT", "/system", 1);
-    setenv("ANDROID_DATA", "/data", 1);
+    /* Deb plane: Android is /android/*, never /system. */
+    unsetenv("ANDROID_ROOT");
+    unsetenv("ANDROID_DATA");
+    unsetenv("ANDROID_BOOTLOGO");
+    unsetenv("ANDROID_STORAGE");
+    unsetenv("ANDROID_ART_ROOT");
+    unsetenv("ANDROID_I18N_ROOT");
+    unsetenv("ANDROID_TZDATA_ROOT");
+    unsetenv("ANDROID_ASSETS");
+    unsetenv("BOOTCLASSPATH");
+    unsetenv("ASEC_MOUNTPOINT");
+    setenv("ANDROID_ROOT", "/android/system", 1);
     /* Stop CE bashrc clobber — PATH is product-owned (user installs on HOME). */
     setenv("BASH_ENV", "", 1);
     unsetenv("LD_LIBRARY_PATH");
@@ -802,16 +812,9 @@ static void handle_client(int csock, uid_t peer) {
       path_add_dir(path, sizeof(path), "/sbin");
       path_add_dir(path, sizeof(path), "/bin");
       if (h && h[0]) path_add_user_installs(path, sizeof(path), h);
-      /* also CE files home if distinct (android plane tools) */
-      path_add_user_installs(path, sizeof(path), "/data/data/com.titanus2.atlas/files");
-      path_add_dir(path, sizeof(path), "/system/bin");
-      path_add_dir(path, sizeof(path), "/system_ext/bin");
-      path_add_dir(path, sizeof(path), "/product/bin");
-      path_add_dir(path, sizeof(path), "/system/xbin");
-      path_add_dir(path, sizeof(path), "/vendor/bin");
       if (!path[0]) {
         snprintf(path, sizeof(path),
-                 "/usr/local/bin:/usr/bin:/bin:/system/bin");
+                 "/usr/local/bin:/usr/bin:/bin");
       }
       setenv("PATH", path, 1);
     }
