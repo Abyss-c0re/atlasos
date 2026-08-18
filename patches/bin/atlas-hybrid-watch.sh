@@ -5,76 +5,30 @@ export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 CTL=/system/bin/atlas-hybrid-ctl.sh
 [ -f "$CTL" ] || CTL=/system/bin/atlas-hybrid-ctl
 ENTERD=/system/bin/atlas-enterd
-# Tip land (rootless product): prefer /data/local/tmp tip ELF without remount.
-ENTERD_TIP=/data/local/tmp/atlas-enterd-tip
 LOG=/data/local/tmp/atlas-hybrid-service.log
 ST=/data/local/tmp
 export ATLAS_AUTO_BOOTSTRAP=1
 
 log() { echo "atlas-hybrid-watch: $*" >>"$LOG" 2>/dev/null || true; }
 
-pick_enterd() {
-  if [ -x "$ENTERD_TIP" ]; then
-    echo "$ENTERD_TIP"
-  elif [ -x "$ENTERD" ]; then
-    echo "$ENTERD"
-  else
-    echo ""
-  fi
-}
-
-# Never SIGKILL tip enterd — that kills Deb bash (session exit -9 black term).
-kill_system_enterd_only() {
-  setprop ctl.stop atlas-enterd 2>/dev/null || true
-  for p in `pidof atlas-enterd 2>/dev/null`; do
-    # pidof exact name atlas-enterd (not tip)
-    kill -9 "$p" 2>/dev/null || true
-    log "pruned system enterd pid=$p"
-  done
-}
-
-kill_all_enterd() {
-  # reload only — tip + system
-  kill_system_enterd_only
-  for p in `pidof atlas-enterd-tip 2>/dev/null`; do
-    kill "$p" 2>/dev/null || true
-  done
-  sleep 0.3
-}
-
-enterd_tip_live() {
-  pidof atlas-enterd-tip >/dev/null 2>&1
-}
-
+# LAW: Deb enter is the ROM daemon. Never prefer /data/local/tmp tip —
+# tip-prefer killed system enterd and Atlas fell back to Android toybox sh.
 enterd_live() {
-  enterd_tip_live && return 0
   pidof atlas-enterd >/dev/null 2>&1
 }
 
 ensure_enterd() {
-  ED=`pick_enterd`
-  [ -n "$ED" ] || return 0
-  # reload request: kill + restart (tip binary swap)
-  if [ -f "$ST/atlas-enterd-reload-request" ]; then
-    rm -f "$ST/atlas-enterd-reload-request" 2>/dev/null || true
-    log "enterd-reload-request → $ED"
-    kill_all_enterd
+  [ -x "$ENTERD" ] || return 0
+  # Drop leftover tip so it cannot steal the plane after a reboot.
+  rm -f /data/local/tmp/atlas-enterd-tip /data/local/tmp/atlas-enterd-reload-request 2>/dev/null || true
+  if enterd_live; then
+    return 0
   fi
-  # Tip preferred: keep tip forever; only stop system service (do not kill tip)
-  if [ -x "$ENTERD_TIP" ]; then
-    kill_system_enterd_only
-    if enterd_tip_live; then
-      return 0
-    fi
-    log "start tip enterd ($ENTERD_TIP)"
-    "$ENTERD_TIP" >>/data/local/tmp/atlas-enterd.tip.log 2>&1 &
-    sleep 0.3
-    enterd_tip_live && return 0
-  fi
-  # System only when no tip
+  log "start atlas-enterd ($ENTERD)"
+  setprop ctl.start atlas-enterd 2>/dev/null || true
+  sleep 0.2
   enterd_live && return 0
-  log "start atlas-enterd ($ED)"
-  "$ED" >>/data/local/tmp/atlas-enterd.log 2>&1 &
+  "$ENTERD" >>/data/local/tmp/atlas-enterd.log 2>&1 &
   sleep 0.2
 }
 

@@ -109,13 +109,6 @@ public final class HybridEnsure {
     /** Ask init / watch to start atlas-enterd (rootless UI bridge). */
     public static boolean requestEnterd() {
         try {
-            java.io.FileWriter w = new java.io.FileWriter(
-                "/data/local/tmp/atlas-enterd-reload-request", false);
-            w.write("ts=" + System.currentTimeMillis() + " src=app\n");
-            w.close();
-        } catch (Exception ignored) {
-        }
-        try {
             new ProcessBuilder("/system/bin/setprop", "sys.atlas.enterd", "1")
                 .redirectErrorStream(true).start();
         } catch (Exception ignored) {
