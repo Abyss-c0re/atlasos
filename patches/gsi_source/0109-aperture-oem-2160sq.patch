@@ -1,0 +1,386 @@
+# project:packages/apps/Aperture
+# 2160p 1:1 = 2160×2160. 1080p 1:1 = 1440/1080². HD 1:1 = 720².
+# 16:9: 3840×2160 / 1920×1080 / 1280×720 / 640×480. FPS follows the control
+# (UHD max 30). Do not force UHD for every 1:1 bind (that made 1080 and
+# 2160 both write 2160×2160).
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -21,8 +21,8 @@
+         applicationId = "org.lineageos.aperture"
+         minSdk = 26
+         targetSdk = 36
+-        versionCode = 1
+-        versionName = "1.0"
++        versionCode = 45
++        versionName = "16.oem-2160sq"
+     }
+ 
+     buildTypes {
+--- a/app/src/main/java/org/lineageos/aperture/CameraActivity.kt
++++ b/app/src/main/java/org/lineageos/aperture/CameraActivity.kt
+@@ -1560,26 +1560,18 @@
+                 val square1to1 = org.lineageos.aperture.utils.TitanAspect.isSquare(
+                     viewModel.photoAspectRatio.value
+                 )
+-                val bindQuality = if (square1to1) {
+-                    Quality.UHD
+-                } else {
+-                    cameraConfiguration.videoQuality
+-                }
+-                // Check whether or not the video quality is supported
++                val bindQuality = cameraConfiguration.videoQuality
+                 val videoQualityInfo = cameraConfiguration.camera.supportedVideoQualities[
+                     bindQuality
+-                ] ?: cameraConfiguration.camera.supportedVideoQualities[
+-                    cameraConfiguration.videoQuality
+-                ] ?: error("Video quality not supported by the camera")
+-
+-                if (!square1to1) {
+-                    require(
+-                        videoQualityInfo.supportedFrameRates.contains(
+-                            cameraConfiguration.videoFrameRate
+-                        )
+-                    ) {
+-                        "Video frame rate not supported with the requested video quality"
+-                    }
++                ] ?: cameraConfiguration.camera.supportedVideoQualities.values.firstOrNull()
++                    ?: error("Video quality not supported by the camera")
++
++                require(
++                    videoQualityInfo.supportedFrameRates.contains(
++                        cameraConfiguration.videoFrameRate
++                    ) || square1to1
++                ) {
++                    "Video frame rate not supported with the requested video quality"
+                 }
+ 
+                 require(
+@@ -1592,7 +1584,10 @@
+ 
+                 // 1:1 finder is FILL_CENTER. Encode is OEM 16:9 HAL only.
+                 // Leftover 1:1 ImageCapture filter + FHD Quality → 368×1080.
+-                val videoSel = org.lineageos.aperture.utils.TitanAspect.videoHalSelector()
++                val videoSel = org.lineageos.aperture.utils.TitanAspect.videoHalSelector(
++                    square1to1,
++                    bindQuality,
++                )
+                 viewModel.cameraController.previewResolutionSelector = videoSel
+                 viewModel.cameraController.imageCaptureResolutionSelector = videoSel
+                 org.lineageos.aperture.utils.TitanVideo.applyToController(
+@@ -1667,14 +1662,7 @@
+                 .setFrameRate(
+                     when (cameraConfiguration) {
+                         is CameraConfiguration.Video ->
+-                            if (org.lineageos.aperture.utils.TitanAspect.isSquare(
+-                                    viewModel.photoAspectRatio.value
+-                                )
+-                            ) {
+-                                org.lineageos.aperture.models.FrameRate.FPS_30
+-                            } else {
+-                                cameraConfiguration.videoFrameRate
+-                            }
++                            cameraConfiguration.videoFrameRate
+                         else -> null
+                     }
+                 )
+--- a/app/src/main/java/org/lineageos/aperture/models/Camera.kt
++++ b/app/src/main/java/org/lineageos/aperture/models/Camera.kt
+@@ -7,6 +7,7 @@
+ 
+ import android.hardware.camera2.CameraCharacteristics
+ import android.hardware.camera2.CameraMetadata
++import android.media.MediaRecorder
+ import android.os.Build
+ import androidx.annotation.OptIn
+ import androidx.camera.camera2.interop.Camera2CameraInfo
+@@ -115,6 +116,22 @@
+                     dynamicRangeToQualities.value.contains(it)
+                 }.map { dynamicRangeToQualities -> dynamicRangeToQualities.key }.toSet()
+             )
++        }.let { base ->
++            // CameraX Quality table often omits UHD even when HAL MediaRecorder
++            // lists 3840×2160. Inject it so the 4K button exists.
++            if (base.containsKey(Quality.UHD) || !mediaRecorderHas(3840, 2160)) {
++                base
++            } else {
++                val donor = base[Quality.FHD] ?: base.values.firstOrNull()
++                    ?: return@let base
++                val fps30 = donor.supportedFrameRates.filter { it.value <= 30 }.toSet()
++                    .ifEmpty { setOf(FrameRate.FPS_30) }
++                base + (Quality.UHD to VideoQualityInfo(
++                    Quality.UHD,
++                    fps30,
++                    donor.supportedDynamicRanges,
++                ))
++            }
+         }
+ 
+     val supportedVideoStabilizationModes = buildList {
+@@ -269,6 +286,14 @@
+         }
+     }
+ 
++    private fun mediaRecorderHas(width: Int, height: Int): Boolean {
++        val map = camera2CameraInfo.getCameraCharacteristic(
++            CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP
++        ) ?: return false
++        return map.getOutputSizes(MediaRecorder::class.java)
++            ?.any { it.width == width && it.height == height } == true
++    }
++
+     private inline fun <T : Enum<T>> Camera2CameraInfo.getAndMapCameraCharacteristics(
+         key: CameraCharacteristics.Key<IntArray>,
+         mapper: (Int) -> T?,
+--- a/app/src/main/java/org/lineageos/aperture/utils/TitanAspect.kt
++++ b/app/src/main/java/org/lineageos/aperture/utils/TitanAspect.kt
+@@ -41,51 +41,80 @@
+             )
+         if (isSquare(ratio)) {
+             builder.setResolutionFilter { supportedSizes, _ ->
+-                val squares = supportedSizes.filter { it.width == it.height }
++                val oem = supportedSizes.filter { s ->
++                    s.width == s.height && (
++                        s.width == 3504 || s.width == 3000 ||
++                            s.width == 1440 || s.width == 720
++                        )
++                }.sortedByDescending { it.width }
++                if (oem.isNotEmpty()) {
++                    return@setResolutionFilter oem.toMutableList()
++                }
++                supportedSizes.filter { it.width == it.height }
+                     .sortedByDescending { it.width.toLong() * it.height }
+-                (if (squares.isNotEmpty()) squares else supportedSizes).toMutableList()
++                    .ifEmpty { supportedSizes }
++                    .toMutableList()
+             }
+         }
+         return builder.build()
+     }
+ 
+     /**
+-     * Video preview + leftover ImageCapture selector.
+-     * 1:1 photo filter on the shared session produced 368×1080 (not a HAL
+-     * size). Video encodes OEM 16:9 only; 1:1 file is a later center-crop.
++     * Bind the size the user picked. Do not collapse 1080 and 2160 onto one stream.
++     * 16:9: 3840×2160 / 1920×1080 / 1280×720 / 640×480.
++     * 1:1: 2160×2160 for 2160p, 1440/1080² for 1080p, 720² for HD/SD.
+      */
+-    fun videoHalSelector(): ResolutionSelector {
++    fun videoHalSelector(square: Boolean, quality: androidx.camera.video.Quality): ResolutionSelector {
+         return ResolutionSelector.Builder()
+             .setAllowedResolutionMode(
+                 ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE
+             )
+             .setAspectRatioStrategy(
+                 AspectRatioStrategy(
+-                    AspectRatio.RATIO_16_9,
++                    if (square) AspectRatio.RATIO_4_3 else AspectRatio.RATIO_16_9,
+                     AspectRatioStrategy.FALLBACK_RULE_AUTO,
+                 )
+             )
+             .setResolutionFilter { supportedSizes, _ ->
+-                val hal = supportedSizes.filter { s ->
+-                    (s.width == 3840 && s.height == 2160) ||
+-                        (s.width == 1920 && s.height == 1080) ||
+-                        (s.width == 1280 && s.height == 720)
+-                }.sortedByDescending { it.width }
+-                if (hal.isNotEmpty()) {
+-                    return@setResolutionFilter hal.toMutableList()
++                val want = targetSizes(square, quality)
++                val pick = supportedSizes.filter { s ->
++                    want.any { it.width == s.width && it.height == s.height }
++                }
++                if (pick.isNotEmpty()) {
++                    return@setResolutionFilter pick.toMutableList()
+                 }
+                 supportedSizes.filter { s ->
+-                    s.width >= 1280 && s.height >= 720 &&
+-                        kotlin.math.abs(s.width.toFloat() / s.height - 16f / 9f) < 0.08f
+-                }.sortedByDescending { it.width.toLong() * it.height }
+-                    .ifEmpty {
+-                        supportedSizes.filter { it.width >= 1280 && it.height >= 720 }
+-                    }
+-                    .toMutableList()
++                    want.any { kotlin.math.abs(s.width - it.width) < 16 &&
++                        kotlin.math.abs(s.height - it.height) < 16 }
++                }.ifEmpty { supportedSizes }.toMutableList()
+             }
+             .build()
+     }
+ 
++    fun targetSizes(square: Boolean, quality: androidx.camera.video.Quality): List<android.util.Size> {
++        if (square) {
++            return when (quality) {
++                androidx.camera.video.Quality.UHD -> listOf(
++                    android.util.Size(2160, 2160),
++                    android.util.Size(3840, 2160),
++                )
++                androidx.camera.video.Quality.HD,
++                androidx.camera.video.Quality.SD -> listOf(android.util.Size(720, 720))
++                else -> listOf(
++                    android.util.Size(1440, 1440),
++                    android.util.Size(1080, 1080),
++                    android.util.Size(1920, 1080),
++                )
++            }
++        }
++        return when (quality) {
++            androidx.camera.video.Quality.UHD -> listOf(android.util.Size(3840, 2160))
++            androidx.camera.video.Quality.HD -> listOf(android.util.Size(1280, 720))
++            androidx.camera.video.Quality.SD -> listOf(android.util.Size(640, 480))
++            else -> listOf(android.util.Size(1920, 1080))
++        }
++    }
++
+     fun photoResolutionSelector(ratio: Int, highResolution: Boolean): ResolutionSelector {
+         val builder = ResolutionSelector.Builder()
+             .setAllowedResolutionMode(
+@@ -103,9 +132,18 @@
+             )
+         if (isSquare(ratio)) {
+             builder.setResolutionFilter { supportedSizes, _ ->
+-                val squares = supportedSizes.filter { it.width == it.height }
+-                (if (squares.isNotEmpty()) squares else supportedSizes)
++                val oem = supportedSizes.filter { s ->
++                    s.width == s.height && (
++                        s.width == 3504 || s.width == 3000 ||
++                            s.width == 1440 || s.width == 720
++                        )
++                }.sortedByDescending { it.width }
++                if (oem.isNotEmpty()) {
++                    return@setResolutionFilter oem.toMutableList()
++                }
++                supportedSizes.filter { it.width == it.height }
+                     .sortedByDescending { it.width.toLong() * it.height }
++                    .ifEmpty { supportedSizes }
+                     .toMutableList()
+             }
+         }
+--- a/app/src/main/java/org/lineageos/aperture/utils/TitanVideo.kt
++++ b/app/src/main/java/org/lineageos/aperture/utils/TitanVideo.kt
+@@ -18,7 +18,6 @@
+ import android.util.Log
+ import android.util.Range
+ import android.util.Size
+-import androidx.camera.video.FallbackStrategy
+ import androidx.camera.video.Quality
+ import androidx.camera.video.QualitySelector
+ import androidx.camera.view.CameraController
+@@ -55,9 +54,9 @@
+     }
+ 
+     /**
+-     * 1:1 product file is 1080×1080 @ 60. CameraX has no square Quality, so
+-     * we encode OEM FHD 1920×1080 @ 60 (HAL size) then center-crop.
+-     * Do not put a square ResolutionFilter on preview — that leaked 368².
++     * Bind the quality the user picked. 1:1 must not force UHD (that made
++     * 1080 and 2160 both record 2160×2160). FPS follows the control;
++     * UHD is 30 max (HAL AE).
+      */
+     fun applyToController(
+         controller: CameraController,
+@@ -65,22 +64,20 @@
+         frameRate: FrameRate?,
+         square: Boolean,
+     ) {
+-        // OEM / live HAL (cam 0 MediaRecorder): 3840×2160, 1920×1080,
+-        // 1440×1440, 1280×720, 720×720. No 1080×1080. No 368×1080.
+-        // CameraX Quality.FHD means "1080-tall class" and picked 368×1080.
+-        // 1:1 uses UHD (3840×2160, real HAL) then crop to 1080².
+-        val q = if (square) Quality.UHD else quality
+-        val fps = if (square) FrameRate.FPS_30 else oemFrameRate(q, frameRate)
+-        controller.videoCaptureQualitySelector = if (square) {
+-            QualitySelector.fromOrderedList(
+-                listOf(Quality.UHD, Quality.HD),
+-                FallbackStrategy.lowerQualityThan(Quality.UHD),
+-            )
++        // 1:1 follows the quality button: 2160p → 2160², 1080p → 1440/1080², HD → 720².
++        val q = if (square) {
++            when (quality) {
++                Quality.UHD -> Quality.UHD
++                Quality.HD, Quality.SD -> Quality.HD
++                else -> Quality.FHD
++            }
+         } else {
+-            QualitySelector.from(q)
++            quality
+         }
++        val fps = oemFrameRate(quality, frameRate)
++        controller.videoCaptureQualitySelector = QualitySelector.from(q)
+         controller.videoCaptureTargetFrameRate = Range(fps.value, fps.value)
+-        Log.i(TAG, "video bind square=$square quality=$q fps=${fps.value}")
++        Log.i(TAG, "video bind square=$square ui=$quality encode=$q fps=${fps.value}")
+     }
+ 
+     fun cropSavedVideoToSquare(resolver: ContentResolver, uri: Uri) {
+@@ -104,16 +101,19 @@
+         if (width <= 0 || height <= 0) {
+             return
+         }
+-        // Product 1:1 file is 1080×1080. Native HAL squares (1440² / 720²)
+-        // stay as-is if already square and ≥1080. 368×1080 is not OEM.
+-        if (width < 1280 || height < 720) {
+-            Log.w(TAG, "skip square crop of junk encode ${width}x${height}")
++        // 2160p 1:1 = 2160². 1080p 1:1 = 1080². HD 1:1 = 720².
++        if (width == height && (width == 2160 || width == 1440 || width == 1080 || width == 720)) {
++            Log.i(TAG, "keep square ${width}x${height}")
+             return
+         }
+         val side = when {
+-            width >= 1920 && height >= 1080 -> 1080
+-            width == height && width >= 1080 -> return
+-            else -> min(width, height)
++            width >= 3840 || height >= 2160 -> 2160
++            width >= 1920 || height >= 1080 -> 1080
++            width >= 1280 || height >= 720 -> 720
++            else -> {
++                Log.w(TAG, "skip square crop of junk ${width}x${height}")
++                return
++            }
+         }
+         if (width == side && height == side) {
+             return
+--- a/app/src/main/java/org/lineageos/aperture/viewmodels/CameraViewModel.kt
++++ b/app/src/main/java/org/lineageos/aperture/viewmodels/CameraViewModel.kt
+@@ -1720,33 +1720,23 @@
+         }
+ 
+         CameraMode.VIDEO -> {
+-            val square1to1 = org.lineageos.aperture.utils.TitanAspect.isSquare(
+-                preferencesRepository.photoAspectRatio.value
++            val videoQuality = preferencesRepository.videoQuality.value.takeIf {
++                camera.supportedVideoQualities.contains(it)
++            } ?: camera.supportedVideoQualities.keys.firstOrNull() ?: error(
++                "Camera ${camera.cameraId} does not support any video quality"
+             )
+-            val videoQuality = if (square1to1 &&
+-                camera.supportedVideoQualities.contains(Quality.UHD)
+-            ) {
+-                Quality.UHD
+-            } else {
+-                preferencesRepository.videoQuality.value.takeIf {
+-                    camera.supportedVideoQualities.contains(it)
+-                } ?: camera.supportedVideoQualities.keys.firstOrNull() ?: error(
+-                    "Camera ${camera.cameraId} does not support any video quality"
+-                )
+-            }
+ 
+             val videoQualityInfo = camera.supportedVideoQualities[videoQuality] ?: error(
+                 "Camera ${camera.cameraId} does not support video quality $videoQuality"
+             )
+ 
+-            val videoFrameRate = if (square1to1) {
+-                org.lineageos.aperture.models.FrameRate.FPS_30
+-            } else {
++            val videoFrameRate = org.lineageos.aperture.utils.TitanVideo.oemFrameRate(
++                videoQuality,
+                 preferencesRepository.videoFrameRate.value.takeIf {
+                     videoQualityInfo.supportedFrameRates.contains(it)
+                 } ?: videoQualityInfo.supportedFrameRates.firstOrNull { it.value >= 60 }
+-                    ?: videoQualityInfo.supportedFrameRates.maxByOrNull { it.value }
+-            }
++                    ?: videoQualityInfo.supportedFrameRates.maxByOrNull { it.value },
++            )
+ 
+             val videoDynamicRange = preferencesRepository.videoDynamicRange.value.takeIf {
+                 videoQualityInfo.supportedDynamicRanges.contains(it)

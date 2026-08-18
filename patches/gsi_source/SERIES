@@ -113,5 +113,9 @@
 # Aperture on-open: if privacy OFF and HI847S missing, wake the belt.
 0107-aperture-heal-aux-on-open.patch
 
-# OEM: no 1080×1080 / no 368×1080. 1:1 = UHD 3840×2160 @ 30 then crop 1080².
+# OEM: no 1080×1080 / no 368×1080. Bind path that removed 368×1080.
 0108-aperture-video-uhd-crop-1080.patch
+
+# 2160p 1:1 = 2160×2160. Honor the quality button (do not force UHD on
+# every 1:1 bind). CameraX UHD injected when HAL lists 3840×2160.
+0109-aperture-oem-2160sq.patch

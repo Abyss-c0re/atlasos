@@ -221,3 +221,23 @@ prebuilt_etc {
     sub_dir: "init",
     filename_from_src: true,
 }
+
+// Live Titan: bind Cube-fixed MTK FrameworkResOverlay over EROFS vendor.
+sh_binary {
+    name: "titan2-bind-mtk-privacy-overlay.sh",
+    src: "titan2-bind-mtk-privacy-overlay.sh",
+}
+
+prebuilt_etc {
+    name: "titan2-privacy-overlay.rc",
+    src: "titan2-privacy-overlay.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}
+
+prebuilt_etc {
+    name: "titan2-privacy-FrameworkResOverlay.apk",
+    src: "FrameworkResOverlay.apk",
+    filename: "FrameworkResOverlay.apk",
+    sub_dir: "titan2_privacy",
+}

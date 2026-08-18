@@ -60,3 +60,5 @@ patches/gsi_source
 third_party/titan2-touchpadd
 packages/titan_usb_hid_system
 packages/titan_icon_mask_only
+packages/gsi_product/overlays
+packages/gsi_product/titanus2.mk

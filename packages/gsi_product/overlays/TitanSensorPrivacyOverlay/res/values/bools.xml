@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Framework SensorPrivacyService.supportsSensorToggle SOFTWARE -->
+    <bool name="config_supportsCamToggle">true</bool>
+    <bool name="config_supportsMicToggle">true</bool>
+    <!-- Hardware path stays false unless OEM exposes HW mute -->
+    <bool name="config_supportsHardwareCamToggle">false</bool>
+    <bool name="config_supportsHardwareMicToggle">false</bool>
+    <!-- Power button = sleep/wake; camera is QS privacy — not double-power launch -->
+    <bool name="config_cameraDoubleTapPowerGestureEnabled">false</bool>
+</resources>

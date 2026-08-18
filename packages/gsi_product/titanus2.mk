@@ -112,7 +112,36 @@ PRODUCT_PACKAGES += \
     openwrt-lpctl \
     titan2-pad-agent.rc \
     titan2-ims.rc \
-    titan2-sensor-privacy.rc
+    titan2-sensor-privacy.rc \
+    titan2-bind-mtk-privacy-overlay.sh \
+    titan2-privacy-overlay.rc \
+    titan2-privacy-FrameworkResOverlay.apk
+
+# AtlasOS overlays captured from live Titan 2026-08-18
+# (/system/product/overlay/Titan*.apk). Built as runtime_resource_overlay.
+PRODUCT_PACKAGES += \
+    TitanCubeIconMask \
+    TitanSensorPrivacyOverlay \
+    TitanCubeIcon_settings \
+    TitanCubeIcon_com_android_calculator2 \
+    TitanCubeIcon_com_android_contacts \
+    TitanCubeIcon_com_android_deskclock \
+    TitanCubeIcon_com_android_dialer \
+    TitanCubeIcon_com_android_documentsui \
+    TitanCubeIcon_com_android_fmradio \
+    TitanCubeIcon_com_android_messaging \
+    TitanCubeIcon_com_clanker_commander \
+    TitanCubeIcon_com_titanus2_atlas \
+    TitanCubeIcon_com_titanus2_clanker \
+    TitanCubeIcon_com_titanus2_nanobot \
+    TitanCubeIcon_com_titanus2_usbhid \
+    TitanCubeIcon_im_angry_openeuicc \
+    TitanCubeIcon_org_lineageos_aperture \
+    TitanCubeIcon_org_lineageos_audiofx \
+    TitanCubeIcon_org_lineageos_etar \
+    TitanCubeIcon_org_lineageos_glimpse \
+    TitanCubeIcon_org_lineageos_recorder \
+    TitanCubeIcon_org_lineageos_twelve
 
 # product.prop (0020) is not read on this GSI bind layout — stamp system.
 # tether_ipv4 is the Android DHCP gateway (0090). Must be host .1, never .0.

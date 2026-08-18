@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Cube: minimal cyan on black for Settings chrome icons -->
+    <color name="icon_accent">#FF00E5FF</color>
+    <color name="dark_mode_icon_color_single_tone">#FF00E5FF</color>
+    <color name="light_mode_icon_color_single_tone">#FF00E5FF</color>
+    <color name="advanced_icon_color">#FF00E5FF</color>
+    <color name="settingslib_colorAccentPrimary">#FF00E5FF</color>
+    <color name="settingslib_colorAccentSecondary">#FF66F0FF</color>
+    <color name="message_icon_color">#FF00E5FF</color>
+    <!-- homepage / expressive soft surfaces → near-black cubes -->
+    <color name="settingslib_colorSurface">#FF0C1016</color>
+    <color name="settingslib_colorSurfaceVariant">#FF141A22</color>
+    <color name="settingslib_colorSurfaceHeader">#FF0C1016</color>
+</resources>

@@ -152,11 +152,14 @@ for m in re.finditer(r"PRODUCT_PACKAGES\s*\+=\s*\\?\n((?:\s+\S+.*\n)+)", mk):
         if line and not line.startswith("#"):
             pkgs.add(line)
 bps = set()
-for bp in (root / "packages/gsi_product").rglob("Android.bp"):
-    if bp.name.endswith(".example"):
-        continue
-    for m in re.finditer(r'name:\s*"([^"]+)"', bp.read_text()):
-        bps.add(m.group(1))
+import os
+for dirpath, _, filenames in os.walk(root / "packages/gsi_product", followlinks=True):
+    for fn in filenames:
+        if fn != "Android.bp" or fn.endswith(".example"):
+            continue
+        text = Path(dirpath, fn).read_text()
+        for m in re.finditer(r'name:\s*"([^"]+)"', text):
+            bps.add(m.group(1))
 missing = sorted(pkgs - bps)
 if missing:
     print("FAIL PRODUCT_PACKAGES missing Android.bp:", ", ".join(missing))

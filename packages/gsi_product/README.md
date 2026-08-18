@@ -22,6 +22,7 @@ inject.
 | titan2-touchpadd | submodule `third_party/titan2-touchpadd/` → packed `prebuilt_touchpadd/` | `/system/bin` + init.rc |
 | TitanAtlas | `apps/titan_atlas/` + `packages/titan_atlas/` | priv-app + hybrid scripts + boot mount |
 | TitanNanobot (opt) | `apps/titan_nanobot/` | optional PRODUCT_PACKAGES |
+| AtlasOS overlays | `packages/gsi_product/overlays/` (live Titan 2026-08-18) | `/product/overlay` via `runtime_resource_overlay` |
 
 ## Land process
 

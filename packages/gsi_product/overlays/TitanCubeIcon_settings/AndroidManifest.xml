@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.titanus2.overlay.cubeicon.settings"
+    android:versionCode="3"
+    android:versionName="1.2-cube-settings">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35"/>
+    <overlay
+        android:targetPackage="com.android.settings"
+        android:priority="950"
+        android:isStatic="true"/>
+    <application android:hasCode="false" android:label="Titan Cube Settings Icons"/>
+</manifest>

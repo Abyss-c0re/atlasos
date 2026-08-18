@@ -1,0 +1,6 @@
+// Live Titan overlay captured 2026-08-18 → GSI runtime_resource_overlay.
+runtime_resource_overlay {
+    name: "TitanCubeIcon_org_lineageos_etar",
+    product_specific: true,
+    sdk_version: "current",
+}
