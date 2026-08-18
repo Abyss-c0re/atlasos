@@ -1216,28 +1216,8 @@ exec /usr/local/libexec/atlas-android-exec "$@"
 EOF
   cat >"$MERGE/usr/local/bin/android" <<'EOF'
 #!/bin/sh
-# android am|pm|screencap|… — Deb → Android plane (optional bio)
-if [ -z "$1" ]; then
-  echo "usage: android <tool|path> [args…]" >&2
-  echo "  android am start -n …" >&2
-  echo "  android screencap -p /sdcard/x.png" >&2
-  echo "  optional bio: ATLAS_ANDROID_AUTH=1" >&2
-  exit 2
-fi
-cmd="$1"
-shift
-case "$cmd" in
-  /*) exec /usr/local/libexec/atlas-android-exec "$cmd" "$@" ;;
-  *)
-    for d in /system/bin /system/xbin /product/bin /vendor/bin; do
-      if [ -x "$d/$cmd" ]; then
-        exec /usr/local/libexec/atlas-android-exec "$d/$cmd" "$@"
-      fi
-    done
-    echo "android: $cmd not found under /system/bin" >&2
-    exit 127
-    ;;
-esac
+# Deb OUT port — enterd ELEVATE. Never search Deb /system/bin for Bionic ELFs.
+exec /usr/local/libexec/atlas-android "$@"
 EOF
   chmod 755 "$MERGE/usr/local/bin/android-exec" "$MERGE/usr/local/bin/android" 2>/dev/null || true
   # Alias names agents expect from issue reports
@@ -1251,9 +1231,8 @@ EOF
   fi
   cat >"$MERGE/usr/local/libexec/atlas-android-hint" <<'EOF'
 #!/bin/sh
-echo "use: android ${0##*/} $*" >&2
-echo "Debian cannot see Android. Run: atlas-agent-status" >&2
-exit 64
+# CubeChain port: same-name Android tools wire to enterd. Exit 64 was a dam.
+exec /usr/local/bin/android "${0##*/}" "$@"
 EOF
   chmod 755 "$MERGE/usr/local/libexec/atlas-android-hint" 2>/dev/null || true
   for t in getprop setprop am pm cmd dumpsys service screencap screenshot \
@@ -4030,7 +4009,7 @@ cmd_rebuild() {
 cmd_path() {
   mount_overlay 2>/dev/null || true
   if is_overlay_up; then
-    echo "export PATH=\"$MERGE/usr/local/bin:$MERGE/usr/bin:$MERGE/bin:/system/bin:/system/xbin:/vendor/bin:\$PATH\""
+    echo "export PATH=\"$MERGE/usr/local/bin:$MERGE/usr/bin:$MERGE/bin:\$PATH\""
     echo "export ATLAS_HYBRID_MERGE=$MERGE"
   else
     echo "# overlay not up — hybrid mount first" >&2
