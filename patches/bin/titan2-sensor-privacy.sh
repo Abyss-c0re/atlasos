@@ -202,13 +202,15 @@ cam_block() {
   fi
 }
 
-# HI847S (id 2) is only ADDed if Aperture is on aux.packagelist *and*
-# camerahalserver starts after that stamp. Never dumpsys-gate (hangs).
-# Privacy ON (nodes 000): stamp persist only — do not bounce HAL.
-# Privacy OFF: stamp + one HAL bounce so 0+1+2+3 all publish.
+# HI847S (id 2) is SYSTEM_CAMERA. CameraProviderManager publishes it only
+# when persist.sys.phh.include_all_cameras=true at first enum. Init stamps
+# that + aux packagelist at early-init (before HAL). Never dumpsys-gate.
+# Privacy ON (nodes 000): stamp only — do not bounce HAL.
+# Privacy OFF miss: init recycle so 0+1+2+3 all publish.
 _AUX_PKGS="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
 _AUX_PUB_TS=0
 aux_cam_stamp() {
+  setprop persist.sys.phh.include_all_cameras true 2>/dev/null || true
   setprop camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
   setprop vendor.camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
   setprop persist.camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
@@ -224,11 +226,29 @@ _aux_svc_up() {
   [ "$(getprop init.svc.camerahalserver | tr -d '\r')" = running ] \
     && [ "$(getprop init.svc.cameraserver | tr -d '\r')" = running ]
 }
-# $1=force — skip 20s debounce (privacy OFF edge).
+_aux_hal_up() {
+  [ "$(getprop init.svc.camerahalserver | tr -d '\r')" = running ]
+}
+# MTK HAL must finish probing HI847S before CameraService enums.
+# Recycle before this line → ADD 0+1 only (lab T2128Z v32).
+_aux_hal_has_hi847s() {
+  logcat -d -b main 2>/dev/null | grep -q 'HI847S_MIPI_RAW:2 is installed'
+}
+# Last CameraService enum only (stale ADD 2 from a prior instance is a lie).
+# Never dumpsys media.camera (hangs).
+_aux_device2_added() {
+  logcat -d -b main -b system -s CameraService:I 2>/dev/null \
+    | grep 'ADD device' | tail -8 | grep -q 'ADD device 2'
+}
+# $1=force — skip 20s debounce (privacy OFF edge / boot miss).
 aux_cam_publish() {
   aux_cam_stamp
   if aux_cam_nodes_blocked; then
     log "aux stamp only (privacy fail-closed — all cameras off)"
+    return 0
+  fi
+  if [ "${1:-}" != "force" ] && _aux_device2_added; then
+    log "aux already ADD 2 — no bounce"
     return 0
   fi
   now=$(date +%s 2>/dev/null || echo 0)
@@ -237,17 +257,16 @@ aux_cam_publish() {
     age=$((now - _AUX_PUB_TS))
     [ "$age" -ge 0 ] && [ "$age" -lt 20 ] && return 0
   fi
-  # Wait until both services have finished their first (wrong) enum.
+  # boot_completed: first HAL probe is done. Recycle, then give the
+  # restarted HAL 15s to re-probe HI847S. 3s was too short (T2128Z).
   _w=0
-  while [ "$_w" -lt 40 ]; do
-    _aux_svc_up && break
+  while [ "$_w" -lt 20 ]; do
+    _aux_hal_up && break
     sleep 1
     _w=$((_w + 1))
   done
   aux_cam_stamp
   _AUX_PUB_TS=$(date +%s 2>/dev/null || echo 0)
-  # Init recycles CameraService. 5s fully down — 2s left HAL mid-teardown
-  # and ADD 0+1 only. Init also writes the volatile aux list (SELinux).
   setprop sys.titan2.aux_pub 1
   sleep 5
   hs=$(getprop init.svc.camerahalserver | tr -d '\r')
@@ -255,7 +274,13 @@ aux_cam_publish() {
   log "aux after stop hal=$hs cam=$cs"
   aux_cam_stamp
   setprop sys.titan2.aux_pub 2
-  sleep 3
+  _w=0
+  while [ "$_w" -lt 20 ]; do
+    _aux_hal_up && break
+    sleep 1
+    _w=$((_w + 1))
+  done
+  sleep 15
   setprop sys.titan2.aux_pub 3
   _w=0
   while [ "$_w" -lt 20 ]; do
@@ -263,10 +288,16 @@ aux_cam_publish() {
     sleep 1
     _w=$((_w + 1))
   done
+  sleep 8
   restore_camera_nodes
   aux_cam_stamp
   setprop sys.titan2.aux_pub 0
-  log "aux published init recycle (HI847S + main)"
+  if _aux_device2_added; then
+    log "aux published init recycle (HI847S ADD 2)"
+  else
+    log "aux recycle missed ADD 2"
+    return 1
+  fi
 }
 
 cam_allow() {
@@ -451,14 +482,19 @@ else
   aux_cam_stamp
   log "boot CAM allowed (SPM OFF)"
 fi
-# Recycle after first enum has finished. +30s is the adb-proven window.
-# +70s belt if the first recycle still ADDs only 0+1.
-(
-  sleep 30
-  aux_cam_publish force
-  sleep 40
-  aux_cam_publish force
-) &
+# First enum is usually 0+1 until HAL has probed HI847S and we recycle.
+# Wait for that probe, then one recycle. Instant double-retry kills enum.
+if [ "$last_cam" = "0" ]; then
+  if _aux_device2_added; then
+    log "boot HI847S already public (early stamp)"
+  else
+    aux_cam_publish force
+    if ! _aux_device2_added; then
+      sleep 8
+      aux_cam_publish force
+    fi
+  fi
+fi
 privacy_mic_on
 _rcm=$?
 if [ "$_rcm" = "0" ] || [ "$_rcm" = "2" ]; then
@@ -471,7 +507,7 @@ else
   log "boot MIC allowed"
 fi
 
-log "titan2-sensor-privacy ONLINE v31 (init recycle 5s down +30s/+70s; privacy-off only)"
+log "titan2-sensor-privacy ONLINE v33 (wait HI847S probe then recycle; privacy-off only)"
 seed_qs_tiles
 TICK=0
 [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 200000 ] && : >"$LOG"
@@ -492,6 +528,7 @@ while true; do
     case "$_w" in
       cam_block) cam_block; last_cam=1; aux_cam_stamp ;;
       cam_allow) cam_allow; last_cam=0; aux_cam_publish force ;;
+      aux_pub) aux_cam_publish force ;;
       mic_block) mic_block 2>/dev/null || true; last_mic=1 ;;
       mic_allow) mic_allow 2>/dev/null || true; last_mic=0 ;;
     esac

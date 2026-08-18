@@ -132,6 +132,7 @@ setprop persist.sys.agui.touchpad_function 0 2>/dev/null
 # Never dumpsys media.camera here — it hangs and skips the stamp.
 _titan2_aux_pkgs="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
 _titan2_stamp_aux() {
+  setprop persist.sys.phh.include_all_cameras true 2>/dev/null || true
   setprop camera.aux.packagelist "$_titan2_aux_pkgs" 2>/dev/null || true
   setprop vendor.camera.aux.packagelist "$_titan2_aux_pkgs" 2>/dev/null || true
   setprop persist.camera.aux.packagelist "$_titan2_aux_pkgs" 2>/dev/null || true

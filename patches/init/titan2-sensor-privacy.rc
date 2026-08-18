@@ -2,6 +2,23 @@
 # Root via init (hybrid system image) — no Magisk / no app root.
 # See docs/project/SENSOR_PRIVACY_SYSTEM.md
 
+# HI847S (id 2) is SYSTEM_CAMERA. CameraProviderManager only publishes it
+# when persist.sys.phh.include_all_cameras=true at first HAL/CameraService
+# enum. Volatile aux packagelist must exist before camerahalserver starts.
+# A +30s/+70s recycle is too late — human opens Aperture at boot.
+on early-init
+    setprop persist.sys.phh.include_all_cameras true
+    setprop camera.aux.packagelist org.lineageos.aperture,org.lineageos.aperture.lenslauncher
+    setprop vendor.camera.aux.packagelist org.lineageos.aperture,org.lineageos.aperture.lenslauncher
+on init
+    setprop persist.sys.phh.include_all_cameras true
+    setprop camera.aux.packagelist org.lineageos.aperture,org.lineageos.aperture.lenslauncher
+    setprop vendor.camera.aux.packagelist org.lineageos.aperture,org.lineageos.aperture.lenslauncher
+on post-fs-data
+    setprop persist.sys.phh.include_all_cameras true
+    setprop camera.aux.packagelist org.lineageos.aperture,org.lineageos.aperture.lenslauncher
+    setprop vendor.camera.aux.packagelist org.lineageos.aperture,org.lineageos.aperture.lenslauncher
+
 service titan2-sensor-privacy /system/bin/titan2-sensor-privacy.sh
     class late_start
     user root
@@ -22,6 +39,7 @@ on property:persist.titan2.privacy_belt=*
 on property:sys.titan2.aux_pub=1
     stop cameraserver
     stop camerahalserver
+    setprop persist.sys.phh.include_all_cameras true
     setprop camera.aux.packagelist org.lineageos.aperture,org.lineageos.aperture.lenslauncher
     setprop vendor.camera.aux.packagelist org.lineageos.aperture,org.lineageos.aperture.lenslauncher
 on property:sys.titan2.aux_pub=2
