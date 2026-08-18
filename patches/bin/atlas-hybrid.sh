@@ -1011,13 +1011,24 @@ for a in "$@"; do
   q=${a//\'/\'\\\'\'}
   cmd="${cmd:+$cmd }'$q'"
 done
-# Capture/mutate need ticket.exec (Grok 01a01703 unauth screencap).
+# Capture/mutate need a live ticket.exec (expiry+ttl). File presence is not auth.
+ticket_exec_live() {
+  for tk in /var/lib/atlas-auth/ticket.exec \
+    /data/local/atlas-linux/var/lib/atlas-auth/ticket.exec; do
+    [ -f "$tk" ] || continue
+    read -r exp ttl <"$tk" || continue
+    now=$(date +%s)
+    [ -n "$exp" ] && [ -n "$ttl" ] || continue
+    [ "$ttl" -gt 0 ] 2>/dev/null || continue
+    [ "$exp" -gt "$now" ] 2>/dev/null || continue
+    return 0
+  done
+  return 1
+}
 case "$1" in
   *screencap*|*screenshot*|*nsenter*|/system/bin/input|/system/bin/am|/system/bin/pm|/system/bin/atlas-sudo)
-    tk=/var/lib/atlas-auth/ticket.exec
-    [ -f "$tk" ] || tk=/data/local/atlas-linux/var/lib/atlas-auth/ticket.exec
-    if [ ! -f "$tk" ]; then
-      echo "atlas-android: $1 needs atlas-auth (no ticket.exec)" >&2
+    if ! ticket_exec_live; then
+      echo "atlas-android: $1 needs atlas-auth (no live ticket.exec)" >&2
       exit 3
     fi
     ;;
