@@ -1011,6 +1011,17 @@ for a in "$@"; do
   q=${a//\'/\'\\\'\'}
   cmd="${cmd:+$cmd }'$q'"
 done
+# Capture/mutate need ticket.exec (Grok 01a01703 unauth screencap).
+case "$1" in
+  *screencap*|*screenshot*|*nsenter*|/system/bin/input|/system/bin/am|/system/bin/pm|/system/bin/atlas-sudo)
+    tk=/var/lib/atlas-auth/ticket.exec
+    [ -f "$tk" ] || tk=/data/local/atlas-linux/var/lib/atlas-auth/ticket.exec
+    if [ ! -f "$tk" ]; then
+      echo "atlas-android: $1 needs atlas-auth (no ticket.exec)" >&2
+      exit 3
+    fi
+    ;;
+esac
 exec 3<>/dev/tcp/127.0.0.1/17999 || {
   echo "atlas-android: enterd not listening (127.0.0.1:17999)" >&2
   exit 4

@@ -290,17 +290,18 @@ static int observe_class(const char *cmd) {
   char name[64];
   memcpy(name, slash, n);
   name[n] = 0;
+  /* Seeing the glass is NOT observe. getprop/dumpsys only.
+   * screencap/screenshot/input/am/pm were free → Grok 01a01703
+   * captured 1440² with no live auth (ELEVATE chroot=0). */
   static const char *obs[] = {
-      "screencap", "screenshot", "dumpsys", "getprop", "setprop",
-      "logcat", "am", "pm", "cmd", "wm", "input", "settings",
-      "service", "content", "app_process", "app_process64",
+      "getprop", "dumpsys",
       NULL};
   for (int i = 0; obs[i]; i++)
     if (strcmp(name, obs[i]) == 0) return 1;
-  /* env -i PATH=… /system/bin/screencap — first token is env */
-  return strstr(cmd, "screencap") || strstr(cmd, "dumpsys") ||
-         strstr(cmd, "getprop") || strstr(cmd, "/bin/logcat") ||
-         strstr(cmd, " app_process");
+  if (strstr(cmd, "screencap") || strstr(cmd, "screenshot")
+      || strstr(cmd, "nsenter") || strstr(cmd, "unshare"))
+    return 0;
+  return strstr(cmd, "getprop") || strstr(cmd, "dumpsys");
 }
 
 /* enterd accepts ticket.exec only (15s one-shot after atlas-auth grant).
@@ -391,10 +392,9 @@ static void handle_elevate(int csock, uid_t peer, char *line) {
     return;
   }
 
-  /* chroot=0 is atlas-android Android-plane plumbing — not a second ticket
-   * religion. Ticket.exec only for Deb-root (chroot=1) mutate. Observe-class
-   * never tickets. Checking the ELEVATE header was the 1.2.7 agent-dead bug. */
-  if (do_chroot && !observe_class(shellcmd) && !auth_ticket_ok()) {
+  /* Observe (getprop/dumpsys) flows. Capture/mutate need ticket.exec.
+   * chroot=0 used to skip the gate — Grok nsenter+screencap with no finger. */
+  if (!observe_class(shellcmd) && !auth_ticket_ok()) {
     dprintf(csock, "ERR need-auth-ticket peer=%u\n", (unsigned)peer);
     close(csock);
     return;

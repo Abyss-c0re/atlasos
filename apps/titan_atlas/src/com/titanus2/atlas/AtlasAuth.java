@@ -68,6 +68,31 @@ public final class AtlasAuth {
         return sb.length() == 0 ? "ask" : sb.toString();
     }
 
+    /** Glass capture + mutate never silent-grant. */
+    public static boolean isCaptureOrMutateScope(String scope, String cmd) {
+        String sc = sanitizeScope(scope);
+        String c = cmd != null ? cmd.toLowerCase() : "";
+        switch (sc) {
+            case "screencap":
+            case "screenshot":
+            case "input":
+            case "am":
+            case "pm":
+            case "cmd":
+            case "settings":
+            case "setprop":
+            case "wm":
+            case "sudo":
+            case "su":
+            case "exec":
+                return true;
+            default:
+                break;
+        }
+        return c.contains("screencap") || c.contains("screenshot")
+            || c.contains("nsenter") || c.contains("input ");
+    }
+
     public static void clearStaleRequests(Context c) {
         File dir = authDir(c);
         File[] files = dir.listFiles();
@@ -117,7 +142,9 @@ public final class AtlasAuth {
             String cmd = parseField(body, "cmd");
             if (reason == null || reason.isEmpty()) reason = "Atlas privilege";
             appendLog(c, "host-claim", scope, reason, cmd, "busy");
-            if (!biometricsOn) {
+            /* Capture/mutate never silent-grant. Bio off still asks (Approve).
+             * Silent grant when bio=off minted ticket.screencap for Grok. */
+            if (!biometricsOn && !isCaptureOrMutateScope(scope, cmd)) {
                 writeResult(c, id, true, scope, reason, cmd);
                 continue;
             }
