@@ -34,7 +34,7 @@ import java.util.List;
  * Multi-session like Termux: + / prev / next / close; Exit leaves the app.
  */
 public class MainActivity extends Activity implements AtlasTermClient.Host {
-    public static final String VERSION = "1.0.32-shared";
+    public static final String VERSION = "1.0.33-plane";
     private static final int MAX_SESSIONS = 8;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -785,26 +785,14 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
                 new AlertDialog.Builder(this)
                     .setTitle("User")
                     .setSingleChoiceItems(names, checked, (d, which) -> {
-                        HybridEnsure.DebianUser u = pick.get(which);
-                        String name = u.name;
+                        String name = pick.get(which).name;
                         AtlasPrefs.setShellUser(this, name);
                         updateUserButton();
                         d.dismiss();
-                        int i = SessionHub.index();
                         boolean onDeb = SessionHub.MODE_DEBIAN.equals(
-                            SessionHub.modeAt(i));
-                        // Root and Deb-only logins cannot sit on the Android plane.
-                        if (!onDeb && ("root".equals(name) || !u.android)
-                                && u.debian) {
-                            SessionHub.setModeAt(i, SessionHub.MODE_DEBIAN);
-                            toast("Deb → " + name);
-                        } else if (onDeb && !u.debian && u.android) {
-                            SessionHub.setModeAt(i, SessionHub.MODE_ANDROID);
-                            toast("And → " + name);
-                        } else {
-                            toast((onDeb ? "Deb" : "And") + " → " + name);
-                        }
-                        // onResume swallows requestSessionRestart when PTY is live
+                            SessionHub.modeAt(SessionHub.index()));
+                        toast((onDeb ? "Deb" : "And") + " → " + name);
+                        // Identity only. Never flip And/Deb — that is heresy.
                         restartSession();
                     })
                     .setNeutralButton("Users…", (d, w) ->
@@ -996,8 +984,6 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         File sessionHome = home;
         String login = AtlasPrefs.shellUser(this);
         if (login == null || login.isEmpty()) login = "atlas";
-        // Android plane cannot be uid 0. Root is Debian-only.
-        if (!priv && "root".equals(login)) login = "atlas";
         if (priv) {
             File linuxHome = new File(NativeBin.LINUX_HOME);
             //noinspection ResultOfMethodCallIgnored
