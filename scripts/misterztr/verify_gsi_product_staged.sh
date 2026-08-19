@@ -96,6 +96,11 @@ if grep -qE '_is_protected_capture_pcm|Hostless_Spk' "$DEST_SYS/titan2-sensor-pr
 else
   bad "sensor-privacy missing hostless/spk protect — media silence risk"
 fi
+if grep -qE 'aux_pub_abort|v34-aux-watch' "$DEST_SYS/titan2-sensor-privacy.sh" 2>/dev/null; then
+  ok "sensor-privacy HI847S watchdog (v34 privacy-abort)"
+else
+  bad "sensor-privacy missing HI847S privacy-abort watchdog"
+fi
 grep -qF 'titan2-ims-setup.sh' "$DEST_MK" 2>/dev/null && ok "PRODUCT_PACKAGES lists ims-setup" || bad "mk missing ims-setup"
 if grep -qE 'settings put secure location_mode' "$DEST_SYS/titan2-ims-setup.sh" 2>/dev/null; then
   bad "ims-setup still forces location_mode (privacy)"
