@@ -114,7 +114,7 @@ public final class AtlasPrefs {
         }
     }
 
-    /** Debian login for the next Deb session. Default atlas. */
+    /** Shared login for Android and Debian sessions. Default atlas. */
     public static String shellUser(Context c) {
         String s = p(c).getString("shell_user", "atlas");
         if (s == null || s.isEmpty()) return "atlas";

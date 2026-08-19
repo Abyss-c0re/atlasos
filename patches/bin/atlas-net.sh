@@ -418,11 +418,14 @@ exec_admin_bash() {
   [ -n "$ATLAS_ASKPASS_BIN" ] && export SUDO_ASKPASS="$ATLAS_ASKPASS_BIN"
   export ATLAS_BIN ATLAS_HOME HOME ATLAS_SYSBIN ATLAS_USER_BIN
   export USER="${ATLAS_LOGIN:-atlas}" LOGNAME="${ATLAS_LOGIN:-atlas}" ATLAS_ROLE="${ATLAS_LOGIN:-atlas}"
+  export PS1="android:${ATLAS_LOGIN:-atlas}:\\w\\$ "
+  export PROMPT_COMMAND=""
   stty sane 2>/dev/null || true
   stty erase '^?' 2>/dev/null || true
   cd "$HOME" 2>/dev/null || true
   if [ -n "$BASH_BIN" ]; then
-    exec "$BASH_BIN" -il
+    # No login rc — profile must not steal USER back to the app passwd name.
+    exec "$BASH_BIN" --norc --noprofile -i
   fi
   ATLAS_REPL=`find_tool atlas`
   if [ -n "$ATLAS_REPL" ]; then

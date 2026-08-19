@@ -42,7 +42,7 @@ public class UsersActivity extends Activity {
             ScrollView.LayoutParams.WRAP_CONTENT));
 
         UiKit.section(root, "Shared identity");
-        UiKit.note(root, "Use — next Debian session is this login");
+        UiKit.note(root, "Use — this login on Android and Debian");
         summary = UiKit.summary(root);
         UiKit.button(root, "Add user", this::showAdd);
         UiKit.button(root, "Set Debian root password", this::showRootPass);
@@ -158,10 +158,10 @@ public class UsersActivity extends Activity {
         Switch android = sw(col, "Android access", u.android);
         Switch debian = sw(col, "Debian login", u.debian);
         Switch sudo = sw(col, "Debian sudo (atlas-auth)", u.sudo);
-        if (u.debian) {
-            AtlasUi.actionBtn(col, "Use in next Deb session", () -> {
+        if (u.debian || u.android) {
+            AtlasUi.actionBtn(col, "Use this user", () -> {
                 AtlasPrefs.setShellUser(this, u.name);
-                toast("Deb session → " + u.name);
+                toast("session → " + u.name);
                 reload();
             });
         }
