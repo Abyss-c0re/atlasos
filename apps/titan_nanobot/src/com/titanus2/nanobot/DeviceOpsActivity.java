@@ -34,6 +34,7 @@ public class DeviceOpsActivity extends Activity {
 
         TextView h = new TextView(this);
         h.setText("device_control + Accessibility (user grant) + bin_exec.\n"
+            + "Optional Atlas auth uses the same plane as Debian (scoped ticket).\n"
             + "SMS = compose intent only (no silent send). Reboot blocked by shell policy.");
         h.setTextColor(0xFF9E9E9E);
         h.setPadding(0, dp(8), 0, dp(12));
@@ -56,6 +57,12 @@ public class DeviceOpsActivity extends Activity {
         be.setChecked(PrivacyPrefs.binExec(this));
         be.setOnCheckedChangeListener((b, v) -> PrivacyPrefs.setBinExec(this, v));
         col.addView(be);
+
+        Switch aa = new Switch(this);
+        aa.setText("Atlas auth (optional · same as Debian)");
+        aa.setChecked(PrivacyPrefs.atlasAuth(this));
+        aa.setOnCheckedChangeListener((b, v) -> PrivacyPrefs.setAtlasAuth(this, v));
+        col.addView(aa);
 
         col.addView(btn("Open Accessibility settings", v ->
             show(DeviceOps.openA11ySettings(this))));

@@ -32,6 +32,22 @@ public final class PrivacyPrefs {
         return s.getBoolean("share_lan", false);
     }
 
+    /**
+     * Optional Atlas privilege plane (same as Debian {@code atlas-auth}).
+     * Default OFF — chat / Grok session never require it.
+     */
+    public static boolean atlasAuth(Context c) {
+        return sp(c).getBoolean("atlas_auth", false);
+    }
+
+    public static void setAtlasAuth(Context c, boolean v) {
+        sp(c).edit().putBoolean("atlas_auth", v).apply();
+        plane(c, "titan2_nanobot_atlas_auth", v ? "1" : "0");
+        try {
+            AccessLog.record(c, "atlas_auth_pref", v ? "on" : "off");
+        } catch (Exception ignored) {}
+    }
+
     public static boolean deviceControl(Context c) {
         return sp(c).getBoolean("device_control", false);
     }
@@ -329,6 +345,7 @@ public final class PrivacyPrefs {
         setFilesAcl(c, filesAcl(c));
         setAllowNetworkAgents(c, allowNetworkAgents(c));
         setAllowReboot(c, allowReboot(c));
+        plane(c, "titan2_nanobot_atlas_auth", atlasAuth(c) ? "1" : "0");
     }
 
     private static void plane(Context c, String name, String body) {

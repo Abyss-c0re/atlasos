@@ -46,6 +46,7 @@ public class NanobotA11yService extends AccessibilityService {
 
     @Override public void onInterrupt() { /* no-op */ }
 
+    /** Prefs only — Atlas gate lives in {@link DeviceOps#a11y} (observe vs input). */
     private boolean allowed() {
         return PrivacyPrefs.deviceControl(this) && PrivacyPrefs.a11yControl(this);
     }

@@ -43,6 +43,19 @@ public final class BiometricGate {
 
     public static void authenticate(Activity activity, String title, String subtitle, Callback cb) {
         if (activity == null || cb == null) return;
+        // Optional Atlas plane — same host as Debian sudo. Not a second religion.
+        if (PrivacyPrefs.atlasAuth(activity)) {
+            new Thread(() -> {
+                boolean ok = AtlasAuthGate.allowSilent(
+                    activity, "nanobot-secrets",
+                    title != null ? title : "Nanobot secret");
+                H.post(() -> {
+                    if (ok) cb.onAuthenticated();
+                    else cb.onFailed("atlas-auth denied");
+                });
+            }, "nanobot-atlas-auth").start();
+            return;
+        }
         if (!canAuthenticate(activity)) {
             // Fail closed for secrets when no lock screen — still allow with explicit toast path
             Toast.makeText(activity,

@@ -224,6 +224,20 @@ public final class Titan2ApiContract {
     public static final String HID_HOST_PKG = "com.titanus2.usbhid";
     public static final String HID_HOST_LABEL = "USB HID host";
 
+    /**
+     * Atlas privilege plane (Debian ↔ Android). Same inode as Deb
+     * {@code /var/lib/atlas-auth} when LP is mounted. Survives userdata wipe.
+     * Never {@code /data/local/tmp} and never app CE as SoT.
+     */
+    public static final String ATLAS_LP_MNT = "/data/local/atlas-linux";
+    public static final String ATLAS_AUTH_ON_LP = ATLAS_LP_MNT + "/var/lib/atlas-auth";
+    public static final String ATLAS_AUTH_IN_DEB = "/var/lib/atlas-auth";
+    public static final String ATLAS_PKG = "com.titanus2.atlas";
+    public static final String ATLAS_AUTH_PROMPT =
+        "com.titanus2.atlas.AuthPromptActivity";
+    public static final String ACTION_ATLAS_AUTH_PROMPT =
+        "com.titanus2.atlas.action.AUTH_PROMPT";
+
     // --- Pad gesture plane (touchpadd hot-read; HID + Controls) ---
     /** 1 = left tap-click on (default). */
     public static final String FILE_PAD_TAP_CLICK = "titan2_pad_tap_click";

@@ -799,6 +799,11 @@ public class MainActivity extends Activity {
         swDevice = sw("Allow device control (shell)", PrivacyPrefs.deviceControl(this),
             (b, v) -> { PrivacyPrefs.setDeviceControl(this, v); toast(v ? "Shell control ON" : "OFF"); });
         col.addView(swDevice);
+        col.addView(sw("Atlas auth (optional · Debian plane)", PrivacyPrefs.atlasAuth(this),
+            (b, v) -> {
+                PrivacyPrefs.setAtlasAuth(this, v);
+                toast(v ? "Atlas auth ON — capture/mutate asks Atlas" : "Atlas auth off");
+            }));
         col.addView(sw("a11y UI control (taps/apps)", PrivacyPrefs.a11yControl(this),
             (b, v) -> {
                 PrivacyPrefs.setA11yControl(this, v);

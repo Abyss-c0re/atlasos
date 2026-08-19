@@ -35,24 +35,30 @@ public final class DeviceOps {
             o.put("a11y_control", PrivacyPrefs.a11yControl(c));
             o.put("a11y_connected", NanobotA11yService.isLive());
             o.put("bin_exec", PrivacyPrefs.binExec(c));
+            o.put("atlas_auth", AtlasAuthGate.status(c));
         } catch (Exception ignored) {}
         return o;
     }
 
     private static boolean needControl(Context c, JSONObject o) throws Exception {
+        return needControl(c, o, "am", "Nanobot device op");
+    }
+
+    private static boolean needControl(Context c, JSONObject o, String scope, String reason)
+            throws Exception {
         if (!PrivacyPrefs.deviceControl(c)) {
             o.put("ok", false);
             o.put("error", "device_control OFF — enable in Nanobot Share/Settings");
             return false;
         }
-        return true;
+        return AtlasAuthGate.allow(c, o, scope, reason);
     }
 
     /** Launch package main activity. */
     public static JSONObject launchPackage(Context c, String pkg) {
         JSONObject o = new JSONObject();
         try {
-            if (!needControl(c, o)) return o;
+            if (!needControl(c, o, "am", "launch " + pkg)) return o;
             if (pkg == null || pkg.isEmpty()) {
                 o.put("ok", false);
                 o.put("error", "empty package");
@@ -83,7 +89,7 @@ public final class DeviceOps {
     public static JSONObject startActivity(Context c, JSONObject spec) {
         JSONObject o = new JSONObject();
         try {
-            if (!needControl(c, o)) return o;
+            if (!needControl(c, o, "am", "startActivity")) return o;
             if (spec == null) {
                 o.put("ok", false);
                 o.put("error", "null spec");
@@ -157,7 +163,6 @@ public final class DeviceOps {
     public static JSONObject execBinary(Context c, String path, String[] args) {
         JSONObject o = new JSONObject();
         try {
-            if (!needControl(c, o)) return o;
             if (!PrivacyPrefs.binExec(c)) {
                 o.put("ok", false);
                 o.put("error", "bin_exec OFF");
@@ -173,6 +178,10 @@ public final class DeviceOps {
                 o.put("error", "path not allowlisted: " + path);
                 return o;
             }
+            String scope = path;
+            int slash = scope.lastIndexOf('/');
+            if (slash >= 0 && slash + 1 < scope.length()) scope = scope.substring(slash + 1);
+            if (!needControl(c, o, scope, "exec " + path)) return o;
             File f = new File(path);
             if (!f.isFile()) {
                 o.put("ok", false);
@@ -245,7 +254,8 @@ public final class DeviceOps {
     public static JSONObject a11y(Context c, String op, JSONObject args) {
         JSONObject o = new JSONObject();
         try {
-            if (!needControl(c, o)) return o;
+            String a11yScope = "status".equals(op) || "dump".equals(op) ? "dump" : "input";
+            if (!needControl(c, o, a11yScope, "a11y " + op)) return o;
             if (!PrivacyPrefs.a11yControl(c)) {
                 o.put("ok", false);
                 o.put("error", "a11y_control OFF");
