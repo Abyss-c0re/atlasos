@@ -87,6 +87,7 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         boolean hasNeuron;
         boolean bits; // NexusCore 512-bit lattice (0/1)
         int gen;
+        int[] spikes;
         boolean ready;
     }
     private final AtomicReference<Snap> snapRef = new AtomicReference<>();
@@ -97,6 +98,13 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
     private int boxCacheGridN = -1;
     private float boxCacheOrigin, boxCacheScale;
     private int boxCacheCount;
+    private boolean boxUploaded;
+    private int meshCacheN = -1;
+    private float meshCacheOrigin, meshCacheScale;
+    private int meshCacheCount;
+    private boolean meshUploaded;
+    private FloatBuffer meshVertBuf;
+    private long boostUntilMs;
 
     private final float[] edgeScratch = new float[6];
     private final float[] faceScratch = new float[12];
@@ -258,7 +266,11 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
      * Kick is backup only (continuous is SoT). Match main app / cube_gl.
      */
     private long rearFrameMs(Context ctx, boolean interact) {
-        if (forceCompact) return interact ? 33L : 50L; // 20 fps idle, 30 on touch
+        if (forceCompact) {
+            if (interact) return 50L;
+            if (System.currentTimeMillis() < boostUntilMs) return 50L;
+            return 100L; // 10 fps persist-orbit; 20 fps on touch / SMX flip
+        }
         if (CubeStability.isThermalSevere(ctx)) return 33L;
         return 16L;
     }
@@ -296,6 +308,12 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
             System.arraycopy(matrix.impulse, 0, s.impulse, 0, need);
             s.hasNeuron = matrix.hasNeuron;
             s.bits = matrix.isBitLattice();
+            int ns = 0;
+            int[] sp = new int[64];
+            for (int k = 0; k < need && ns < sp.length; k++) {
+                if (s.impulse[k] > 0.05f) sp[ns++] = k;
+            }
+            s.spikes = java.util.Arrays.copyOf(sp, ns);
             Snap prev = snapRef.get();
             if (prev != null && prev.cells != null && prev.n == n
                     && java.util.Arrays.equals(prev.cells, s.cells)
@@ -303,6 +321,7 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
                 s.gen = prev.gen;
             } else {
                 s.gen = ++snapGen;
+                boostUntilMs = System.currentTimeMillis() + 600L;
             }
             s.ready = true;
             snapRef.set(s);
@@ -357,15 +376,15 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         if (CubeStability.allowPeerHttp(ctx)) {
             long pullEvery = CubeStability.peerPullIntervalMs(ctx);
             // Rear lattice: SMX bits must tick. 6s felt like a brick.
-            if (forceCompact) pullEvery = 1500L;
+            if (forceCompact) pullEvery = 4000L;
             if (nowMs - lastPullMs >= pullEvery) {
                 lastPullMs = nowMs;
                 schedulePull();
             }
         }
 
-        // cube_gl.c: impulse *= 0.88 every frame. Same on rear.
-        long decayEvery = 16L;
+        // Decay with the frame, not a 60 Hz memcpy while rear draws at 15.
+        long decayEvery = forceCompact ? 100L : 16L;
         if (nowMs - lastDecayMs >= decayEvery) {
             lastDecayMs = nowMs;
             matrix.decayImpulses(0.88f);
@@ -373,7 +392,7 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
                 globalPulse *= 0.90f;
                 if (globalPulse < 0.02f) globalPulse = 0f;
             }
-            if (snap != null && snap.ready && snap.impulse != null) {
+            if (!forceCompact && snap != null && snap.ready && snap.impulse != null) {
                 int n = Math.min(snap.impulse.length, matrix.impulse.length);
                 System.arraycopy(matrix.impulse, 0, snap.impulse, 0, n);
             }
@@ -467,6 +486,11 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
             bb.order(ByteOrder.nativeOrder());
             boxColorBuf = bb.asFloatBuffer();
         }
+        if (meshVertBuf == null) {
+            ByteBuffer bb = ByteBuffer.allocateDirect(MAX_LINES * 6 * 4);
+            bb.order(ByteOrder.nativeOrder());
+            meshVertBuf = bb.asFloatBuffer();
+        }
     }
 
     private void lineClear() { lineN = 0; }
@@ -554,11 +578,14 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
     private void boxDrawCached(GL10 gl) {
         if (boxCacheCount <= 0) return;
         ensureBufs();
-        boxVertBuf.clear();
-        boxVertBuf.put(boxVertScratch, 0, boxCacheCount * 3);
+        if (!boxUploaded) {
+            boxVertBuf.clear();
+            boxVertBuf.put(boxVertScratch, 0, boxCacheCount * 3);
+            boxColorBuf.clear();
+            boxColorBuf.put(boxColorScratch, 0, boxCacheCount * 4);
+            boxUploaded = true;
+        }
         boxVertBuf.position(0);
-        boxColorBuf.clear();
-        boxColorBuf.put(boxColorScratch, 0, boxCacheCount * 4);
         boxColorBuf.position(0);
         gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
         gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
@@ -566,6 +593,18 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         gl.glColorPointer(4, GL10.GL_FLOAT, 0, boxColorBuf);
         gl.glDrawArrays(GL10.GL_TRIANGLES, 0, boxCacheCount);
         gl.glDisableClientState(GL10.GL_COLOR_ARRAY);
+        gl.glDisableClientState(GL10.GL_VERTEX_ARRAY);
+    }
+
+    private void meshDrawCached(GL10 gl, float r, float g, float b, float a) {
+        if (meshCacheCount <= 0) return;
+        ensureBufs();
+        meshVertBuf.position(0);
+        gl.glLineWidth(1f);
+        gl.glColor4f(r, g, b, a);
+        gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
+        gl.glVertexPointer(3, GL10.GL_FLOAT, 0, meshVertBuf);
+        gl.glDrawArrays(GL10.GL_LINES, 0, meshCacheCount * 2);
         gl.glDisableClientState(GL10.GL_VERTEX_ARRAY);
     }
 
@@ -702,13 +741,13 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         float pulse = 0.15f + 0.55f * globalPulse;
         float cr = CubePalette.cageR(ctx), cg = CubePalette.cageG(ctx), cb = CubePalette.cageB(ctx);
         float ca = CubePalette.cageA(ctx);
+        lineClear();
         for (int ei = 0; ei < edges.length; ei++) {
             int[] ed = edges[ei];
             float[] a = corners[ed[0]], b = corners[ed[1]];
-            drawEdge(gl, a[0], a[1], a[2], b[0], b[1], b[2],
-                cr, cg, cb, ca * 0.7f + pulse * 0.4f,
-                compact ? 1.2f : 1.2f);
+            lineEmit(a[0], a[1], a[2], b[0], b[1], b[2]);
         }
+        lineFlush(gl, cr, cg, cb, ca * 0.7f + pulse * 0.4f, 1.2f);
 
         // Lattice (rear always; front when SMX bits). Solid boxes were a brick.
         if (compact || snap.bits) {
@@ -797,30 +836,43 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         gl.glEnable(GL10.GL_BLEND);
         gl.glBlendFunc(GL10.GL_SRC_ALPHA, GL10.GL_ONE);
 
-        // cube_gl: one GL_LINES for the mesh (not one draw per edge).
         float mr = CubePalette.meshR(ctx), mg = CubePalette.meshG(ctx);
         float mb = CubePalette.meshB(ctx), ma = CubePalette.meshA(ctx);
-        int stepW = (n >= 16) ? 2 : 1;
-        lineClear();
-        for (int z = 0; z <= n; z += stepW)
-            for (int y = 0; y <= n; y += stepW) {
-                float py = origin + (y - 0.5f) * scale;
-                float pz = origin + (z - 0.5f) * scale;
-                lineEmit(origin - 0.5f * scale, py, pz, origin + (n - 0.5f) * scale, py, pz);
-            }
-        for (int z = 0; z <= n; z += stepW)
-            for (int x = 0; x <= n; x += stepW) {
-                float px = origin + (x - 0.5f) * scale;
-                float pz = origin + (z - 0.5f) * scale;
-                lineEmit(px, origin - 0.5f * scale, pz, px, origin + (n - 0.5f) * scale, pz);
-            }
-        for (int y = 0; y <= n; y += stepW)
-            for (int x = 0; x <= n; x += stepW) {
-                float px = origin + (x - 0.5f) * scale;
-                float py = origin + (y - 0.5f) * scale;
-                lineEmit(px, py, origin - 0.5f * scale, px, py, origin + (n - 0.5f) * scale);
-            }
-        lineFlush(gl, mr, mg, mb, ma, 1f);
+        if (meshCacheN != n || meshCacheOrigin != origin || meshCacheScale != scale) {
+            int stepW = (n >= 16) ? 2 : 1;
+            lineClear();
+            for (int z = 0; z <= n; z += stepW)
+                for (int y = 0; y <= n; y += stepW) {
+                    float py = origin + (y - 0.5f) * scale;
+                    float pz = origin + (z - 0.5f) * scale;
+                    lineEmit(origin - 0.5f * scale, py, pz,
+                        origin + (n - 0.5f) * scale, py, pz);
+                }
+            for (int z = 0; z <= n; z += stepW)
+                for (int x = 0; x <= n; x += stepW) {
+                    float px = origin + (x - 0.5f) * scale;
+                    float pz = origin + (z - 0.5f) * scale;
+                    lineEmit(px, origin - 0.5f * scale, pz,
+                        px, origin + (n - 0.5f) * scale, pz);
+                }
+            for (int y = 0; y <= n; y += stepW)
+                for (int x = 0; x <= n; x += stepW) {
+                    float px = origin + (x - 0.5f) * scale;
+                    float py = origin + (y - 0.5f) * scale;
+                    lineEmit(px, py, origin - 0.5f * scale,
+                        px, py, origin + (n - 0.5f) * scale);
+                }
+            ensureBufs();
+            meshVertBuf.clear();
+            meshVertBuf.put(lineVertScratch, 0, lineN * 6);
+            meshCacheCount = lineN;
+            meshCacheN = n;
+            meshCacheOrigin = origin;
+            meshCacheScale = scale;
+            meshUploaded = true;
+            lineN = 0;
+        }
+        meshDrawCached(gl, mr, mg, mb, ma);
 
         float sr = CubePalette.spikeR(ctx), sg = CubePalette.spikeG(ctx);
         float sb = CubePalette.spikeB(ctx), sa = CubePalette.spikeA(ctx);
@@ -867,30 +919,35 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
             boxCacheGridN = n;
             boxCacheOrigin = origin;
             boxCacheScale = scale;
+            boxUploaded = false;
         }
         boxDrawCached(gl);
 
         float now = (System.nanoTime() - t0) / 1e9f;
-        int i = 0;
         boolean anySpike = false;
         lineClear();
-        for (int z = 0; z < n; z++)
-            for (int y = 0; y < n; y++)
-                for (int x = 0; x < n; x++, i++) {
-                    if (i >= snap.impulse.length) continue;
-                    float imp = snap.impulse[i];
-                    if (imp <= 0.05f) continue;
-                    anySpike = true;
-                    float px = origin + x * scale;
-                    float py = origin + y * scale;
-                    float pz = origin + z * scale;
-                    float jitter = 0.12f + 0.45f * imp;
-                    float t = now * 40f + i;
-                    lineEmit(px, py, pz,
-                        px + (float) Math.sin(t) * jitter,
-                        py + (float) Math.cos(t * 1.3f) * jitter,
-                        pz + (float) Math.sin(t * 0.7f) * jitter);
-                }
+        int[] sp = snap.spikes;
+        if (sp != null) {
+            for (int si = 0; si < sp.length; si++) {
+                int i = sp[si];
+                if (i < 0 || i >= snap.impulse.length) continue;
+                float imp = snap.impulse[i];
+                if (imp <= 0.05f) continue;
+                anySpike = true;
+                int x = i % n;
+                int y = (i / n) % n;
+                int z = i / (n * n);
+                float px = origin + x * scale;
+                float py = origin + y * scale;
+                float pz = origin + z * scale;
+                float jitter = 0.12f + 0.45f * imp;
+                float t = now * 40f + i;
+                lineEmit(px, py, pz,
+                    px + (float) Math.sin(t) * jitter,
+                    py + (float) Math.cos(t * 1.3f) * jitter,
+                    pz + (float) Math.sin(t * 0.7f) * jitter);
+            }
+        }
         lineFlush(gl, sr, sg, sb, sa, 2.0f);
         if (anySpike) globalPulse = Math.max(globalPulse, 0.55f);
         gl.glDepthMask(true);

@@ -143,7 +143,9 @@ public class RearCubeActivity extends Activity {
                 }
             }
         };
-        lawHandler.postDelayed(lawPoll, 1500L);
+        // Nexus SMX is the rear SoT — do not run the seed-promote HTTP loop
+        // (it was a second peer tax on the same process).
+        lawHandler.postDelayed(lawPoll, 30000L);
 
         setContentView(root);
         try {
