@@ -107,6 +107,14 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
     private final float[] lineVertScratch = new float[MAX_LINES * 6];
     private FloatBuffer lineVertBuf;
     private int lineN;
+    /** cube_gl draw_box: 6 faces × 2 tris × 3 verts. Batched, not GL_POINTS. */
+    private static final int BOX_VERTS = 36;
+    private static final int MAX_BOX_VERTS = 256 * BOX_VERTS;
+    private final float[] boxVertScratch = new float[MAX_BOX_VERTS * 3];
+    private final float[] boxColorScratch = new float[MAX_BOX_VERTS * 4];
+    private FloatBuffer boxVertBuf;
+    private FloatBuffer boxColorBuf;
+    private int boxN;
 
     private final Runnable frameKick = new Runnable() {
         @Override public void run() {
@@ -435,6 +443,16 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
             bb.order(ByteOrder.nativeOrder());
             lineVertBuf = bb.asFloatBuffer();
         }
+        if (boxVertBuf == null) {
+            ByteBuffer bb = ByteBuffer.allocateDirect(MAX_BOX_VERTS * 3 * 4);
+            bb.order(ByteOrder.nativeOrder());
+            boxVertBuf = bb.asFloatBuffer();
+        }
+        if (boxColorBuf == null) {
+            ByteBuffer bb = ByteBuffer.allocateDirect(MAX_BOX_VERTS * 4 * 4);
+            bb.order(ByteOrder.nativeOrder());
+            boxColorBuf = bb.asFloatBuffer();
+        }
     }
 
     private void lineClear() { lineN = 0; }
@@ -460,6 +478,63 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         gl.glDrawArrays(GL10.GL_LINES, 0, lineN * 2);
         gl.glDisableClientState(GL10.GL_VERTEX_ARRAY);
         lineN = 0;
+    }
+
+    private void boxClear() { boxN = 0; }
+
+    private void boxEmitVert(float x, float y, float z, float r, float g, float b, float a) {
+        if (boxN >= MAX_BOX_VERTS) return;
+        int o = boxN * 3;
+        boxVertScratch[o] = x; boxVertScratch[o + 1] = y; boxVertScratch[o + 2] = z;
+        int c = boxN * 4;
+        boxColorScratch[c] = r; boxColorScratch[c + 1] = g;
+        boxColorScratch[c + 2] = b; boxColorScratch[c + 3] = a;
+        boxN++;
+    }
+
+    private void boxEmitQuad(float x0, float y0, float z0,
+                             float x1, float y1, float z1,
+                             float x2, float y2, float z2,
+                             float x3, float y3, float z3,
+                             float r, float g, float b, float a) {
+        boxEmitVert(x0, y0, z0, r, g, b, a);
+        boxEmitVert(x1, y1, z1, r, g, b, a);
+        boxEmitVert(x2, y2, z2, r, g, b, a);
+        boxEmitVert(x0, y0, z0, r, g, b, a);
+        boxEmitVert(x2, y2, z2, r, g, b, a);
+        boxEmitVert(x3, y3, z3, r, g, b, a);
+    }
+
+    /** cube_gl draw_box — 6 faces, one later flush. */
+    private void boxEmit(float x, float y, float z, float s,
+                         float r, float g, float b, float a) {
+        float h = s * 0.5f;
+        float x0 = x - h, x1 = x + h, y0 = y - h, y1 = y + h, z0 = z - h, z1 = z + h;
+        boxEmitQuad(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, r, g, b, a);
+        boxEmitQuad(x0, y0, z0, x0, y1, z0, x1, y1, z0, x1, y0, z0, r, g, b, a);
+        boxEmitQuad(x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0, r, g, b, a);
+        boxEmitQuad(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, r, g, b, a);
+        boxEmitQuad(x1, y0, z0, x1, y1, z0, x1, y1, z1, x1, y0, z1, r, g, b, a);
+        boxEmitQuad(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, r, g, b, a);
+    }
+
+    private void boxFlush(GL10 gl) {
+        if (boxN <= 0) return;
+        ensureBufs();
+        boxVertBuf.clear();
+        boxVertBuf.put(boxVertScratch, 0, boxN * 3);
+        boxVertBuf.position(0);
+        boxColorBuf.clear();
+        boxColorBuf.put(boxColorScratch, 0, boxN * 4);
+        boxColorBuf.position(0);
+        gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
+        gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
+        gl.glVertexPointer(3, GL10.GL_FLOAT, 0, boxVertBuf);
+        gl.glColorPointer(4, GL10.GL_FLOAT, 0, boxColorBuf);
+        gl.glDrawArrays(GL10.GL_TRIANGLES, 0, boxN);
+        gl.glDisableClientState(GL10.GL_COLOR_ARRAY);
+        gl.glDisableClientState(GL10.GL_VERTEX_ARRAY);
+        boxN = 0;
     }
 
     private void schedulePull() {
@@ -720,9 +795,9 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         float[] rgb = new float[3];
         float now = (System.nanoTime() - t0) / 1e9f;
         int i = 0;
-        int pts = 0;
         boolean anySpike = false;
         lineClear();
+        boxClear();
         for (int z = 0; z < n; z++)
             for (int y = 0; y < n; y++)
                 for (int x = 0; x < n; x++, i++) {
@@ -737,57 +812,39 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
                     float py = origin + y * scale;
                     float pz = origin + z * scale;
                     digitColor(d > 0 ? d : 1, rgb);
-                    float a = 0.28f + 0.08f * Math.max(d, 1);
-                    if (neur) {
-                        a = 0.45f;
-                        rgb[0] = 0.95f; rgb[1] = 0.06f; rgb[2] = 0.08f;
-                    }
-                    if (d >= 6) {
-                        a = 0.75f + 0.02f * d;
-                        rgb[0] = 1f; rgb[1] = 0.08f; rgb[2] = 0.06f;
-                    } else if (d >= 3) {
-                        a = 0.5f + 0.05f * d;
-                    }
                     if (imp > 0.05f) {
                         anySpike = true;
                         float flash = imp;
-                        a = 0.95f * flash;
-                        rgb[0] = 1f; rgb[1] = 0.12f; rgb[2] = 0.08f;
                         float jitter = 0.12f + 0.45f * flash;
                         float t = now * 40f + i;
+                        boxEmit(px, py, pz, 0.55f + 0.35f * flash,
+                            1f, 0.12f, 0.08f, 0.95f * flash);
                         lineEmit(px, py, pz,
                             px + (float) Math.sin(t) * jitter,
                             py + (float) Math.cos(t * 1.3f) * jitter,
                             pz + (float) Math.sin(t * 0.7f) * jitter);
+                    } else {
+                        float a = 0.28f + 0.08f * Math.max(d, 1);
+                        float sz = 0.48f + 0.06f * d;
+                        if (neur) {
+                            a = 0.45f;
+                            rgb[0] = 0.95f; rgb[1] = 0.06f; rgb[2] = 0.08f;
+                            sz = 0.58f;
+                        }
+                        if (d >= 6) {
+                            a = 0.75f + 0.02f * d;
+                            sz = 0.72f;
+                            rgb[0] = 1f; rgb[1] = 0.08f; rgb[2] = 0.06f;
+                        } else if (d >= 3) {
+                            a = 0.5f + 0.05f * d;
+                            sz = 0.6f;
+                        }
+                        if (a > 0.98f) a = 0.98f;
+                        if (heat) sz *= 0.92f;
+                        boxEmit(px, py, pz, sz, rgb[0], rgb[1], rgb[2], a);
                     }
-                    if (a > 0.98f) a = 0.98f;
-                    int o = pts * 3;
-                    pointBatchScratch[o] = px;
-                    pointBatchScratch[o + 1] = py;
-                    pointBatchScratch[o + 2] = pz;
-                    int c = pts * 4;
-                    pointColorScratch[c] = rgb[0];
-                    pointColorScratch[c + 1] = rgb[1];
-                    pointColorScratch[c + 2] = rgb[2];
-                    pointColorScratch[c + 3] = a;
-                    pts++;
                 }
-        if (pts > 0) {
-            pointBatchBuf.clear();
-            pointBatchBuf.put(pointBatchScratch, 0, pts * 3);
-            pointBatchBuf.position(0);
-            pointColorBuf.clear();
-            pointColorBuf.put(pointColorScratch, 0, pts * 4);
-            pointColorBuf.position(0);
-            gl.glPointSize(heat ? 6f : 8f);
-            gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
-            gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
-            gl.glVertexPointer(3, GL10.GL_FLOAT, 0, pointBatchBuf);
-            gl.glColorPointer(4, GL10.GL_FLOAT, 0, pointColorBuf);
-            gl.glDrawArrays(GL10.GL_POINTS, 0, pts);
-            gl.glDisableClientState(GL10.GL_COLOR_ARRAY);
-            gl.glDisableClientState(GL10.GL_VERTEX_ARRAY);
-        }
+        boxFlush(gl);
         lineFlush(gl, sr, sg, sb, sa, 2.0f);
         if (anySpike) globalPulse = Math.max(globalPulse, 0.55f);
         gl.glDepthMask(true);
