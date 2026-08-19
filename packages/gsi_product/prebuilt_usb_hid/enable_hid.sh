@@ -161,10 +161,9 @@ restore_config() {
   log "restore done config=$(getprop sys.usb.config) state=$(getprop sys.usb.state) tcp=$(getprop service.adb.tcp.port) hidg0=$([ -e /dev/hidg0 ] && echo y || echo n)"
 }
 
-# Wireless ADB must survive HID. USB gadget bounce stops adbd; persist alone
-# does not reopen :5555 on this MTK stack. Keep an already-armed TCP port
-# (props / listen / hid_tcp_keep / desire / lab). Never invent ON on ship
-# images. Never rewrite sys.usb.config here — HID owns the gadget.
+# Wireless ADB must survive HID *only while desire is on or unset*.
+# USB gadget bounce stops adbd; persist alone does not reopen :5555.
+# desire=off is SoT — never invent ON from keep / persist / lab.
 TCP_KEEP=/data/misc/titan2/hid_tcp_keep
 
 valid_tcp_port() {
@@ -194,6 +193,7 @@ want_tcp() {
   if [ -f /data/misc/titan2/remote_adb.desire ]; then
     d=$(tr -d '\r\n ' </data/misc/titan2/remote_adb.desire 2>/dev/null)
     [ "$d" = "on" ] && return 0
+    [ "$d" = "off" ] && return 1
   fi
   [ -f /data/misc/titan2/wireless_adb_wanted ] && return 0
   [ -f "$TCP_KEEP" ] && return 0
@@ -203,6 +203,13 @@ want_tcp() {
 }
 
 snap_tcp_keep() {
+  if [ -f /data/misc/titan2/remote_adb.desire ]; then
+    d=$(tr -d '\r\n ' </data/misc/titan2/remote_adb.desire 2>/dev/null)
+    if [ "$d" = "off" ]; then
+      rm -f "$TCP_KEEP" 2>/dev/null || true
+      return 0
+    fi
+  fi
   p=$(tcp_already) || {
     if lab_wants_adb; then
       p=5555

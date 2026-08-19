@@ -21,6 +21,7 @@
 #  4) one adbd bounce max per apply (ctl.restart; stop/start fallback once)
 #  5) USB composite always re-pinned with adb after bounce
 #  6) pair is orthogonal: cancel does not force desire off
+#  7) desire=off ALWAYS tears TCP down (delete hid_tcp_keep; never skip)
 #
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
@@ -38,7 +39,7 @@ PAIR_CMD=$ST/titan2_adb_pair_cmd
 PORT_FILE=$T2/remote_adb_port
 PORT_TMP=$ST/remote_adb_port
 LOCK=$ST/titan2_remote_adb.lock
-VER=3.2-cancel
+VER=3.3-off-wins
 
 log() {
   mkdir -p "$ST" 2>/dev/null || true
@@ -273,10 +274,11 @@ apply() {
       return 1
       ;;
     *)
-      # off — never drop TCP while HID session owns the gadget.
-      if hid_usb_live || [ -f /data/misc/titan2/hid_tcp_keep ]; then
-        log "apply OFF skipped — HID keeps wireless ADB"
-        return 0
+      # desire=off is SoT. Leftover hid_tcp_keep or a live exclusive HID
+      # session must not keep :5555 after the human asked for OFF.
+      rm -f /data/misc/titan2/hid_tcp_keep 2>/dev/null || true
+      if hid_usb_live; then
+        log "apply OFF while HID live — dropping TCP anyway (desire=off)"
       fi
       clear_pair_files
       service call adb 11 >/dev/null 2>&1 || true

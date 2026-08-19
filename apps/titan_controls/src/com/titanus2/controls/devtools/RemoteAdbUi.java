@@ -247,7 +247,8 @@ final class RemoteAdbUi {
         snapToggle(false);
         hidePin();
         paintOptimisticOff();
-        writeOptimisticStatus("off");
+        // Must be busy so applyAsync waits for engine listen-gone, not the lie.
+        writeOptimisticStatus("busy off");
         setWorking(true);
         applyAsync("off", -1, "disable_wireless_adb");
     }

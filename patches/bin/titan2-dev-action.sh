@@ -588,6 +588,7 @@ disarm_wireless_adb() {
   remote_adb_lock
   # 1) Desired OFF first — pad-agent / AuthPrompt / pair-wait must not re-arm
   rm -f "$WIRELESS_ADB_WANT" 2>/dev/null || true
+  rm -f /data/misc/titan2/hid_tcp_keep 2>/dev/null || true
   rm -f /data/local/tmp/titan2_remote_adb_grant 2>/dev/null || true
   rm -f /data/local/tmp/titan2_dev_action /data/misc/titan2/titan2_dev_action 2>/dev/null || true
   : > /data/local/tmp/titan2_dev_action 2>/dev/null || true
