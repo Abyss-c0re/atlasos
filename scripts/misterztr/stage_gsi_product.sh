@@ -91,6 +91,13 @@ else
   [ -n "$USB_APK" ] || die "missing TitanUsbHid.apk"
   [ -n "$CUBE_APK" ] || die "missing CubeContact.apk"
 fi
+# Cube Experience SoT: black+crimson cube_gl. Refuse stale brick APKs.
+if [ -n "$CUBE_APK" ]; then
+  grep -q '2.04-cube-gl-mono' "$ROOT/apps/cube_contact/AndroidManifest.xml" 2>/dev/null \
+    || die "CubeContact source missing 2.04-cube-gl-mono"
+  strings "$CUBE_APK" 2>/dev/null | grep -q '2.04-cube-gl-mono' \
+    || die "CubeContact.apk is not 2.04-cube-gl-mono ($CUBE_APK)"
+fi
 # HwKeyboardLayouts optional but recommended for RU system layout picker
 if [ -z "$HWKB_APK" ]; then
   info "warn: HwKeyboardLayouts.apk missing — RU system HW layout pack skipped"
