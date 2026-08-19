@@ -102,6 +102,11 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
     private FloatBuffer pointColorBuf;
     private final float[] pointBatchScratch = new float[StateMatrix.MAX_CELLS * 3];
     private final float[] pointColorScratch = new float[StateMatrix.MAX_CELLS * 4];
+    /** cube_gl emits all mesh lines in one begin/end. ES1 per-edge draw was the CPU bill. */
+    private static final int MAX_LINES = 2048;
+    private final float[] lineVertScratch = new float[MAX_LINES * 6];
+    private FloatBuffer lineVertBuf;
+    private int lineN;
 
     private final Runnable frameKick = new Runnable() {
         @Override public void run() {
@@ -182,9 +187,9 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
     public void setForceCompact(boolean v) {
         forceCompact = v;
         if (v) setPlane(CubePlanePrefs.PLANE_REAR);
-        // Same as CubeContactActivity / cube_gl: continuous levitate.
-        // WHEN_DIRTY + heat (load≥8 → 10 fps) made the rear feel stuck.
-        setRenderMode(RENDERMODE_CONTINUOUSLY);
+        // Rear 410×502: 30 fps WHEN_DIRTY + time-based orbit. 60 fps continuous
+        // was ~⅓ core (one ES1 draw per edge/box). Same look, batched + 33ms.
+        setRenderMode(v ? RENDERMODE_WHEN_DIRTY : RENDERMODE_CONTINUOUSLY);
         if (attached) {
             frameH.removeCallbacks(frameKick);
             frameH.post(frameKick);
@@ -239,6 +244,7 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
      * Kick is backup only (continuous is SoT). Match main app / cube_gl.
      */
     private long rearFrameMs(Context ctx, boolean interact) {
+        if (forceCompact) return interact ? 16L : 33L; // 30 fps idle, 60 on touch
         if (CubeStability.isThermalSevere(ctx)) return 33L;
         return 16L;
     }
@@ -424,6 +430,36 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
             bb.order(ByteOrder.nativeOrder());
             pointColorBuf = bb.asFloatBuffer();
         }
+        if (lineVertBuf == null) {
+            ByteBuffer bb = ByteBuffer.allocateDirect(MAX_LINES * 6 * 4);
+            bb.order(ByteOrder.nativeOrder());
+            lineVertBuf = bb.asFloatBuffer();
+        }
+    }
+
+    private void lineClear() { lineN = 0; }
+
+    private void lineEmit(float x0, float y0, float z0, float x1, float y1, float z1) {
+        if (lineN >= MAX_LINES) return;
+        int o = lineN * 6;
+        lineVertScratch[o] = x0; lineVertScratch[o + 1] = y0; lineVertScratch[o + 2] = z0;
+        lineVertScratch[o + 3] = x1; lineVertScratch[o + 4] = y1; lineVertScratch[o + 5] = z1;
+        lineN++;
+    }
+
+    private void lineFlush(GL10 gl, float r, float g, float b, float a, float w) {
+        if (lineN <= 0) return;
+        ensureBufs();
+        gl.glLineWidth(w);
+        gl.glColor4f(r, g, b, a);
+        lineVertBuf.clear();
+        lineVertBuf.put(lineVertScratch, 0, lineN * 6);
+        lineVertBuf.position(0);
+        gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
+        gl.glVertexPointer(3, GL10.GL_FLOAT, 0, lineVertBuf);
+        gl.glDrawArrays(GL10.GL_LINES, 0, lineN * 2);
+        gl.glDisableClientState(GL10.GL_VERTEX_ARRAY);
+        lineN = 0;
     }
 
     private void schedulePull() {
@@ -654,40 +690,39 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         gl.glEnable(GL10.GL_BLEND);
         gl.glBlendFunc(GL10.GL_SRC_ALPHA, GL10.GL_ONE);
 
+        // cube_gl: one GL_LINES for the mesh (not one draw per edge).
         float mr = CubePalette.meshR(ctx), mg = CubePalette.meshG(ctx);
         float mb = CubePalette.meshB(ctx), ma = CubePalette.meshA(ctx);
         int stepW = (n >= 16) ? 2 : 1;
+        lineClear();
         for (int z = 0; z <= n; z += stepW)
             for (int y = 0; y <= n; y += stepW) {
                 float py = origin + (y - 0.5f) * scale;
                 float pz = origin + (z - 0.5f) * scale;
-                float x0 = origin - 0.5f * scale;
-                float x1 = origin + (n - 0.5f) * scale;
-                drawEdge(gl, x0, py, pz, x1, py, pz, mr, mg, mb, ma, 1f);
+                lineEmit(origin - 0.5f * scale, py, pz, origin + (n - 0.5f) * scale, py, pz);
             }
         for (int z = 0; z <= n; z += stepW)
             for (int x = 0; x <= n; x += stepW) {
                 float px = origin + (x - 0.5f) * scale;
                 float pz = origin + (z - 0.5f) * scale;
-                float y0 = origin - 0.5f * scale;
-                float y1 = origin + (n - 0.5f) * scale;
-                drawEdge(gl, px, y0, pz, px, y1, pz, 0.20f, 0.00f, 0.02f, 0.06f, 1f);
+                lineEmit(px, origin - 0.5f * scale, pz, px, origin + (n - 0.5f) * scale, pz);
             }
         for (int y = 0; y <= n; y += stepW)
             for (int x = 0; x <= n; x += stepW) {
                 float px = origin + (x - 0.5f) * scale;
                 float py = origin + (y - 0.5f) * scale;
-                float z0 = origin - 0.5f * scale;
-                float z1 = origin + (n - 0.5f) * scale;
-                drawEdge(gl, px, py, z0, px, py, z1, 0.18f, 0.00f, 0.02f, 0.05f, 1f);
+                lineEmit(px, py, origin - 0.5f * scale, px, py, origin + (n - 0.5f) * scale);
             }
+        lineFlush(gl, mr, mg, mb, ma, 1f);
 
         float sr = CubePalette.spikeR(ctx), sg = CubePalette.spikeG(ctx);
         float sb = CubePalette.spikeB(ctx), sa = CubePalette.spikeA(ctx);
         float[] rgb = new float[3];
         float now = (System.nanoTime() - t0) / 1e9f;
         int i = 0;
+        int pts = 0;
         boolean anySpike = false;
+        lineClear();
         for (int z = 0; z < n; z++)
             for (int y = 0; y < n; y++)
                 for (int x = 0; x < n; x++, i++) {
@@ -702,39 +737,58 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
                     float py = origin + y * scale;
                     float pz = origin + z * scale;
                     digitColor(d > 0 ? d : 1, rgb);
+                    float a = 0.28f + 0.08f * Math.max(d, 1);
+                    if (neur) {
+                        a = 0.45f;
+                        rgb[0] = 0.95f; rgb[1] = 0.06f; rgb[2] = 0.08f;
+                    }
+                    if (d >= 6) {
+                        a = 0.75f + 0.02f * d;
+                        rgb[0] = 1f; rgb[1] = 0.08f; rgb[2] = 0.06f;
+                    } else if (d >= 3) {
+                        a = 0.5f + 0.05f * d;
+                    }
                     if (imp > 0.05f) {
                         anySpike = true;
                         float flash = imp;
+                        a = 0.95f * flash;
+                        rgb[0] = 1f; rgb[1] = 0.12f; rgb[2] = 0.08f;
                         float jitter = 0.12f + 0.45f * flash;
                         float t = now * 40f + i;
-                        drawBox(gl, px, py, pz, 0.55f + 0.35f * flash,
-                            1f, 0.12f, 0.08f, 0.95f * flash, true);
-                        drawEdge(gl, px, py, pz,
+                        lineEmit(px, py, pz,
                             px + (float) Math.sin(t) * jitter,
                             py + (float) Math.cos(t * 1.3f) * jitter,
-                            pz + (float) Math.sin(t * 0.7f) * jitter,
-                            sr, sg, sb, sa * flash, 2.0f);
-                    } else {
-                        float a = 0.28f + 0.08f * Math.max(d, 1);
-                        float sz = 0.48f + 0.06f * d;
-                        if (neur) {
-                            a = 0.45f;
-                            rgb[0] = 0.95f; rgb[1] = 0.06f; rgb[2] = 0.08f;
-                            sz = 0.58f;
-                        }
-                        if (d >= 6) {
-                            a = 0.75f + 0.02f * d;
-                            sz = 0.72f;
-                            rgb[0] = 1f; rgb[1] = 0.08f; rgb[2] = 0.06f;
-                        } else if (d >= 3) {
-                            a = 0.5f + 0.05f * d;
-                            sz = 0.6f;
-                        }
-                        if (a > 0.98f) a = 0.98f;
-                        if (heat) sz *= 0.92f;
-                        drawBox(gl, px, py, pz, sz, rgb[0], rgb[1], rgb[2], a, false);
+                            pz + (float) Math.sin(t * 0.7f) * jitter);
                     }
+                    if (a > 0.98f) a = 0.98f;
+                    int o = pts * 3;
+                    pointBatchScratch[o] = px;
+                    pointBatchScratch[o + 1] = py;
+                    pointBatchScratch[o + 2] = pz;
+                    int c = pts * 4;
+                    pointColorScratch[c] = rgb[0];
+                    pointColorScratch[c + 1] = rgb[1];
+                    pointColorScratch[c + 2] = rgb[2];
+                    pointColorScratch[c + 3] = a;
+                    pts++;
                 }
+        if (pts > 0) {
+            pointBatchBuf.clear();
+            pointBatchBuf.put(pointBatchScratch, 0, pts * 3);
+            pointBatchBuf.position(0);
+            pointColorBuf.clear();
+            pointColorBuf.put(pointColorScratch, 0, pts * 4);
+            pointColorBuf.position(0);
+            gl.glPointSize(heat ? 6f : 8f);
+            gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
+            gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
+            gl.glVertexPointer(3, GL10.GL_FLOAT, 0, pointBatchBuf);
+            gl.glColorPointer(4, GL10.GL_FLOAT, 0, pointColorBuf);
+            gl.glDrawArrays(GL10.GL_POINTS, 0, pts);
+            gl.glDisableClientState(GL10.GL_COLOR_ARRAY);
+            gl.glDisableClientState(GL10.GL_VERTEX_ARRAY);
+        }
+        lineFlush(gl, sr, sg, sb, sa, 2.0f);
         if (anySpike) globalPulse = Math.max(globalPulse, 0.55f);
         gl.glDepthMask(true);
     }
