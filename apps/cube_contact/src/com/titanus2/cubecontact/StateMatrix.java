@@ -95,18 +95,23 @@ public final class StateMatrix {
                 Log.i(TAG, "peer override " + PEER);
                 return;
             }
-            // No explicit override: failover local → lab LAN (Atlas BUG-42).
+            // No explicit override: local :8787, then station BrainCube.
+            // Blank + demo is theater. Live lattice is the Cube.
             long now = android.os.SystemClock.elapsedRealtime();
             if (now - sLastPeerHealthMs < PEER_HEALTH_TTL_MS
                     && PEER != null && PEER.startsWith("http")) {
                 return;
             }
             sLastPeerHealthMs = now;
-            PEER = PEER_LOCAL;
             if (peerHealthOk(PEER_LOCAL, 300)) {
+                PEER = PEER_LOCAL;
                 Log.i(TAG, "peer local healthy " + PEER);
+            } else if (peerHealthOk(PEER_LAB, 400)) {
+                PEER = PEER_LAB;
+                Log.i(TAG, "peer lab BrainCube " + PEER);
             } else {
-                Log.w(TAG, "peer local down — fail closed (no lab default)");
+                PEER = PEER_LOCAL;
+                Log.w(TAG, "peer local+lab down — kernel cells.bin only (no demo)");
             }
         } catch (Exception e) {
             Log.w(TAG, "tryResolvePeer", e);
@@ -527,7 +532,7 @@ public final class StateMatrix {
         }
         if (want == MatrixSource.KERNEL) {
             if (loadKernelLattice()) return true;
-            if (!haveFrame) applyDemoOrCustom(ctx);
+            Log.w(TAG, "kernel cells.bin missing — fail closed (no demo)");
             return haveFrame;
         }
         // PEER or AUTO — real BrainCube state matrix first. No densify theater.
@@ -592,8 +597,9 @@ public final class StateMatrix {
             }
         } catch (Exception ignored) {}
 
-        // Kernel only if peer did not deliver a real matrix.
-        if (!ok && want != MatrixSource.PEER && loadKernelLattice()) {
+        // Real on-device 8³ dump (kernel sampler, ~1Hz). PEER used to skip this
+        // and paint demo — that is theater. Live cells.bin is a state matrix.
+        if (!ok && loadKernelLattice()) {
             return true;
         }
         if (!ok && loadDumpFile(new File("/tmp/cubebrain_viz/cells.bin"))) {
@@ -601,21 +607,12 @@ public final class StateMatrix {
             dataSource = "cube_experience_cells";
             ok = true;
         }
-        if (!ok && loadDumpFile(new File("/data/local/tmp/cubebrain_viz/cells.bin"))) {
-            source = "cells.bin";
-            dataSource = "kernel_cells";
-            ok = true;
-        }
-        // Seed densify only when peer is dead. Never replace live BrainCube with crimson theater.
-        if (!ok && !peerLive && !peerOk) {
-            applyDemoOrCustom(ctx);
-            dataSource = "seed-fallback";
-            source = "seed-fallback";
-            ok = haveFrame;
-        } else if (!ok && peerLive) {
-            // Peer up but lattice empty this tick — keep previous frame if any.
+        if (!ok && peerLive) {
             ok = haveFrame;
             Log.w(TAG, "peer live but no lattice this tick (not densifying)");
+        } else if (!ok) {
+            // HONEST empty. Never crimson-self / seed-fallback / demo16 as "live".
+            Log.w(TAG, "no live lattice — fail closed (no demo theater)");
         }
         return ok;
     }

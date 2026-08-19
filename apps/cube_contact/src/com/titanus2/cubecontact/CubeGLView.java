@@ -202,15 +202,15 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
             try {
                 matrix.tryResolvePeer();
                 boolean ok = matrix.refreshFromPeer();
-                // Real BrainCube matrix may be sparse (quiet zeros) — that is state, not void.
-                // Seed densify only when peer delivered nothing.
-                if (!ok && !matrix.haveFrame) {
+                // Real matrix may be sparse (quiet zeros) — that is state, not void.
+                // Never seed-densify on the rear/eyes path (crimson theater).
+                if (!ok && !matrix.haveFrame && !forceCompact) {
                     matrix.ensureSeedFrame();
                 }
                 publishSnap();
             } catch (Exception ignored) {
                 try {
-                    if (!matrix.refreshFromPeer() && !matrix.haveFrame) {
+                    if (!matrix.refreshFromPeer() && !matrix.haveFrame && !forceCompact) {
                         matrix.ensureSeedFrame();
                     }
                     publishSnap();
@@ -322,8 +322,8 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
 
         Snap snap = snapRef.get();
         if (snap == null || !snap.ready) {
-            // Prefer peer-backed frame; seed only if still empty (black void guard).
-            if (!matrix.haveFrame) {
+            // Prefer peer/kernel frame. Rear: honest empty, never demo seed.
+            if (!matrix.haveFrame && !forceCompact) {
                 try { matrix.ensureSeedFrame(); } catch (Exception ignored) {}
             }
             if (matrix.haveFrame) publishSnap();

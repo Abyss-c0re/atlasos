@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.cubecontact"
-    android:versionCode="110"
-    android:versionName="2.01b-sub-truth-eyes">
+    android:versionCode="111"
+    android:versionName="2.02-live-matrix">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
