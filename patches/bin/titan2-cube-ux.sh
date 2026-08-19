@@ -1,10 +1,11 @@
 #!/system/bin/sh
-# Hybrid ROM-wide Cube UX — night OLED + selectable cyan glow (no square RROs).
+# Hybrid ROM-wide Cube UX — night OLED + Cube spike glow (no square RROs).
 # Geometry: square chrome RROs DROPPED 2026-07-21 (FGS pill NPE + mangled Settings).
-# Product: night/cyan via theme seed only — never re-enable Titan*Square* overlays.
-# Called from titan2-display. Version: 14 (never pin IME — PocketBoard/user choice)
-# Glow/mode from Controls Look (ThemePrefs) when set:
-#   settings global titan2_ui_accent_argb  (hex without #, e.g. ff00e5ff or 00E5FF)
+# Product: night + spike #FF141A via theme seed — never re-enable Titan*Square*.
+# Cyan #00E5FF was leftover OS seed; CubeAI/CubeUI ticket is mesh/cage/spike/void.
+# Called from titan2-display. Version: 15 (Cube spike default; migrate leftover cyan)
+# Glow/mode from leftover Look (ThemePrefs) when the human picked a non-default:
+#   settings global titan2_ui_accent_argb  (hex without #, e.g. ffff141a or FF141A)
 #   settings global titan2_ui_day_night    day | night | auto
 
 export PATH=/system/bin:/system/xbin:/product/bin:$PATH
@@ -16,14 +17,15 @@ mkdir -p /data/local/tmp 2>/dev/null || true
 rm -f "$LOG" 2>/dev/null || true
 : >"$LOG" 2>/dev/null || true
 chmod 666 "$LOG" 2>/dev/null || true
-logm "start v11 theme=$(getprop ro.titanus2.theme) profile=$(getprop ro.titanus2.profile)"
+logm "start v15 theme=$(getprop ro.titanus2.theme) profile=$(getprop ro.titanus2.profile)"
 
-# Seed Look plane defaults after wipe so SystemUI/cube match Controls factory
+# Seed Look plane defaults after wipe so SystemUI/cube match Cube spike.
+# Leftover product cyan #00E5FF is not a human pick — migrate to spike.
 ACCENT_RAW=$(settings get global titan2_ui_accent_argb 2>/dev/null | tr -d '\r' | tr 'A-F' 'a-f')
 case "$ACCENT_RAW" in
-  null|""|*" "*)
-    settings put global titan2_ui_accent_argb 00e5ff 2>/dev/null || true
-    ACCENT_RAW=00e5ff
+  null|""|*" "*|00e5ff|ff00e5ff)
+    settings put global titan2_ui_accent_argb ff141a 2>/dev/null || true
+    ACCENT_RAW=ff141a
     ;;
 esac
 DAYNIGHT=$(settings get global titan2_ui_day_night 2>/dev/null | tr -d '\r' | tr 'A-Z' 'a-z')
@@ -34,9 +36,9 @@ case "$DAYNIGHT" in
     ;;
 esac
 
-# --- Accent from Look prefs (default product cyan) ---
+# --- Accent from Look prefs (default Cube spike) ---
 case "$ACCENT_RAW" in
-  null|""|*" "*) ACCENT_HEX=00e5ff ;;
+  null|""|*" "*) ACCENT_HEX=ff141a ;;
   *)
     ACCENT_HEX=$(echo "$ACCENT_RAW" | sed 's/^0x//;s/^#//')
     case "$ACCENT_HEX" in
@@ -44,7 +46,7 @@ case "$ACCENT_RAW" in
     esac
     ;;
 esac
-[ ${#ACCENT_HEX} -eq 6 ] || ACCENT_HEX=00e5ff
+[ ${#ACCENT_HEX} -eq 6 ] || ACCENT_HEX=ff141a
 
 case "$DAYNIGHT" in
   day)
@@ -64,9 +66,9 @@ case "$DAYNIGHT" in
 esac
 logm "glow=#$ACCENT_HEX day_night=${DAYNIGHT:-night}"
 
-# --- Cube seed: monochromatic black + selectable glow (not Material pastels) ---
-# PRODUCT_UX 2026-07-21: no Titan square shape package in theme seed (FGS residual).
-# Stock adaptive shape stays; night cyan palette only.
+# --- Cube seed: monochromatic black + spike glow (not Material pastels) ---
+# PRODUCT_UX 2026-08-20: CubeAI/CubeUI spike. No Titan square shape package (FGS).
+# Stock adaptive shape stays; night + #FF141A only.
 theme_json="{\"android.theme.customization.theme_style\":\"MONOCHROMATIC\",\"android.theme.customization.color_source\":\"preset\",\"android.theme.customization.system_palette\":\"$ACCENT_HEX\",\"android.theme.customization.accent_color\":\"$ACCENT_HEX\"}"
 settings put secure theme_customization_overlay_packages "$theme_json" 2>/dev/null || true
 if ! settings get secure theme_customization_overlay_packages 2>/dev/null | grep -q MONOCHROMATIC; then
@@ -299,8 +301,8 @@ fi
 settings put global search_global 0 2>/dev/null || true
 settings put system font_scale 0.95 2>/dev/null || true
 
-setprop persist.titanus2.cube_ux 12 2>/dev/null || true
-settings put global titanus2_cube_ux 12 2>/dev/null || true
+setprop persist.titanus2.cube_ux 15 2>/dev/null || true
+settings put global titanus2_cube_ux 15 2>/dev/null || true
 setprop persist.titanus2.theme cube 2>/dev/null || true
 
 night=$(settings get secure ui_night_mode 2>/dev/null | tr -d '\r')
@@ -308,7 +310,7 @@ nav=$(settings get secure navigation_mode 2>/dev/null | tr -d '\r')
 tb=$(settings get system enable_taskbar 2>/dev/null | tr -d '\r')
 ime=$(settings get secure show_ime_with_hard_keyboard 2>/dev/null | tr -d '\r')
 def_ime=$(settings get secure default_input_method 2>/dev/null | tr -d '\r')
-logm "done v12 night=$night nav=$nav taskbar=$tb cube=12 ime=$ime def_ime=$def_ime glow=#$ACCENT_HEX no-square"
+logm "done v15 night=$night nav=$nav taskbar=$tb cube=15 ime=$ime def_ime=$def_ime glow=#$ACCENT_HEX no-square"
 
 # Waves: Launcher3 re-enables taskbar after first boot; re-pin at 15s/45s/90s.
 # Re-assert dim=0 on each wave so a late polish / residual root 0.92 cannot

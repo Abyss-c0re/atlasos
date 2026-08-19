@@ -1,0 +1,358 @@
+#!/bin/sh
+# cubeai — Titan Debian Cube organ (gVRMod CubeUI ticket)
+# Palette SoT: mesh #330005  cage #8C050D  spike #FF141A  void #000000
+# Law: identity ≠ plane. Switch never flips And/Deb. Java Settings is leftover host.
+# Entry: cubeai   (Debian PATH). Packed to /system/bin + hybrid copies /usr/local/bin.
+set -eu
+# Bare chroot has no PATH. Debian login already has one.
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${PATH:+:$PATH}"
+export PATH
+
+CUBEAI_VER=1.0.0-cubeui
+MESH=330005
+CAGE=8C050D
+SPIKE=FF141A
+VOID=000000
+SPIKE_RGB="255;20;26"
+CAGE_RGB="140;5;13"
+MESH_RGB="51;0;5"
+TEXT_RGB="245;230;231"
+MUTED_RGB="196;168;170"
+
+_c() { printf '\033[38;2;%sm' "$1"; }
+_off() { printf '\033[0m'; }
+spike() { _c "$SPIKE_RGB"; printf '%s' "$*"; _off; }
+cage() { _c "$CAGE_RGB"; printf '%s' "$*"; _off; }
+text() { _c "$TEXT_RGB"; printf '%s' "$*"; _off; }
+muted() { _c "$MUTED_RGB"; printf '%s' "$*"; _off; }
+
+hr() {
+  printf '%s' "$(_c "$CAGE_RGB")"
+  printf '────────────────────────────────────────────────'
+  _off
+  printf '\n'
+}
+
+# settings / android / adb — whichever plane we are on
+_settings() {
+  if command -v settings >/dev/null 2>&1 && [ -x /system/bin/settings ]; then
+    settings "$@"
+  elif command -v android >/dev/null 2>&1; then
+    android settings "$@"
+  elif [ -x /usr/local/bin/android ]; then
+    /usr/local/bin/android settings "$@"
+  else
+    return 1
+  fi
+}
+
+_trim() {
+  x=${1-}
+  x=$(printf '%s' "$x" | tr -d '\r\n' 2>/dev/null) || x=${1-}
+  printf '%s' "$x"
+}
+
+_readf() {
+  p=$1
+  if [ -r "$p" ]; then
+    IFS= read -r line <"$p" || true
+    _trim "$line"
+    return 0
+  fi
+  # Debian: Android files live under /android or via android cat
+  if command -v android >/dev/null 2>&1; then
+    _trim "$(android cat "$p" 2>/dev/null || true)"
+    return 0
+  fi
+  printf ''
+}
+
+detect_where() {
+  if [ -f /system/build.prop ] && [ ! -f /etc/debian_version ]; then
+    printf android
+  elif [ -f /etc/debian_version ]; then
+    printf debian
+  else
+    printf host
+  fi
+}
+
+fact_login() {
+  if [ -n "${ATLAS_LOGIN:-}" ]; then
+    printf '%s' "$ATLAS_LOGIN"
+  elif [ -n "${USER:-}" ]; then
+    printf '%s' "$USER"
+  else
+    id -un 2>/dev/null || printf '?'
+  fi
+}
+
+fact_uid() { id -u 2>/dev/null || printf '?'; }
+
+fact_home() { printf '%s' "${HOME:-?}"; }
+
+fact_plane() {
+  if [ -n "${ATLAS_MODE:-}" ]; then
+    printf '%s' "$ATLAS_MODE"
+  elif [ -n "${ATLAS_PLANE:-}" ]; then
+    printf '%s' "$ATLAS_PLANE"
+  else
+    detect_where
+  fi
+}
+
+fact_enterd() {
+  v=$(_readf /data/local/tmp/atlas-enterd.ver)
+  [ -n "$v" ] && { printf '%s' "$v"; return; }
+  if command -v atlas-enterd >/dev/null 2>&1; then
+    atlas-enterd -V 2>/dev/null | head -1 || true
+  else
+    printf '?'
+  fi
+}
+
+fact_hybrid() {
+  if [ -n "${ATLAS_HYBRID:-}" ]; then
+    printf '%s' "$ATLAS_HYBRID"
+    return
+  fi
+  if [ -f /etc/debian_version ] && [ -d /usr/local/bin ]; then
+    printf UP
+  else
+    printf '?'
+  fi
+}
+
+fact_accent() {
+  a=$(_settings get global titan2_ui_accent_argb 2>/dev/null || true)
+  a=$(_trim "$a")
+  case "$a" in
+    null|""|*" "*) printf '?' ;;
+    *)
+      a=$(printf '%s' "$a" | sed 'y/ABCDEF/abcdef/' 2>/dev/null || printf '%s' "$a")
+      printf '%s' "$a"
+      ;;
+  esac
+}
+
+cmd_palette() {
+  printf 'CubePalette (gVRMod CubeUI / cubeai)\n'
+  printf '  mesh  #%s\n' "$MESH"
+  printf '  cage  #%s\n' "$CAGE"
+  printf '  spike #%s\n' "$SPIKE"
+  printf '  void  #%s\n' "$VOID"
+  printf '  cyan  #00E5FF  leftover OS cube-ux — not Cube chrome\n'
+}
+
+cmd_status() {
+  where=$(detect_where)
+  login=$(fact_login)
+  uid=$(fact_uid)
+  home=$(fact_home)
+  plane=$(fact_plane)
+  enterd=$(fact_enterd)
+  hybrid=$(fact_hybrid)
+  accent=$(fact_accent)
+  printf 'cubeai %s\n' "$CUBEAI_VER"
+  printf 'where  %s\n' "$where"
+  printf 'plane  %s\n' "$plane"
+  printf 'login  %s  uid=%s\n' "$login" "$uid"
+  printf 'home   %s\n' "$home"
+  printf 'hybrid %s\n' "$hybrid"
+  printf 'enterd %s\n' "$enterd"
+  printf 'accent %s\n' "$accent"
+  printf 'law    identity ≠ plane (Switch never flips And/Deb)\n'
+}
+
+cmd_who() {
+  printf 'login=%s uid=%s home=%s plane=%s\n' \
+    "$(fact_login)" "$(fact_uid)" "$(fact_home)" "$(fact_plane)"
+}
+
+cmd_plane() {
+  printf 'plane=%s  (identity is separate: login=%s)\n' "$(fact_plane)" "$(fact_login)"
+}
+
+cmd_law() {
+  printf '%s\n' \
+    'CUBE LAW (Titan Debian organ)' \
+    '  1. Ticket is gVRMod CubeUI — scripts/CubeUI.sh → install/native/CubeUI.' \
+    '  2. Palette is mesh/cage/spike/void. Cyan #00E5FF is leftover OS seed.' \
+    '  3. Switch = identity only. And/Deb = plane only. Never auto-flip.' \
+    '  4. Product truth is pack+flash. /system bind-mount overlays are heresy.' \
+    '  5. Java Settings / titan_controls chrome is leftover host, not the organ.' \
+    '  6. Develop from Debian: cubeai, atlas, android <cmd>.'
+}
+
+cmd_apply_ux() {
+  hex=$(printf '%s' "$SPIKE" | tr 'A-F' 'a-f')
+  if ! _settings put global titan2_ui_accent_argb "$hex" 2>/dev/null; then
+    printf 'apply-ux: no settings plane (need android settings or /system)\n' >&2
+    return 1
+  fi
+  _settings put global titan2_ui_day_night night 2>/dev/null || true
+  _settings put secure ui_night_mode 2 2>/dev/null || true
+  json="{\"android.theme.customization.theme_style\":\"MONOCHROMATIC\",\"android.theme.customization.color_source\":\"preset\",\"android.theme.customization.system_palette\":\"$hex\",\"android.theme.customization.accent_color\":\"$hex\"}"
+  _settings put secure theme_customization_overlay_packages "$json" 2>/dev/null || true
+  _settings put global titanus2_cube_ux 15 2>/dev/null || true
+  got=$(_settings get global titan2_ui_accent_argb 2>/dev/null || true)
+  got=$(_trim "$got" | tr 'A-F' 'a-f')
+  printf 'apply-ux accent=%s want=%s\n' "$got" "$hex"
+  [ "$got" = "$hex" ]
+}
+
+banner() {
+  printf '\n'
+  spike 'CUBEAI'
+  printf '  '
+  cage 'TITAN DEBIAN ORGAN'
+  printf '  '
+  muted "$CUBEAI_VER"
+  printf '\n'
+  hr
+}
+
+page_session() {
+  banner
+  text ' SESSION'
+  printf '   plane + identity (independent)\n'
+  hr
+  printf '  '
+  cage 'plane   '
+  text "$(fact_plane)"
+  printf '\n  '
+  cage 'login   '
+  text "$(fact_login)"
+  printf '  uid='
+  text "$(fact_uid)"
+  printf '\n  '
+  cage 'home    '
+  text "$(fact_home)"
+  printf '\n  '
+  cage 'hybrid  '
+  text "$(fact_hybrid)"
+  printf '\n  '
+  cage 'enterd  '
+  text "$(fact_enterd)"
+  printf '\n'
+}
+
+page_organs() {
+  banner
+  text ' ORGANS'
+  printf '   debian first\n'
+  hr
+  printf '  '
+  cage 'cubeai    '
+  text "this organ ($CUBEAI_VER)"
+  printf '\n  '
+  cage 'atlas     '
+  text 'Debian enter / identity'
+  printf '\n  '
+  cage 'android   '
+  text 'bridge to leftover host'
+  printf '\n  '
+  cage 'nanobot   '
+  text 'peer — not this chrome'
+  printf '\n  '
+  cage 'CubeUI    '
+  text 'gVRMod native launcher (ticket)'
+  printf '\n'
+}
+
+page_settings() {
+  banner
+  text ' SETTINGS'
+  printf '   Cube spike seed\n'
+  hr
+  printf '  '
+  cage 'accent  '
+  text "$(fact_accent)"
+  printf '  want='
+  spike "#$SPIKE"
+  printf '\n  '
+  muted 'a = apply-ux (night + spike monochromatic)'
+  printf '\n  '
+  muted 'p = palette'
+  printf '\n'
+}
+
+page_law() {
+  banner
+  text ' LAW'
+  printf '\n'
+  hr
+  cmd_law
+}
+
+interactive() {
+  page=1
+  while :; do
+    case "$page" in
+      1) page_session ;;
+      2) page_organs ;;
+      3) page_settings ;;
+      4) page_law ;;
+    esac
+    hr
+    muted '1 session  2 organs  3 settings  4 law  a apply-ux  q quit'
+    printf '\n> '
+    if ! IFS= read -r ans; then
+      printf '\n'
+      return 0
+    fi
+    case "$ans" in
+      1|s|S) page=1 ;;
+      2|o|O) page=2 ;;
+      3) page=3 ;;
+      4|l|L) page=4 ;;
+      a|A|apply|apply-ux)
+        cmd_apply_ux || true
+        printf '\n'
+        muted 'enter...'
+        printf '\n'
+        IFS= read -r _ || true
+        ;;
+      p|P)
+        cmd_palette
+        printf '\n'
+        muted 'enter...'
+        printf '\n'
+        IFS= read -r _ || true
+        ;;
+      q|Q|quit|exit) return 0 ;;
+      *) ;;
+    esac
+  done
+}
+
+usage() {
+  cat <<EOF
+cubeai $CUBEAI_VER — Titan Debian Cube organ (CubeUI ticket)
+  cubeai              interactive (session / organs / settings / law)
+  cubeai status       facts
+  cubeai who          login + plane
+  cubeai plane        plane only (never switches)
+  cubeai palette      Cube mesh/cage/spike/void
+  cubeai apply-ux     seed night + spike #${SPIKE} on leftover OS
+  cubeai law          identity ≠ plane
+EOF
+}
+
+cmd=${1:-}
+case "$cmd" in
+  ""|ui|menu) interactive ;;
+  status) cmd_status ;;
+  who|whoami) cmd_who ;;
+  plane) cmd_plane ;;
+  palette) cmd_palette ;;
+  apply-ux|apply|ux) cmd_apply_ux ;;
+  law) cmd_law ;;
+  -h|--help|help) usage ;;
+  -V|--version) printf '%s\n' "$CUBEAI_VER" ;;
+  *)
+    printf 'cubeai: unknown %s\n' "$cmd" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

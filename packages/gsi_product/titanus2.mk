@@ -55,6 +55,7 @@ PRODUCT_PACKAGES += \
     atlas-lpctl \
     atlas-agent-status \
     atlas-screencap \
+    cubeai \
     atlas \
     atlas-bridge \
     atlas-auth-policy

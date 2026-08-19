@@ -179,6 +179,11 @@ sh_binary {
     src: "atlas-screencap.sh",
 }
 
+sh_binary {
+    name: "cubeai",
+    src: "cubeai",
+}
+
 prebuilt_etc {
     name: "atlas-bridge",
     src: "BRIDGE",

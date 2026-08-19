@@ -16,7 +16,7 @@
 
 - **HOLD_FLASH** is owned by the human / workshop. This repo does not flash.
 - Link Lineage / MisterZtr / stock. Never `git add` those trees.
-- Cube = icon mask + `titan2-cube-ux` only. No hive, prophecy, or Clanker.
+- Cube = icon mask + `titan2-cube-ux` (spike `#FF141A`) + Debian `cubeai`. No hive, prophecy, or Clanker.
 - No secrets: `./scripts/check_clean.sh` must pass before commit.
 - AtlasOS mouse driver: stage `titan2-touchpadd` into `MISTERZTR_TREE` and
   compile it into the GSI (`PRODUCT_PACKAGES` + IDC). Do **not** hybrid-inject

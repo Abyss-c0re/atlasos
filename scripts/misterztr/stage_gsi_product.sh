@@ -380,7 +380,7 @@ if [ -n "$ATLAS_APK" ] && [ -f "$SRC_ATLAS/Android.bp" ]; then
     [ "$DRY" != "1" ] && [ "$extra" = "atlas-enterd.sh" ] && chmod 755 "$DEST_ATLAS/$extra" 2>/dev/null || true
   done
   # Agent plane helpers (hybrid awareness / screencap nsenter)
-  for h in atlas-agent-status.sh atlas-screencap.sh; do
+  for h in atlas-agent-status.sh atlas-screencap.sh cubeai; do
     src=""
     for c in "$ROOT/apps/titan_atlas/assets/bin/$h" "$SRC_ATLAS/$h"; do
       [ -f "$c" ] && [ -s "$c" ] && src="$c" && break

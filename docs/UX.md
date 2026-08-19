@@ -10,7 +10,8 @@ Settings (`Theme.DeviceDefault`). No private design language.
 | `patches/gsi_source/0010-…keyguard…` | No secondary keyguard / AOD suppress |
 | `0050` / `0060` | Sensor privacy toggles (fail closed) |
 | `0070` | Torch sysfs under camera privacy |
-| `titan2-cube-ux.sh` | Night + cyan accent seed, IME-with-HW |
+| `titan2-cube-ux.sh` | Night + Cube spike `#FF141A` seed, IME-with-HW |
+| Debian `cubeai` | CubeUI-shaped organ (session / organs / settings / law) |
 | `packages/titan_icon_mask_only` | Square adaptive icon mask |
 
 Full zero-radius Settings/SystemUI RROs are **off** (they break notifications

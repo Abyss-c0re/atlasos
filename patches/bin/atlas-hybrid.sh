@@ -1283,7 +1283,7 @@ EOF
     sh "$_apply" 2>/dev/null || true
   fi
   # Screencap + status helpers (copy from system/app if present)
-  for h in atlas-screencap atlas-agent-status; do
+  for h in atlas-screencap atlas-agent-status cubeai; do
     for src in \
       /data/user/0/com.titanus2.atlas/files/bin/$h \
       /data/user/0/com.titanus2.atlas/files/bin/${h}.sh \
@@ -1337,14 +1337,25 @@ export ATLAS_REPORTS="${HOME}/reports"
 if [ -n "${PS1:-}" ] && [ -z "${ATLAS_MOTD_SHOWN:-}" ]; then
   export ATLAS_MOTD_SHOWN=1
   echo "Atlas: Debian cannot see Android."
-  echo "Bridge: android <cmd>   files: android cat|write|ls   status: atlas-agent-status"
+  echo "Bridge: android <cmd>   files: android cat|write|ls   organ: cubeai"
 fi
 case "${PS1:-}" in
   *debian*|*android*) ;;
-  *) PS1='\[\e[1;36m\]debian\[\e[0m\]:'"${USER:-atlas}"'\$ ' ;;
+  *) PS1='\[\e[38;2;255;20;26m\]debian\[\e[0m\]:'"${USER:-atlas}"'\$ ' ;;
 esac
 EOF
   chmod 644 "$MERGE/etc/profile.d/zz-atlas-plane.sh" 2>/dev/null || true
+  # Cube crimson organ (gVRMod CubeUI ticket). After zz-atlas so PATH is set.
+  cat >"$MERGE/etc/profile.d/zz-cube-crimson.sh" <<'EOF'
+# CubeAI — Titan Debian organ. Palette = CubeUI, not leftover cyan.
+export CUBE_MESH="${CUBE_MESH:-#330005}"
+export CUBE_CAGE="${CUBE_CAGE:-#8C050D}"
+export CUBE_SPIKE="${CUBE_SPIKE:-#FF141A}"
+export CUBE_VOID="${CUBE_VOID:-#000000}"
+export GROK_THEME="${GROK_THEME:-groknight}"
+# Never steal HOME. Never flip And/Deb. Surface: cubeai
+EOF
+  chmod 644 "$MERGE/etc/profile.d/zz-cube-crimson.sh" 2>/dev/null || true
 }
 
 

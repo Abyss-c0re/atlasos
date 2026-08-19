@@ -23,8 +23,10 @@ public final class ThemePrefs {
     public static final String MODE_NIGHT = "night";
     public static final String MODE_AUTO = "auto";
 
-    /** Product night cyan — BB-strict on pure black. */
+    /** Leftover OS cyan — not Cube chrome. */
     public static final int ACCENT_CYAN = 0xFF00E5FF;
+    /** Cube spike — CubeUI / cubeai SoT (#FF141A). */
+    public static final int ACCENT_SPIKE = 0xFFFF141A;
     public static final int ACCENT_AMBER = 0xFFFFB300;
     public static final int ACCENT_WHITE = 0xFFE8E8E8;
     public static final int ACCENT_RED = 0xFFFF1744;
@@ -39,7 +41,13 @@ public final class ThemePrefs {
     }
 
     public static int accent(Context c) {
-        return p(c).getInt(KEY_ACCENT, ACCENT_CYAN);
+        int stored = p(c).getInt(KEY_ACCENT, ACCENT_SPIKE);
+        // Leftover product cyan is not a human pick — migrate to Cube spike.
+        if (stored == ACCENT_CYAN) {
+            p(c).edit().putInt(KEY_ACCENT, ACCENT_SPIKE).apply();
+            return ACCENT_SPIKE;
+        }
+        return stored;
     }
 
     public static void setAccent(Context c, int argb) {
@@ -127,7 +135,7 @@ public final class ThemePrefs {
             }
         } catch (Exception ignored) {}
 
-        // Monochromatic black + glow (cube-ux v10 parity) — night cyan only.
+        // Monochromatic black + glow (cube-ux v15) — Cube spike #FF141A.
         // No adaptive_icon_shape / TitanIconShape seed (FGS pill NPE residual).
         String themeJson = "{"
             + "\"android.theme.customization.theme_style\":\"MONOCHROMATIC\","
