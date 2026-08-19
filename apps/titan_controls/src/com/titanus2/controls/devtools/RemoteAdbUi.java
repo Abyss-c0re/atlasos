@@ -68,8 +68,10 @@ final class RemoteAdbUi {
     private TextView banner;
     private TextView pinPanel;
     private TextView detail;
+    private TextView clientsView;
     private TextView cancelBtn;
     private UiKit.Toggle toggle;
+    private static final String CLIENTS = "/data/local/tmp/remote_adb.clients";
 
     private volatile Work work = Work.IDLE;
     private volatile long workSince;
@@ -146,14 +148,21 @@ final class RemoteAdbUi {
         UiKit.button(root, "Copy command", this::copyCmd);
         detail = UiKit.mono(root);
         TextView note = UiKit.mono(root);
-        note.setText("ON needs biometrics · OFF drops remote TCP (USB stays)\n"
-            + "Pair shows PIN · host: adb pair IP:PORT PIN");
+        note.setText("ON needs biometrics · first new host needs Atlas auth\n"
+            + "OFF drops remote TCP (USB stays) · Pair: adb pair IP:PORT PIN");
+
+        UiKit.section(root, "Clients");
+        clientsView = UiKit.mono(root);
+        clientsView.setText("none");
+        UiKit.button(root, "Forget all hosts", this::userWantsForgetClients);
+        paintClients();
 
         paintFromStatus(readStatus(), true);
         setWorking(false);
     }
 
     void onResumeTick() {
+        paintClients();
         String st = readStatus();
         // Cancel must win: never re-paint PIN chrome while cancelling
         if (work == Work.APPLY_CANCEL || pairAbort) {
@@ -219,6 +228,46 @@ final class RemoteAdbUi {
     void keyOn() { userWantsOn(); }
     void keyOff() { userWantsOff(); }
     void keyCopy() { copyCmd(); }
+
+    private void userWantsForgetClients() {
+        new Thread(() -> {
+            execRemote("clients_forget", -1);
+            h.post(this::paintClients);
+        }, "remote-adb-forget").start();
+        UiKit.toast(act, "hosts forgotten");
+    }
+
+    private void paintClients() {
+        if (clientsView == null) return;
+        String raw = readFile(CLIENTS);
+        if (raw == null || raw.trim().isEmpty()) {
+            clientsView.setText("none");
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        String[] lines = raw.split("\n");
+        for (String line : lines) {
+            line = line.trim();
+            if (line.isEmpty()) continue;
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(line);
+        }
+        clientsView.setText(sb.length() == 0 ? "none" : sb.toString());
+    }
+
+    private static String readFile(String path) {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new FileReader(path))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (sb.length() > 0) sb.append('\n');
+                sb.append(line.trim());
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
 
     // --- user intents ---
 

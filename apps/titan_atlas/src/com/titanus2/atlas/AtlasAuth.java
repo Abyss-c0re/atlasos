@@ -85,6 +85,9 @@ public final class AtlasAuth {
             case "sudo":
             case "su":
             case "exec":
+            case "adb":
+            case "remoteadb":
+            case "remote_adb":
                 return true;
             default:
                 break;

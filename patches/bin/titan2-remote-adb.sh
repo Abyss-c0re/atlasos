@@ -22,6 +22,7 @@
 #  5) USB composite always re-pinned with adb after bounce
 #  6) pair is orthogonal: cancel does not force desire off
 #  7) desire=off ALWAYS tears TCP down (delete hid_tcp_keep; never skip)
+#  8) new TCP peer needs Atlas auth once; allowlist persists; UI reads clients file
 #
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
@@ -39,7 +40,13 @@ PAIR_CMD=$ST/titan2_adb_pair_cmd
 PORT_FILE=$T2/remote_adb_port
 PORT_TMP=$ST/remote_adb_port
 LOCK=$ST/titan2_remote_adb.lock
-VER=3.3-off-wins
+CLIENTS_FILE=$ST/remote_adb.clients
+ALLOW_FILE=$T2/remote_adb.allow
+DENY_FILE=$T2/remote_adb.deny
+WATCH_PID=$ST/titan2_remote_adb_clients.pid
+WATCH_SH=$ST/titan2_remote_adb_clients.sh
+AUTH_DIR=/data/local/atlas-linux/var/lib/atlas-auth
+VER=3.4-clients
 
 log() {
   mkdir -p "$ST" 2>/dev/null || true
@@ -243,6 +250,288 @@ clear_pair_files() {
   _write "$PAIR_STATE" "idle"
 }
 
+# --- client allowlist / first-connect Atlas gate ---
+
+client_ip_ok() {
+  case "$1" in
+    ''|127.*|::1|localhost|0.0.0.0|*::*) return 1 ;;
+  esac
+  return 0
+}
+
+client_in() {
+  [ -f "$1" ] || return 1
+  grep -qxF "$2" "$1" 2>/dev/null
+}
+
+client_add() {
+  mkdir -p "$(dirname "$1")" 2>/dev/null || true
+  client_in "$1" "$2" && return 0
+  echo "$2" >>"$1" 2>/dev/null || true
+  chmod 666 "$1" 2>/dev/null || true
+}
+
+client_del() {
+  [ -f "$1" ] || return 0
+  t="${1}.tmp"
+  grep -vxF "$2" "$1" >"$t" 2>/dev/null || true
+  mv -f "$t" "$1" 2>/dev/null || true
+  chmod 666 "$1" 2>/dev/null || true
+}
+
+# Established peers talking to our TCP ADB port (IPv4).
+list_estab_ips() {
+  p=`read_port`
+  ss -tn 2>/dev/null | awk -v port=":$p" '
+    $1 ~ /^ESTAB/ {
+      loc=$4; peer=$5
+      if (index(loc, port) == 0) next
+      gsub(/[\[\]]/, "", peer)
+      sub(/^::ffff:/, "", peer)
+      n=split(peer, a, ":")
+      ip=a[1]
+      if (n > 2) { ip=peer; sub(/:[0-9]+$/, "", ip) }
+      if (ip != "" && ip != "127.0.0.1" && ip != "::1") print ip
+    }' | sort -u
+}
+
+kill_peer() {
+  ip="$1"
+  p=`read_port`
+  ss -K dst "$ip" sport = :"$p" >/dev/null 2>&1 || true
+  ss -K dst "$ip" dport = :"$p" >/dev/null 2>&1 || true
+}
+
+write_clients_file() {
+  mkdir -p "$ST" 2>/dev/null || true
+  {
+    seen=
+    for ip in `list_estab_ips`; do
+      client_ip_ok "$ip" || continue
+      if client_in "$ALLOW_FILE" "$ip"; then
+        echo "$ip connected"
+      elif client_in "$DENY_FILE" "$ip"; then
+        echo "$ip denied"
+      else
+        echo "$ip pending"
+      fi
+      seen="$seen $ip "
+    done
+    if [ -f "$ALLOW_FILE" ]; then
+      while IFS= read -r ip || [ -n "$ip" ]; do
+        ip=$(echo "$ip" | tr -d '\r\n ')
+        [ -n "$ip" ] || continue
+        case "$seen" in *" $ip "*) continue ;; esac
+        echo "$ip allowed"
+      done <"$ALLOW_FILE"
+    fi
+  } >"$CLIENTS_FILE" 2>/dev/null || true
+  chmod 666 "$CLIENTS_FILE" 2>/dev/null || true
+}
+
+seed_connected_allowed() {
+  for ip in `list_estab_ips`; do
+    client_ip_ok "$ip" || continue
+    client_add "$ALLOW_FILE" "$ip"
+    client_del "$DENY_FILE" "$ip"
+    log "clients seed allowed $ip"
+  done
+  write_clients_file
+}
+
+stop_clients_watch() {
+  if [ -f "$WATCH_PID" ]; then
+    kill `tr -d ' \r\n' <"$WATCH_PID"` 2>/dev/null || true
+    rm -f "$WATCH_PID" 2>/dev/null || true
+  fi
+  for d in /proc/[0-9]*; do
+    c=$(tr '\0' ' ' <"$d/cmdline" 2>/dev/null) || continue
+    case "$c" in *titan2_remote_adb_clients*) kill "${d#/proc/}" 2>/dev/null ;; esac
+  done
+}
+
+start_clients_watch() {
+  write_clients_file
+  # already running?
+  if [ -f "$WATCH_PID" ]; then
+    pid=`tr -d ' \r\n' <"$WATCH_PID"`
+    [ -n "$pid" ] && [ -d "/proc/$pid" ] && return 0
+  fi
+  cat >"$WATCH_SH" <<'WATCHEOF'
+#!/system/bin/sh
+export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
+ST=/data/local/tmp
+T2=/data/misc/titan2
+DESIRE_FILE=$T2/remote_adb.desire
+CLIENTS_FILE=$ST/remote_adb.clients
+ALLOW_FILE=$T2/remote_adb.allow
+DENY_FILE=$T2/remote_adb.deny
+AUTH_DIR=/data/local/atlas-linux/var/lib/atlas-auth
+PORT_FILE=$T2/remote_adb_port
+log() { echo "remote-adb-clients: $*" >>$ST/titan2_pad_agent.log 2>/dev/null; }
+read_port() {
+  p=
+  [ -f "$PORT_FILE" ] && p=`tr -d '\r\n ' <"$PORT_FILE" 2>/dev/null`
+  [ -z "$p" ] && p=5555
+  echo "$p"
+}
+client_ip_ok() {
+  case "$1" in ''|127.*|::1|localhost|0.0.0.0) return 1 ;; esac
+  return 0
+}
+client_in() { [ -f "$1" ] && grep -qxF "$2" "$1" 2>/dev/null; }
+client_add() {
+  mkdir -p "$(dirname "$1")" 2>/dev/null || true
+  client_in "$1" "$2" && return 0
+  echo "$2" >>"$1" 2>/dev/null || true
+  chmod 666 "$1" 2>/dev/null || true
+}
+list_estab_ips() {
+  p=`read_port`
+  ss -tn 2>/dev/null | awk -v port=":$p" '
+    $1 ~ /^ESTAB/ {
+      loc=$4; peer=$5
+      if (index(loc, port) == 0) next
+      gsub(/[\[\]]/, "", peer)
+      sub(/^::ffff:/, "", peer)
+      n=split(peer, a, ":")
+      ip=a[1]
+      if (n > 2) { ip=peer; sub(/:[0-9]+$/, "", ip) }
+      if (ip != "" && ip != "127.0.0.1") print ip
+    }' | sort -u
+}
+kill_peer() {
+  ip="$1"; p=`read_port`
+  ss -K dst "$ip" sport = :"$p" >/dev/null 2>&1 || true
+  ss -K dst "$ip" dport = :"$p" >/dev/null 2>&1 || true
+}
+auth_id_for() { echo "adb-$(echo "$1" | tr '.:' '--')"; }
+ask_atlas() {
+  ip="$1"
+  id=`auth_id_for "$ip"`
+  pend=$ST/remote_adb.pending.$id
+  if [ -f "$pend" ]; then
+    age=$(( $(date +%s) - $(stat -c %Y "$pend" 2>/dev/null || echo 0) ))
+    [ "$age" -lt 90 ] && return 0
+  fi
+  echo "$ip" >"$pend" 2>/dev/null || true
+  chmod 666 "$pend" 2>/dev/null || true
+  am start-foreground-service -n com.titanus2.atlas/.AtlasSessionService \
+    -a com.titanus2.atlas.ENSURE_AUTH_AGENT >/dev/null 2>&1 || true
+  am broadcast -a com.titanus2.atlas.action.REMOTE_AUTH \
+    --es auth_id "$id" \
+    --es auth_source "Remote ADB" \
+    --es auth_reason "First connect $ip" >/dev/null 2>&1 || true
+  log "ask atlas first-connect $ip id=$id"
+}
+settle_pending() {
+  for pend in $ST/remote_adb.pending.adb-*; do
+    [ -f "$pend" ] || continue
+    id=${pend##*/remote_adb.pending.}
+    ip=$(tr -d '\r\n ' <"$pend" 2>/dev/null)
+    if [ -f "$AUTH_DIR/ok.$id" ]; then
+      client_add "$ALLOW_FILE" "$ip"
+      if [ -f "$DENY_FILE" ]; then
+        grep -vxF "$ip" "$DENY_FILE" >"$DENY_FILE.tmp" 2>/dev/null || true
+        mv -f "$DENY_FILE.tmp" "$DENY_FILE" 2>/dev/null || true
+      fi
+      rm -f "$pend" 2>/dev/null || true
+      log "atlas grant $ip"
+    elif [ -f "$AUTH_DIR/fail.$id" ]; then
+      client_add "$DENY_FILE" "$ip"
+      rm -f "$pend" 2>/dev/null || true
+      kill_peer "$ip"
+      log "atlas deny $ip"
+    else
+      age=$(( $(date +%s) - $(stat -c %Y "$pend" 2>/dev/null || echo 0) ))
+      if [ "$age" -gt 90 ]; then
+        client_add "$DENY_FILE" "$ip"
+        rm -f "$pend" 2>/dev/null || true
+        kill_peer "$ip"
+        log "atlas timeout $ip"
+      fi
+    fi
+  done
+}
+write_clients_file() {
+  {
+    seen=
+    for ip in `list_estab_ips`; do
+      client_ip_ok "$ip" || continue
+      if client_in "$ALLOW_FILE" "$ip"; then echo "$ip connected"
+      elif client_in "$DENY_FILE" "$ip"; then echo "$ip denied"
+      else echo "$ip pending"
+      fi
+      seen="$seen $ip "
+    done
+    if [ -f "$ALLOW_FILE" ]; then
+      while IFS= read -r ip || [ -n "$ip" ]; do
+        ip=$(echo "$ip" | tr -d '\r\n ')
+        [ -n "$ip" ] || continue
+        case "$seen" in *" $ip "*) continue ;; esac
+        echo "$ip allowed"
+      done <"$ALLOW_FILE"
+    fi
+  } >"$CLIENTS_FILE" 2>/dev/null || true
+  chmod 666 "$CLIENTS_FILE" 2>/dev/null || true
+}
+log "watch start"
+while :; do
+  d=$(tr -d '\r\n ' <"$DESIRE_FILE" 2>/dev/null)
+  [ "$d" = "on" ] || { log "watch exit desire=$d"; exit 0; }
+  settle_pending
+  for ip in `list_estab_ips`; do
+    client_ip_ok "$ip" || continue
+    if client_in "$ALLOW_FILE" "$ip"; then
+      continue
+    fi
+    kill_peer "$ip"
+    if client_in "$DENY_FILE" "$ip"; then
+      continue
+    fi
+    ask_atlas "$ip"
+  done
+  write_clients_file
+  sleep 0.4
+done
+WATCHEOF
+  chmod 755 "$WATCH_SH" 2>/dev/null || true
+  nohup /system/bin/sh "$WATCH_SH" >>"$ST/titan2_pad_agent.log" 2>&1 &
+  echo $! >"$WATCH_PID" 2>/dev/null || true
+  log "clients watch pid=$(cat $WATCH_PID 2>/dev/null)"
+}
+
+cmd_clients() {
+  write_clients_file
+  cat "$CLIENTS_FILE" 2>/dev/null || echo "(none)"
+}
+
+cmd_clients_forget() {
+  _lock
+  stop_clients_watch
+  rm -f "$ALLOW_FILE" "$DENY_FILE" $ST/remote_adb.pending.adb-* 2>/dev/null || true
+  write_clients_file
+  d=`get_desire`
+  [ "$d" = "on" ] && start_clients_watch
+  log "clients forget-all"
+}
+
+cmd_clients_revoke() {
+  _lock
+  ip=$(echo "${1:-}" | tr -d '\r\n ')
+  [ -n "$ip" ] || return 1
+  client_del "$ALLOW_FILE" "$ip"
+  client_add "$DENY_FILE" "$ip"
+  kill_peer "$ip"
+  write_clients_file
+  log "clients revoke $ip"
+}
+
+cmd_clients_seed() {
+  _lock
+  seed_connected_allowed
+}
+
 # Make reality match desire.
 # Never clobber an active PIN session (waiting|starting) — that stole Cancel from the UI.
 apply() {
@@ -260,12 +549,14 @@ apply() {
       if port_listen "$p"; then
         ip=`best_ip`
         set_status "on ${ip}:${p}"
+        start_clients_watch
         return 0
       fi
       set_status "busy on"
       if bounce_tcp "$p"; then
         ip=`best_ip`
         set_status "on ${ip}:${p}"
+        start_clients_watch
         log "apply ON ok ${ip}:${p}"
         return 0
       fi
@@ -277,6 +568,7 @@ apply() {
       # desire=off is SoT. Leftover hid_tcp_keep or a live exclusive HID
       # session must not keep :5555 after the human asked for OFF.
       rm -f /data/misc/titan2/hid_tcp_keep 2>/dev/null || true
+      stop_clients_watch
       if hid_usb_live; then
         log "apply OFF while HID live — dropping TCP anyway (desire=off)"
       fi
@@ -312,11 +604,15 @@ cmd_on() {
   # clear stale pair UI
   clear_pair_files
   apply
+  # Host already on the wire when human armed ON is not a first-time client.
+  seed_connected_allowed
+  start_clients_watch
 }
 
 cmd_off() {
   _lock
   set_desire off
+  stop_clients_watch
   clear_pair_files
   apply
 }
@@ -568,8 +864,23 @@ case "$cmd" in
     apply
     ;;
   status) cmd_status ;;
+  clients|clients_list)
+    cmd_clients
+    ;;
+  clients_forget|forget_clients)
+    cmd_clients_forget
+    ;;
+  clients_revoke|revoke_client)
+    cmd_clients_revoke "${2:-}"
+    ;;
+  clients_seed)
+    cmd_clients_seed
+    ;;
+  clients_watch)
+    start_clients_watch
+    ;;
   *)
-    echo "usage: titan2-remote-adb.sh on|off|pair|pair_cancel|apply|status|version" >&2
+    echo "usage: titan2-remote-adb.sh on|off|pair|pair_cancel|apply|status|clients|clients_forget|clients_revoke|version" >&2
     exit 2
     ;;
 esac

@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.17-adb-clients (617) — 2026-08-19T01:14Z
+
+- Remote ADB client list; first new host needs Atlas auth
+
+---
+
 ## 16.15 (615) — 2026-08-17T15:36Z
 
 - Hub paints before seed/heal. Grey Settings chrome, no teal chips. Keys lists after first frame.

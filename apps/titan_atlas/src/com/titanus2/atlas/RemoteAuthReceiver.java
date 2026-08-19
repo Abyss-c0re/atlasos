@@ -73,7 +73,15 @@ public class RemoteAuthReceiver extends BroadcastReceiver {
             java.io.File dir = AtlasAuth.authDir(context);
             java.io.File req = new java.io.File(dir, "req." + id);
             try (java.io.FileOutputStream fos = new java.io.FileOutputStream(req)) {
-                String line = reason + "\n# source=" + source + "\n";
+                String scope = "ask";
+                if (source != null) {
+                    String sl = source.toLowerCase();
+                    if (sl.contains("adb")) scope = "adb";
+                }
+                if (reason != null && reason.toLowerCase().contains("first connect")) {
+                    scope = "adb";
+                }
+                String line = reason + "\n# source=" + source + "\n# scope=" + scope + "\n";
                 fos.write(line.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }
             //noinspection ResultOfMethodCallIgnored

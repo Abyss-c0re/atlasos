@@ -1,4 +1,4 @@
-versionName=16.15
-versionCode=615
-built_utc=2026-08-17T15:36Z
+versionName=16.17-adb-clients
+versionCode=617
+built_utc=2026-08-19T01:14Z
 allow_root=0
