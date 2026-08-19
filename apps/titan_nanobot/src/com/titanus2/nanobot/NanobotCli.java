@@ -220,8 +220,13 @@ public final class NanobotCli {
      */
     public static JSONObject authStatus(Context c) throws Exception {
         JSONObject peer = tryPeerAuth(c);
-        if (peer != null && peer.optBoolean("signed_in", false)) {
+        // Stale RAM after app Clear data: peer can still say signed_in
+        // after we shredded the session file. Disk is SoT.
+        if (peer != null && peer.optBoolean("signed_in", false) && sessionOnDisk()) {
             return annotateDisk(peer);
+        }
+        if (peer != null && peer.optBoolean("signed_in", false) && !sessionOnDisk()) {
+            Log.w(TAG, "peer signed_in without session file — stale after CE wipe");
         }
         if (NanobotRuntime.isPeerHttpAlive() && peer != null) {
             return annotateDisk(peer);
@@ -301,6 +306,10 @@ public final class NanobotCli {
     public static JSONObject authPoll(Context c) throws Exception {
         // Peer advances device-login on every /api/auth GET.
         JSONObject peer = tryPeerAuth(c);
+        if (peer != null && peer.optBoolean("signed_in", false) && !sessionOnDisk()) {
+            Log.w(TAG, "authPoll: ignore stale peer signed_in (no session file)");
+            peer = null;
+        }
         if (peer != null && (peer.optBoolean("signed_in", false)
                 || peer.optBoolean("login_pending", false))) {
             return annotateDisk(peer);

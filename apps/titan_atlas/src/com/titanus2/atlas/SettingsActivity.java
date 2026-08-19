@@ -227,11 +227,15 @@ public class SettingsActivity extends Activity {
         hybridStatus = UiKit.mono(root);
         hybridStatus.setText("…");
         refreshHybridStatus();
-        if (HybridEnsure.debianLpLive()) {
-            UiKit.note(root, "super LP · wipe-survive · no loop image");
-            UiKit.button(root, "Fix home ownership", this::healHome);
-        } else {
-            sizeLab = UiKit.sliderLabel(root, sizeTargetLabel());
+        boolean lp = HybridEnsure.debianLpLive();
+        if (lp) {
+            UiKit.note(root,
+                "Wipe — user files in Debian home.\n"
+                    + "Reinstall — seed image + empty home.\n"
+                    + "Size is the LP partition.");
+        }
+        sizeLab = UiKit.sliderLabel(root, sizeTargetLabel());
+        if (!lp) {
             UiKit.slider(root, 15, (AtlasPrefs.hybridSizeG(this) - 2) / 2,
                 new SeekBar.OnSeekBarChangeListener() {
                     @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
@@ -241,14 +245,16 @@ public class SettingsActivity extends Activity {
                     @Override public void onStartTrackingTouch(SeekBar s) {}
                     @Override public void onStopTrackingTouch(SeekBar s) {}
                 });
-            LinearLayout diskRow = UiKit.row(root);
-            UiKit.flexButton(diskRow, "Apply size", this::doApplySize);
-            UiKit.flexButton(diskRow, "Remount", this::doRemount);
-            LinearLayout diskRow2 = UiKit.row(root);
-            UiKit.flexButton(diskRow2, "Rebuild", this::confirmRebuild);
-            UiKit.flexButton(diskRow2, "Wipe", this::confirmWipe);
-            UiKit.button(root, "Fix home ownership", this::healHome);
         }
+        LinearLayout diskRow = UiKit.row(root);
+        if (!lp) {
+            UiKit.flexButton(diskRow, "Apply size", this::doApplySize);
+        }
+        UiKit.flexButton(diskRow, "Remount", this::doRemount);
+        LinearLayout diskRow2 = UiKit.row(root);
+        UiKit.flexButton(diskRow2, "Reinstall", this::confirmRebuild);
+        UiKit.flexButton(diskRow2, "Wipe", this::confirmWipe);
+        UiKit.button(root, "Fix home ownership", this::healHome);
 
         UiKit.section(root, "Agent");
         UiKit.toggle(root, "Keep-alive notification", AtlasPrefs.keepAlive(this), on -> {
@@ -435,6 +441,9 @@ public class SettingsActivity extends Activity {
     }
 
     private String sizeTargetLabel() {
+        if (HybridEnsure.debianLpLive()) {
+            return "LP atlas_linux";
+        }
         int want = AtlasPrefs.hybridSizeG(this);
         int act = HybridEnsure.actualImageSizeG();
         if (act <= 0) return want + "G target · no image";
@@ -499,20 +508,29 @@ public class SettingsActivity extends Activity {
     }
 
     private void confirmRebuild() {
+        boolean lp = HybridEnsure.debianLpLive();
+        if (lp) {
+            new AlertDialog.Builder(this)
+                .setTitle("Reinstall Debian?")
+                .setMessage("Puts the Atlas seed back and empties home.")
+                .setPositiveButton("Reinstall", (d, w) -> doRebuild(false))
+                .setNegativeButton("Cancel", null)
+                .show();
+            return;
+        }
         final boolean[] preserve = { true };
         int want = AtlasPrefs.hybridSizeG(this);
         int act = HybridEnsure.actualImageSizeG();
         new AlertDialog.Builder(this)
-            .setTitle("Rebuild")
+            .setTitle("Reinstall")
             .setMultiChoiceItems(
-                new CharSequence[] { "Preserve data" },
+                new CharSequence[] { "Keep user files" },
                 new boolean[] { true },
                 (d, which, checked) -> preserve[0] = checked)
             .setMessage(
-                "Preserve ON: remount only · size stays " + act + "G\n"
-                    + "Preserve OFF: wipe → target " + want + "G\n"
-                    + "Grow without wipe: Apply size")
-            .setPositiveButton("Rebuild", (d, w) -> doRebuild(preserve[0]))
+                "Keep files ON: remount only · size stays " + act + "G\n"
+                    + "Keep files OFF: new image at " + want + "G")
+            .setPositiveButton("Reinstall", (d, w) -> doRebuild(preserve[0]))
             .setNegativeButton("Cancel", null)
             .show();
     }
@@ -528,13 +546,18 @@ public class SettingsActivity extends Activity {
                 main.post(() -> toast("Denied"));
                 return;
             }
-            String err = HybridEnsure.rebuildBlocking(SettingsActivity.this, preserve);
-            final boolean ready = NativeBin.hybridRootfsReady();
+            String err;
+            if (!preserve && HybridEnsure.debianLpLive()) {
+                CeWipe.resetLinuxHome(SettingsActivity.this);
+                err = HybridEnsure.ensureBlocking(SettingsActivity.this);
+            } else {
+                err = HybridEnsure.rebuildBlocking(SettingsActivity.this, preserve);
+            }
+            final boolean ready = NativeBin.hybridRootfsReady()
+                || HybridEnsure.debianLpLive();
             main.post(() -> {
                 if (err == null && ready) {
-                    toast(preserve
-                        ? "remounted · " + HybridEnsure.actualImageSizeG() + "G"
-                        : "fresh · " + HybridEnsure.actualImageSizeG() + "G");
+                    toast(preserve ? "remounted" : "reinstalled");
                     AtlasPrefs.setPrivilegedHybrid(SettingsActivity.this, true);
                     AtlasPrefs.requestSessionRestart(SettingsActivity.this);
                 } else {
@@ -546,15 +569,14 @@ public class SettingsActivity extends Activity {
     }
 
     private void confirmWipe() {
-        if (HybridEnsure.debianLpLive()) {
-            toast("refused · live LP Debian");
-            return;
-        }
-        int want = AtlasPrefs.hybridSizeG(this);
+        boolean lp = HybridEnsure.debianLpLive();
         new AlertDialog.Builder(this)
-            .setTitle("Wipe hybrid?")
-            .setMessage("Deletes disk + data · new image at " + want + "G")
-            .setPositiveButton("Wipe " + want + "G", (d, w) -> doWipe())
+            .setTitle(lp ? "Wipe user files?" : "Wipe image?")
+            .setMessage(lp
+                ? "Deletes user files in Debian home. The system image stays."
+                : ("Deletes the disk image and user files · new image at "
+                    + AtlasPrefs.hybridSizeG(this) + "G"))
+            .setPositiveButton("Wipe", (d, w) -> doWipe())
             .setNegativeButton("Cancel", null)
             .show();
     }
@@ -568,7 +590,13 @@ public class SettingsActivity extends Activity {
                 main.post(() -> toast("Denied"));
                 return;
             }
-            String err = HybridEnsure.rebuildBlocking(SettingsActivity.this, false);
+            String err;
+            if (HybridEnsure.debianLpLive()) {
+                CeWipe.resetLinuxHome(SettingsActivity.this);
+                err = null;
+            } else {
+                err = HybridEnsure.rebuildBlocking(SettingsActivity.this, false);
+            }
             if (err != null) {
                 shellSu(
                     "export ATLAS_HYBRID_SIZE_G="

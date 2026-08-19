@@ -15,9 +15,9 @@ import android.util.Log;
  *   <li>Auth plane = {@code /data/local/atlas-linux/var/lib/atlas-auth} on that LP
  *       (survives <b>factory reset</b>) — never app CE as SoT</li>
  *   <li>Linux HOME = {@code /data/local/atlas-home/atlas} (wiped with factory reset)</li>
- *   <li>Atlas <b>Clear data</b> = fresh identity: shred tickets + HOME
- *       {@code .grok} / user CLIs. Debian seed stays Atlas stack only.
- *       Grok is never part of the image — user may install it after</li>
+ *   <li>Atlas <b>Clear data</b> = reset Debian HOME (no Grok, no user CLIs)
+ *       + shred tickets. Settings Reinstall/Wipe do the same on LP.
+ *       Size slider is loop-image only; LP size is the partition</li>
  * </ul>
  */
 public final class AtlasApp extends Application {
@@ -30,22 +30,13 @@ public final class AtlasApp extends Application {
             NativeBin.ensureUserInstallDirs(this);
             NativeBin.ensureNativeLibs(this);
             boolean identityWiped = CeWipe.reconcile(this);
-            if (identityWiped) {
-                NativeBin.ensureShellProfile(this);
-            }
             /* Nanobot peers: Nanobot app + Titan command plane. Not Atlas. */
             AtlasPrefs.publishPrivilegePlane(this);
             AtlasPrefs.publishBioPlane(this);
             AtlasPrefs.publishAuthPolicy(this);
-            boolean ceWipe = AtlasPrefs.restoreHybridAfterCeWipe(this);
-            if (identityWiped) {
-                // Deb root may remain; privilege identity does not.
-                HybridEnsure.ensureLiveUidAsync(this);
-            } else if (ceWipe || NativeBin.debianRootPresent()) {
-                HybridEnsure.kickAfterCeWipe(this);
-            } else {
-                HybridEnsure.ensureLiveUidAsync(this);
-            }
+            // Never kickAfterCeWipe — that remounted leftover Deb as if
+            // Clear data had not happened. HOME reset is CeWipe's job.
+            HybridEnsure.ensureLiveUidAsync(this);
         } catch (Throwable t) {
             Log.w(TAG, "native lib warm", t);
         }

@@ -39,9 +39,9 @@ public final class CeWipe {
         // CE mark gone. Same install generation on LP/tmp → Clear data, not factory reset.
         boolean appWipe = gen.equals(readText(tmp)) || gen.equals(readText(lpBind));
         if (appWipe) {
-            Log.w(TAG, "CE empty + same install gen — Atlas Clear data; shred identity + user CLIs");
+            Log.w(TAG, "CE empty + same install gen — Atlas Clear data; reset Debian HOME");
             shredAuthIdentity();
-            shredUserExtras();
+            resetLinuxHome(c);
         }
         writeText(ce, gen);
         writeText(tmp, gen);
@@ -95,26 +95,35 @@ public final class CeWipe {
         deleteQuiet(new File("/data/local/tmp/titan2_remote_adb_grant"));
     }
 
-    /**
-     * Grok and other user CLIs live under LINUX_HOME (bind-mounted as Deb
-     * {@code /home/atlas}). That tree survives Atlas Clear data — leftover
-     * {@code ~/.grok} after wipe is heresy. Atlas stack is {@code atlas-*},
-     * not Grok. User may reinstall Grok after a wipe if they want it.
-     */
     public static void shredUserExtras() {
-        File home = new File(NativeBin.LINUX_HOME);
-        shredGrokTree(home);
-        shredGrokTree(new File("/data/local/atlas-linux/home/atlas"));
-        shredGrokTree(new File("/home/atlas"));
-        Log.i(TAG, "shredded user extras (grok) under linux home");
+        resetLinuxHome(null);
     }
 
-    private static void shredGrokTree(File home) {
-        if (home == null || !home.isDirectory()) return;
-        deleteTree(new File(home, ".grok"));
-        deleteQuiet(new File(home, "bin/grok"));
-        deleteQuiet(new File(home, ".local/bin/grok"));
-        deleteQuiet(new File(home, ".config/fish/completions/grok.fish"));
+    /**
+     * Empty Debian home, Atlas profile only. LP system image stays.
+     * Used on Atlas Clear data and Settings → Wipe.
+     */
+    public static void resetLinuxHome(Context c) {
+        File home = new File(NativeBin.LINUX_HOME);
+        if (home.isDirectory()) {
+            File[] kids = home.listFiles();
+            if (kids != null) {
+                for (File k : kids) deleteTree(k);
+            }
+        }
+        //noinspection ResultOfMethodCallIgnored
+        home.mkdirs();
+        deleteTree(new File("/data/local/atlas-linux/home/atlas/.local"));
+        deleteTree(new File("/home/atlas/.local"));
+        if (c != null) {
+            try {
+                NativeBin.ensureUserInstallDirs(c);
+                NativeBin.ensureShellProfile(c);
+            } catch (Exception e) {
+                Log.w(TAG, "reseed profile: " + e.getMessage());
+            }
+        }
+        Log.i(TAG, "reset linux HOME " + home.getAbsolutePath());
     }
 
     private static void shredAuthDir(File dir) {
