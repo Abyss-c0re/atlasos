@@ -34,7 +34,7 @@ import java.util.List;
  * Multi-session like Termux: + / prev / next / close; Exit leaves the app.
  */
 public class MainActivity extends Activity implements AtlasTermClient.Host {
-    public static final String VERSION = "1.0.20-enter";
+    public static final String VERSION = "1.0.28-user-bar";
     private static final int MAX_SESSIONS = 8;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -48,6 +48,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
     private ExtraKeysView extraKeys;
     /** Top-bar shell plane toggle (per-session Android vs Debian). */
     private Button shellModeBtn;
+    private Button userBtn;
     private int padL, padT, padR, padB;
     private boolean softImeWanted;
     private Typeface termFont;
@@ -136,9 +137,9 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         // Per-session shell: And / Deb (this PTY only)
         shellModeBtn = makeCompactBtn("Deb", v -> toggleSessionShellMode());
         bar1.addView(shellModeBtn, barWeight());
+        userBtn = makeCompactBtn(userBtnLabel(), v -> pickShellUser());
+        bar1.addView(userBtn, barWeight());
         bar1.addView(makeCompactBtn("Exit", v -> exitApp()), barWeight());
-        bar1.addView(makeCompactBtn("Kbd", v -> toggleSoftKeyboard()), barWeight());
-        bar1.addView(makeCompactBtn("Paste", v -> pasteToSession()), barWeight());
         bar1.addView(makeCompactBtn("Load", v -> loadSeatDialog()), barWeight());
         bar1.addView(makeCompactBtn("Save", v -> saveCurrentSeat()), barWeight());
         bar1.addView(makeCompactBtn("↻", v -> restartSession()), barWeight());
@@ -318,6 +319,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
             strip.setTextColor(AtlasUi.planeColor(this, wantDeb, NativeBin.hybridRootfsReady()));
         }
         updateShellModeButton();
+        updateUserButton();
         // Product Authentication Agent + session keep-alive (OS-wise, not tip-only)
         AtlasSessionService.ensureAuthAgent(this);
         AtlasSessionService.startOrUpdate(this, SessionHub.liveCount(), "auth-poll");
@@ -749,6 +751,61 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         shellModeBtn.setTextColor(AtlasUi.planeColor(this, deb, ready));
     }
 
+    private String userBtnLabel() {
+        String u = AtlasPrefs.shellUser(this);
+        if (u == null || u.isEmpty()) u = "atlas";
+        if (u.length() > 8) u = u.substring(0, 8);
+        return u;
+    }
+
+    private void updateUserButton() {
+        if (userBtn == null) return;
+        userBtn.setText(userBtnLabel());
+    }
+
+    private void pickShellUser() {
+        new Thread(() -> {
+            List<HybridEnsure.DebianUser> users =
+                HybridEnsure.loadDebianUsers(MainActivity.this);
+            main.post(() -> {
+                if (users == null || users.isEmpty()) {
+                    startActivity(new Intent(this, UsersActivity.class));
+                    return;
+                }
+                final List<HybridEnsure.DebianUser> pick = new ArrayList<>();
+                for (HybridEnsure.DebianUser u : users) {
+                    if (u != null && u.debian && u.name != null && !u.name.isEmpty()) {
+                        pick.add(u);
+                    }
+                }
+                if (pick.isEmpty()) {
+                    startActivity(new Intent(this, UsersActivity.class));
+                    return;
+                }
+                String cur = AtlasPrefs.shellUser(this);
+                CharSequence[] names = new CharSequence[pick.size()];
+                int checked = 0;
+                for (int i = 0; i < pick.size(); i++) {
+                    names[i] = pick.get(i).name;
+                    if (pick.get(i).name.equals(cur)) checked = i;
+                }
+                new AlertDialog.Builder(this)
+                    .setTitle("Debian user")
+                    .setSingleChoiceItems(names, checked, (d, which) -> {
+                        String name = pick.get(which).name;
+                        AtlasPrefs.setShellUser(this, name);
+                        updateUserButton();
+                        d.dismiss();
+                        toast("Deb → " + name);
+                    })
+                    .setNeutralButton("Users…", (d, w) ->
+                        startActivity(new Intent(this, UsersActivity.class)))
+                    .setNegativeButton("Close", null)
+                    .show();
+            });
+        }, "atlas-pick-user").start();
+    }
+
     private void cycleSession(int delta) {
         List<TerminalSession> sessions = SessionHub.sessions();
         if (sessions.isEmpty()) {
@@ -926,10 +983,16 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         // Deb HOME = product linux home (not app CE — chdir denied after hybrid enter).
         // Android plane keeps CE files for app state.
         File sessionHome = home;
+        String login = priv ? AtlasPrefs.shellUser(this) : "atlas";
+        if (login == null || login.isEmpty()) login = "atlas";
         if (priv) {
             File linuxHome = new File(NativeBin.LINUX_HOME);
             //noinspection ResultOfMethodCallIgnored
             linuxHome.mkdirs();
+            if (!"atlas".equals(login)) {
+                File uh = new File("/data/local/atlas-linux/home/" + login);
+                if (uh.isDirectory()) linuxHome = uh;
+            }
             if (linuxHome.isDirectory()) {
                 sessionHome = linuxHome;
             }
@@ -960,9 +1023,10 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         env.add("ATLAS_HYBRID=" + (priv && hybridReady ? "1" : "0"));
         env.add("ATLAS_HYBRID_SIZE_G=" + AtlasPrefs.hybridSizeG(this));
         env.add("ATLAS_REPORTS=" + new File(home, "reports").getAbsolutePath());
-        env.add("USER=atlas");
-        env.add("LOGNAME=atlas");
-        env.add("ATLAS_ROLE=atlas");
+        env.add("USER=" + login);
+        env.add("LOGNAME=" + login);
+        env.add("ATLAS_LOGIN=" + login);
+        env.add("ATLAS_ROLE=" + login);
         if (ca.isFile()) {
             env.add("SSL_CERT_FILE=" + ca.getAbsolutePath());
             env.add("CURL_CA_BUNDLE=" + ca.getAbsolutePath());

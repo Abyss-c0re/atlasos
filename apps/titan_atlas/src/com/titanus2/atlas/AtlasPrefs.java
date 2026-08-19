@@ -114,6 +114,19 @@ public final class AtlasPrefs {
         }
     }
 
+    /** Debian login for the next Deb session. Default atlas. */
+    public static String shellUser(Context c) {
+        String s = p(c).getString("shell_user", "atlas");
+        if (s == null || s.isEmpty()) return "atlas";
+        return s;
+    }
+
+    public static void setShellUser(Context c, String name) {
+        if (name == null || !name.matches("^[a-z_][a-z0-9_-]{0,31}$")) name = "atlas";
+        p(c).edit().putString("shell_user", name).apply();
+        requestSessionRestart(c);
+    }
+
     public static boolean keepScreenOn(Context c) {
         return p(c).getBoolean("keep_screen_on", true);
     }

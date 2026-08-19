@@ -42,7 +42,7 @@ public class UsersActivity extends Activity {
             ScrollView.LayoutParams.WRAP_CONTENT));
 
         UiKit.section(root, "Shared identity");
-        UiKit.note(root, "Android API + Debian login · atlas-auth elevate");
+        UiKit.note(root, "Use — next Debian session is this login");
         summary = UiKit.summary(root);
         UiKit.button(root, "Add user", this::showAdd);
         UiKit.button(root, "Set Debian root password", this::showRootPass);
@@ -68,13 +68,15 @@ public class UsersActivity extends Activity {
             summary.setText("none");
             return;
         }
-        summary.setText(users.size() + " · session " + android.os.Process.myUid());
+        String cur = AtlasPrefs.shellUser(this);
+        summary.setText(users.size() + " · now " + cur);
         for (HybridEnsure.DebianUser u : users) {
             String sec = "A " + (u.android ? "on" : "off")
                 + " · D " + (u.debian ? "on" : "off")
                 + " · sudo " + (u.sudo ? "on" : "off")
                 + " · pass " + (u.passSet ? "set" : "lock")
-                + (u.session ? " · session" : "");
+                + (u.session ? " · session" : "")
+                + (u.name.equals(cur) ? " · now" : "");
             UiKit.listRow(list, u.name + "  " + u.uid, sec, () -> showUser(u));
         }
     }
@@ -156,6 +158,13 @@ public class UsersActivity extends Activity {
         Switch android = sw(col, "Android access", u.android);
         Switch debian = sw(col, "Debian login", u.debian);
         Switch sudo = sw(col, "Debian sudo (atlas-auth)", u.sudo);
+        if (u.debian) {
+            AtlasUi.actionBtn(col, "Use in next Deb session", () -> {
+                AtlasPrefs.setShellUser(this, u.name);
+                toast("Deb session → " + u.name);
+                reload();
+            });
+        }
         if (u.session) {
             TextView s = AtlasUi.monoFact(this, "session identity — cannot delete");
             s.setPadding(0, dp(8), 0, 0);
