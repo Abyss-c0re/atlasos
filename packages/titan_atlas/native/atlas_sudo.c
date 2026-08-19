@@ -475,12 +475,10 @@ int main(int argc, char **argv) {
         }
         need_bio = want;
       }
-      if (!need_bio) {
-        /* Settings toggled bio off for this plane — elevate without agent */
-        goto after_auth;
-      }
-      /* One wrap: atlas-auth owns tickets (ticket.sudo only, never blanket). */
-      fprintf(stderr, "%s: auth agent (biometrics)…\n", base);
+      /* User in control: sudo/su always asks Atlas. Bio-off still Approve/Deny.
+       * Never mint ticket.exec here — atlas-auth writes it on grant. */
+      (void)need_bio;
+      fprintf(stderr, "%s: Atlas auth…\n", base);
       int rc = run_auth(reason);
       if (rc != 0) {
         fprintf(stderr, "%s: denied by auth agent (exit %d)\n", base, rc);
@@ -489,22 +487,6 @@ int main(int argc, char **argv) {
     }
   }
 after_auth:
-  /* enterd wants ticket.exec (15s one-shot). atlas-auth writes it on grant.
-   * If bio was skipped, mint exec token only — never a 1800s blanket. */
-  {
-    long exp = (long)time(NULL) + 15;
-    static const char *mirrors[] = {
-        "/data/local/atlas-linux/var/lib/atlas-auth/ticket.exec",
-        "/var/lib/atlas-auth/ticket.exec",
-        NULL};
-    for (int i = 0; mirrors[i]; i++) {
-      FILE *tf = fopen(mirrors[i], "w");
-      if (!tf) continue;
-      fprintf(tf, "%ld 15\n", exp);
-      fclose(tf);
-      chmod(mirrors[i], 0644);
-    }
-  }
 
   int arg0 = as_su ? 1 : skip_sudo_opts(argc, argv);
 

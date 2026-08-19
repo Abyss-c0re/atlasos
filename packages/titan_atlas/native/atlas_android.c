@@ -24,6 +24,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include "atlas_bridge_class.h"
 
 #ifndef ATLAS_VERSION
 #define ATLAS_VERSION "1.1.8-no-nsenter-capture"
@@ -162,7 +163,7 @@ static int policy_cmd(const char *name) {
   snprintf(key, sizeof key, "cmd.%s", name);
   int m = policy_lookup(key);
   if (m != POL_UNSET) return m;
-  if (!strcmp(name, "getprop") || !strcmp(name, "dumpsys")) return POL_ALLOW;
+  if (atlas_bridge_observe_name(name)) return POL_ALLOW;
   m = policy_lookup("default");
   return m != POL_UNSET ? m : POL_ASK;
 }
@@ -201,11 +202,7 @@ static int policy_path(const char *path, int wr) {
 /* Fork-bomb / recurse only. Screencap is NOT special — it takes the same
  * atlas-auth wrap as any other Android bin when bio Android access is on. */
 static int is_observe_name(const char *name) {
-  if (!name) return 0;
-  static const char *obs[] = { "dumpsys", "getprop", "logcat", NULL };
-  for (int i = 0; obs[i]; i++)
-    if (!strcmp(name, obs[i])) return 1;
-  return 0;
+  return atlas_bridge_observe_name(name);
 }
 
 static int skip_auth_name(const char *name) {

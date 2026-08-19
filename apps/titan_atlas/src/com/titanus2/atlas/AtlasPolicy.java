@@ -46,7 +46,8 @@ public final class AtlasPolicy {
     }
 
     public static int defaultCmd(String name) {
-        if ("getprop".equals(name) || "dumpsys".equals(name)) return ALLOW;
+        if ("getprop".equals(name) || "dumpsys".equals(name)
+                || "logcat".equals(name)) return ALLOW;
         return ASK;
     }
 

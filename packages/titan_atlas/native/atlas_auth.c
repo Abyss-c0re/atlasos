@@ -35,6 +35,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include "atlas_bridge_class.h"
 
 #ifndef ATLAS_VERSION
 #define ATLAS_VERSION "1.1.4-no-leftover-capture"
@@ -192,14 +193,7 @@ static int ticket_file_valid(const char *path) {
 }
 
 static int capture_scope(const char *scope) {
-  static const char *cap[] = {
-      "screencap", "screenshot", "input", "am", "pm", "cmd",
-      "settings", "setprop", "wm", "sudo", "su", "exec",
-      "adb", "remoteadb", "remote_adb", NULL};
-  if (!scope) return 0;
-  for (int i = 0; cap[i]; i++)
-    if (!strcmp(scope, cap[i])) return 1;
-  return 0;
+  return atlas_bridge_capture_name(scope);
 }
 
 static int scoped_ticket_valid(const char *auth_dir, const char *scope) {

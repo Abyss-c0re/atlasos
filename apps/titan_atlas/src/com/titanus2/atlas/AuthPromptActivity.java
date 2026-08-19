@@ -209,8 +209,33 @@ public class AuthPromptActivity extends Activity {
                 return;
             }
         }
-        Toast.makeText(this, "no lock · granted", Toast.LENGTH_SHORT).show();
-        grant();
+        showApproveDeny(reason != null ? reason : "Atlas privilege");
+    }
+
+    /** No lock enrolled — human still decides. Never silent-grant capture. */
+    private void showApproveDeny(String reason) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.BLACK);
+        root.setGravity(Gravity.CENTER);
+        int p = dp(24);
+        root.setPadding(p, p, p, p);
+        TextView t = new TextView(this);
+        t.setText(reason + "\n\nApprove or deny");
+        t.setTextColor(0xFFB0BEC5);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        t.setGravity(Gravity.CENTER);
+        t.setTypeface(android.graphics.Typeface.MONOSPACE);
+        root.addView(t);
+        android.widget.Button yes = new android.widget.Button(this);
+        yes.setText("Approve");
+        yes.setOnClickListener(v -> grant());
+        root.addView(yes);
+        android.widget.Button no = new android.widget.Button(this);
+        no.setText("Deny");
+        no.setOnClickListener(v -> deny());
+        root.addView(no);
+        setContentView(root);
     }
 
     @Override

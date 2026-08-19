@@ -36,12 +36,13 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "atlas_bridge_class.h"
 #ifndef TIOCSCTTY
 #define TIOCSCTTY 0x540E
 #endif
 
 #ifndef ATLAS_VERSION
-#define ATLAS_VERSION "1.2.9-agent"
+#define ATLAS_VERSION "1.2.13-bridge"
 #endif
 
 #define ABS_NAME "atlasenter"
@@ -274,38 +275,7 @@ static int recv_fd(int sock) {
  * Header is "ELEVATE chroot=0" and never contains screencap; checking it
  * dammed every observe call behind ticket.exec (heresy). */
 static int observe_class(const char *cmd) {
-  if (!cmd || !cmd[0]) return 0;
-  const char *s = cmd;
-  while (*s == ' ' || *s == '\t') s++;
-  if (strncmp(s, "CMD ", 4) == 0) s += 4;
-  while (*s == ' ' || *s == '\t' || *s == '\'' || *s == '"') s++;
-  const char *slash = s;
-  const char *p = s;
-  while (*p && *p != ' ' && *p != '\t' && *p != '\'' && *p != '"') {
-    if (*p == '/') slash = p + 1;
-    p++;
-  }
-  size_t n = (size_t)(p - slash);
-  if (n == 0 || n >= 64) return 0;
-  char name[64];
-  memcpy(name, slash, n);
-  name[n] = 0;
-  /* Seeing the glass is NOT observe. getprop/dumpsys only.
-   * screencap/screenshot/input/am/pm were free → Grok 01a01703
-   * captured 1440² with no live auth (ELEVATE chroot=0). */
-  static const char *obs[] = {
-      "getprop", "dumpsys",
-      NULL};
-  for (int i = 0; obs[i]; i++) {
-    if (strcmp(name, obs[i]) != 0) continue;
-    /* First token only. getprop;screencap / dumpsys|am is mutate, not observe. */
-    if (strpbrk(p, ";&|`") != NULL) return 0;
-    if (strstr(cmd, "screencap") || strstr(cmd, "screenshot")
-        || strstr(cmd, "nsenter") || strstr(cmd, "unshare"))
-      return 0;
-    return 1;
-  }
-  return 0;
+  return atlas_bridge_observe_cmd(cmd);
 }
 
 /* enterd accepts ticket.exec only (15s one-shot after atlas-auth grant).
@@ -396,9 +366,10 @@ static void handle_elevate(int csock, uid_t peer, char *line) {
     return;
   }
 
-  /* Observe (getprop/dumpsys) flows. Capture/mutate need ticket.exec.
-   * chroot=0 used to skip the gate — Grok nsenter+screencap with no finger. */
-  if (!observe_class(shellcmd) && !auth_ticket_ok()) {
+  /* Observe flows. Auth brokers (atlas-auth/sudo) start their own prompt.
+   * Everything else needs a live ticket.exec. */
+  if (!observe_class(shellcmd) && !atlas_bridge_broker_cmd(shellcmd)
+      && !auth_ticket_ok()) {
     dprintf(csock, "ERR need-auth-ticket peer=%u\n", (unsigned)peer);
     close(csock);
     return;

@@ -115,6 +115,8 @@ public class SettingsActivity extends Activity {
         UiKit.section(root, "Privileges");
         AtlasPrefs.publishPrivilegePlane(this);
         AtlasPrefs.publishBioPlane(this);
+        UiKit.note(root,
+            "observe getprop dumpsys logcat flow · capture asks Atlas");
         // Pref only: default *new* shells to Debian. Does not mount/unmount the LP.
         // Per-session And/Deb is the top bar. Off does not stop Debian.
         UiKit.toggle(root, "Default new shell: Debian", AtlasPrefs.privilegedHybrid(this), on -> {
