@@ -231,16 +231,19 @@ _aux_svc_up() {
 _aux_hal_up() {
   [ "$(getprop init.svc.camerahalserver | tr -d '\r')" = running ]
 }
-# MTK HAL must finish probing HI847S before CameraService enums.
-# Recycle before this line → ADD 0+1 only (lab T2128Z v32).
-_aux_hal_has_hi847s() {
-  logcat -d -b main 2>/dev/null | grep -q 'HI847S_MIPI_RAW:2 is installed'
-}
-# Last CameraService enum only (stale ADD 2 from a prior instance is a lie).
+# Fresh HI847S probe / ADD 2 only (full-buffer grep is stale after recycle).
 # Never dumpsys media.camera (hangs).
+_aux_log_tail() {
+  logcat -d -t 400 -b main 2>/dev/null
+}
+_aux_hi847s_count() {
+  _aux_log_tail | grep -c 'HI847S_MIPI_RAW:2 is installed'
+}
+_aux_hal_has_hi847s() {
+  [ "$(_aux_hi847s_count)" -gt "${_AUX_HI847S_MARK:-0}" ]
+}
 _aux_device2_added() {
-  logcat -d -b main -b system -s CameraService:I 2>/dev/null \
-    | grep 'ADD device' | tail -8 | grep -q 'ADD device 2'
+  _aux_log_tail | grep 'ADD device' | tail -8 | grep -q 'ADD device 2'
 }
 # Privacy ON must win over heal. Never bounce/restore while blocked.
 _aux_privacy_blocks() {
@@ -275,7 +278,7 @@ aux_cam_publish() {
     log "aux stamp only (privacy on / nodes 000)"
     return 0
   fi
-  if [ "${1:-}" != "force" ] && _aux_device2_added; then
+  if [ "${1:-}" != "force" ] && _aux_log_tail | grep -q 'HI847S_MIPI_RAW:2 is installed'; then
     return 0
   fi
   if aux_pub_running; then
@@ -297,7 +300,8 @@ aux_cam_publish() {
       log "aux child abort before stop (privacy on)"
       exit 0
     fi
-    log "aux recycle start — init aux_pub 1/2/3 (shell ctl.stop is a no-op)"
+    _AUX_HI847S_MARK=$(_aux_hi847s_count)
+    log "aux recycle start — init aux_pub 1/2/3 (mark=$_AUX_HI847S_MARK)"
     aux_cam_stamp
     # 1 = init stop CS+HAL. Do not shell-stop (lab T2031Z).
     setprop sys.titan2.aux_pub 1
@@ -338,10 +342,10 @@ aux_cam_publish() {
     if _aux_privacy_blocks; then setprop sys.titan2.aux_pub 0; cam_block; exit 0; fi
     restore_camera_nodes
     aux_cam_stamp
-    if _aux_device2_added; then
-      log "aux published HI847S ADD 2"
+    if _aux_hal_has_hi847s || _aux_log_tail | grep -q 'HI847S_MIPI_RAW:2 is installed'; then
+      log "aux published HI847S"
     else
-      log "aux recycle missed ADD 2"
+      log "aux recycle missed HI847S"
     fi
   ) &
 }
@@ -639,8 +643,8 @@ while true; do
       # Watchdog: packagelist every tick; HI847S miss heals in background.
       aux_cam_stamp
       if [ $((TICK % 8)) -eq 0 ] && ! aux_pub_running; then
-        if ! _aux_device2_added; then
-          log "aux watchdog — ADD 2 missing, heal"
+        if ! _aux_log_tail | grep -q 'HI847S_MIPI_RAW:2 is installed'; then
+          log "aux watchdog — HI847S missing, heal"
           aux_cam_publish
         fi
       fi
