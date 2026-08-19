@@ -194,6 +194,7 @@ cam_nodes_open() {
 # kill_video_holders only on edge block — not on steady re-assert (avoids
 # DIED client thrash when privacy ON and user still has camera UI open).
 cam_block() {
+  aux_pub_abort
   revoke_camera_nodes
   kill_video_holders
   revoke_camera_nodes
@@ -209,6 +210,7 @@ cam_block() {
 # Privacy OFF miss: init recycle so 0+1+2+3 all publish.
 _AUX_PKGS="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
 _AUX_PUB_TS=0
+_AUX_PUB_PIDF=/data/local/tmp/titan2_aux_pub.pid
 aux_cam_stamp() {
   setprop persist.sys.phh.include_all_cameras true 2>/dev/null || true
   setprop camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
@@ -240,64 +242,108 @@ _aux_device2_added() {
   logcat -d -b main -b system -s CameraService:I 2>/dev/null \
     | grep 'ADD device' | tail -8 | grep -q 'ADD device 2'
 }
-# $1=force — skip 20s debounce (privacy OFF edge / boot miss).
+# Privacy ON must win over heal. Never bounce/restore while blocked.
+_aux_privacy_blocks() {
+  refresh_desire
+  privacy_cam_on && return 0
+  aux_cam_nodes_blocked && return 0
+  return 1
+}
+
+aux_pub_running() {
+  [ -f "$_AUX_PUB_PIDF" ] || return 1
+  p=$(tr -d '\r\n ' <"$_AUX_PUB_PIDF" 2>/dev/null)
+  [ -n "$p" ] && [ -d "/proc/$p" ]
+}
+
+# Kill background HI847S heal so cam_block is never stuck behind 20s HAL wait.
+aux_pub_abort() {
+  if [ -f "$_AUX_PUB_PIDF" ]; then
+    p=$(tr -d '\r\n ' <"$_AUX_PUB_PIDF" 2>/dev/null)
+    [ -n "$p" ] && kill "$p" 2>/dev/null || true
+    rm -f "$_AUX_PUB_PIDF" 2>/dev/null || true
+  fi
+  setprop sys.titan2.aux_pub 0 2>/dev/null || true
+}
+
+# Real recycle: stamp → stop CS+HAL → start HAL → wait HI847S → start CS → restamp.
+# Background. Abort if privacy toggle goes ON mid-heal.
+# $1=force — skip debounce / skip "already ADD 2".
 aux_cam_publish() {
   aux_cam_stamp
-  if aux_cam_nodes_blocked; then
-    log "aux stamp only (privacy fail-closed — all cameras off)"
+  if _aux_privacy_blocks; then
+    log "aux stamp only (privacy on / nodes 000)"
     return 0
   fi
   if [ "${1:-}" != "force" ] && _aux_device2_added; then
-    log "aux already ADD 2 — no bounce"
+    return 0
+  fi
+  if aux_pub_running; then
     return 0
   fi
   now=$(date +%s 2>/dev/null || echo 0)
   case "$now" in ''|*[!0-9]*) now=0 ;; esac
   if [ "${1:-}" != "force" ] && [ "$now" -gt 0 ] && [ "$_AUX_PUB_TS" -gt 0 ]; then
     age=$((now - _AUX_PUB_TS))
-    [ "$age" -ge 0 ] && [ "$age" -lt 20 ] && return 0
+    [ "$age" -ge 0 ] && [ "$age" -lt 30 ] && return 0
   fi
-  # boot_completed: first HAL probe is done. Recycle, then give the
-  # restarted HAL 15s to re-probe HI847S. 3s was too short (T2128Z).
-  _w=0
-  while [ "$_w" -lt 20 ]; do
-    _aux_hal_up && break
-    sleep 1
-    _w=$((_w + 1))
-  done
-  aux_cam_stamp
-  _AUX_PUB_TS=$(date +%s 2>/dev/null || echo 0)
-  setprop sys.titan2.aux_pub 1
-  sleep 5
-  hs=$(getprop init.svc.camerahalserver | tr -d '\r')
-  cs=$(getprop init.svc.cameraserver | tr -d '\r')
-  log "aux after stop hal=$hs cam=$cs"
-  aux_cam_stamp
-  setprop sys.titan2.aux_pub 2
-  _w=0
-  while [ "$_w" -lt 20 ]; do
-    _aux_hal_up && break
-    sleep 1
-    _w=$((_w + 1))
-  done
-  sleep 15
-  setprop sys.titan2.aux_pub 3
-  _w=0
-  while [ "$_w" -lt 20 ]; do
-    _aux_svc_up && break
-    sleep 1
-    _w=$((_w + 1))
-  done
-  sleep 8
-  restore_camera_nodes
-  aux_cam_stamp
-  setprop sys.titan2.aux_pub 0
-  if _aux_device2_added; then
-    log "aux published init recycle (HI847S ADD 2)"
-  else
-    log "aux recycle missed ADD 2"
-    return 1
-  fi
+  _AUX_PUB_TS=$now
+  (
+    echo $$ >"$_AUX_PUB_PIDF" 2>/dev/null || true
+    chmod 666 "$_AUX_PUB_PIDF" 2>/dev/null || true
+    _die() { rm -f "$_AUX_PUB_PIDF" 2>/dev/null; setprop sys.titan2.aux_pub 0 2>/dev/null; }
+    trap '_die' EXIT
+    if _aux_privacy_blocks; then
+      log "aux child abort before stop (privacy on)"
+      exit 0
+    fi
+    log "aux recycle start — init aux_pub 1/2/3 (shell ctl.stop is a no-op)"
+    aux_cam_stamp
+    # 1 = init stop CS+HAL. Do not shell-stop (lab T2031Z).
+    setprop sys.titan2.aux_pub 1
+    _w=0
+    while [ "$_w" -lt 8 ]; do
+      if _aux_privacy_blocks; then
+        log "aux child abort after stop request — cam_block wins"
+        setprop sys.titan2.aux_pub 0
+        cam_block
+        exit 0
+      fi
+      hs=$(getprop init.svc.camerahalserver | tr -d '\r')
+      case "$hs" in stopped|stopping) break ;; esac
+      sleep 1
+      _w=$((_w + 1))
+    done
+    if _aux_privacy_blocks; then setprop sys.titan2.aux_pub 0; cam_block; exit 0; fi
+    aux_cam_stamp
+    # 2 = init start HAL only — wait HI847S before CameraService enums.
+    setprop sys.titan2.aux_pub 2
+    _w=0
+    while [ "$_w" -lt 20 ]; do
+      if _aux_privacy_blocks; then setprop sys.titan2.aux_pub 0; cam_block; exit 0; fi
+      _aux_hal_has_hi847s && break
+      sleep 1
+      _w=$((_w + 1))
+    done
+    if _aux_privacy_blocks; then setprop sys.titan2.aux_pub 0; cam_block; exit 0; fi
+    # 3 = init start CameraService
+    setprop sys.titan2.aux_pub 3
+    _w=0
+    while [ "$_w" -lt 16 ]; do
+      if _aux_privacy_blocks; then setprop sys.titan2.aux_pub 0; cam_block; exit 0; fi
+      _aux_svc_up && _aux_device2_added && break
+      sleep 1
+      _w=$((_w + 1))
+    done
+    if _aux_privacy_blocks; then setprop sys.titan2.aux_pub 0; cam_block; exit 0; fi
+    restore_camera_nodes
+    aux_cam_stamp
+    if _aux_device2_added; then
+      log "aux published HI847S ADD 2"
+    else
+      log "aux recycle missed ADD 2"
+    fi
+  ) &
 }
 
 cam_allow() {
@@ -507,7 +553,7 @@ else
   log "boot MIC allowed"
 fi
 
-log "titan2-sensor-privacy ONLINE v33 (wait HI847S probe then recycle; privacy-off only)"
+log "titan2-sensor-privacy ONLINE v34-aux-watch (HI847S heal bg; abort if privacy on)"
 seed_qs_tiles
 TICK=0
 [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 200000 ] && : >"$LOG"
@@ -526,7 +572,7 @@ while true; do
     : >"$_sp_wake" 2>/dev/null || true
     chmod 666 "$_sp_wake" 2>/dev/null || true
     case "$_w" in
-      cam_block) cam_block; last_cam=1; aux_cam_stamp ;;
+      cam_block) aux_pub_abort; cam_block; last_cam=1; aux_cam_stamp ;;
       cam_allow) cam_allow; last_cam=0; aux_cam_publish force ;;
       aux_pub) aux_cam_publish force ;;
       mic_block) mic_block 2>/dev/null || true; last_mic=1 ;;
@@ -566,6 +612,8 @@ while true; do
   [ "$priv" = "1" ] && cam=1
 
   if [ "$cam" = "1" ]; then
+    # Toggle ON must win immediately — never wait on HI847S heal.
+    aux_pub_abort
     if [ "$last_cam" != "1" ]; then
       log "CAM block — video nodes only (torch plane separate)"
       cam_block
@@ -587,6 +635,14 @@ while true; do
         log "CAM re-allow — nodes still 000 while toggle allowed"
         cam_allow
         aux_cam_publish
+      fi
+      # Watchdog: packagelist every tick; HI847S miss heals in background.
+      aux_cam_stamp
+      if [ $((TICK % 8)) -eq 0 ] && ! aux_pub_running; then
+        if ! _aux_device2_added; then
+          log "aux watchdog — ADD 2 missing, heal"
+          aux_cam_publish
+        fi
       fi
     fi
   fi
