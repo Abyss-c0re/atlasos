@@ -102,13 +102,10 @@ fact_plane() {
 }
 
 fact_enterd() {
+  # File only. Never exec atlas-enterd — it is a daemon; -V hung cubeai status.
   v=$(_readf /data/local/tmp/atlas-enterd.ver)
   [ -n "$v" ] && { printf '%s' "$v"; return; }
-  if command -v atlas-enterd >/dev/null 2>&1; then
-    atlas-enterd -V 2>/dev/null | head -1 || true
-  else
-    printf '?'
-  fi
+  printf '?'
 }
 
 fact_hybrid() {

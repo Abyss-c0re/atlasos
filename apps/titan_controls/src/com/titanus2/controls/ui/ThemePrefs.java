@@ -115,7 +115,7 @@ public final class ThemePrefs {
                     "titan2_ui_day_night", mode);
             }
             // Tip pin so install_latest / probes match cube-ux v10 (no square seed).
-            Settings.Global.putString(app.getContentResolver(), "titanus2_cube_ux", "10");
+            Settings.Global.putString(app.getContentResolver(), "titanus2_cube_ux", "15");
         } catch (Exception ignored) {}
 
         // Night / day / auto via UiModeManager (no shell)
