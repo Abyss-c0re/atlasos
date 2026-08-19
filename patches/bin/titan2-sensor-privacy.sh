@@ -207,10 +207,13 @@ cam_block() {
 # when persist.sys.phh.include_all_cameras=true at first enum. Init stamps
 # that + aux packagelist at early-init (before HAL). Never dumpsys-gate.
 # Privacy ON (nodes 000): stamp only — do not bounce HAL.
-# Privacy OFF miss: init recycle so 0+1+2+3 all publish.
+# Privacy OFF edge / HAL death: one init recycle so 0+1+2+3 publish.
+# NEVER treat logcat rotation as "lens missing" (v34 heresy: recycled HAL
+# every ~45s under Aperture → black preview).
 _AUX_PKGS="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
 _AUX_PUB_TS=0
 _AUX_PUB_PIDF=/data/local/tmp/titan2_aux_pub.pid
+_AUX_HALPIDF=/data/local/tmp/titan2_hi847s.halpid
 aux_cam_stamp() {
   setprop persist.sys.phh.include_all_cameras true 2>/dev/null || true
   setprop camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
@@ -231,19 +234,23 @@ _aux_svc_up() {
 _aux_hal_up() {
   [ "$(getprop init.svc.camerahalserver | tr -d '\r')" = running ]
 }
-# Fresh HI847S probe / ADD 2 only (full-buffer grep is stale after recycle).
-# Never dumpsys media.camera (hangs).
-_aux_log_tail() {
-  logcat -d -t 400 -b main 2>/dev/null
+_aux_hal_pid() {
+  pidof camerahalserver 2>/dev/null | awk '{print $1}'
 }
-_aux_hi847s_count() {
-  _aux_log_tail | grep -c 'HI847S_MIPI_RAW:2 is installed'
+_aux_mark_hal() {
+  hp=$(_aux_hal_pid)
+  [ -n "$hp" ] && echo "$hp" >"$_AUX_HALPIDF" 2>/dev/null || true
+  chmod 644 "$_AUX_HALPIDF" 2>/dev/null || true
 }
-_aux_hal_has_hi847s() {
-  [ "$(_aux_hi847s_count)" -gt "${_AUX_HI847S_MARK:-0}" ]
+# CameraService real add (main). Not HAL "HI847S_MIPI_RAW:2 is installed"
+# (that tag is not in main — v34 grepped empty forever and never stopped).
+_aux_cs_has_id2() {
+  logcat -d -t 200 -b main 2>/dev/null | grep -q 'cameraId=2'
 }
-_aux_device2_added() {
-  _aux_log_tail | grep 'ADD device' | tail -8 | grep -q 'ADD device 2'
+# Preview open — killing HAL here is a black screen.
+_aux_camera_in_use() {
+  pidof org.lineageos.aperture com.mediatek.camera com.android.camera2 \
+    com.google.android.GoogleCamera com.android.camera >/dev/null 2>&1
 }
 # Privacy ON must win over heal. Never bounce/restore while blocked.
 _aux_privacy_blocks() {
@@ -259,7 +266,7 @@ aux_pub_running() {
   [ -n "$p" ] && [ -d "/proc/$p" ]
 }
 
-# Kill background HI847S heal so cam_block is never stuck behind 20s HAL wait.
+# Kill background HI847S heal so cam_block is never stuck behind HAL wait.
 aux_pub_abort() {
   if [ -f "$_AUX_PUB_PIDF" ]; then
     p=$(tr -d '\r\n ' <"$_AUX_PUB_PIDF" 2>/dev/null)
@@ -269,16 +276,23 @@ aux_pub_abort() {
   setprop sys.titan2.aux_pub 0 2>/dev/null || true
 }
 
-# Real recycle: stamp → stop CS+HAL → start HAL → wait HI847S → start CS → restamp.
+# Real recycle: stamp → stop CS+HAL → start HAL → settle → start CS → restamp.
 # Background. Abort if privacy toggle goes ON mid-heal.
-# $1=force — skip debounce / skip "already ADD 2".
+# $1=force — privacy-off edge (one bounce). Never a periodic logcat miss.
 aux_cam_publish() {
   aux_cam_stamp
   if _aux_privacy_blocks; then
     log "aux stamp only (privacy on / nodes 000)"
     return 0
   fi
-  if [ "${1:-}" != "force" ] && _aux_log_tail | grep -q 'HI847S_MIPI_RAW:2 is installed'; then
+  if [ "${1:-}" != "force" ] && _aux_camera_in_use; then
+    log "aux skip — camera client live (no HAL bounce)"
+    _aux_mark_hal
+    return 0
+  fi
+  if [ "${1:-}" != "force" ] && _aux_svc_up; then
+    # Services up and not forced: leave HAL alone. Id 2 stays until HAL dies.
+    _aux_mark_hal
     return 0
   fi
   if aux_pub_running; then
@@ -288,7 +302,7 @@ aux_cam_publish() {
   case "$now" in ''|*[!0-9]*) now=0 ;; esac
   if [ "${1:-}" != "force" ] && [ "$now" -gt 0 ] && [ "$_AUX_PUB_TS" -gt 0 ]; then
     age=$((now - _AUX_PUB_TS))
-    [ "$age" -ge 0 ] && [ "$age" -lt 30 ] && return 0
+    [ "$age" -ge 0 ] && [ "$age" -lt 60 ] && return 0
   fi
   _AUX_PUB_TS=$now
   (
@@ -300,8 +314,11 @@ aux_cam_publish() {
       log "aux child abort before stop (privacy on)"
       exit 0
     fi
-    _AUX_HI847S_MARK=$(_aux_hi847s_count)
-    log "aux recycle start — init aux_pub 1/2/3 (mark=$_AUX_HI847S_MARK)"
+    if [ "${1:-}" != "force" ] && _aux_camera_in_use; then
+      log "aux child abort — camera client live"
+      exit 0
+    fi
+    log "aux recycle start — init aux_pub 1/2/3"
     aux_cam_stamp
     # 1 = init stop CS+HAL. Do not shell-stop (lab T2031Z).
     setprop sys.titan2.aux_pub 1
@@ -320,12 +337,12 @@ aux_cam_publish() {
     done
     if _aux_privacy_blocks; then setprop sys.titan2.aux_pub 0; cam_block; exit 0; fi
     aux_cam_stamp
-    # 2 = init start HAL only — wait HI847S before CameraService enums.
+    # 2 = init start HAL only — short settle, then CameraService enums.
     setprop sys.titan2.aux_pub 2
     _w=0
-    while [ "$_w" -lt 20 ]; do
+    while [ "$_w" -lt 8 ]; do
       if _aux_privacy_blocks; then setprop sys.titan2.aux_pub 0; cam_block; exit 0; fi
-      _aux_hal_has_hi847s && break
+      if _aux_hal_up && [ "$_w" -ge 2 ]; then break; fi
       sleep 1
       _w=$((_w + 1))
     done
@@ -333,19 +350,20 @@ aux_cam_publish() {
     # 3 = init start CameraService
     setprop sys.titan2.aux_pub 3
     _w=0
-    while [ "$_w" -lt 16 ]; do
+    while [ "$_w" -lt 10 ]; do
       if _aux_privacy_blocks; then setprop sys.titan2.aux_pub 0; cam_block; exit 0; fi
-      _aux_svc_up && _aux_device2_added && break
+      if _aux_svc_up && _aux_cs_has_id2; then break; fi
       sleep 1
       _w=$((_w + 1))
     done
     if _aux_privacy_blocks; then setprop sys.titan2.aux_pub 0; cam_block; exit 0; fi
     restore_camera_nodes
     aux_cam_stamp
-    if _aux_hal_has_hi847s || _aux_log_tail | grep -q 'HI847S_MIPI_RAW:2 is installed'; then
-      log "aux published HI847S"
+    _aux_mark_hal
+    if _aux_cs_has_id2; then
+      log "aux published cameraId=2"
     else
-      log "aux recycle missed HI847S"
+      log "aux recycle done (cameraId=2 not in tail — HAL left running)"
     fi
   ) &
 }
@@ -532,17 +550,14 @@ else
   aux_cam_stamp
   log "boot CAM allowed (SPM OFF)"
 fi
-# First enum is usually 0+1 until HAL has probed HI847S and we recycle.
-# Wait for that probe, then one recycle. Instant double-retry kills enum.
+# Boot: if HAL+CS already up, do not bounce (black screen on first open).
+# Recycle only when services are down after privacy-on crash-loop.
 if [ "$last_cam" = "0" ]; then
-  if _aux_device2_added; then
-    log "boot HI847S already public (early stamp)"
+  if _aux_svc_up; then
+    _aux_mark_hal
+    log "boot camera services up — no recycle"
   else
     aux_cam_publish force
-    if ! _aux_device2_added; then
-      sleep 8
-      aux_cam_publish force
-    fi
   fi
 fi
 privacy_mic_on
@@ -557,7 +572,7 @@ else
   log "boot MIC allowed"
 fi
 
-log "titan2-sensor-privacy ONLINE v34-aux-watch (HI847S heal bg; abort if privacy on)"
+log "titan2-sensor-privacy ONLINE v35-aux-hold (heal on privacy-off/HAL death only; abort if privacy on)"
 seed_qs_tiles
 TICK=0
 [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 200000 ] && : >"$LOG"
@@ -640,12 +655,28 @@ while true; do
         cam_allow
         aux_cam_publish
       fi
-      # Watchdog: packagelist every tick; HI847S miss heals in background.
+      # Watchdog: restamp packagelist. Recycle only if HAL/CS died, never
+      # because a log line aged out, and never under a live camera client.
       aux_cam_stamp
       if [ $((TICK % 8)) -eq 0 ] && ! aux_pub_running; then
-        if ! _aux_log_tail | grep -q 'HI847S_MIPI_RAW:2 is installed'; then
-          log "aux watchdog — HI847S missing, heal"
+        if ! _aux_svc_up; then
+          log "aux watchdog — camera service down, heal"
+          cam_allow
           aux_cam_publish
+        else
+          hp=$(_aux_hal_pid)
+          old=$(tr -d '\r\n ' <"$_AUX_HALPIDF" 2>/dev/null)
+          if [ -n "$old" ] && [ -n "$hp" ] && [ "$old" != "$hp" ]; then
+            if _aux_camera_in_use; then
+              log "aux watchdog — HAL pid changed, client live, hold"
+              _aux_mark_hal
+            else
+              log "aux watchdog — HAL pid changed, one recycle"
+              aux_cam_publish
+            fi
+          else
+            [ -n "$hp" ] && [ ! -f "$_AUX_HALPIDF" ] && _aux_mark_hal
+          fi
         fi
       fi
     fi

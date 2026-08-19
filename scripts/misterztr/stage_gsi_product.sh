@@ -256,8 +256,11 @@ fi
 if ! grep -q '_is_protected_capture_pcm\|Hostless_Spk' "$SRC_SYS/titan2-sensor-privacy.sh" 2>/dev/null; then
   die "titan2-sensor-privacy.sh missing hostless/spk protect (v13+) — media silence risk"
 fi
-if ! grep -q 'aux_pub_abort\|v34-aux-watch' "$SRC_SYS/titan2-sensor-privacy.sh" 2>/dev/null; then
+if ! grep -q 'aux_pub_abort\|v34-aux-watch\|v35-aux-hold' "$SRC_SYS/titan2-sensor-privacy.sh" 2>/dev/null; then
   die "titan2-sensor-privacy.sh missing HI847S privacy-abort watchdog (v34+)"
+fi
+if ! grep -q 'v35-aux-hold' "$SRC_SYS/titan2-sensor-privacy.sh" 2>/dev/null; then
+  die "titan2-sensor-privacy.sh missing v35-aux-hold (logcat recycle is heresy)"
 fi
 stage_file "$SRC_SYS/Android.bp" "$DEST_SYS/Android.bp"
 for f in $_SYSBIN_SOT titan2-ims-setup.sh titan2-sensor-privacy.sh \
