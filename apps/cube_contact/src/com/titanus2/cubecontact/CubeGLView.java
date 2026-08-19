@@ -86,11 +86,17 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         float[] impulse;
         boolean hasNeuron;
         boolean bits; // NexusCore 512-bit lattice (0/1)
+        int gen;
         boolean ready;
     }
     private final AtomicReference<Snap> snapRef = new AtomicReference<>();
     private final Object snapBuildLock = new Object();
     private boolean snapBuilding;
+    private int snapGen;
+    private int boxCacheGen = -1;
+    private int boxCacheGridN = -1;
+    private float boxCacheOrigin, boxCacheScale;
+    private int boxCacheCount;
 
     private final float[] edgeScratch = new float[6];
     private final float[] faceScratch = new float[12];
@@ -252,7 +258,7 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
      * Kick is backup only (continuous is SoT). Match main app / cube_gl.
      */
     private long rearFrameMs(Context ctx, boolean interact) {
-        if (forceCompact) return interact ? 16L : 33L; // 30 fps idle, 60 on touch
+        if (forceCompact) return interact ? 33L : 50L; // 20 fps idle, 30 on touch
         if (CubeStability.isThermalSevere(ctx)) return 33L;
         return 16L;
     }
@@ -290,6 +296,14 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
             System.arraycopy(matrix.impulse, 0, s.impulse, 0, need);
             s.hasNeuron = matrix.hasNeuron;
             s.bits = matrix.isBitLattice();
+            Snap prev = snapRef.get();
+            if (prev != null && prev.cells != null && prev.n == n
+                    && java.util.Arrays.equals(prev.cells, s.cells)
+                    && java.util.Arrays.equals(prev.neuron, s.neuron)) {
+                s.gen = prev.gen;
+            } else {
+                s.gen = ++snapGen;
+            }
             s.ready = true;
             snapRef.set(s);
         } catch (Exception ignored) {
@@ -343,7 +357,7 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         if (CubeStability.allowPeerHttp(ctx)) {
             long pullEvery = CubeStability.peerPullIntervalMs(ctx);
             // Rear lattice: SMX bits must tick. 6s felt like a brick.
-            if (forceCompact) pullEvery = 900L;
+            if (forceCompact) pullEvery = 1500L;
             if (nowMs - lastPullMs >= pullEvery) {
                 lastPullMs = nowMs;
                 schedulePull();
@@ -535,6 +549,24 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         gl.glDisableClientState(GL10.GL_COLOR_ARRAY);
         gl.glDisableClientState(GL10.GL_VERTEX_ARRAY);
         boxN = 0;
+    }
+
+    private void boxDrawCached(GL10 gl) {
+        if (boxCacheCount <= 0) return;
+        ensureBufs();
+        boxVertBuf.clear();
+        boxVertBuf.put(boxVertScratch, 0, boxCacheCount * 3);
+        boxVertBuf.position(0);
+        boxColorBuf.clear();
+        boxColorBuf.put(boxColorScratch, 0, boxCacheCount * 4);
+        boxColorBuf.position(0);
+        gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
+        gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
+        gl.glVertexPointer(3, GL10.GL_FLOAT, 0, boxVertBuf);
+        gl.glColorPointer(4, GL10.GL_FLOAT, 0, boxColorBuf);
+        gl.glDrawArrays(GL10.GL_TRIANGLES, 0, boxCacheCount);
+        gl.glDisableClientState(GL10.GL_COLOR_ARRAY);
+        gl.glDisableClientState(GL10.GL_VERTEX_ARRAY);
     }
 
     private void schedulePull() {
@@ -793,37 +825,24 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         float sr = CubePalette.spikeR(ctx), sg = CubePalette.spikeG(ctx);
         float sb = CubePalette.spikeB(ctx), sa = CubePalette.spikeA(ctx);
         float[] rgb = new float[3];
-        float now = (System.nanoTime() - t0) / 1e9f;
-        int i = 0;
-        boolean anySpike = false;
-        lineClear();
-        boxClear();
-        for (int z = 0; z < n; z++)
-            for (int y = 0; y < n; y++)
-                for (int x = 0; x < n; x++, i++) {
-                    if (i >= snap.cells.length) continue;
-                    int raw = snap.cells[i] & 0xff;
-                    int d = raw % 10;
-                    if (d == 0 && raw != 0) d = (raw % 9) + 1;
-                    boolean neur = snap.hasNeuron && snap.neuron[i] != 0;
-                    float imp = i < snap.impulse.length ? snap.impulse[i] : 0f;
-                    if (d == 0 && !neur && imp < 0.08f) continue;
-                    float px = origin + x * scale;
-                    float py = origin + y * scale;
-                    float pz = origin + z * scale;
-                    digitColor(d > 0 ? d : 1, rgb);
-                    if (imp > 0.05f) {
-                        anySpike = true;
-                        float flash = imp;
-                        float jitter = 0.12f + 0.45f * flash;
-                        float t = now * 40f + i;
-                        boxEmit(px, py, pz, 0.55f + 0.35f * flash,
-                            1f, 0.12f, 0.08f, 0.95f * flash);
-                        lineEmit(px, py, pz,
-                            px + (float) Math.sin(t) * jitter,
-                            py + (float) Math.cos(t * 1.3f) * jitter,
-                            pz + (float) Math.sin(t * 0.7f) * jitter);
-                    } else {
+        boolean dirty = boxCacheGen != snap.gen || boxCacheGridN != n
+            || boxCacheOrigin != origin || boxCacheScale != scale;
+        if (dirty) {
+            boxClear();
+            int i = 0;
+            for (int z = 0; z < n; z++)
+                for (int y = 0; y < n; y++)
+                    for (int x = 0; x < n; x++, i++) {
+                        if (i >= snap.cells.length) continue;
+                        int raw = snap.cells[i] & 0xff;
+                        int d = raw % 10;
+                        if (d == 0 && raw != 0) d = (raw % 9) + 1;
+                        boolean neur = snap.hasNeuron && snap.neuron[i] != 0;
+                        if (d == 0 && !neur) continue;
+                        float px = origin + x * scale;
+                        float py = origin + y * scale;
+                        float pz = origin + z * scale;
+                        digitColor(d > 0 ? d : 1, rgb);
                         float a = 0.28f + 0.08f * Math.max(d, 1);
                         float sz = 0.48f + 0.06f * d;
                         if (neur) {
@@ -843,8 +862,35 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
                         if (heat) sz *= 0.92f;
                         boxEmit(px, py, pz, sz, rgb[0], rgb[1], rgb[2], a);
                     }
+            boxCacheCount = boxN;
+            boxCacheGen = snap.gen;
+            boxCacheGridN = n;
+            boxCacheOrigin = origin;
+            boxCacheScale = scale;
+        }
+        boxDrawCached(gl);
+
+        float now = (System.nanoTime() - t0) / 1e9f;
+        int i = 0;
+        boolean anySpike = false;
+        lineClear();
+        for (int z = 0; z < n; z++)
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++, i++) {
+                    if (i >= snap.impulse.length) continue;
+                    float imp = snap.impulse[i];
+                    if (imp <= 0.05f) continue;
+                    anySpike = true;
+                    float px = origin + x * scale;
+                    float py = origin + y * scale;
+                    float pz = origin + z * scale;
+                    float jitter = 0.12f + 0.45f * imp;
+                    float t = now * 40f + i;
+                    lineEmit(px, py, pz,
+                        px + (float) Math.sin(t) * jitter,
+                        py + (float) Math.cos(t * 1.3f) * jitter,
+                        pz + (float) Math.sin(t * 0.7f) * jitter);
                 }
-        boxFlush(gl);
         lineFlush(gl, sr, sg, sb, sa, 2.0f);
         if (anySpike) globalPulse = Math.max(globalPulse, 0.55f);
         gl.glDepthMask(true);
