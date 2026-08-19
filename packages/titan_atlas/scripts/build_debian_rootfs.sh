@@ -242,6 +242,12 @@ if tar -tzf "$TAR" | grep -E -q 'etc/apt/sources\.list\.d/.*\.sources$'; then
   log "FATAL: seed still has deb822 *.sources — dual apt config"
   exit 1
 fi
+# LAW: Grok is a user CLI — never bake it into the Debian image.
+# _ngrok bash-completion (unrelated) may exist; grok ELF / ~/.grok must not.
+if tar -tzf "$TAR" | grep -E -q '(^|./)(usr/bin/grok|usr/local/bin/grok|home/.*/\.grok/|root/\.grok/)'; then
+  log "FATAL: seed ships grok — user CLI must not be in debian image"
+  exit 1
+fi
 # LAW: sudoers must be archive uid 0 — host extract as non-root remaps to 1000
 # and bakes broken LP. Fail closed at seed pack, not after flash.
 if ! python3 - "$TAR" <<'PY'

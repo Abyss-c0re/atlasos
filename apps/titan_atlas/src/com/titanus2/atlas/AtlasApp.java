@@ -13,11 +13,11 @@ import android.util.Log;
  *   <li>Debian root = super LP {@code atlas_linux} (survives userdata wipe)
  *       or hybrid overlay/lower (survives Atlas Clear data)</li>
  *   <li>Auth plane = {@code /data/local/atlas-linux/var/lib/atlas-auth} on that LP
- *       (survives userdata wipe) — never app CE, never tmp</li>
- *   <li>Linux HOME = {@code /data/local/atlas-home/atlas} (survives Atlas
- *       Clear data; wiped with factory reset)</li>
- *   <li>Atlas Clear data wipes CE prefs only — must remount + enterd, never
- *       bootstrap or treat Deb as gone</li>
+ *       (survives <b>factory reset</b>) — never app CE as SoT</li>
+ *   <li>Linux HOME = {@code /data/local/atlas-home/atlas} (wiped with factory reset)</li>
+ *   <li>Atlas <b>Clear data</b> = fresh identity: shred tickets + HOME
+ *       {@code .grok} / user CLIs. Debian seed stays Atlas stack only.
+ *       Grok is never part of the image — user may install it after</li>
  * </ul>
  */
 public final class AtlasApp extends Application {
@@ -29,12 +29,19 @@ public final class AtlasApp extends Application {
         try {
             NativeBin.ensureUserInstallDirs(this);
             NativeBin.ensureNativeLibs(this);
+            boolean identityWiped = CeWipe.reconcile(this);
+            if (identityWiped) {
+                NativeBin.ensureShellProfile(this);
+            }
             /* Nanobot peers: Nanobot app + Titan command plane. Not Atlas. */
             AtlasPrefs.publishPrivilegePlane(this);
             AtlasPrefs.publishBioPlane(this);
             AtlasPrefs.publishAuthPolicy(this);
             boolean ceWipe = AtlasPrefs.restoreHybridAfterCeWipe(this);
-            if (ceWipe || NativeBin.debianRootPresent()) {
+            if (identityWiped) {
+                // Deb root may remain; privilege identity does not.
+                HybridEnsure.ensureLiveUidAsync(this);
+            } else if (ceWipe || NativeBin.debianRootPresent()) {
                 HybridEnsure.kickAfterCeWipe(this);
             } else {
                 HybridEnsure.ensureLiveUidAsync(this);
