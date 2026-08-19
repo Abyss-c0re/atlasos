@@ -402,11 +402,11 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
     }
 
     private void digitColor(int d, float[] rgb) {
-        /* Hotter crimson — match desktop cube_gl dense prophecy. */
+        /* cube_gl.c digit_color — hotter crimson only. */
         float v = (d < 0 ? 0 : (d > 9 ? 9 : d)) / 9f;
-        rgb[0] = 0.70f + 0.30f * v;
-        rgb[1] = 0.03f + 0.10f * v;
-        rgb[2] = 0.04f + 0.06f * v;
+        rgb[0] = 0.55f + 0.45f * v;
+        rgb[1] = 0.02f + 0.08f * v;
+        rgb[2] = 0.03f + 0.05f * v;
     }
 
     private void ensureBufs() {
@@ -552,11 +552,13 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         float now = (System.nanoTime() - t0) / 1e9f;
         float[] rgb = new float[3];
 
+        Context ctx = getContext();
         gl.glEnable(GL10.GL_BLEND);
-        gl.glBlendFunc(GL10.GL_SRC_ALPHA, GL10.GL_ONE_MINUS_SRC_ALPHA);
+        gl.glBlendFunc(GL10.GL_SRC_ALPHA, GL10.GL_ONE); /* cube_gl: additive crimson on black */
         gl.glDisable(GL10.GL_CULL_FACE);
+        gl.glDepthMask(false);
 
-        // Outer cage (12 edges — always; cube silhouette for pennies)
+        // Outer cage — palette.ini cage_* (cube_gl.c)
         float e = half;
         float[][] corners = {
             {-e,-e,-e},{e,-e,-e},{e,e,-e},{-e,e,-e},
@@ -565,13 +567,15 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         int[][] edges = {
             {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}
         };
-        float pulse = 0.25f + 0.55f * globalPulse;
+        float pulse = 0.15f + 0.55f * globalPulse;
+        float cr = CubePalette.cageR(ctx), cg = CubePalette.cageG(ctx), cb = CubePalette.cageB(ctx);
+        float ca = CubePalette.cageA(ctx);
         for (int ei = 0; ei < edges.length; ei++) {
             int[] ed = edges[ei];
             float[] a = corners[ed[0]], b = corners[ed[1]];
             drawEdge(gl, a[0], a[1], a[2], b[0], b[1], b[2],
-                0.85f, 0.05f, 0.08f, 0.45f + pulse * 0.4f,
-                compact ? 1.4f : 1.6f);
+                cr, cg, cb, ca * 0.7f + pulse * 0.4f,
+                compact ? 1.2f : 1.2f);
         }
 
         // Lattice (rear always; front when SMX bits). Solid boxes were a brick.
@@ -647,12 +651,13 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
     }
 
     /**
-     * Subdisplay = lattice, not a brick. NexusCore law: 8³ bits, quiet zeros
-     * stay empty, layers have meaning, hive XOR is flow. Fat boxes were heresy.
+     * cube_gl.c draw_cube: lattice mesh + crimson nodes + impulse spikes.
+     * Palette keys = desktop palette.default.ini. No other hues.
      */
     private void drawRearTruth(GL10 gl, Snap snap, float origin, float scale,
                                boolean heat) {
         ensureBufs();
+        Context ctx = getContext();
         int n = snap.n;
         gl.glEnable(GL10.GL_DEPTH_TEST);
         gl.glDepthFunc(GL10.GL_LEQUAL);
@@ -660,80 +665,89 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         gl.glEnable(GL10.GL_BLEND);
         gl.glBlendFunc(GL10.GL_SRC_ALPHA, GL10.GL_ONE);
 
-        // Slice wires — you see through the volume.
-        float lo = origin - 0.5f * scale;
-        float hi = origin - 0.5f * scale + n * scale;
+        float mr = CubePalette.meshR(ctx), mg = CubePalette.meshG(ctx);
+        float mb = CubePalette.meshB(ctx), ma = CubePalette.meshA(ctx);
         int stepW = (n >= 16) ? 2 : 1;
-        for (int k = 0; k <= n; k += stepW) {
-            float p = origin - 0.5f * scale + k * scale;
-            float wa = 0.10f;
-            drawEdge(gl, lo, lo, p, hi, lo, p, 0.55f, 0.06f, 0.08f, wa, 1f);
-            drawEdge(gl, hi, lo, p, hi, hi, p, 0.55f, 0.06f, 0.08f, wa, 1f);
-            drawEdge(gl, hi, hi, p, lo, hi, p, 0.55f, 0.06f, 0.08f, wa, 1f);
-            drawEdge(gl, lo, hi, p, lo, lo, p, 0.55f, 0.06f, 0.08f, wa, 1f);
-        }
+        for (int z = 0; z <= n; z += stepW)
+            for (int y = 0; y <= n; y += stepW) {
+                float py = origin + (y - 0.5f) * scale;
+                float pz = origin + (z - 0.5f) * scale;
+                float x0 = origin - 0.5f * scale;
+                float x1 = origin + (n - 0.5f) * scale;
+                drawEdge(gl, x0, py, pz, x1, py, pz, mr, mg, mb, ma, 1f);
+            }
+        for (int z = 0; z <= n; z += stepW)
+            for (int x = 0; x <= n; x += stepW) {
+                float px = origin + (x - 0.5f) * scale;
+                float pz = origin + (z - 0.5f) * scale;
+                float y0 = origin - 0.5f * scale;
+                float y1 = origin + (n - 0.5f) * scale;
+                drawEdge(gl, px, y0, pz, px, y1, pz, 0.20f, 0.00f, 0.02f, 0.06f, 1f);
+            }
+        for (int y = 0; y <= n; y += stepW)
+            for (int x = 0; x <= n; x += stepW) {
+                float px = origin + (x - 0.5f) * scale;
+                float py = origin + (y - 0.5f) * scale;
+                float z0 = origin - 0.5f * scale;
+                float z1 = origin + (n - 0.5f) * scale;
+                drawEdge(gl, px, py, z0, px, py, z1, 0.18f, 0.00f, 0.02f, 0.05f, 1f);
+            }
 
-        int pts = 0;
+        float sr = CubePalette.spikeR(ctx), sg = CubePalette.spikeG(ctx);
+        float sb = CubePalette.spikeB(ctx), sa = CubePalette.spikeA(ctx);
+        float[] rgb = new float[3];
+        float now = (System.nanoTime() - t0) / 1e9f;
         int i = 0;
-        boolean anyFlow = false;
+        boolean anySpike = false;
         for (int z = 0; z < n; z++)
             for (int y = 0; y < n; y++)
                 for (int x = 0; x < n; x++, i++) {
                     if (i >= snap.cells.length) continue;
                     int raw = snap.cells[i] & 0xff;
-                    boolean on = raw != 0;
-                    boolean hive = snap.hasNeuron && snap.neuron[i] != 0;
+                    int d = raw % 10;
+                    if (d == 0 && raw != 0) d = (raw % 9) + 1;
+                    boolean neur = snap.hasNeuron && snap.neuron[i] != 0;
                     float imp = i < snap.impulse.length ? snap.impulse[i] : 0f;
-                    if (!on && !hive && imp < 0.12f) continue;
+                    if (d == 0 && !neur && imp < 0.08f) continue;
                     float px = origin + x * scale;
                     float py = origin + y * scale;
                     float pz = origin + z * scale;
-                    // Nexus layers: z0 services, z1 mesh, z6 beacon, z7 frame, else field.
-                    float r, g, b, a;
-                    if (z == 0) { r = 1f; g = 0.78f; b = 0.22f; a = 0.95f; }
-                    else if (z == 1) { r = 1f; g = 0.45f; b = 0.12f; a = 0.90f; }
-                    else if (z == 6) { r = 0.55f; g = 0.85f; b = 1f; a = 0.95f; }
-                    else if (z == 7) { r = 1f; g = 0.15f; b = 0.12f; a = 0.88f; }
-                    else { r = 0.95f; g = 0.08f; b = 0.10f; a = 0.82f; }
-                    if (!on && hive) {
-                        r = 0.25f; g = 0.75f; b = 1f; a = 0.55f;
+                    digitColor(d > 0 ? d : 1, rgb);
+                    if (imp > 0.05f) {
+                        anySpike = true;
+                        float flash = imp;
+                        float jitter = 0.12f + 0.45f * flash;
+                        float t = now * 40f + i;
+                        drawBox(gl, px, py, pz, 0.55f + 0.35f * flash,
+                            1f, 0.12f, 0.08f, 0.95f * flash, true);
+                        drawEdge(gl, px, py, pz,
+                            px + (float) Math.sin(t) * jitter,
+                            py + (float) Math.cos(t * 1.3f) * jitter,
+                            pz + (float) Math.sin(t * 0.7f) * jitter,
+                            sr, sg, sb, sa * flash, 2.0f);
+                    } else {
+                        float a = 0.28f + 0.08f * Math.max(d, 1);
+                        float sz = 0.48f + 0.06f * d;
+                        if (neur) {
+                            a = 0.45f;
+                            rgb[0] = 0.95f; rgb[1] = 0.06f; rgb[2] = 0.08f;
+                            sz = 0.58f;
+                        }
+                        if (d >= 6) {
+                            a = 0.75f + 0.02f * d;
+                            sz = 0.72f;
+                            rgb[0] = 1f; rgb[1] = 0.08f; rgb[2] = 0.06f;
+                        } else if (d >= 3) {
+                            a = 0.5f + 0.05f * d;
+                            sz = 0.6f;
+                        }
+                        if (a > 0.98f) a = 0.98f;
+                        if (heat) sz *= 0.92f;
+                        drawBox(gl, px, py, pz, sz, rgb[0], rgb[1], rgb[2], a, true);
                     }
-                    if (imp > 0.2f) {
-                        anyFlow = true;
-                        a = 1f;
-                        r = 1f; g = 0.35f; b = 0.15f;
-                    }
-                    int o = pts * 3;
-                    pointBatchScratch[o] = px;
-                    pointBatchScratch[o + 1] = py;
-                    pointBatchScratch[o + 2] = pz;
-                    int c = pts * 4;
-                    pointColorScratch[c] = r;
-                    pointColorScratch[c + 1] = g;
-                    pointColorScratch[c + 2] = b;
-                    pointColorScratch[c + 3] = a;
-                    pts++;
-                    if (pts >= StateMatrix.MAX_CELLS) break;
                 }
-        if (pts > 0) {
-            pointBatchBuf.clear();
-            pointBatchBuf.put(pointBatchScratch, 0, pts * 3);
-            pointBatchBuf.position(0);
-            pointColorBuf.clear();
-            pointColorBuf.put(pointColorScratch, 0, pts * 4);
-            pointColorBuf.position(0);
-            gl.glPointSize(heat ? 5.5f : 7.5f);
-            gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
-            gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
-            gl.glVertexPointer(3, GL10.GL_FLOAT, 0, pointBatchBuf);
-            gl.glColorPointer(4, GL10.GL_FLOAT, 0, pointColorBuf);
-            gl.glDrawArrays(GL10.GL_POINTS, 0, pts);
-            gl.glDisableClientState(GL10.GL_COLOR_ARRAY);
-            gl.glDisableClientState(GL10.GL_VERTEX_ARRAY);
-        }
-        if (anyFlow) globalPulse = Math.max(globalPulse, 0.7f);
+        if (anySpike) globalPulse = Math.max(globalPulse, 0.55f);
         gl.glDepthMask(true);
-        gl.glBlendFunc(GL10.GL_SRC_ALPHA, GL10.GL_ONE_MINUS_SRC_ALPHA);
     }
 
     @Override public boolean onTouchEvent(MotionEvent e) {

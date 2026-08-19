@@ -35,9 +35,17 @@ public final class CubePalette {
     public static void setMode(Context c, PrivilegeMode m) {
         sp(c).edit().putString("privilege_mode", m.name()).apply();
     }
-    /* defaults: black wire + crimson spike */
-    public static float spikeR(Context c) { return get(c, "spike_r", 1.0f); }
+    /* defaults = desktop modules/viz/palette.default.ini */
+    public static float meshR(Context c) { return get(c, "mesh_r", 0.20f); }
+    public static float meshG(Context c) { return get(c, "mesh_g", 0.00f); }
+    public static float meshB(Context c) { return get(c, "mesh_b", 0.02f); }
+    public static float meshA(Context c) { return get(c, "mesh_a", 0.07f); }
+    public static float cageR(Context c) { return get(c, "cage_r", 0.55f); }
+    public static float cageG(Context c) { return get(c, "cage_g", 0.02f); }
+    public static float cageB(Context c) { return get(c, "cage_b", 0.05f); }
+    public static float cageA(Context c) { return get(c, "cage_a", 0.35f); }
+    public static float spikeR(Context c) { return get(c, "spike_r", 1.00f); }
     public static float spikeG(Context c) { return get(c, "spike_g", 0.08f); }
     public static float spikeB(Context c) { return get(c, "spike_b", 0.10f); }
-    public static float meshA(Context c) { return get(c, "mesh_a", 0.07f); }
+    public static float spikeA(Context c) { return get(c, "spike_a", 0.95f); }
 }
