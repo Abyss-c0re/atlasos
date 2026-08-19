@@ -122,7 +122,9 @@ public final class AtlasPrefs {
     }
 
     public static void setShellUser(Context c, String name) {
-        if (name == null || !name.matches("^[a-z_][a-z0-9_-]{0,31}$")) name = "atlas";
+        if (name == null || !name.matches("^[a-z_][a-z0-9_-]{0,31}$")) {
+            name = "atlas";
+        }
         p(c).edit().putString("shell_user", name).apply();
         requestSessionRestart(c);
     }

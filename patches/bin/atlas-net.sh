@@ -352,7 +352,7 @@ export PATH="$ATLAS_USER_BIN:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.
 export TERM="${TERM:-xterm-256color}"
 export LANG="${LANG:-C.UTF-8}"
 export COLORTERM="${COLORTERM:-truecolor}"
-export USER="${USER:-atlas}"
+export USER="${ATLAS_LOGIN:-${USER:-atlas}}"
 export LOGNAME="${LOGNAME:-atlas}"
 export ATLAS_ROLE=atlas
 [ -f "$HOME/cacert.pem" ] && export SSL_CERT_FILE="$HOME/cacert.pem"
@@ -417,7 +417,7 @@ exec_admin_bash() {
   export ATLAS_AUTH_DIR="$HOME/auth"
   [ -n "$ATLAS_ASKPASS_BIN" ] && export SUDO_ASKPASS="$ATLAS_ASKPASS_BIN"
   export ATLAS_BIN ATLAS_HOME HOME ATLAS_SYSBIN ATLAS_USER_BIN
-  export USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas
+  export USER="${ATLAS_LOGIN:-atlas}" LOGNAME="${ATLAS_LOGIN:-atlas}" ATLAS_ROLE="${ATLAS_LOGIN:-atlas}"
   stty sane 2>/dev/null || true
   stty erase '^?' 2>/dev/null || true
   cd "$HOME" 2>/dev/null || true
@@ -437,7 +437,7 @@ if [ "$(id -u)" = "0" ]; then
     RSU=`find_real_su`
     if [ -n "$RSU" ] && [ -n "$BASH_BIN" ]; then
       export ATLAS_DROP_UID="$ADMIN_UID"
-      exec "$RSU" "$ADMIN_UID" -c "export HOME='$HOME' ATLAS_HOME='$HOME' ATLAS_BIN='$ATLAS_BIN' ATLAS_SYSBIN='$ATLAS_SYSBIN' ATLAS_USER_BIN='$ATLAS_USER_BIN' ATLAS_AUTH_DIR='$HOME/auth' SUDO_ASKPASS='${ATLAS_ASKPASS_BIN:-}' PATH='$ATLAS_USER_BIN:/system/bin:/system_ext/bin:/product/bin:/system/xbin' USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas; cd '$HOME' 2>/dev/null; exec '$BASH_BIN' -il"
+      exec "$RSU" "$ADMIN_UID" -c "export HOME='$HOME' ATLAS_HOME='$HOME' ATLAS_BIN='$ATLAS_BIN' ATLAS_SYSBIN='$ATLAS_SYSBIN' ATLAS_USER_BIN='$ATLAS_USER_BIN' ATLAS_AUTH_DIR='$HOME/auth' SUDO_ASKPASS='${ATLAS_ASKPASS_BIN:-}' PATH='$ATLAS_USER_BIN:/system/bin:/system_ext/bin:/product/bin:/system/xbin' USER=${ATLAS_LOGIN:-atlas} LOGNAME=${ATLAS_LOGIN:-atlas} ATLAS_ROLE=${ATLAS_LOGIN:-atlas}; cd '$HOME' 2>/dev/null; exec '$BASH_BIN' -il"
     fi
   fi
   echo "atlas-net: FATAL refuse interactive root shell" >&2
@@ -517,7 +517,7 @@ if [ "$want_hybrid" = "1" ]; then
       export ATLAS_AUTH_DIR="${ATLAS_AUTH_DIR:-$HOME/auth}"
     fi
     export SUDO_ASKPASS="${ATLAS_ASKPASS_BIN:-}"
-    export USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas
+    export USER="${ATLAS_LOGIN:-atlas}" LOGNAME="${ATLAS_LOGIN:-atlas}" ATLAS_ROLE="${ATLAS_LOGIN:-atlas}"
     export ATLAS_SESSION=hybrid ATLAS_PRIV=1 ATLAS_PLANE=hybrid ATLAS_MODE=debian ATLAS_HYBRID=1
     # Prefer product linux home for Deb (not CE files)
     case "$HOME" in
@@ -550,8 +550,19 @@ if [ "$want_hybrid" = "1" ]; then
       done
     fi
     # --ensure once if still cold; enterd binds /home/atlas + user PATH
+    LOGIN="${ATLAS_LOGIN:-atlas}"
+    SU_CMD=""
+    if [ -n "$LOGIN" ] && [ "$LOGIN" != "atlas" ]; then
+      SU_CMD="/bin/su - $LOGIN"
+    fi
     if hybrid_ready; then
+      if [ -n "$SU_CMD" ]; then
+        exec "$ENTER" --uid "$DROP_UID" --home "$HOME" --no-ensure -- $SU_CMD
+      fi
       exec "$ENTER" --uid "$DROP_UID" --home "$HOME" --no-ensure --
+    fi
+    if [ -n "$SU_CMD" ]; then
+      exec "$ENTER" --uid "$DROP_UID" --home "$HOME" --ensure -- $SU_CMD
     fi
     exec "$ENTER" --uid "$DROP_UID" --home "$HOME" --ensure --
   fi
@@ -581,7 +592,7 @@ if [ "$want_hybrid" = "1" ]; then
     export ATLAS_AUTH_DIR='$HOME/auth'
     export SUDO_ASKPASS='${ATLAS_ASKPASS_BIN:-}'
     export PATH='$ATLAS_USER_BIN:/usr/local/bin:/usr/bin:/bin:/system/bin:/system_ext/bin:/product/bin:/system/xbin:/vendor/bin'
-    export USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas
+    export USER="${ATLAS_LOGIN:-atlas}" LOGNAME="${ATLAS_LOGIN:-atlas}" ATLAS_ROLE="${ATLAS_LOGIN:-atlas}"
     export ATLAS_SESSION=hybrid ATLAS_PRIV=1 ATLAS_PLANE=hybrid ATLAS_MODE=debian ATLAS_HYBRID=1
     HYB='$HYB'
     export ATLAS_INTERNAL_SU=1

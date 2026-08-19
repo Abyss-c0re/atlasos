@@ -77,7 +77,7 @@ while IFS= read -r -d '' f; do
   mkdir -p "$BUILD/$(dirname "$rel")"
   cp -f "$f" "$BUILD/$rel"
   (cd "$BUILD" && "$BT/aapt" add unsigned.apk "$rel")
-done < <(find "$ROOT/assets/bin" -type f -print0 2>/dev/null)
+done < <(find -L "$ROOT/assets/bin" -type f -print0 2>/dev/null)
 
 # TLS CA for static Linux ELFs (grok)
 if [ -f "$ROOT/assets/ssl/cacert.pem" ]; then

@@ -42,7 +42,7 @@
 #endif
 
 #ifndef ATLAS_VERSION
-#define ATLAS_VERSION "1.2.13-bridge"
+#define ATLAS_VERSION "1.2.14-login"
 #endif
 
 #define ABS_NAME "atlasenter"
@@ -126,6 +126,30 @@ static void ensure_home_bind(const char *merge) {
     struct stat sm, st2;
     if (!(stat(merge, &sm) == 0 && stat(tgt, &st2) == 0 && sm.st_dev != st2.st_dev)) {
       (void)mount("/data/local/atlas-home", tgt, NULL, MS_BIND, NULL);
+    }
+  }
+}
+
+/* Extra Deb login: host /data/local/atlas-home/$login → merge /home/$login. */
+static void ensure_login_home_bind(const char *merge, const char *login) {
+  char host[256];
+  char tgt[512];
+  char tgt_parent[512];
+  struct stat st;
+  if (!merge || !login || !login[0] || strcmp(login, "atlas") == 0) return;
+  if (strcmp(login, "root") == 0) return;
+  snprintf(host, sizeof(host), "/data/local/atlas-home/%s", login);
+  (void)mkdir("/data/local/atlas-home", 0755);
+  (void)mkdir(host, 0755);
+  if (stat(host, &st) != 0 || !S_ISDIR(st.st_mode)) return;
+  snprintf(tgt_parent, sizeof(tgt_parent), "%s/home", merge);
+  snprintf(tgt, sizeof(tgt), "%s/home/%s", merge, login);
+  (void)mkdir(tgt_parent, 0755);
+  (void)mkdir(tgt, 0755);
+  {
+    struct stat sm, st2;
+    if (!(stat(merge, &sm) == 0 && stat(tgt, &st2) == 0 && sm.st_dev != st2.st_dev)) {
+      (void)mount(host, tgt, NULL, MS_BIND, NULL);
     }
   }
 }
@@ -577,7 +601,9 @@ static void handle_client(int csock, uid_t peer) {
 
   uid_t drop = 0;
   char home[512];
+  char login[64];
   home[0] = 0;
+  login[0] = 0;
   int do_ensure = 1;
   char *p = line;
   while (*p && *p != ' ') p++;
@@ -595,6 +621,19 @@ static void handle_client(int csock, uid_t peer) {
     if (sp) *sp = 0;
     if (strcmp(p, "uid") == 0) drop = (uid_t)strtoul(val, NULL, 10);
     else if (strcmp(p, "home") == 0) snprintf(home, sizeof(home), "%s", val);
+    else if (strcmp(p, "login") == 0) {
+      size_t n = 0;
+      for (; val[n] && n + 1 < sizeof(login); n++) {
+        char c = val[n];
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+              || c == '_' || c == '-')) {
+          n = 0;
+          break;
+        }
+        login[n] = c;
+      }
+      login[n] = 0;
+    }
     else if (strcmp(p, "ensure") == 0) do_ensure = (val[0] != '0');
     if (!sp) break;
     p = sp + 1;
@@ -655,6 +694,7 @@ static void handle_client(int csock, uid_t peer) {
   }
   write_status(1);
   logf2("enter ok", home);
+  if (login[0]) logf2("enter login", login);
 
   const char *shrel = pick_shell(merge);
   if (!shrel) {
@@ -723,14 +763,30 @@ static void handle_client(int csock, uid_t peer) {
 
     /* Bind real linux home into merge BEFORE chroot (reboot drops binds). */
     ensure_home_bind(merge);
+    if (login[0] && strcmp(login, "atlas") != 0)
+      ensure_login_home_bind(merge, login);
 
     if (chdir(merge) != 0) _exit(78);
     if (chroot(merge) != 0) _exit(78);
     chdir("/");
-    /* Prefer /home/atlas (bound to Android atlas-home). Installers mkdir ~/… */
+    /* Prefer /home/atlas (bound to Android atlas-home). root → /root. Other → /home/$login. */
     {
       const char *h = home;
-      if (access("/home/atlas", X_OK) == 0)
+      int as_root = login[0] && strcmp(login, "root") == 0;
+      int other = login[0] && strcmp(login, "atlas") != 0 && !as_root;
+      if (as_root) {
+        /* Seed /root is often system:system 0700 — uid 0 cannot cd until healed. */
+        (void)chown("/root", 0, 0);
+        (void)chmod("/root", 0700);
+        if (access("/root", X_OK) == 0)
+          h = "/root";
+      }
+      else if (other) {
+        char uh[256];
+        snprintf(uh, sizeof(uh), "/home/%s", login);
+        if (access(uh, X_OK) == 0)
+          h = uh;
+      } else if (access("/home/atlas", X_OK) == 0)
         h = "/home/atlas";
       else if (access("/data/local/atlas-home/atlas", X_OK) == 0)
         h = "/data/local/atlas-home/atlas";
@@ -747,11 +803,15 @@ static void handle_client(int csock, uid_t peer) {
     setenv("ATLAS_MODE", "debian", 1);
     setenv("ATLAS_SESSION", "hybrid", 1);
     setenv("ATLAS_PRIV", "1", 1);
-    setenv("ATLAS_ROLE", "atlas", 1);
-    /* Avoid "I have no name!" when passwd lacks app uid (LP often RO). */
-    setenv("USER", "atlas", 1);
-    setenv("LOGNAME", "atlas", 1);
-    setenv("PS1", "debian:atlas:\\w\\$ ", 1);
+    {
+      const char *who = (login[0] && strcmp(login, "atlas") != 0) ? login : "atlas";
+      char ps1[128];
+      setenv("ATLAS_ROLE", who, 1);
+      setenv("USER", who, 1);
+      setenv("LOGNAME", who, 1);
+      snprintf(ps1, sizeof(ps1), "debian:%s:\\w\\$ ", who);
+      setenv("PS1", ps1, 1);
+    }
     setenv("PROMPT_COMMAND", "", 1);
     setenv("TERM", "xterm-256color", 1);
     setenv("COLORTERM", "truecolor", 1);
@@ -792,6 +852,19 @@ static void handle_client(int csock, uid_t peer) {
                  "/usr/local/bin:/usr/bin:/bin");
       }
       setenv("PATH", path, 1);
+    }
+    /* Root session: stay uid 0. Do not `su -` — login profiles used to
+     * rewrite HOME=/root back to atlas. Other logins: su inside chroot. */
+    if (login[0] && strcmp(login, "root") == 0) {
+      execl(shrel, "bash", "--norc", "--noprofile", "-i", (char *)NULL);
+      execl(shrel, shrel, "-i", (char *)NULL);
+      _exit(78);
+    }
+    if (login[0] && strcmp(login, "atlas") != 0) {
+      if (access("/bin/su", X_OK) == 0)
+        execl("/bin/su", "su", "-", login, (char *)NULL);
+      if (access("/usr/bin/su", X_OK) == 0)
+        execl("/usr/bin/su", "su", "-", login, (char *)NULL);
     }
     if (setgid(drop) != 0) _exit(77);
     if (setuid(drop) != 0) _exit(77);

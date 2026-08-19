@@ -145,9 +145,29 @@ static int local_root_enter(uid_t drop, const char *home, int do_ensure) {
   setenv("ATLAS_HYBRID", "1", 1);
   setenv("ATLAS_PLANE", "hybrid", 1);
   setenv("ATLAS_MODE", "debian", 1);
-  setenv("USER", "atlas", 1);
-  setenv("LOGNAME", "atlas", 1);
-  setenv("PS1", "debian:atlas:\\w\\$ ", 1);
+  {
+    const char *who = getenv("ATLAS_LOGIN");
+    char ps1[128];
+    if (!who || !who[0]) who = "atlas";
+    setenv("USER", who, 1);
+    setenv("LOGNAME", who, 1);
+    setenv("ATLAS_ROLE", who, 1);
+    snprintf(ps1, sizeof(ps1), "debian:%s:\\w\\$ ", who);
+    setenv("PS1", ps1, 1);
+    if (strcmp(who, "root") == 0 && access("/root", X_OK) == 0) {
+      setenv("HOME", "/root", 1);
+      setenv("ATLAS_HOME", "/root", 1);
+      (void)chdir("/root");
+    } else if (who[0] && strcmp(who, "atlas") != 0) {
+      char uh[256];
+      snprintf(uh, sizeof(uh), "/home/%s", who);
+      if (access(uh, X_OK) == 0) {
+        setenv("HOME", uh, 1);
+        setenv("ATLAS_HOME", uh, 1);
+        (void)chdir(uh);
+      }
+    }
+  }
   setenv("TERM", "xterm-256color", 1);
   setenv("PATH",
          "/home/atlas/bin:/home/atlas/.local/bin:"
@@ -157,6 +177,20 @@ static int local_root_enter(uid_t drop, const char *home, int do_ensure) {
   unsetenv("LD_PRELOAD");
   unsetenv("ANDROID_ROOT");
   unsetenv("ANDROID_DATA");
+  {
+    const char *who = getenv("USER");
+    if (who && who[0] && strcmp(who, "atlas") != 0) {
+      if (access("/bin/su", X_OK) == 0)
+        execl("/bin/su", "su", "-", who, (char *)NULL);
+      if (access("/usr/bin/su", X_OK) == 0)
+        execl("/usr/bin/su", "su", "-", who, (char *)NULL);
+      if (strcmp(who, "root") == 0) {
+        const char *sh = access("/bin/bash", X_OK) == 0 ? "/bin/bash" : "/bin/sh";
+        execl(sh, sh, "-i", (char *)NULL);
+        die(78, "exec failed");
+      }
+    }
+  }
   if (setgid(drop) != 0 || setuid(drop) != 0) die(77, "drop failed");
   if (geteuid() == 0) die(77, "still root");
   const char *sh = access("/bin/bash", X_OK) == 0 ? "/bin/bash" : "/bin/sh";
@@ -237,8 +271,12 @@ int main(int argc, char **argv) {
   }
 
   char hdr[768];
-  int hl = snprintf(hdr, sizeof(hdr), "ENTER uid=%u home=%s ensure=%d\n",
-                    (unsigned)drop, home, do_ensure ? 1 : 0);
+  const char *login = getenv("ATLAS_LOGIN");
+  if (!login || !login[0]) login = getenv("USER");
+  if (!login || !login[0]) login = "atlas";
+  int hl = snprintf(hdr, sizeof(hdr),
+                    "ENTER uid=%u home=%s ensure=%d login=%s\n",
+                    (unsigned)drop, home, do_ensure ? 1 : 0, login);
   if (write(s, hdr, (size_t)hl) != hl) {
     close(s);
     die(79, "FATAL enterd write failed");

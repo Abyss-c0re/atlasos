@@ -1303,9 +1303,12 @@ EOF
 export ATLAS_PLANE=hybrid ATLAS_MODE=debian ATLAS_HYBRID=1 ATLAS_COMBINED=1
 # Deb product HOME: bound linux home (not CE files, not empty LP stub)
 export ATLAS_LINUX_HOME="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
+# Never steal /root or a real extra-user HOME. Only rewrite empty/CE stubs.
 case "${HOME:-}" in
-  ""|"/"|"/root"|"/data"|/data/data/*|/data/user/*)
-    if [ -d /home/atlas ] && [ -x /home/atlas ]; then
+  ""|"/"|"/data"|/data/data/*|/data/user/*)
+    if [ "$(id -u 2>/dev/null)" = "0" ] && [ -d /root ]; then
+      export HOME=/root
+    elif [ -d /home/atlas ] && [ -x /home/atlas ]; then
       export HOME=/home/atlas
     elif [ -d "$ATLAS_LINUX_HOME" ]; then
       export HOME="$ATLAS_LINUX_HOME"
@@ -1338,7 +1341,7 @@ if [ -n "${PS1:-}" ] && [ -z "${ATLAS_MOTD_SHOWN:-}" ]; then
 fi
 case "${PS1:-}" in
   *debian*|*android*) ;;
-  *) PS1='\[\e[1;36m\]debian\[\e[0m\]:atlas\$ ' ;;
+  *) PS1='\[\e[1;36m\]debian\[\e[0m\]:'"${USER:-atlas}"'\$ ' ;;
 esac
 EOF
   chmod 644 "$MERGE/etc/profile.d/zz-atlas-plane.sh" 2>/dev/null || true
@@ -2891,15 +2894,22 @@ write_profile() {
 # Atlas combined OS — one terminal, seamless Android ↔ Debian
 export ATLAS_HYBRID=1
 export ATLAS_COMBINED=1
-export USER="${USER:-atlas}"
-export LOGNAME="${LOGNAME:-atlas}"
-export ATLAS_ROLE=atlas
+# Honor the session login. Forcing atlas here made Switch a label-only lie.
+if [ "$(id -u 2>/dev/null)" = "0" ]; then
+  export USER=root LOGNAME=root ATLAS_ROLE=root
+elif [ -z "${USER:-}" ]; then
+  export USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas
+else
+  export LOGNAME="${LOGNAME:-$USER}"
+  export ATLAS_ROLE="${ATLAS_ROLE:-$USER}"
+fi
 _AB="${ATLAS_BIN:-}"
 export ATLAS_LINUX_HOME="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
-# Prefer bound Deb home for installs
+# Prefer bound Deb home for installs. Never steal /root.
 case "${HOME:-}" in
-  ""|"/"|"/root")
-    if [ -d /home/atlas ]; then HOME=/home/atlas
+  ""|"/"|"/data"|/data/data/*|/data/user/*)
+    if [ "$(id -u 2>/dev/null)" = "0" ] && [ -d /root ]; then HOME=/root
+    elif [ -d /home/atlas ]; then HOME=/home/atlas
     elif [ -d "$ATLAS_LINUX_HOME" ]; then HOME=$ATLAS_LINUX_HOME
     fi
     ;;
@@ -2938,9 +2948,9 @@ elif [ -x /usr/bin/bash ]; then
   export SHELL=/usr/bin/bash
 fi
 if [ -n "${BASH_VERSION:-}" ]; then
-  PS1='atlas:\w\$ '
+  PS1="${USER:-atlas}:\\w\\$ "
 else
-  PS1='atlas\$ '
+  PS1="${USER:-atlas}\\$ "
 fi
 stty sane 2>/dev/null || true
 stty erase ^? intr ^C 2>/dev/null || true

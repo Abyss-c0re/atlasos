@@ -34,7 +34,7 @@ import java.util.List;
  * Multi-session like Termux: + / prev / next / close; Exit leaves the app.
  */
 public class MainActivity extends Activity implements AtlasTermClient.Host {
-    public static final String VERSION = "1.0.28-user-bar";
+    public static final String VERSION = "1.0.31-root";
     private static final int MAX_SESSIONS = 8;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -137,7 +137,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         // Per-session shell: And / Deb (this PTY only)
         shellModeBtn = makeCompactBtn("Deb", v -> toggleSessionShellMode());
         bar1.addView(shellModeBtn, barWeight());
-        userBtn = makeCompactBtn(userBtnLabel(), v -> pickShellUser());
+        userBtn = makeCompactBtn("Switch", v -> pickShellUser());
         bar1.addView(userBtn, barWeight());
         bar1.addView(makeCompactBtn("Exit", v -> exitApp()), barWeight());
         bar1.addView(makeCompactBtn("Load", v -> loadSeatDialog()), barWeight());
@@ -751,16 +751,9 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         shellModeBtn.setTextColor(AtlasUi.planeColor(this, deb, ready));
     }
 
-    private String userBtnLabel() {
-        String u = AtlasPrefs.shellUser(this);
-        if (u == null || u.isEmpty()) u = "atlas";
-        if (u.length() > 8) u = u.substring(0, 8);
-        return u;
-    }
-
     private void updateUserButton() {
         if (userBtn == null) return;
-        userBtn.setText(userBtnLabel());
+        userBtn.setText("Switch");
     }
 
     private void pickShellUser() {
@@ -774,9 +767,9 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
                 }
                 final List<HybridEnsure.DebianUser> pick = new ArrayList<>();
                 for (HybridEnsure.DebianUser u : users) {
-                    if (u != null && u.debian && u.name != null && !u.name.isEmpty()) {
-                        pick.add(u);
-                    }
+                    if (u == null || !u.debian || u.name == null || u.name.isEmpty())
+                        continue;
+                    pick.add(u);
                 }
                 if (pick.isEmpty()) {
                     startActivity(new Intent(this, UsersActivity.class));
@@ -797,6 +790,8 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
                         updateUserButton();
                         d.dismiss();
                         toast("Deb → " + name);
+                        // onResume swallows requestSessionRestart when PTY is live
+                        restartSession();
                     })
                     .setNeutralButton("Users…", (d, w) ->
                         startActivity(new Intent(this, UsersActivity.class)))
@@ -884,6 +879,10 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         boolean wantDeb = SessionHub.MODE_DEBIAN.equals(mode);
         boolean ready = NativeBin.hybridRootfsReady();
         String plane = AtlasUi.planeLabel(wantDeb, ready);
+        if (wantDeb) {
+            String who = AtlasPrefs.shellUser(this);
+            if (who != null && !who.isEmpty()) plane = plane + " · " + who;
+        }
         strip.setText(AtlasUi.statusLine(plane, Math.max(i, 0), n, live, note));
         strip.setTextColor(AtlasUi.planeColor(this, wantDeb, ready));
         updateShellModeButton();
@@ -989,7 +988,10 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
             File linuxHome = new File(NativeBin.LINUX_HOME);
             //noinspection ResultOfMethodCallIgnored
             linuxHome.mkdirs();
-            if (!"atlas".equals(login)) {
+            if ("root".equals(login)) {
+                File rh = new File("/data/local/atlas-linux/root");
+                if (rh.isDirectory()) linuxHome = rh;
+            } else if (!"atlas".equals(login)) {
                 File uh = new File("/data/local/atlas-linux/home/" + login);
                 if (uh.isDirectory()) linuxHome = uh;
             }
