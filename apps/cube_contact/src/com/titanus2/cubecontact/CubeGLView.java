@@ -85,6 +85,7 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         byte[] neuron;
         float[] impulse;
         boolean hasNeuron;
+        boolean bits; // NexusCore 512-bit lattice (0/1)
         boolean ready;
     }
     private final AtomicReference<Snap> snapRef = new AtomicReference<>();
@@ -281,6 +282,7 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
             System.arraycopy(matrix.neuron, 0, s.neuron, 0, need);
             System.arraycopy(matrix.impulse, 0, s.impulse, 0, need);
             s.hasNeuron = matrix.hasNeuron;
+            s.bits = matrix.isBitLattice();
             s.ready = true;
             snapRef.set(s);
         } catch (Exception ignored) {
@@ -333,8 +335,8 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         // Async pull — never on GL thread
         if (CubeStability.allowPeerHttp(ctx)) {
             long pullEvery = CubeStability.peerPullIntervalMs(ctx);
-            // Rear truth: refresh real export often enough for live eyes (export is SoT).
-            if (forceCompact) pullEvery = Math.max(pullEvery, 6000L);
+            // Rear lattice: SMX bits must tick. 6s felt like a brick.
+            if (forceCompact) pullEvery = 900L;
             if (nowMs - lastPullMs >= pullEvery) {
                 lastPullMs = nowMs;
                 schedulePull();
@@ -572,8 +574,8 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
                 compact ? 1.4f : 1.6f);
         }
 
-        // ── REAR: truth cube — every lit cell from real matrix, solid voxels. ──
-        if (compact) {
+        // Lattice (rear always; front when SMX bits). Solid boxes were a brick.
+        if (compact || snap.bits) {
             drawRearTruth(gl, snap, origin, scale, heat);
             return;
         }
@@ -645,59 +647,93 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
     }
 
     /**
-     * Subdisplay truth face (status-brief class): cage + solid voxels for
-     * <b>every real lit cell</b>. Quiet zeros stay black. No densify haze,
-     * no step-sampling that drops truth. n=8 (~200 lit) is cheap on 410×502.
+     * Subdisplay = lattice, not a brick. NexusCore law: 8³ bits, quiet zeros
+     * stay empty, layers have meaning, hive XOR is flow. Fat boxes were heresy.
      */
     private void drawRearTruth(GL10 gl, Snap snap, float origin, float scale,
                                boolean heat) {
         ensureBufs();
         int n = snap.n;
-        // Only subsample if someone still pushed n=16 densify residual.
-        int step = (n >= 16) ? 2 : 1;
-        float[] rgb = new float[3];
-        float szMul = heat ? 0.95f : 1.15f;
         gl.glEnable(GL10.GL_DEPTH_TEST);
         gl.glDepthFunc(GL10.GL_LEQUAL);
-        gl.glDepthMask(true);
-        int drawn = 0;
+        gl.glDepthMask(false);
+        gl.glEnable(GL10.GL_BLEND);
+        gl.glBlendFunc(GL10.GL_SRC_ALPHA, GL10.GL_ONE);
+
+        // Slice wires — you see through the volume.
+        float lo = origin - 0.5f * scale;
+        float hi = origin - 0.5f * scale + n * scale;
+        int stepW = (n >= 16) ? 2 : 1;
+        for (int k = 0; k <= n; k += stepW) {
+            float p = origin - 0.5f * scale + k * scale;
+            float wa = 0.10f;
+            drawEdge(gl, lo, lo, p, hi, lo, p, 0.55f, 0.06f, 0.08f, wa, 1f);
+            drawEdge(gl, hi, lo, p, hi, hi, p, 0.55f, 0.06f, 0.08f, wa, 1f);
+            drawEdge(gl, hi, hi, p, lo, hi, p, 0.55f, 0.06f, 0.08f, wa, 1f);
+            drawEdge(gl, lo, hi, p, lo, lo, p, 0.55f, 0.06f, 0.08f, wa, 1f);
+        }
+
+        int pts = 0;
         int i = 0;
+        boolean anyFlow = false;
         for (int z = 0; z < n; z++)
             for (int y = 0; y < n; y++)
                 for (int x = 0; x < n; x++, i++) {
-                    if (drawn >= REAR_MAX_LIT) return;
-                    if (step > 1 && ((x + y + z) % step) != 0) continue;
                     if (i >= snap.cells.length) continue;
                     int raw = snap.cells[i] & 0xff;
-                    int d = raw % 10;
-                    if (d == 0 && raw != 0) d = (raw % 9) + 1;
-                    boolean neur = snap.hasNeuron && snap.neuron[i] != 0;
+                    boolean on = raw != 0;
+                    boolean hive = snap.hasNeuron && snap.neuron[i] != 0;
                     float imp = i < snap.impulse.length ? snap.impulse[i] : 0f;
-                    // Truth: only real energy. No ambient invent.
-                    if (d == 0 && !neur && imp < 0.08f) continue;
+                    if (!on && !hive && imp < 0.12f) continue;
                     float px = origin + x * scale;
                     float py = origin + y * scale;
                     float pz = origin + z * scale;
-                    digitColor(d > 0 ? d : 1, rgb);
-                    float a = 0.50f + 0.06f * Math.max(d, 1);
-                    float sz = (0.55f + 0.06f * d) * szMul;
-                    if (neur || d >= 6) {
-                        a = 0.92f;
-                        sz = 0.72f * szMul;
-                        rgb[0] = 1f; rgb[1] = 0.07f; rgb[2] = 0.05f;
-                    } else if (d >= 3) {
-                        a = 0.72f;
-                        sz = 0.62f * szMul;
-                    } else if (imp > 0.05f) {
-                        a = 0.95f;
-                        sz = (0.58f + 0.3f * imp) * szMul;
-                        rgb[0] = 1f; rgb[1] = 0.12f; rgb[2] = 0.08f;
+                    // Nexus layers: z0 services, z1 mesh, z6 beacon, z7 frame, else field.
+                    float r, g, b, a;
+                    if (z == 0) { r = 1f; g = 0.78f; b = 0.22f; a = 0.95f; }
+                    else if (z == 1) { r = 1f; g = 0.45f; b = 0.12f; a = 0.90f; }
+                    else if (z == 6) { r = 0.55f; g = 0.85f; b = 1f; a = 0.95f; }
+                    else if (z == 7) { r = 1f; g = 0.15f; b = 0.12f; a = 0.88f; }
+                    else { r = 0.95f; g = 0.08f; b = 0.10f; a = 0.82f; }
+                    if (!on && hive) {
+                        r = 0.25f; g = 0.75f; b = 1f; a = 0.55f;
                     }
-                    if (a > 0.98f) a = 0.98f;
-                    // Cheap 2-face boxes: solid crimson nodes (status-brief style).
-                    drawBox(gl, px, py, pz, sz, rgb[0], rgb[1], rgb[2], a, true);
-                    drawn++;
+                    if (imp > 0.2f) {
+                        anyFlow = true;
+                        a = 1f;
+                        r = 1f; g = 0.35f; b = 0.15f;
+                    }
+                    int o = pts * 3;
+                    pointBatchScratch[o] = px;
+                    pointBatchScratch[o + 1] = py;
+                    pointBatchScratch[o + 2] = pz;
+                    int c = pts * 4;
+                    pointColorScratch[c] = r;
+                    pointColorScratch[c + 1] = g;
+                    pointColorScratch[c + 2] = b;
+                    pointColorScratch[c + 3] = a;
+                    pts++;
+                    if (pts >= StateMatrix.MAX_CELLS) break;
                 }
+        if (pts > 0) {
+            pointBatchBuf.clear();
+            pointBatchBuf.put(pointBatchScratch, 0, pts * 3);
+            pointBatchBuf.position(0);
+            pointColorBuf.clear();
+            pointColorBuf.put(pointColorScratch, 0, pts * 4);
+            pointColorBuf.position(0);
+            gl.glPointSize(heat ? 5.5f : 7.5f);
+            gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
+            gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
+            gl.glVertexPointer(3, GL10.GL_FLOAT, 0, pointBatchBuf);
+            gl.glColorPointer(4, GL10.GL_FLOAT, 0, pointColorBuf);
+            gl.glDrawArrays(GL10.GL_POINTS, 0, pts);
+            gl.glDisableClientState(GL10.GL_COLOR_ARRAY);
+            gl.glDisableClientState(GL10.GL_VERTEX_ARRAY);
+        }
+        if (anyFlow) globalPulse = Math.max(globalPulse, 0.7f);
+        gl.glDepthMask(true);
+        gl.glBlendFunc(GL10.GL_SRC_ALPHA, GL10.GL_ONE_MINUS_SRC_ALPHA);
     }
 
     @Override public boolean onTouchEvent(MotionEvent e) {

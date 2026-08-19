@@ -33,6 +33,10 @@ public final class StateMatrix {
      */
     public static final String PEER_LAB = "http://192.168.8.100:18787";
     public static String PEER = PEER_LOCAL;
+    /** NexusCore SMX binary lattice (512 bits). Eyes SoT — not BrainCube dense export. */
+    public static final String NEXUS_A = "http://192.168.8.108:8860";
+    public static final String NEXUS_B = "http://192.168.8.100:8860";
+    public static String NEXUS = NEXUS_A;
 
     /**
      * 1.12 residual: rear GL path had no Application Context, so LAW persist
@@ -535,7 +539,11 @@ public final class StateMatrix {
             Log.w(TAG, "kernel cells.bin missing — fail closed (no demo)");
             return haveFrame;
         }
-        // PEER or AUTO — real BrainCube state matrix first. No densify theater.
+        // PEER or AUTO — NexusCore 512-bit lattice first (Cube SoT).
+        // BrainCube export is a dense meta cube; painting it solid is theater.
+        if (loadFromNexusBinary()) {
+            return true;
+        }
         boolean ok = false;
         boolean peerLive = false;
         try {
@@ -911,6 +919,123 @@ public final class StateMatrix {
             off += r;
         }
         return off;
+    }
+
+    public boolean isBitLattice() {
+        return dataSource != null && dataSource.startsWith("nexus-smx");
+    }
+
+    private static volatile long sLastNexusMs;
+    private static String readUrlFile(String path) {
+        try {
+            java.io.File f = new java.io.File(path);
+            if (!f.isFile() || f.length() <= 0 || f.length() >= 256) return null;
+            byte[] b = new byte[(int) f.length()];
+            try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+                int n = in.read(b);
+                if (n <= 0) return null;
+                String s = new String(b, 0, n, java.nio.charset.StandardCharsets.UTF_8).trim();
+                if (s.startsWith("http")) {
+                    while (s.endsWith("/")) s = s.substring(0, s.length() - 1);
+                    return s;
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    /** Resolve NexusCore /api/binary host (Cube SoT lattice). */
+    public static void tryResolveNexus() {
+        try {
+            String p = readUrlFile("/data/local/tmp/cube_nexus_url");
+            if (p == null && sAppCtx != null) {
+                try {
+                    String pref = sAppCtx.getSharedPreferences("cube_contact", Context.MODE_PRIVATE)
+                        .getString("nexus_url", null);
+                    if (pref != null && pref.startsWith("http")) {
+                        p = pref.trim();
+                        while (p.endsWith("/")) p = p.substring(0, p.length() - 1);
+                    }
+                } catch (Exception ignored) {}
+            }
+            if (p != null && p.startsWith("http")) {
+                NEXUS = p;
+                return;
+            }
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (now - sLastNexusMs < PEER_HEALTH_TTL_MS
+                    && NEXUS != null && NEXUS.startsWith("http")) {
+                return;
+            }
+            sLastNexusMs = now;
+            if (nexusBinaryOk(NEXUS_A)) {
+                NEXUS = NEXUS_A;
+            } else if (nexusBinaryOk(NEXUS_B)) {
+                NEXUS = NEXUS_B;
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private static boolean nexusBinaryOk(String base) {
+        if (base == null || !base.startsWith("http")) return false;
+        java.net.HttpURLConnection c = null;
+        try {
+            java.net.URL u = new java.net.URL(base + "/api/binary");
+            c = (java.net.HttpURLConnection) u.openConnection();
+            c.setConnectTimeout(350);
+            c.setReadTimeout(500);
+            c.setRequestMethod("GET");
+            c.setUseCaches(false);
+            return c.getResponseCode() >= 200 && c.getResponseCode() < 500;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (c != null) try { c.disconnect(); } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * NexusCore SMX: 512 bits, n=8. Quiet 0 = empty. Hive bits = flow.
+     * This is the Cube lattice — not a solid prophecy fill.
+     */
+    private boolean loadFromNexusBinary() {
+        try {
+            tryResolveNexus();
+            if (NEXUS == null || !NEXUS.startsWith("http")) return false;
+            JSONObject j = getJson(NEXUS + "/api/binary");
+            if (j == null) return false;
+            String sot = j.optString("sot", "").replaceAll("[^01]", "");
+            String hive = j.optString("hive", "").replaceAll("[^01]", "");
+            if (sot.length() < 64) return false;
+            int nn = 8;
+            int need = nn * nn * nn;
+            byte[] c = new byte[need];
+            byte[] neur = new byte[need];
+            int lit = 0;
+            int nHive = hive.length();
+            for (int i = 0; i < need; i++) {
+                boolean on = i < sot.length() && sot.charAt(i) == '1';
+                c[i] = on ? (byte) 1 : 0;
+                if (on) lit++;
+                neur[i] = (i < nHive && hive.charAt(i) == '1') ? (byte) 1 : 0;
+            }
+            applyCells(nn, c, neur, true);
+            for (int i = 0; i < need; i++) {
+                boolean on = c[i] != 0;
+                boolean h = neur[i] != 0;
+                if (on != h) impulse[i] = 1f;
+            }
+            source = "nexus-smx";
+            dataSource = "nexus-smx";
+            peerOk = true;
+            seq++;
+            ticks = seq;
+            Log.i(TAG, "nexus SMX n=8 lit=" + lit + " @" + NEXUS);
+            return true;
+        } catch (Exception e) {
+            Log.w(TAG, "nexus: " + e.getMessage());
+            return false;
+        }
     }
 
     // 1.63 residual: shared PeerHttp drain — no getResponseCode/disconnect
