@@ -150,27 +150,135 @@ public final class NanobotCli {
     }
 
     /**
+     * Sealed Grok files exist under SHARED_HOME. The app UID often cannot
+     * decrypt them (0600 other-uid + session.key vs peer_token). That is
+     * NOT "logged out" — do not mint a new device code.
+     */
+    public static boolean sessionOnDisk() {
+        try {
+            File sess = new File(NanobotRuntime.SHARED_HOME, "session");
+            return sess.isFile() && sess.length() > 32;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Best-effort world rw so app + shell + Cube share one seal. */
+    public static void healSharedSessionPerms() {
+        File home = new File(NanobotRuntime.SHARED_HOME);
+        for (String n : new String[] {
+                "session", "session.key", "peer_token", "grok_auth.json", "device_login"
+        }) {
+            File f = new File(home, n);
+            if (!f.isFile()) continue;
+            try {
+                //noinspection ResultOfMethodCallIgnored
+                f.setReadable(true, false);
+                //noinspection ResultOfMethodCallIgnored
+                f.setWritable(true, false);
+            } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * Peer /api/auth even when /health is slow. TCP-up + signed_in is the
+     * product session — CLI decrypt fail must not hide it.
+     */
+    private static JSONObject tryPeerAuth(Context c) {
+        if (!NanobotRuntime.isPortListening()) return null;
+        try {
+            JSONObject a = new PeerClient(c).authStatus();
+            if (peerAuthTrusted(a) || a.optBoolean("signed_in", false)) {
+                healSharedSessionPerms();
+                return a;
+            }
+            if (a.optBoolean("login_pending", false)) return a;
+        } catch (Exception e) {
+            Log.w(TAG, "tryPeerAuth: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private static JSONObject annotateDisk(JSONObject a) {
+        if (a == null) return null;
+        try {
+            boolean disk = sessionOnDisk();
+            a.put("session_on_disk", disk);
+            if (disk && !a.optBoolean("signed_in", false)) {
+                // Existing seal — never treat as "must log in again".
+                a.put("login_required", false);
+            }
+        } catch (Exception ignored) {}
+        return a;
+    }
+
+    /**
      * Auth status: prefer loopback peer when it is on SHARED_HOME (or signed
      * in). 1.8.2: wrong-home peer with signed_in=false falls through to CLI.
+     * 1.8.5: peer TCP + signed_in wins over CLI "session not valid" (unread
+     * seal). Never invent a new login here.
      */
     public static JSONObject authStatus(Context c) throws Exception {
-        // 1.7.13: only use peer when HTTP health works (not TCP-wedge).
-        if (NanobotRuntime.isPeerHttpAlive()) {
-            try {
-                JSONObject a = new PeerClient(c).authStatus();
-                if (peerAuthTrusted(a)) return a;
-                Log.w(TAG, "peer authStatus untrusted workdir="
-                    + a.optString("workdir", "?")
-                    + " signed_in=" + a.optBoolean("signed_in", false)
-                    + " — CLI SHARED_HOME");
-            } catch (Exception e) {
-                Log.w(TAG, "peer authStatus: " + e.getMessage());
-            }
+        JSONObject peer = tryPeerAuth(c);
+        if (peer != null && peer.optBoolean("signed_in", false)) {
+            return annotateDisk(peer);
         }
-        return runJson(c, 20000, "--auth-status");
+        if (NanobotRuntime.isPeerHttpAlive() && peer != null) {
+            return annotateDisk(peer);
+        }
+        try {
+            JSONObject cli = runJson(c, 20000, "--auth-status");
+            healSharedSessionPerms();
+            if (cli != null && cli.optBoolean("signed_in", false)) {
+                return annotateDisk(cli);
+            }
+            // CLI cannot decrypt a live seal — keep peer pending/signed if any.
+            if (peer != null) return annotateDisk(peer);
+            if (cli != null) return annotateDisk(cli);
+        } catch (Exception e) {
+            Log.w(TAG, "cli auth-status: " + e.getMessage());
+            if (peer != null) return annotateDisk(peer);
+            if (sessionOnDisk()) {
+                JSONObject hold = new JSONObject();
+                hold.put("ok", true);
+                hold.put("signed_in", false);
+                hold.put("login_required", false);
+                hold.put("login_pending", false);
+                hold.put("session_on_disk", true);
+                hold.put("needs_browser", true);
+                hold.put("backend", "grok");
+                hold.put("error", "session on disk — waiting for agent (no new login)");
+                return hold;
+            }
+            throw e;
+        }
+        if (peer != null) return annotateDisk(peer);
+        JSONObject empty = new JSONObject();
+        empty.put("ok", false);
+        empty.put("signed_in", false);
+        empty.put("login_required", !sessionOnDisk());
+        empty.put("session_on_disk", sessionOnDisk());
+        empty.put("needs_browser", true);
+        return empty;
     }
 
     public static JSONObject authStart(Context c, boolean force) throws Exception {
+        if (!force) {
+            // Mechanism: reuse the live/sealed session. Do not mint a new
+            // device code just because the app UID cannot decrypt the file.
+            try {
+                JSONObject st = authStatus(c);
+                if (st.optBoolean("signed_in", false)) return st;
+                if (st.optBoolean("session_on_disk", false)
+                        && !st.optBoolean("login_pending", false)) {
+                    st.put("login_required", false);
+                    st.put("reused_session", true);
+                    return st;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "authStart pre-check: " + e.getMessage());
+            }
+        }
         if (NanobotRuntime.isPeerHttpAlive()) {
             try {
                 JSONObject a = new PeerClient(c).authStart(force);
@@ -178,7 +286,7 @@ public final class NanobotCli {
                 if (peerAuthTrusted(a)
                         || a.optBoolean("login_pending", false)
                         || a.optBoolean("signed_in", false)) {
-                    return a;
+                    return annotateDisk(a);
                 }
                 Log.w(TAG, "peer authStart untrusted workdir="
                     + a.optString("workdir", "?") + " — CLI");
@@ -186,31 +294,26 @@ public final class NanobotCli {
                 Log.w(TAG, "peer authStart: " + e.getMessage());
             }
         }
-        if (force) return runJson(c, 60000, "--auth-start", "--force");
-        return runJson(c, 60000, "--auth-start");
+        if (force) return annotateDisk(runJson(c, 60000, "--auth-start", "--force"));
+        return annotateDisk(runJson(c, 60000, "--auth-start"));
     }
 
     public static JSONObject authPoll(Context c) throws Exception {
         // Peer advances device-login on every /api/auth GET.
-        // 1.7.13: prefer --auth-status after peer fail so sealed session is not missed.
-        if (NanobotRuntime.isPeerHttpAlive()) {
-            try {
-                JSONObject a = new PeerClient(c).authStatus();
-                if (peerAuthTrusted(a) || a.optBoolean("login_pending", false)) {
-                    return a;
-                }
-                Log.w(TAG, "peer authPoll untrusted — CLI");
-            } catch (Exception e) {
-                Log.w(TAG, "peer authPoll: " + e.getMessage());
-            }
+        JSONObject peer = tryPeerAuth(c);
+        if (peer != null && (peer.optBoolean("signed_in", false)
+                || peer.optBoolean("login_pending", false))) {
+            return annotateDisk(peer);
         }
         try {
             JSONObject st = runJson(c, 20000, "--auth-status");
-            if (st != null && st.optBoolean("signed_in", false)) return st;
+            healSharedSessionPerms();
+            if (st != null && st.optBoolean("signed_in", false)) return annotateDisk(st);
         } catch (Exception e) {
             Log.w(TAG, "cli auth-status: " + e.getMessage());
         }
-        return runJson(c, 45000, "--auth-poll");
+        if (peer != null) return annotateDisk(peer);
+        return annotateDisk(runJson(c, 45000, "--auth-poll"));
     }
 
     /** Persist Grok cloud backend for subsequent CLI invocations. */

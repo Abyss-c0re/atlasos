@@ -389,6 +389,9 @@ public class ProvidersActivity extends Activity {
                         if (!authPolling) {
                             ui(this::startAuthPoll);
                         }
+                    } else if (a.optBoolean("session_on_disk", false)
+                            || NanobotCli.sessionOnDisk()) {
+                        detail = "Session on disk — loading (no new browser login)";
                     } else {
                         detail = "Not signed in — use browser below (CLI auth)";
                     }
@@ -481,6 +484,22 @@ public class ProvidersActivity extends Activity {
                         onGrokSignedInSaved();
                         return;
                     }
+                    // Existing seal / live peer — do not invent a new device code.
+                    if (!force && (j.optBoolean("reused_session", false)
+                            || j.optBoolean("session_on_disk", false))) {
+                        if (grokAuthHint != null) {
+                            grokAuthHint.setText(
+                                "Existing Grok session is on this phone.\n"
+                                    + "Not starting a new browser login.");
+                        }
+                        if (grokStatus != null) {
+                            grokStatus.setText("○ Session on disk — loading");
+                            grokStatus.setTextColor(C_ACCENT);
+                        }
+                        toast("Using existing session");
+                        startAuthPoll();
+                        return;
+                    }
                     String uri = j.optString("verification_uri_complete", "");
                     if (uri.isEmpty()) uri = j.optString("verification_uri", "");
                     String code = j.optString("user_code", "");
@@ -494,7 +513,6 @@ public class ProvidersActivity extends Activity {
                         uri = uri + (uri.contains("?") ? "&" : "?") + "user_code=" + code;
                     }
                     savePendingAuthPrefs(uri, code);
-                    // Keep CLI --auth-poll alive while browser is on another device.
                     NanobotService.requestAuthWatch(this);
                     if (grokAuthHint != null) {
                         grokAuthHint.setText(crossDeviceAuthHint(code, uri));
@@ -509,8 +527,8 @@ public class ProvidersActivity extends Activity {
                             + (code.isEmpty() ? "" : " · " + code));
                         grokStatus.setTextColor(C_ACCENT);
                     }
-                    // Prefer opening the verification link on another device when convenient.
-                    // User can tap "Reopen browser link" on this phone if they want.
+                    // Complete the loop on this device — do not leave auth in another app.
+                    openBrowser(uri);
                     startAuthPoll();
                 });
             } catch (Exception e) {
@@ -559,56 +577,56 @@ public class ProvidersActivity extends Activity {
     }
 
     /**
-     * After browser approve: confirm session file + re-read status so we never
-     * claim signed-in without a loadable sealed session under app home.
+     * After browser approve (or reused seal): peer/CLI signed_in is enough.
+     * Do not fail just because the app UID cannot read a 0600 session file —
+     * that used to toast "try Sign in again" and mint a second device code.
      */
     private void onGrokSignedInSaved() {
         authIo.execute(() -> {
             String detail;
             boolean ok = false;
+            boolean hold = false;
             try {
                 ProviderStore.setMode(this, "remote");
                 NanobotCli.setRemoteGrok(this, "grok-4.5");
-                File home = NanobotCli.homeDir(this);
-                File sess = new File(home, "session");
-                if (!sess.isFile() || sess.length() < 32) {
-                    // One more poll can seal if approval just landed.
+                NanobotCli.healSharedSessionPerms();
+                JSONObject a = NanobotCli.authStatus(this);
+                ok = a.optBoolean("signed_in", false);
+                if (!ok) {
                     JSONObject p = NanobotCli.authPoll(this);
                     ok = p.optBoolean("signed_in", false);
-                    if (!sess.isFile() || sess.length() < 32) {
-                        detail = "Approved but session file missing under "
-                            + home.getAbsolutePath()
-                            + " — try Sign in again.";
-                        ok = false;
-                    } else {
-                        detail = ok ? "Signed in · session saved" : "Session file present but not valid";
-                    }
+                    a = p;
+                }
+                if (ok) {
+                    detail = "Signed in · " + a.optString("model", "grok-4.5");
+                } else if (a.optBoolean("session_on_disk", false)
+                        || NanobotCli.sessionOnDisk()) {
+                    hold = true;
+                    detail = "Session on disk — agent will load it (no new login)";
                 } else {
-                    JSONObject a = NanobotCli.authStatus(this);
-                    ok = a.optBoolean("signed_in", false);
-                    detail = ok
-                        ? ("Signed in · " + a.optString("model", "grok-4.5") + " · saved")
-                        : "Session file present but auth-status signed_in=false";
+                    detail = "Browser returned; waiting for session (not starting a new login)";
+                    hold = true;
                 }
             } catch (Exception e) {
-                detail = "Save check failed: " + e.getMessage();
-                ok = false;
+                detail = "Auth check: " + e.getMessage();
+                hold = NanobotCli.sessionOnDisk();
             }
             final boolean si = ok;
+            final boolean keep = hold;
             final String d = detail;
             ui(() -> {
-                clearPendingAuthPrefs();
-                if (grokOpenLinkBtn != null) grokOpenLinkBtn.setVisibility(View.GONE);
-                if (grokCopyCodeBtn != null) grokCopyCodeBtn.setVisibility(View.GONE);
                 if (si) {
-                    toast("Grok signed in · session saved");
+                    clearPendingAuthPrefs();
+                    if (grokOpenLinkBtn != null) grokOpenLinkBtn.setVisibility(View.GONE);
+                    if (grokCopyCodeBtn != null) grokCopyCodeBtn.setVisibility(View.GONE);
+                    toast("Grok signed in");
                     if (grokStatus != null) {
                         grokStatus.setText("● " + d);
                         grokStatus.setTextColor(0xFF7DFFB3);
                     }
                     if (grokAuthHint != null) {
                         grokAuthHint.setText(
-                            "Grok session sealed on this phone.\n"
+                            "Grok session is live on this phone.\n"
                                 + "Remote chat uses it. Local mode never needs it.");
                     }
                     if (grokSignInBtn != null) grokSignInBtn.setText("Signed in ✓");
@@ -616,12 +634,12 @@ public class ProvidersActivity extends Activity {
                         grokRegenBtn.setText("Sign in again (new code)");
                     }
                 } else {
-                    toast(d);
                     if (grokAuthHint != null) grokAuthHint.setText(d);
                     if (grokStatus != null) {
                         grokStatus.setText("○ " + d);
-                        grokStatus.setTextColor(C_MUT);
+                        grokStatus.setTextColor(keep ? C_ACCENT : C_MUT);
                     }
+                    if (keep && !authPolling) startAuthPoll();
                 }
                 refresh();
                 refreshGrokAuthStatus();

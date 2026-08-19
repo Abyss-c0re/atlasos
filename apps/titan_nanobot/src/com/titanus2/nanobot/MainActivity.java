@@ -1261,7 +1261,8 @@ public class MainActivity extends Activity {
         String model = a.optString("model", currentModel);
         if (model != null && !model.isEmpty()) currentModel = model;
         boolean signed = a.optBoolean("signed_in", false);
-        boolean loginReq = a.optBoolean("login_required", !signed);
+        boolean disk = a.optBoolean("session_on_disk", false);
+        boolean loginReq = a.optBoolean("login_required", !signed && !disk);
         boolean pending = a.optBoolean("login_pending", false);
         // needs_browser is backend TYPE (always true for Grok) — never treat as "logged out".
         boolean cloudOk = signed || !isCloudBackend();
@@ -1822,12 +1823,17 @@ public class MainActivity extends Activity {
                     h.post(() -> {
                         if (gen != sendGen) return;
                         if (e instanceof PeerClient.NeedLoginException) {
-                            streamBubble.setText(
-                                "Grok needs browser sign-in (Providers).\n"
-                                    + "CLI auth — no open agent port.");
+                            boolean disk = NanobotCli.sessionOnDisk();
+                            streamBubble.setText(disk
+                                ? "Grok session is on disk — agent is loading it.\n"
+                                    + "Not starting a new browser login."
+                                : "Grok needs browser sign-in (Providers).");
                             currentBackend = "grok";
-                            updateConnectUi(false);
-                            connectProvider(false);
+                            updateConnectUi(disk);
+                            if (!disk) {
+                                showAuthPending("", null);
+                            }
+                            // Do not force Providers — user asked to fix handoff, not login.
                         } else {
                             streamBubble.setText("Grok: "
                                 + (e.getMessage() != null ? e.getMessage() : e));
