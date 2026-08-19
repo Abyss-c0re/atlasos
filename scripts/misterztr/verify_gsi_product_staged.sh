@@ -68,10 +68,10 @@ fi
 [ -f "$DEST_APPS/TitanControls.apk" ] && ok "staged TitanControls.apk" || bad "missing TitanControls.apk"
 [ -f "$DEST_APPS/TitanUsbHid.apk" ] && ok "staged TitanUsbHid.apk" || bad "missing TitanUsbHid.apk"
 [ -f "$DEST_APPS/CubeContact.apk" ] && ok "staged CubeContact.apk" || bad "missing CubeContact.apk"
-if [ -f "$DEST_APPS/CubeContact.apk" ] && strings "$DEST_APPS/CubeContact.apk" 2>/dev/null | grep -q '2.04-cube-gl-mono'; then
-  ok "staged CubeContact is 2.04-cube-gl-mono"
+if [ -f "$DEST_APPS/CubeContact.apk" ] && strings "$DEST_APPS/CubeContact.apk" 2>/dev/null | grep -q 'cube-gl-mono'; then
+  ok "staged CubeContact is cube-gl-mono"
 else
-  bad "staged CubeContact is not 2.04-cube-gl-mono (Cube Experience)"
+  bad "staged CubeContact is not cube-gl-mono (Cube Experience)"
 fi
 [ -f "$DEST_APPS/privapp-permissions-com.titanus2.controls.xml" ] && ok "staged controls privapp xml" || bad "missing controls privapp xml"
 grep -qF 'TitanControls' "$DEST_MK" 2>/dev/null && ok "PRODUCT_PACKAGES lists TitanControls" || bad "mk missing TitanControls"

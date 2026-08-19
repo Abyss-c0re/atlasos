@@ -182,12 +182,12 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
     public void setForceCompact(boolean v) {
         forceCompact = v;
         if (v) setPlane(CubePlanePrefs.PLANE_REAR);
-        // Rear: dirty + ~30fps kick (continuous on secondary burned Mali).
-        // Front: continuous levitate orbit.
-        setRenderMode(v ? RENDERMODE_WHEN_DIRTY : RENDERMODE_CONTINUOUSLY);
+        // Same as CubeContactActivity / cube_gl: continuous levitate.
+        // WHEN_DIRTY + heat (load≥8 → 10 fps) made the rear feel stuck.
+        setRenderMode(RENDERMODE_CONTINUOUSLY);
         if (attached) {
             frameH.removeCallbacks(frameKick);
-            if (v) frameH.post(frameKick);
+            frameH.post(frameKick);
             requestRender();
         }
     }
@@ -236,18 +236,11 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
     }
 
     /**
-     * Rear is a 410×502 panel — never chase front density.
-     * Cheap frames @ ~20–24 fps beat expensive "30 fps" stutter.
+     * Kick is backup only (continuous is SoT). Match main app / cube_gl.
      */
     private long rearFrameMs(Context ctx, boolean interact) {
-        boolean heat = CubeStability.isCubeHeat(ctx);
-        if (forceCompact) {
-            if (heat) return interact ? 70L : 100L;
-            return interact ? 40L : 48L; // ~25 / 21 fps — each frame is tiny
-        }
-        if (!autoSpin && !interact) return heat ? 250L : 120L;
-        if (heat) return interact ? 50L : 66L;
-        return 16L; // front continuous path; kick is backup only
+        if (CubeStability.isThermalSevere(ctx)) return 33L;
+        return 16L;
     }
 
     /**
@@ -343,16 +336,16 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
             }
         }
 
-        // Impulse decay: rear rarely needs full mirror (saves main-thread memcpy).
-        long decayEvery = forceCompact ? 250L : 100L;
+        // cube_gl.c: impulse *= 0.88 every frame. Same on rear.
+        long decayEvery = 16L;
         if (nowMs - lastDecayMs >= decayEvery) {
             lastDecayMs = nowMs;
-            matrix.decayImpulses(forceCompact ? 0.82f : 0.88f);
+            matrix.decayImpulses(0.88f);
             if (globalPulse > 0f) {
                 globalPulse *= 0.90f;
                 if (globalPulse < 0.02f) globalPulse = 0f;
             }
-            if (!forceCompact && snap != null && snap.ready && snap.impulse != null) {
+            if (snap != null && snap.ready && snap.impulse != null) {
                 int n = Math.min(snap.impulse.length, matrix.impulse.length);
                 System.arraycopy(matrix.impulse, 0, snap.impulse, 0, n);
             }
@@ -374,14 +367,10 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
         if (dt > 0.12f) dt = 0.12f;
         lastFrameNanos = nnow;
         float nowSec = (System.nanoTime() - t0) / 1e9f;
-        // cube_gl --levitate: slow continuous orbit even under heat (glorious face).
+        // cube_gl --levitate: same orbit on rear and front.
         if ((autoSpin || levitate) && !drag && !multiTouch) {
-            // Rear: gentler spin (less motion blur feel + cheaper look)
-            float spinDps = CubeStability.isCubeHeat(ctx)
-                ? (compact ? 16f : 20f)
-                : (compact ? 22f : 28f);
-            if (levitate && !compact) spinDps += 6f;
-            else if (levitate) spinDps += 3f;
+            float spinDps = CubeStability.isThermalSevere(ctx) ? 20f : 28f;
+            if (levitate) spinDps += 6f;
             yaw += spinDps * dt;
             if (yaw > 360f) yaw -= 360f;
             if (yaw < 0f) yaw += 360f;
@@ -743,7 +732,7 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
                         }
                         if (a > 0.98f) a = 0.98f;
                         if (heat) sz *= 0.92f;
-                        drawBox(gl, px, py, pz, sz, rgb[0], rgb[1], rgb[2], a, true);
+                        drawBox(gl, px, py, pz, sz, rgb[0], rgb[1], rgb[2], a, false);
                     }
                 }
         if (anySpike) globalPulse = Math.max(globalPulse, 0.55f);

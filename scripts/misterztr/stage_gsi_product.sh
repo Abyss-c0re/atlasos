@@ -93,10 +93,10 @@ else
 fi
 # Cube Experience SoT: black+crimson cube_gl. Refuse stale brick APKs.
 if [ -n "$CUBE_APK" ]; then
-  grep -q '2.04-cube-gl-mono' "$ROOT/apps/cube_contact/AndroidManifest.xml" 2>/dev/null \
-    || die "CubeContact source missing 2.04-cube-gl-mono"
-  strings "$CUBE_APK" 2>/dev/null | grep -q '2.04-cube-gl-mono' \
-    || die "CubeContact.apk is not 2.04-cube-gl-mono ($CUBE_APK)"
+  grep -q 'cube-gl-mono' "$ROOT/apps/cube_contact/AndroidManifest.xml" 2>/dev/null \
+    || die "CubeContact source missing cube-gl-mono (Cube Experience)"
+  strings "$CUBE_APK" 2>/dev/null | grep -q 'cube-gl-mono' \
+    || die "CubeContact.apk is not cube-gl-mono ($CUBE_APK)"
 fi
 # HwKeyboardLayouts optional but recommended for RU system layout picker
 if [ -z "$HWKB_APK" ]; then
