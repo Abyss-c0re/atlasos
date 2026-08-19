@@ -296,12 +296,16 @@ static int observe_class(const char *cmd) {
   static const char *obs[] = {
       "getprop", "dumpsys",
       NULL};
-  for (int i = 0; obs[i]; i++)
-    if (strcmp(name, obs[i]) == 0) return 1;
-  if (strstr(cmd, "screencap") || strstr(cmd, "screenshot")
-      || strstr(cmd, "nsenter") || strstr(cmd, "unshare"))
-    return 0;
-  return strstr(cmd, "getprop") || strstr(cmd, "dumpsys");
+  for (int i = 0; obs[i]; i++) {
+    if (strcmp(name, obs[i]) != 0) continue;
+    /* First token only. getprop;screencap / dumpsys|am is mutate, not observe. */
+    if (strpbrk(p, ";&|`") != NULL) return 0;
+    if (strstr(cmd, "screencap") || strstr(cmd, "screenshot")
+        || strstr(cmd, "nsenter") || strstr(cmd, "unshare"))
+      return 0;
+    return 1;
+  }
+  return 0;
 }
 
 /* enterd accepts ticket.exec only (15s one-shot after atlas-auth grant).

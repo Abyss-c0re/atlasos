@@ -81,7 +81,7 @@ public class RemoteAuthReceiver extends BroadcastReceiver {
                 if (reason != null && reason.toLowerCase().contains("first connect")) {
                     scope = "adb";
                 }
-                String line = reason + "\n# source=" + source + "\n# scope=" + scope + "\n";
+                String line = reason + "\nsource=" + source + "\nscope=" + scope + "\n";
                 fos.write(line.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }
             //noinspection ResultOfMethodCallIgnored

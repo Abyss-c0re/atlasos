@@ -93,7 +93,9 @@ public final class AtlasAuth {
                 break;
         }
         return c.contains("screencap") || c.contains("screenshot")
-            || c.contains("nsenter") || c.contains("input ");
+            || c.contains("nsenter") || c.contains("input ")
+            || c.contains("first connect") || c.contains("remote adb")
+            || c.contains("wireless adb");
     }
 
     public static void clearStaleRequests(Context c) {
@@ -122,8 +124,9 @@ public final class AtlasAuth {
 
     /** Agent poll: one prompt at a time. Never blanket-grant on a leftover ticket. */
     public static void pollOnce(Context c) {
-        clearStaleRequests(c);
+        // Never stale-fail a req while the sheet is up (first-connect waits 90s).
         if (AtlasPrefs.isAuthUiShowing(c)) return;
+        clearStaleRequests(c);
         File dir = authDir(c);
         File[] files = dir.listFiles();
         if (files == null) return;
@@ -147,7 +150,8 @@ public final class AtlasAuth {
             appendLog(c, "host-claim", scope, reason, cmd, "busy");
             /* Capture/mutate never silent-grant. Bio off still asks (Approve).
              * Silent grant when bio=off minted ticket.screencap for Grok. */
-            if (!biometricsOn && !isCaptureOrMutateScope(scope, cmd)) {
+            if (!biometricsOn && !isCaptureOrMutateScope(scope,
+                    (reason == null ? "" : reason) + " " + (cmd == null ? "" : cmd))) {
                 writeResult(c, id, true, scope, reason, cmd);
                 continue;
             }
@@ -278,7 +282,11 @@ public final class AtlasAuth {
         //noinspection ResultOfMethodCallIgnored
         target.setReadable(true, false);
         if (grant) {
-            writeTicket(c, scope != null ? scope : "ask");
+            String sc = sanitizeScope(scope);
+            // ADB host allow is not an enterd elevate hall pass.
+            if (!"adb".equals(sc) && !"remoteadb".equals(sc) && !"remote_adb".equals(sc)) {
+                writeTicket(c, scope != null ? scope : "ask");
+            }
         }
         appendLog(c, grant ? "grant" : "deny", scope, reason, cmd, grant ? "ok" : "fail");
         //noinspection ResultOfMethodCallIgnored
@@ -295,7 +303,8 @@ public final class AtlasAuth {
 
     public static boolean requestBlocking(Context c, String reason, int timeoutSec,
                                           String scope) {
-        if (!AtlasPrefs.biometricAuth(c)) return true;
+        if (!AtlasPrefs.biometricAuth(c)
+                && !isCaptureOrMutateScope(scope, reason)) return true;
         if (hasValidTicket(c, scope)) return true;
         if (!(c instanceof Activity)) {
             return requestBlockingViaFiles(c, reason, timeoutSec, scope);
@@ -473,6 +482,7 @@ public final class AtlasAuth {
         String prefix = key + "=";
         for (String line : body.split("\n")) {
             line = line.trim();
+            if (line.startsWith("#")) line = line.substring(1).trim();
             if (line.startsWith(prefix)) return line.substring(prefix.length()).trim();
         }
         return "";

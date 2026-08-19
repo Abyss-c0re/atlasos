@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.atlas"
-    android:versionCode="149"
-    android:versionName="1.0.21-adb-client">
+    android:versionCode="150"
+    android:versionName="1.0.22-auth-scope">
 
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
 
