@@ -8,9 +8,9 @@
  *
  * Discovers bins by scanning Android bin dirs — no hardcoded tool list.
  * Never execs the Bionic ELF in the Debian mount ns (empty binderfs).
- * Auth: atlas-auth exec is the one lock (scoped ticket / strict). This binary
- * is nsenter/elevate plumbing only — not a second ticket religion.
- * Exec: nsenter -t 1 if permitted, else enterd ELEVATE chroot=0 (init ns).
+ * Auth: atlas-auth wrap + enterd ticket.exec for capture/mutate.
+ * Observe (getprop/dumpsys/logcat) may nsenter. Capture never nsenter —
+ * leftover nsenter -t 1 wrote screencap with expired ticket (08-19 live).
  */
 #include <dirent.h>
 #include <errno.h>
@@ -26,7 +26,7 @@
 #include <unistd.h>
 
 #ifndef ATLAS_VERSION
-#define ATLAS_VERSION "1.1.7-policy"
+#define ATLAS_VERSION "1.1.8-no-nsenter-capture"
 #endif
 
 static const char *BIN_DIRS[] = {
@@ -200,17 +200,18 @@ static int policy_path(const char *path, int wr) {
 
 /* Fork-bomb / recurse only. Screencap is NOT special — it takes the same
  * atlas-auth wrap as any other Android bin when bio Android access is on. */
+static int is_observe_name(const char *name) {
+  if (!name) return 0;
+  static const char *obs[] = { "dumpsys", "getprop", "logcat", NULL };
+  for (int i = 0; obs[i]; i++)
+    if (!strcmp(name, obs[i])) return 1;
+  return 0;
+}
+
 static int skip_auth_name(const char *name) {
   const char *rec = getenv("ATLAS_AUTH_RECURSE");
   if (rec && rec[0] == '1') return 1;
-  if (!name) return 0;
-  static const char *skip[] = {
-      "am", "cmd", "app_process", "app_process64",
-      "dumpsys", "getprop", "logcat",
-      NULL};
-  for (int i = 0; skip[i]; i++)
-    if (!strcmp(name, skip[i])) return 1;
-  return 0;
+  return is_observe_name(name);
 }
 
 static int self_path(char *out, size_t n) {
@@ -661,7 +662,10 @@ int main(int argc, char **argv) {
   }
   nargv[narg + 1] = NULL;
 
-  if (nsenter_ok()) {
+  /* Capture/mutate must go through enterd (ticket.exec). nsenter is observe-only.
+   * Do NOT use skip_auth_name here — ATLAS_AUTH_RECURSE makes it true after wrap
+   * and that re-opened nsenter screencap with an expired ticket (08-19 live). */
+  if (nsenter_ok() && is_observe_name(base)) {
     char *ns[narg + 16];
     int k = 0;
     ns[k++] = "/system/bin/nsenter";

@@ -1203,6 +1203,14 @@ do
   fi
 done
 
+# Capture/mutate must not nsenter — leftover path wrote screencap with no ticket.
+case "`basename "$bin"`" in
+  screencap|screenshot|input|am|pm|cmd|settings|setprop|wm|nsenter)
+    echo "atlas-android-exec: capture needs enterd ticket — wrap missing" >&2
+    exit 3
+    ;;
+esac
+
 if [ -n "$NSENTER" ]; then
   # Host Android env — no Debian LD_LIBRARY_PATH
   exec $NSENTER -t 1 -m -- env -i \

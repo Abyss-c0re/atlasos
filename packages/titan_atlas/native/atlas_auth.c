@@ -37,7 +37,7 @@
 #include <unistd.h>
 
 #ifndef ATLAS_VERSION
-#define ATLAS_VERSION "1.1.3-wrap"
+#define ATLAS_VERSION "1.1.4-no-leftover-capture"
 #endif
 
 #define AUTH_ON_LP "/data/local/atlas-linux/var/lib/atlas-auth"
@@ -191,9 +191,22 @@ static int ticket_file_valid(const char *path) {
   return exp > now && exp <= now + ttl + 5;
 }
 
+static int capture_scope(const char *scope) {
+  static const char *cap[] = {
+      "screencap", "screenshot", "input", "am", "pm", "cmd",
+      "settings", "setprop", "wm", "sudo", "su", "exec",
+      "adb", "remoteadb", "remote_adb", NULL};
+  if (!scope) return 0;
+  for (int i = 0; cap[i]; i++)
+    if (!strcmp(scope, cap[i])) return 1;
+  return 0;
+}
+
 static int scoped_ticket_valid(const char *auth_dir, const char *scope) {
   if (policy_strict()) return 0;
   if (policy_ttl() <= 0) return 0;
+  /* Leftover ticket.screencap must not mint ticket.exec (08-19 live heresy). */
+  if (capture_scope(scope)) return 0;
   if (!scope || !scope[0] || !strcmp(scope, "exec")) return 0;
   char path[640];
   if (auth_dir && auth_dir[0]) {
