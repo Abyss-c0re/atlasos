@@ -101,6 +101,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         root.setClipChildren(true);
         root.setClipToPadding(true);
         TermTheme.applyScheme(this);
+        AtlasPrefs.publishTermPlane(this);
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             // ADJUST_RESIZE already shrank the window; recompute PTY rows only.
             if (termView != null) {

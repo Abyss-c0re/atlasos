@@ -5,6 +5,18 @@
 
 Reference: `apps/titan_controls` (especially `…/ui/UiKit.java` after Material purge).
 
+## Shared theme sliders
+
+`src/com/titanus2/ui/ThemeSliders.java` is the framework for Atlas terminal
+Appearance and Titan Controls Theme. Both `build.sh` files compile this tree.
+
+- `fontSlider` — 8–32 sp SeekBar (Atlas terminal)
+- `openColorPicker` — HSV Hue / Saturation / Value sliders
+- `colorField` — title + hex + square swatch → picker
+- `presetRow` — Dark / Cube / Spike tiles
+
+Do not copy a second HSV picker into an app.
+
 ## Rules
 
 1. **Match the OS** — `Theme.DeviceDefault.DayNight`, framework `Switch` / `Button`, theme text colors.  

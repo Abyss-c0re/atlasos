@@ -75,7 +75,8 @@ public final class ExtraKeysView extends LinearLayout {
             Math.min(255, g + 20),
             Math.min(255, b + 20));
         keyFg = fg;
-        keyOnBg = AtlasUi.accent(c);
+        int cur = AtlasPrefs.cursorColor(c);
+        keyOnBg = (cur == fg || cur == bg) ? fg : cur;
         for (int i = 0; i < getChildCount(); i++) {
             ViewGroup line = (ViewGroup) getChildAt(i);
             for (int j = 0; j < line.getChildCount(); j++) {

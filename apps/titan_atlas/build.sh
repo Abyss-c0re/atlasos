@@ -54,7 +54,9 @@ mkdir -p "$BUILD"/{gen,obj}
 
 FIND="${FIND:-/usr/bin/find}"
 [ -x "$FIND" ] || FIND=find
-mapfile -t _JAVAS < <("$FIND" -H "$BUILD/gen" "$ROOT/src" -name '*.java')
+UI_SRC="$(cd "$ROOT/../ui_template/src" 2>/dev/null && pwd -P || true)"
+[ -n "$UI_SRC" ] || { echo "missing apps/ui_template/src"; exit 1; }
+mapfile -t _JAVAS < <("$FIND" -H "$BUILD/gen" "$ROOT/src" "$UI_SRC" -name '*.java')
 if [ "${#_JAVAS[@]}" -lt 8 ]; then
   echo "build.sh: only ${#_JAVAS[@]} java files — refusing hollow APK (src symlink?)" >&2
   exit 1
