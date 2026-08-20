@@ -38,15 +38,29 @@ public final class CeWipe {
         }
         // CE mark gone. Same install generation on LP/tmp → Clear data, not factory reset.
         boolean appWipe = gen.equals(readText(tmp)) || gen.equals(readText(lpBind));
-        if (appWipe) {
+        boolean pkgUpdate = isPackageUpdate(c);
+        if (appWipe && !pkgUpdate) {
             Log.w(TAG, "CE empty + same install gen — Atlas Clear data; reset Debian HOME");
             shredAuthIdentity();
             resetLinuxHome(c);
+        } else if (pkgUpdate) {
+            Log.i(TAG, "package update — keep Debian HOME / grok downloads");
         }
         writeText(ce, gen);
         writeText(tmp, gen);
         writeText(lpBind, gen);
         return appWipe;
+    }
+
+    /** Overlay / adb -r is not Clear data. lastUpdate > firstInstall. */
+    private static boolean isPackageUpdate(Context c) {
+        try {
+            android.content.pm.PackageInfo pi =
+                c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
+            return pi.lastUpdateTime > pi.firstInstallTime + 2000L;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static String installGen(Context c) {
@@ -108,7 +122,15 @@ public final class CeWipe {
         if (home.isDirectory()) {
             File[] kids = home.listFiles();
             if (kids != null) {
-                for (File k : kids) deleteTree(k);
+                for (File k : kids) {
+                    // Never delete the grok ELF tree. Overlay heresy 2026-08-21
+                    // treated CE-empty as Clear data and left grok a dead symlink.
+                    if (k != null && ".grok".equals(k.getName())) {
+                        preserveGrokDownloads(k);
+                        continue;
+                    }
+                    deleteTree(k);
+                }
             }
         }
         //noinspection ResultOfMethodCallIgnored
@@ -124,6 +146,35 @@ public final class CeWipe {
             }
         }
         Log.i(TAG, "reset linux HOME " + home.getAbsolutePath());
+    }
+
+    /** Keep ~/.grok/downloads ELFs. Recreate bin/grok symlink if present. */
+    private static void preserveGrokDownloads(File grokDir) {
+        if (grokDir == null || !grokDir.isDirectory()) return;
+        File[] kids = grokDir.listFiles();
+        if (kids == null) return;
+        for (File k : kids) {
+            if (k == null) continue;
+            if ("downloads".equals(k.getName())) continue;
+            if ("bin".equals(k.getName())) continue;
+            deleteTree(k);
+        }
+        File dl = new File(grokDir, "downloads");
+        File bin = new File(grokDir, "bin");
+        //noinspection ResultOfMethodCallIgnored
+        bin.mkdirs();
+        File elf = new File(dl, "grok-linux-aarch64");
+        if (elf.isFile()) {
+            File link = new File(bin, "grok");
+            if (!link.exists()) {
+                try {
+                    java.nio.file.Files.createSymbolicLink(link.toPath(),
+                        java.nio.file.Paths.get("../downloads/grok-linux-aarch64"));
+                } catch (Exception e) {
+                    Log.w(TAG, "grok symlink: " + e.getMessage());
+                }
+            }
+        }
     }
 
     private static void shredAuthDir(File dir) {

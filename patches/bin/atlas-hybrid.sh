@@ -1882,9 +1882,18 @@ unbind_android() {
 # not only "add admin if that name is missing".
 ensure_admin_user() {
   uid="${ATLAS_DROP_UID:-}"
-  [ -z "$uid" ] || [ "$uid" = "0" ] && \
+  if [ -z "$uid" ] || [ "$uid" = "0" ]; then
     uid=`stat -c %u /data/data/com.titanus2.atlas 2>/dev/null \
-      || stat -c %u /data/user/0/com.titanus2.atlas 2>/dev/null || echo 10198`
+      || stat -c %u /data/user/0/com.titanus2.atlas 2>/dev/null || true`
+  fi
+  # Never invent 10198. Overlay/CE-not-ready used to restamp atlas to a
+  # dead uid → ssh "No user exists for UID 10101" (2026-08-21 heresy).
+  case "$uid" in
+    ''|0|1|*[!0-9]*)
+      echo "atlas-hybrid: skip passwd rewrite — no live app uid" >&2
+      return 0
+      ;;
+  esac
   home="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
   [ -d "$home" ] || home=/home/atlas
   roots="$MERGE $LOWER"

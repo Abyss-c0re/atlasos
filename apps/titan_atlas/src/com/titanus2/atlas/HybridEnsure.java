@@ -1108,27 +1108,33 @@ public final class HybridEnsure {
             return false;
         }
         int uid = android.os.Process.myUid();
-        if (uid <= 0) return false;
+        if (uid < 10000) return false;
         String pw = NativeBin.LP_MNT + "/etc/passwd";
         if (passwdHasUid(pw, uid)
             || passwdHasUid("/data/local/atlas-hybrid/merge/etc/passwd", uid)) {
             return true;
         }
+        /* Rewrite atlas: to the live app uid. Never invent atlas10101 and
+         * never fall back to a stale 10198 (overlay heresy 2026-08-21). */
         String sh =
             "uid=" + uid + "; "
                 + "home=/data/local/atlas-home/atlas; "
                 + "mkdir -p \"$home\"; "
-                + "for root in /data/local/atlas-linux /data/local/atlas-hybrid/merge; do "
+                + "for root in /data/local/atlas-linux /data/local/atlas-hybrid/merge "
+                + "/data/local/atlas-hybrid/lower; do "
                 + "  [ -f \"$root/etc/passwd\" ] || continue; "
-                + "  if ! grep -q \":x:${uid}:${uid}:\" \"$root/etc/passwd\"; then "
-                + "    if grep -q '^atlas:' \"$root/etc/passwd\"; then "
-                + "      echo \"atlas${uid}:x:${uid}:${uid}:Atlas:${home}:/bin/bash\" >>\"$root/etc/passwd\"; "
-                + "    else "
-                + "      echo \"atlas:x:${uid}:${uid}:Atlas:${home}:/bin/bash\" >>\"$root/etc/passwd\"; "
-                + "    fi; "
+                + "  if grep -q '^atlas:' \"$root/etc/passwd\"; then "
+                + "    sed -i \"s#^atlas:[^:]*:[^:]*:[^:]*:#atlas:x:${uid}:${uid}:#\" "
+                + "      \"$root/etc/passwd\"; "
+                + "  else "
+                + "    echo \"atlas:x:${uid}:${uid}:Atlas:${home}:/bin/bash\" >>\"$root/etc/passwd\"; "
                 + "  fi; "
-                + "  if [ -f \"$root/etc/group\" ] && ! grep -q \"^atlas:\" \"$root/etc/group\"; then "
-                + "    echo \"atlas:x:${uid}:\" >>\"$root/etc/group\"; "
+                + "  if [ -f \"$root/etc/group\" ]; then "
+                + "    if grep -q '^atlas:' \"$root/etc/group\"; then "
+                + "      sed -i \"s#^atlas:x:[^:]*:#atlas:x:${uid}:#\" \"$root/etc/group\"; "
+                + "    else "
+                + "      echo \"atlas:x:${uid}:\" >>\"$root/etc/group\"; "
+                + "    fi; "
                 + "  fi; "
                 + "  if [ -f \"$root/etc/shadow\" ] && ! grep -q \"^atlas:\" \"$root/etc/shadow\"; then "
                 + "    echo \"atlas:!:19600:0:99999:7:::\" >>\"$root/etc/shadow\"; "

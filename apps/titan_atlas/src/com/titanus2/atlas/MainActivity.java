@@ -34,7 +34,7 @@ import java.util.List;
  * Multi-session like Termux: + / prev / next / close; Exit leaves the app.
  */
 public class MainActivity extends Activity implements AtlasTermClient.Host {
-    public static final String VERSION = "1.0.39-tui-c";
+    public static final String VERSION = "1.0.40-uid-lock";
     private static final int MAX_SESSIONS = 8;
 
     private final Handler main = new Handler(Looper.getMainLooper());
