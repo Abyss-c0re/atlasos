@@ -1114,8 +1114,7 @@ public final class HybridEnsure {
             || passwdHasUid("/data/local/atlas-hybrid/merge/etc/passwd", uid)) {
             return true;
         }
-        /* Rewrite atlas: to the live app uid. Never invent atlas10101 and
-         * never fall back to a stale 10198 (overlay heresy 2026-08-21). */
+        /* One Debian login: atlas at the live Android app uid. */
         String sh =
             "uid=" + uid + "; "
                 + "home=/data/local/atlas-home/atlas; "

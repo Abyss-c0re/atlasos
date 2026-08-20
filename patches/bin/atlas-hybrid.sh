@@ -1886,8 +1886,7 @@ ensure_admin_user() {
     uid=`stat -c %u /data/data/com.titanus2.atlas 2>/dev/null \
       || stat -c %u /data/user/0/com.titanus2.atlas 2>/dev/null || true`
   fi
-  # Never invent 10198. Overlay/CE-not-ready used to restamp atlas to a
-  # dead uid → ssh "No user exists for UID 10101" (2026-08-21 heresy).
+  # Live app uid only. Do not invent a Debian uid when CE is unread.
   case "$uid" in
     ''|0|1|*[!0-9]*)
       echo "atlas-hybrid: skip passwd rewrite — no live app uid" >&2
