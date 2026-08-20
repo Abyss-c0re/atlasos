@@ -18,22 +18,23 @@ import com.titanus2.controls.subdisplay.SubDisplayService;
  * it off in Keys — product default for layouts/specials.
  */
 public class BootRestoreReceiver extends BroadcastReceiver {
-    private static final long[] A11Y_RETRY_MS = { 2_000L, 8_000L, 20_000L };
+    private static final long[] A11Y_RETRY_MS = { 2_000L, 8_000L, 20_000L, 45_000L, 90_000L };
 
     @Override
     public void onReceive(Context context, Intent intent) {
         if (intent == null || intent.getAction() == null) return;
         String action = intent.getAction();
+        boolean unlocked = Intent.ACTION_USER_UNLOCKED.equals(action);
         boolean boot = Intent.ACTION_BOOT_COMPLETED.equals(action)
-            || Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action);
+            || Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action)
+            || unlocked;
         boolean replaced = Intent.ACTION_MY_PACKAGE_REPLACED.equals(action);
         if (!boot && !replaced) return;
 
         final Context app = context.getApplicationContext();
         pinAndHeal(app);
-        // adb install kills TrackpadAccessService. Listed-but-crashed + stale
-        // a11y_live=1 makes key-watch skip Home and a11y fire nothing.
-        if (replaced) {
+        // adb install / CE unlock: listed-but-unbound leaves F24 Home dead.
+        if (replaced || unlocked) {
             try { AccessServiceHelper.forceRebindAfterReplace(app); } catch (Exception ignored) {}
         }
         // P0: Settings.Secure can lag after wipe / modular reflash — retry a11y
@@ -195,10 +196,7 @@ public class BootRestoreReceiver extends BroadcastReceiver {
         } catch (Exception ignored) {}
         // 12.16/12.97: short HW taps must not open accent/language letter menus.
         try { ImeHwPrefs.applyHwTypingPolish(app); } catch (Exception ignored) {}
-        // Cube OS seed (monochrome + night) without opening Look after wipe/reflash
-        try {
-            com.titanus2.controls.ui.ThemePrefs.applyOsPlane(app);
-        } catch (Exception ignored) {}
+        // Theme seed-once only if Wallpaper & style is empty (wipe). Never restamp.
         try {
             HostLayoutController.healStaleHidPlane(app);
         } catch (Exception ignored) {}
@@ -254,10 +252,6 @@ public class BootRestoreReceiver extends BroadcastReceiver {
                     AccessServiceHelper.stampLiveTruth(app);
                     if (AccessServiceHelper.isConnected()) {
                         try { TaskbarPin.pinOff(app); } catch (Exception ignored) {}
-                        // Late SettingsProvider: re-push OS Look seed once a11y is live
-                        try {
-                            com.titanus2.controls.ui.ThemePrefs.applyOsPlane(app);
-                        } catch (Exception ignored) {}
                         // 11.62: late waves still clear sticky typing lock after wipe
                         try { TypingCursorLock.clear(app); } catch (Exception ignored) {}
                         try { HostLayoutController.healStaleHidPlane(app); } catch (Exception ignored) {}

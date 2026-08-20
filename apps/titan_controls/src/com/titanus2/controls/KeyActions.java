@@ -84,8 +84,12 @@ public final class KeyActions {
                     }
                     break;
                 case KeyMapPrefs.ACT_BACK:
-                    if (!injectKeyCode(ctx, KeyEvent.KEYCODE_BACK)) {
+                    // GLOBAL_ACTION first. inject BACK re-enters the interceptor
+                    // and dies when Key a11y owns the filter (nav dead after flash).
+                    if (svc != null) {
                         global(ctx, svc, AccessibilityService.GLOBAL_ACTION_BACK);
+                    } else if (!injectKeyCode(ctx, KeyEvent.KEYCODE_BACK)) {
+                        statusBar(ctx, "collapsePanels");
                     }
                     break;
                 case KeyMapPrefs.ACT_RECENTS:

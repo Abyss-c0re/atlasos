@@ -5,6 +5,42 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.27-settings-mono (627) — 2026-08-20T15:49Z
+
+- Settings mono fabricate in Controls (no Magisk, no tmp). Purged cube_crimson.
+
+---
+
+## 16.26-no-icon-loop (626) — 2026-08-20T15:35Z
+
+- No icon-apply loop; a11y stamps titan2_input_lock on keyguard so /system pad-apply parks touchpadd after reboot
+
+---
+
+## 16.25-color-apply (625) — 2026-08-20T15:16Z
+
+- Apply color: Magisk watcher fabricates seed; pad-agent 2.226 mksh-safe
+
+---
+
+## 16.24-color-apply (624) — 2026-08-20T15:09Z
+
+- Apply color writes theme JSON and fabricates seed shades; pad-agent runs icons-preset
+
+---
+
+## 16.23-color-pick (623) — 2026-08-20T14:41Z
+
+- Theme: HSV/RGB/hex custom color applies accent + app icons
+
+---
+
+## 16.18-theme-icons (618) — 2026-08-20T02:20Z
+
+- Theme hub: Settings icon overlay API (plate/glyph)
+
+---
+
 ## 16.17-adb-clients (617) — 2026-08-19T01:14Z
 
 - Remote ADB client list; first new host needs Atlas auth

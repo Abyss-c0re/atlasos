@@ -24,6 +24,7 @@ import com.titanus2.controls.notifled.NotifLedActivity;
 import com.titanus2.controls.notifled.NotifLedController;
 import com.titanus2.controls.notifled.NotifLedPrefs;
 import com.titanus2.controls.notifled.NotifLedService;
+import com.titanus2.controls.ui.ThemeActivity;
 import com.titanus2.controls.ui.UiKit;
 
 /**
@@ -174,7 +175,8 @@ public class MainActivity extends Activity {
             () -> startActivity(new Intent(this, SimActivity.class)));
         UiKit.navRow(root, "Diagnostics", "Calls + nav, no test call",
             () -> startActivity(new Intent(this, DiagnosticsActivity.class)));
-        // Look hub stays out — ROM chrome is cube-ux / RROs (ThemeActivity adb only).
+        UiKit.navRow(root, "Theme", "Accent · Settings icons · apps",
+            () -> startActivity(new Intent(this, ThemeActivity.class)));
         // Developer: always on hub. TCP ADB is human-only (no boot auto-arm).
         // Wireless ADB = classic :5555 for Tailscale/LTE/Wi‑Fi after opt-in —
         // not stock Settings "Wireless debugging".
@@ -197,7 +199,7 @@ public class MainActivity extends Activity {
 
         // Mono fact: HW keyboard map for this hub (not marketing).
         TextView kbHint = UiKit.mono(root);
-        kbHint.setText("K Keys · S Sub · N notif · W Wi‑Fi · T Tweaks · M SIMs · I diag · D Dev · G log · "
+        kbHint.setText("K Keys · S Sub · N notif · H Theme · W Wi‑Fi · T Tweaks · M SIMs · I diag · D Dev · G log · "
             + "0/1/2 pad · C tap · L light · O idle");
         setContentView(scroll);
         // First paint: pad/LED chrome only. Seed/heal/summaries after the frame.
@@ -273,6 +275,9 @@ public class MainActivity extends Activity {
                     } catch (Exception e) {
                         startActivity(new Intent(this, NetworkActivity.class));
                     }
+                    return true;
+                case KeyEvent.KEYCODE_H:
+                    startActivity(new Intent(this, ThemeActivity.class));
                     return true;
                 case KeyEvent.KEYCODE_D:
                     startActivity(new Intent(this, DevToolsActivity.class));

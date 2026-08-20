@@ -1,4 +1,4 @@
-versionName=16.17-adb-clients
-versionCode=617
-built_utc=2026-08-19T01:14Z
+versionName=16.27-settings-mono
+versionCode=627
+built_utc=2026-08-20T15:49Z
 allow_root=0

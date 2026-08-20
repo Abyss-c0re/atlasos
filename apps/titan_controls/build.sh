@@ -136,13 +136,15 @@ public final class BuildConfig {
     private BuildConfig() {}
 }
 EOF
-# Shared framework client sources (apps/titan2_api)
+# Shared framework client sources (apps/titan2_api + theme sliders)
 API_SRC="$(cd "$ROOT/../titan2_api/src" 2>/dev/null && pwd -P || true)"
 [ -n "$API_SRC" ] || { echo "missing apps/titan2_api/src"; exit 1; }
+UI_SRC="$(cd "$ROOT/../ui_template/src" 2>/dev/null && pwd -P || true)"
+[ -n "$UI_SRC" ] || { echo "missing apps/ui_template/src"; exit 1; }
 # Locale/encoding: POSIX LC_ALL makes javac default US-ASCII and reject em-dash in comments.
 export LANG="${LANG:-C.UTF-8}"
 export LC_ALL="${LC_ALL:-C.UTF-8}"
-mapfile -t _JAVAS < <("$FIND" -H "$BUILD/gen" "$ROOT/src" "$API_SRC" -name '*.java')
+mapfile -t _JAVAS < <("$FIND" -H "$BUILD/gen" "$ROOT/src" "$API_SRC" "$UI_SRC" -name '*.java')
 if [ "${#_JAVAS[@]}" -lt 40 ]; then
   echo "build.sh: only ${#_JAVAS[@]} java files — refusing hollow APK (src symlink?)" >&2
   exit 1

@@ -287,9 +287,8 @@ public final class AccessServiceHelper {
         try {
             SensorPrivacyEnforcer.reassertBlockedSensors(ctx);
         } catch (Exception ignored) {}
-        try {
-            com.titanus2.controls.ui.ThemePrefs.applyOsPlane(ctx);
-        } catch (Exception ignored) {}
+        // ThemePrefs.applyOsPlane is human Glow/Mode only — a11y ensure must not
+        // restamp Wallpaper & style (heresy 2026-08-20).
         // B8 11.96: pad mode gate on every a11y ensure (start if wanted, stop orphan)
         try {
             String pm = PadModeController.getMode(ctx);

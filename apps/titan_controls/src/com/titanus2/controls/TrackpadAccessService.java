@@ -522,7 +522,20 @@ public class TrackpadAccessService extends AccessibilityService {
             lastA11yLiveStamp = android.os.SystemClock.elapsedRealtime();
         } catch (Exception ignored) {}
 
-        TrackpadPrefs p = new TrackpadPrefs(this);
+        // CE SharedPreferences throw until credential unlock. DBA bind
+        // must not crash here — AMS then parks restart for 3600s (nav dead).
+        try {
+            android.os.UserManager um = getSystemService(android.os.UserManager.class);
+            if (um != null && !um.isUserUnlocked()) {
+                return;
+            }
+        } catch (Exception ignored) {}
+        TrackpadPrefs p;
+        try {
+            p = new TrackpadPrefs(this);
+        } catch (IllegalStateException ce) {
+            return;
+        }
         if (TrackpadPrefs.MODE_WHITELIST.equals(p.getMode())) {
             TrackpadPolicy.apply(this, null);
         }
@@ -1137,8 +1150,10 @@ public class TrackpadAccessService extends AccessibilityService {
         // T-013 Shift-as-caps and remaps made Shift capitalize two letters and
         // ate Enter so the human could not unlock. Pass every key through.
         if (isCredentialSurface()) {
+            stampInputLock(true);
             return false;
         }
+        stampInputLock(false);
 
         AgentBridge.bumpKeyActivity(this);
 
@@ -1167,13 +1182,14 @@ public class TrackpadAccessService extends AccessibilityService {
             + " rep=" + event.getRepeatCount();
 
         // KL maps Titan Home/Recents (scan 580) to F24 so PWM never sees
-        // APP_SWITCH hold-preview. Controls still owns the slot — fold F24
-        // (or leftover APP_SWITCH) back onto scan 580. Do not swallow.
-        if (!KeyMapPrefs.isRecentsScan(scan) && !KeyMapPrefs.isRecentsScan(rawScan)
-                && isTitanKeyDevice(event)
-                && !isSideInputDevice(event)
+        // APP_SWITCH hold-preview. F24 exists only for that remap — fold it
+        // (or leftover APP_SWITCH) onto scan 580 even when InputDevice is
+        // null. Requiring TitanKey name dropped Home after KEEP_DATA flashes.
+        if (!isSideInputDevice(event)
                 && (keyCode == KeyEvent.KEYCODE_F24
-                    || keyCode == KeyEvent.KEYCODE_APP_SWITCH)) {
+                    || keyCode == KeyEvent.KEYCODE_APP_SWITCH
+                    || KeyMapPrefs.isRecentsScan(scan)
+                    || KeyMapPrefs.isRecentsScan(rawScan))) {
             scan = KeyMapPrefs.SCAN_APP_SWITCH;
             if (rawScan <= 0) rawScan = scan;
         }
@@ -1823,6 +1839,7 @@ public class TrackpadAccessService extends AccessibilityService {
         if (event == null) return;
         // QA: freeze pad/mouse while typing (editable focus / text change)
         try { TypingCursorLock.onA11yEvent(this, event); } catch (Exception ignored) {}
+        stampInputLock(isCredentialSurface());
         if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
         CharSequence pkgCs = event.getPackageName();
         if (pkgCs == null) return;
@@ -2141,6 +2158,21 @@ public class TrackpadAccessService extends AccessibilityService {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private boolean lastInputLock;
+
+    /** pad-apply parks touchpadd when this is 1. Survives reboot (a11y + /system pad-apply). */
+    private void stampInputLock(boolean locked) {
+        if (locked == lastInputLock) return;
+        lastInputLock = locked;
+        try {
+            AgentBridge.put(this, AgentBridge.INPUT_LOCK, locked ? "1" : "0");
+        } catch (Exception ignored) {}
+        try {
+            android.provider.Settings.Global.putString(getContentResolver(),
+                AgentBridge.INPUT_LOCK, locked ? "1" : "0");
+        } catch (Exception ignored) {}
     }
 
     /** Keyguard / bouncer / password field — never remap Shift or Enter. */

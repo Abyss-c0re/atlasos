@@ -55,12 +55,6 @@ public class PublishKmReceiver extends BroadcastReceiver {
         } catch (Exception e) {
             Log.w(TAG, "setup heal: " + e.getMessage());
         }
-        // Cube OS monochrome/night seed (Look plane) — install stack / boot heal
-        try {
-            com.titanus2.controls.ui.ThemePrefs.applyOsPlane(app);
-        } catch (Exception e) {
-            Log.w(TAG, "os plane: " + e.getMessage());
-        }
         // Unstick typing cursor pause (install/heal should not leave host mouse frozen)
         try {
             TypingCursorLock.clear(app);

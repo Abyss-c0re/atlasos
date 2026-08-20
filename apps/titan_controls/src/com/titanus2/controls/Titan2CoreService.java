@@ -331,6 +331,32 @@ public class Titan2CoreService extends Service {
                     if (err != null) reply.putString(Titan2ApiContract.KEY_ERROR, err);
                     break;
                 }
+                case Titan2ApiContract.MSG_GET_ICON_OVERLAY:
+                    reply.putString(Titan2ApiContract.KEY_PLATE,
+                        com.titanus2.controls.ui.ThemePrefs.iconPlateHex(this));
+                    reply.putString(Titan2ApiContract.KEY_GLYPH,
+                        com.titanus2.controls.ui.ThemePrefs.iconGlyphHex(this));
+                    reply.putBoolean(Titan2ApiContract.KEY_OK, true);
+                    break;
+                case Titan2ApiContract.MSG_SET_ICON_OVERLAY: {
+                    String plate = data != null
+                        ? data.getString(Titan2ApiContract.KEY_PLATE) : null;
+                    String glyph = data != null
+                        ? data.getString(Titan2ApiContract.KEY_GLYPH) : null;
+                    String fact = com.titanus2.controls.ui.ThemePrefs.persistIconOverlay(
+                        this, plate, glyph);
+                    new Thread(com.titanus2.controls.ui.ThemePrefs::runIconOverlayApply,
+                        "cube-icons").start();
+                    boolean ok = fact != null && !fact.startsWith("fail");
+                    reply.putBoolean(Titan2ApiContract.KEY_OK, ok);
+                    reply.putString(Titan2ApiContract.KEY_VALUE, ok ? "queued" : fact);
+                    if (!ok) reply.putString(Titan2ApiContract.KEY_ERROR, fact);
+                    reply.putString(Titan2ApiContract.KEY_PLATE,
+                        com.titanus2.controls.ui.ThemePrefs.iconPlateHex(this));
+                    reply.putString(Titan2ApiContract.KEY_GLYPH,
+                        com.titanus2.controls.ui.ThemePrefs.iconGlyphHex(this));
+                    break;
+                }
                 case Titan2ApiContract.MSG_BUMP_KEY_ACTIVITY:
                     AgentBridge.bumpKeyActivity(this);
                     reply.putBoolean(Titan2ApiContract.KEY_OK, true);

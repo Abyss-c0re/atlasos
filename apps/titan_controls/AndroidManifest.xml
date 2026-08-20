@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.controls"
-    android:versionCode="617"
-    android:versionName="16.17-adb-clients">
+    android:versionCode="634"
+    android:versionName="16.34-nav-bind">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
     <!-- Framework API: host declares + holds USE_TITAN2_API -->
     <permission
@@ -283,7 +283,7 @@
         <activity
             android:name=".ui.ThemeActivity"
             android:exported="true"
-            android:label="Look"
+            android:label="Theme"
             android:parentActivityName=".MainActivity"/>
         <activity
             android:name=".subdisplay.SubDisplayActivity"
@@ -446,6 +446,7 @@
             <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.USER_UNLOCKED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>

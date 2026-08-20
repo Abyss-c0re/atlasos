@@ -112,6 +112,12 @@ public final class AgentBridge {
      */
     public static final String A11Y_LIVE = "titan2_a11y_live";
     /**
+     * 1 = keyguard / credential surface. pad-apply parks touchpadd (SoT
+     * {@code titan2_input_lock}). Must be written by a11y — CE stays true after
+     * first unlock so lockscreen is not “CE down”.
+     */
+    public static final String INPUT_LOCK = "titan2_input_lock";
+    /**
      * Display plane for Cube dual-DPI:
      * {@code tablet} = physical size + cube dens (Settings two-pane SW≥600);
      * {@code phone_launcher} = phone SW&lt;600 so Launcher3 DeviceProfile is phone
