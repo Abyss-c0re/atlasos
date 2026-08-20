@@ -194,6 +194,7 @@ cam_nodes_open() {
 # kill_video_holders only on edge block — not on steady re-assert (avoids
 # DIED client thrash when privacy ON and user still has camera UI open).
 cam_block() {
+  _aux_stamp_need
   aux_pub_abort
   revoke_camera_nodes
   kill_video_holders
@@ -218,6 +219,25 @@ _AUX_PUB_TS=0
 _AUX_WD_TS=0
 _AUX_PUB_PIDF=/data/local/tmp/titan2_aux_pub.pid
 _AUX_HALPIDF=/data/local/tmp/titan2_hi847s.halpid
+_AUX_NEED=/data/local/tmp/titan2_hi847s.need_heal
+# Persist across belt restarts. Privacy-on boot leaves CS at 0+1; a second
+# titan2-sensor-privacy start must not forget that Device 2 still needs heal.
+_aux_need_heal() {
+  [ -f "$_AUX_NEED" ] && return 0
+  case "$(getprop persist.sys.titan2.hi847s_need 2>/dev/null | tr -d '\r')" in
+    1|true|on) return 0 ;;
+  esac
+  return 1
+}
+_aux_stamp_need() {
+  echo 1 >"$_AUX_NEED" 2>/dev/null || true
+  chmod 644 "$_AUX_NEED" 2>/dev/null || true
+  setprop persist.sys.titan2.hi847s_need 1 2>/dev/null || true
+}
+_aux_clear_need() {
+  rm -f "$_AUX_NEED" 2>/dev/null || true
+  setprop persist.sys.titan2.hi847s_need 0 2>/dev/null || true
+}
 aux_cam_stamp() {
   setprop persist.sys.phh.include_all_cameras true 2>/dev/null || true
   setprop camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
@@ -356,6 +376,8 @@ aux_cam_publish() {
   fi
   _AUX_PUB_TS=$now
   (
+    # Belt restart must not SIGHUP a live recycle.
+    trap '' HUP
     echo $$ >"$_AUX_PUB_PIDF" 2>/dev/null || true
     chmod 666 "$_AUX_PUB_PIDF" 2>/dev/null || true
     _die() { rm -f "$_AUX_PUB_PIDF" 2>/dev/null; setprop sys.titan2.aux_pub 0 2>/dev/null; }
@@ -417,6 +439,7 @@ aux_cam_publish() {
     _aux_mark_hal
     if _aux_cs_has_id2; then
       log "aux published cameraId=2"
+      _aux_clear_need
     else
       log "aux recycle done (cameraId=2 not in tail — one more cycle)"
       # Second pass: CS often enumerates after the first 10s window when
@@ -445,6 +468,7 @@ aux_cam_publish() {
       _aux_mark_hal
       if _aux_cs_has_id2; then
         log "aux published cameraId=2 (retry)"
+        _aux_clear_need
       else
         log "aux recycle done (cameraId=2 still missing — watchdog will retry)"
       fi
@@ -459,9 +483,11 @@ cam_on_heal() {
   cam_allow
   if _aux_cs_has_id2; then
     log "CAM on heal — Device 2 already public"
+    _aux_clear_need
     _aux_mark_hal
     return 0
   fi
+  _aux_stamp_need
   log "CAM on heal — recycle HAL+CS so HI847S (id 2) remaps"
   aux_cam_publish force
 }
@@ -592,21 +618,45 @@ seed_qs_tiles() {
   pm enable com.titanus2.controls/.TorchTileService >/dev/null 2>&1 || true
 }
 
-# --- single instance ---
+# --- single instance: YIELD. Never kill a live belt ---
+# v38 heresy: kill-old-pid + pidof prune aborted aux_pub mid-heal, then the
+# new process boot-path cam_block'd (privacy ON) and unpublished HI847S.
 _self=$$
 _ppid=$PPID
+_live=""
+_is_privacy_belt() {
+  _c=$(tr '\0' ' ' <"/proc/$1/cmdline" 2>/dev/null)
+  case "$_c" in
+    *titan2-sensor-privacy*) return 0 ;;
+  esac
+  return 1
+}
 if [ -f "$PIDF" ]; then
   _old=$(cat "$PIDF" 2>/dev/null | tr -d '\r\n ')
   case "$_old" in
     ''|0|1|*[!0-9]*) ;;
-    *) [ "$_old" != "$_self" ] && [ "$_old" != "$_ppid" ] && kill "$_old" 2>/dev/null || true ;;
+    *)
+      if [ "$_old" != "$_self" ] && [ "$_old" != "$_ppid" ] \
+          && [ -d "/proc/$_old" ] && _is_privacy_belt "$_old"; then
+        _live=$_old
+      fi
+      ;;
   esac
 fi
-# prune peers
-for _p in $(pidof titan2-sensor-privacy.sh 2>/dev/null); do
-  [ "$_p" = "$_self" ] && continue
-  kill "$_p" 2>/dev/null || true
-done
+if [ -z "$_live" ]; then
+  for _p in $(pidof titan2-sensor-privacy.sh 2>/dev/null); do
+    [ "$_p" = "$_self" ] && continue
+    [ "$_p" = "$_ppid" ] && continue
+    if [ -d "/proc/$_p" ]; then
+      _live=$_p
+      break
+    fi
+  done
+fi
+if [ -n "$_live" ]; then
+  log "yield — live belt pid $_live (v39 never kill mid-HI847S heal)"
+  exit 0
+fi
 
 # boot wait (short)
 i=0
@@ -618,6 +668,13 @@ done
 
 echo $$ >"$PIDF" 2>/dev/null || true
 chmod 666 "$PIDF" 2>/dev/null || true
+# Init restart / SIGTERM: keep the need-heal bit. Do not abort aux child.
+_aux_on_term() {
+  _aux_stamp_need
+  log "belt TERM — persist HI847S need-heal (aux child keeps running)"
+  exit 0
+}
+trap '_aux_on_term' TERM INT
 
 # Boot: wait for SensorPrivacy dumpsys before fail-closed.
 # Unreadable SPM (rc=2) used to chmod 000 /dev/video* and then die —
@@ -651,14 +708,20 @@ fi
 # Boot: privacy OFF. If CameraService never ADD device 2, one recycle.
 # Skipping just because HAL+CS are up is how KEEP_DATA flash lost HI847S
 # (services up with 0+1 only — "no recycle" heresy).
+# Privacy ON: stamp need-heal so the first camera-on after this boot
+# always force-recycles even if this process later dies.
 if [ "$last_cam" = "0" ]; then
-  if _aux_svc_up && _aux_cs_has_id2; then
+  if _aux_svc_up && _aux_cs_has_id2 && ! _aux_need_heal; then
     _aux_mark_hal
+    _aux_clear_need
     log "boot cameras include id 2 — no recycle"
   else
-    log "boot HI847S missing from CameraService — camera-on heal"
+    log "boot HI847S missing or need-heal set — camera-on heal"
     cam_on_heal
   fi
+else
+  _aux_stamp_need
+  log "boot CAM blocked — persist HI847S need-heal for first camera-on"
 fi
 privacy_mic_on
 _rcm=$?
@@ -674,7 +737,9 @@ fi
 
 # v35-aux-hold marker (preflight). v36 stamps real fishfood pkg.
 # v37: boot recycle when Device 2 is not public (KEEP_DATA regression).
-log "titan2-sensor-privacy ONLINE v38-cam-allow-heal (HI847S recycle on every camera-on)"
+# v38-cam-allow-heal: recycle on every camera-on (kept).
+# v39-yield-live-belt: never kill a live belt mid-aux_pub.
+log "titan2-sensor-privacy ONLINE v39-yield-live-belt (never kill mid-HI847S heal)"
 seed_qs_tiles
 TICK=0
 [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 200000 ] && : >"$LOG"
@@ -759,6 +824,9 @@ while true; do
       # Privacy OFF: keep nodes open. Re-heal leftover 000 every tick.
       if ! cam_nodes_open; then
         log "CAM re-allow — nodes still 000 while toggle allowed"
+        cam_on_heal
+      elif _aux_need_heal && ! aux_pub_running; then
+        log "CAM allow — persisted need-heal, camera-on heal"
         cam_on_heal
       fi
       # Watchdog: restamp packagelist. Recycle if Device 2 never mapped
