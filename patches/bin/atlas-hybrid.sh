@@ -1304,9 +1304,11 @@ export ATLAS_PLANE=hybrid ATLAS_MODE=debian ATLAS_HYBRID=1 ATLAS_COMBINED=1
 # Deb product HOME: bound linux home (not CE files, not empty LP stub)
 export ATLAS_LINUX_HOME="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
 # Never steal /root or a real extra-user HOME. Only rewrite empty/CE stubs.
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${PATH:+:$PATH}"
+export PATH
 case "${HOME:-}" in
   ""|"/"|"/data"|/data/data/*|/data/user/*)
-    if [ "$(id -u 2>/dev/null)" = "0" ] && [ -d /root ]; then
+    if [ "$(/usr/bin/id -u 2>/dev/null || echo 1)" = "0" ] && [ -d /root ]; then
       export HOME=/root
     elif [ -d /home/atlas ] && [ -x /home/atlas ]; then
       export HOME=/home/atlas
@@ -1324,11 +1326,6 @@ for _h in "$HOME" "$ATLAS_LINUX_HOME" /home/atlas; do
   [ -n "$_h" ] && [ -d "$_h" ] || continue
   [ -d "$_h/bin" ] && _atlas_up="${_atlas_up:+$_atlas_up:}$_h/bin"
   [ -d "$_h/.local/bin" ] && _atlas_up="${_atlas_up:+$_atlas_up:}$_h/.local/bin"
-  for _d in "$_h"/.*; do
-    [ -d "$_d/bin" ] || continue
-    case "$_d" in */.|*/..|*/.local) continue ;; esac
-    _atlas_up="${_atlas_up:+$_atlas_up:}$_d/bin"
-  done
 done
 export PATH="${_atlas_up:+$_atlas_up:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 unset ANDROID_ROOT ANDROID_DATA ANDROID_STORAGE 2>/dev/null || true
@@ -1345,6 +1342,14 @@ case "${PS1:-}" in
 esac
 EOF
   chmod 644 "$MERGE/etc/profile.d/zz-atlas-plane.sh" 2>/dev/null || true
+  # Deb login used to call id before PATH (slow + "id: not found" on every Atlas Deb enter).
+  if [ -f "$MERGE/etc/profile" ] && ! grep -q '/usr/bin/id' "$MERGE/etc/profile"; then
+    sed -i 's/"$(id -u)"/"$(/usr/bin/id -u 2>\/dev\/null || echo 1)"/g' "$MERGE/etc/profile" 2>/dev/null || true
+    if ! grep -q '^PATH="/usr/local/sbin' "$MERGE/etc/profile"; then
+      { echo 'PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"'; echo 'export PATH'; cat "$MERGE/etc/profile"; } >"$MERGE/etc/profile.n" \
+        && mv "$MERGE/etc/profile.n" "$MERGE/etc/profile"
+    fi
+  fi
   # Cube crimson organ (gVRMod CubeUI ticket). After zz-atlas so PATH is set.
   cat >"$MERGE/etc/profile.d/zz-cube-crimson.sh" <<'EOF'
 # CubeAI — Titan Debian organ. Palette = CubeUI, not leftover cyan.
@@ -2906,7 +2911,10 @@ write_profile() {
 export ATLAS_HYBRID=1
 export ATLAS_COMBINED=1
 # Honor the session login. Forcing atlas here made Switch a label-only lie.
-if [ "$(id -u 2>/dev/null)" = "0" ]; then
+# PATH first — /etc/profile used to call id before /usr/bin was on PATH (slow + "id: not found").
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${PATH:+:$PATH}"
+export PATH
+if [ "$(/usr/bin/id -u 2>/dev/null || echo 1)" = "0" ]; then
   export USER=root LOGNAME=root ATLAS_ROLE=root
 elif [ -z "${USER:-}" ]; then
   export USER=atlas LOGNAME=atlas ATLAS_ROLE=atlas
@@ -2919,25 +2927,20 @@ export ATLAS_LINUX_HOME="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
 # Prefer bound Deb home for installs. Never steal /root.
 case "${HOME:-}" in
   ""|"/"|"/data"|/data/data/*|/data/user/*)
-    if [ "$(id -u 2>/dev/null)" = "0" ] && [ -d /root ]; then HOME=/root
+    if [ "$(/usr/bin/id -u 2>/dev/null || echo 1)" = "0" ] && [ -d /root ]; then HOME=/root
     elif [ -d /home/atlas ]; then HOME=/home/atlas
     elif [ -d "$ATLAS_LINUX_HOME" ]; then HOME=$ATLAS_LINUX_HOME
     fi
     ;;
 esac
 export HOME ATLAS_HOME="${ATLAS_HOME:-$HOME}"
-# Universal: mkdir common layouts; PATH scans every $HOME/.<name>/bin (no hardcodes)
+# Fast PATH: only bin + .local/bin. Never glob $HOME/.* (lag on Deb enter).
 mkdir -p "${HOME}/bin" "${HOME}/.local/bin" 2>/dev/null || true
 _USER_PATH=
 for _h in "$HOME" "$ATLAS_LINUX_HOME"; do
   [ -n "$_h" ] && [ -d "$_h" ] || continue
   [ -d "$_h/bin" ] && _USER_PATH="${_USER_PATH:+$_USER_PATH:}$_h/bin"
   [ -d "$_h/.local/bin" ] && _USER_PATH="${_USER_PATH:+$_USER_PATH:}$_h/.local/bin"
-  for _d in "$_h"/.*; do
-    [ -d "$_d/bin" ] || continue
-    case "$_d" in */.|*/..|*/.local) continue ;; esac
-    _USER_PATH="${_USER_PATH:+$_USER_PATH:}$_d/bin"
-  done
 done
 # Debian first, then user installs, then agent bin. Never let $HOME/bin/apt shadow /usr/bin/apt.
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${_USER_PATH:+:$_USER_PATH}${_AB:+:$_AB}"
