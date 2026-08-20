@@ -100,6 +100,7 @@ public final class AtlasAuth {
         }
         return c.contains("screencap") || c.contains("screenshot")
             || c.contains("nsenter") || c.contains("input ")
+            || c.contains("capture") || c.contains("display capture")
             || c.contains("first connect") || c.contains("remote adb")
             || c.contains("wireless adb");
     }
@@ -214,8 +215,8 @@ public final class AtlasAuth {
         int ttl = AtlasPrefs.ticketTtlSec(c);
         if (ttl <= 0) return;
         String sc = sanitizeScope(scope);
-        if ("exec".equals(sc) || "ask".equals(sc)) return;
-        if (isCaptureOrMutateScope(sc, null)) writeExecToken(c);
+        if ("exec".equals(sc) || "ask".equals(sc)) sc = "screencap";
+        writeExecToken(c);
         writeTicketFile(new File(authDir(c), "ticket." + sc), ttl);
     }
 
@@ -298,12 +299,14 @@ public final class AtlasAuth {
         target.setReadable(true, false);
         if (grant) {
             String sc = sanitizeScope(scope);
-            // Observe/ask silent grants must not mint ticket.exec (screencap hall pass).
-            // ADB host allow is not an enterd elevate hall pass.
-            if (isCaptureOrMutateScope(sc, cmd)
+            String blob = (sc + " " + (reason == null ? "" : reason)
+                + " " + (cmd == null ? "" : cmd));
+            // 390c: grant scope=ask reason=display capture wrote no ticket.exec.
+            // Capture-like human Approve mints screencap + exec at UI TTL.
+            if (isCaptureOrMutateScope(sc, blob)
                     && !"adb".equals(sc) && !"remoteadb".equals(sc)
                     && !"remote_adb".equals(sc)) {
-                writeTicket(c, sc);
+                writeTicket(c, "ask".equals(sc) || "exec".equals(sc) ? "screencap" : sc);
             }
         }
         appendLog(c, grant ? "grant" : "deny", scope, reason, cmd, grant ? "ok" : "fail");

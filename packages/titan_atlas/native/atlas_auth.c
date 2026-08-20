@@ -39,7 +39,7 @@
 #include "atlas_bridge_class.h"
 
 #ifndef ATLAS_VERSION
-#define ATLAS_VERSION "1.1.5-ttl-ui"
+#define ATLAS_VERSION "1.1.6-grant-exec"
 #endif
 
 #define AUTH_ON_LP "/data/local/atlas-linux/var/lib/atlas-auth"
@@ -236,16 +236,33 @@ static void write_exec_token(const char *auth_dir) {
   write_ticket_file(AUTH_IN_DEB "/ticket.exec", ttl);
 }
 
-static void write_scoped_ticket(const char *auth_dir, const char *scope) {
+static int looks_like_capture(const char *scope, const char *reason, const char *cmd) {
+  if (capture_scope(scope)) return 1;
+  const char *blob[3] = { scope, reason, cmd };
+  for (int i = 0; i < 3; i++) {
+    if (!blob[i] || !blob[i][0]) continue;
+    if (strcasestr(blob[i], "screencap") || strcasestr(blob[i], "screenshot")
+        || strcasestr(blob[i], "nsenter") || strcasestr(blob[i], "capture"))
+      return 1;
+  }
+  return 0;
+}
+
+static void write_scoped_ticket(const char *auth_dir, const char *scope,
+                                const char *reason, const char *cmd) {
   int ttl = policy_ttl();
-  /* Observe/unknown "ask" is not an elevate hall pass. */
-  if (!scope || !scope[0] || !strcmp(scope, "exec") || !strcmp(scope, "ask"))
-    return;
-  if (capture_scope(scope)) write_exec_token(auth_dir);
   if (ttl <= 0) return;
+  int cap = looks_like_capture(scope, reason, cmd);
+  /* Human Approve (ok file) for capture always mints ticket.exec at UI TTL.
+   * scope=ask + "display capture" was 390c: grant ok, tickets=none. */
+  if (cap) write_exec_token(auth_dir);
+  const char *sc = scope;
+  if (!sc || !sc[0] || !strcmp(sc, "ask") || !strcmp(sc, "exec"))
+    sc = cap ? "screencap" : NULL;
+  if (!sc) return;
   char path[640];
   if (auth_dir && auth_dir[0]) {
-    snprintf(path, sizeof path, "%s/ticket.%s", auth_dir, scope);
+    snprintf(path, sizeof path, "%s/ticket.%s", auth_dir, sc);
     write_ticket_file(path, ttl);
   }
 }
@@ -427,7 +444,7 @@ static int atlas_auth_request(const char *reason, int timeout_sec,
       unlink(fail);
       unlink(req);
       unlink(busy);
-      write_scoped_ticket(auth_dir, sc);
+      write_scoped_ticket(auth_dir, sc, reason, cmd);
       append_log(auth_dir, "grant", sc, reason, cmd, "ok");
       return 0;
     }
@@ -645,7 +662,9 @@ int main(int argc, char **argv) {
       strncat(reason, argv[i], sizeof reason - strlen(reason) - 1);
     }
     if (!reason[0]) snprintf(reason, sizeof reason, "Atlas privilege");
-    if (!scope) scope = "ask";
+    if (!scope) {
+      scope = looks_like_capture(NULL, reason, NULL) ? "screencap" : "ask";
+    }
     int rc = atlas_auth_request(reason, t, scope, NULL);
     if (rc == 1) fprintf(stderr, "atlas-auth: denied\n");
     return rc;

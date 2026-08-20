@@ -68,7 +68,7 @@ fi
 
 # Auth + biometric sudo gate (all modes: android / debian / hybrid)
 if [ -f "$ROOT/native/atlas_auth.c" ]; then
-  build_one atlas-auth "$ROOT/native/atlas_auth.c" "1.1.5-ttl-ui"
+  build_one atlas-auth "$ROOT/native/atlas_auth.c" "1.1.6-grant-exec"
 fi
 if [ -f "$ROOT/native/atlas_android.c" ]; then
   build_one atlas-android "$ROOT/native/atlas_android.c" "1.1.9-bridge"

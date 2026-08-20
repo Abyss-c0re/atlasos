@@ -68,11 +68,10 @@ static inline const char *atlas_bridge_after_token(const char *cmd) {
 }
 
 static inline int atlas_bridge_smuggle(const char *cmd, const char *after) {
+  (void)cmd;
+  /* Only shell chaining. "screenshot" in an atlas-auth reason is not smuggle
+   * (390c: enterd gated the ask itself, so grant could never mint a ticket). */
   if (after && strpbrk(after, ";&|`") != NULL) return 1;
-  if (!cmd) return 0;
-  if (strstr(cmd, "screencap") || strstr(cmd, "screenshot")
-      || strstr(cmd, "nsenter") || strstr(cmd, "unshare"))
-    return 1;
   return 0;
 }
 
@@ -80,7 +79,11 @@ static inline int atlas_bridge_observe_cmd(const char *cmd) {
   char name[64];
   if (!atlas_bridge_first_token(cmd, name, sizeof name)) return 0;
   if (!atlas_bridge_observe_name(name)) return 0;
-  if (atlas_bridge_smuggle(cmd, atlas_bridge_after_token(cmd))) return 0;
+  const char *after = atlas_bridge_after_token(cmd);
+  if (atlas_bridge_smuggle(cmd, after)) return 0;
+  if (after && (strstr(after, "screencap") || strstr(after, "screenshot")
+                || strstr(after, "nsenter") || strstr(after, "unshare")))
+    return 0;
   return 1;
 }
 
