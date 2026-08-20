@@ -9,7 +9,8 @@
  *
  * Tickets are ticket.<scope> only. Never a blanket ticket.
  * Strict plane (titan2_atlas_auth_strict=1) or TTL=0 → auth every call.
- * ticket.exec is a 15s one-shot for enterd elevate — not a skip-bio grant.
+ * ticket.exec lifetime is the Settings slider (titan2_atlas_ticket_ttl).
+ * Never a 15s leftover that disagrees with the UI.
  *
  * Protocol (filesystem):
  *   $AUTH/req.<id>   client writes reason + scope + cmd
@@ -38,12 +39,11 @@
 #include "atlas_bridge_class.h"
 
 #ifndef ATLAS_VERSION
-#define ATLAS_VERSION "1.1.4-no-leftover-capture"
+#define ATLAS_VERSION "1.1.5-ttl-ui"
 #endif
 
 #define AUTH_ON_LP "/data/local/atlas-linux/var/lib/atlas-auth"
 #define AUTH_IN_DEB "/var/lib/atlas-auth"
-#define EXEC_TOKEN_TTL 15
 #define DEFAULT_TICKET_TTL 60
 
 static const char *home_dir(void) {
@@ -225,19 +225,24 @@ static void write_ticket_file(const char *path, int ttl) {
 }
 
 static void write_exec_token(const char *auth_dir) {
+  int ttl = policy_ttl();
   char path[640];
+  if (ttl <= 0) return;
   if (auth_dir && auth_dir[0]) {
     snprintf(path, sizeof path, "%s/ticket.exec", auth_dir);
-    write_ticket_file(path, EXEC_TOKEN_TTL);
+    write_ticket_file(path, ttl);
   }
-  write_ticket_file(AUTH_ON_LP "/ticket.exec", EXEC_TOKEN_TTL);
-  write_ticket_file(AUTH_IN_DEB "/ticket.exec", EXEC_TOKEN_TTL);
+  write_ticket_file(AUTH_ON_LP "/ticket.exec", ttl);
+  write_ticket_file(AUTH_IN_DEB "/ticket.exec", ttl);
 }
 
 static void write_scoped_ticket(const char *auth_dir, const char *scope) {
   int ttl = policy_ttl();
-  write_exec_token(auth_dir);
-  if (ttl <= 0 || !scope || !scope[0] || !strcmp(scope, "exec")) return;
+  /* Observe/unknown "ask" is not an elevate hall pass. */
+  if (!scope || !scope[0] || !strcmp(scope, "exec") || !strcmp(scope, "ask"))
+    return;
+  if (capture_scope(scope)) write_exec_token(auth_dir);
+  if (ttl <= 0) return;
   char path[640];
   if (auth_dir && auth_dir[0]) {
     snprintf(path, sizeof path, "%s/ticket.%s", auth_dir, scope);
@@ -392,7 +397,9 @@ static int atlas_auth_request(const char *reason, int timeout_sec,
   unlink(fail);
   unlink(busy);
 
-  int fd = open(req, O_WRONLY | O_CREAT | O_EXCL | O_TRUNC, 0600);
+  /* 0666: Atlas host (non-root) must read scope= or bio-off silent-grants
+   * as scope=ask (live 08-20: screencap reqs logged host-claim ask). */
+  int fd = open(req, O_WRONLY | O_CREAT | O_EXCL | O_TRUNC, 0666);
   if (fd < 0) {
     fprintf(stderr, "atlas-auth: cannot write %s: %s\n", req, strerror(errno));
     return 4;
@@ -401,6 +408,7 @@ static int atlas_auth_request(const char *reason, int timeout_sec,
   if (cmd && cmd[0]) dprintf(fd, "cmd=%s\n", cmd);
   fsync(fd);
   close(fd);
+  chmod(req, 0666);
   append_log(auth_dir, "request", sc, reason, cmd, "pending");
 
   {

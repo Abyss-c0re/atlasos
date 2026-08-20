@@ -21,8 +21,8 @@ import java.util.List;
  * authenticates then runs the locked binary. Host never auto-grants leftover
  * {@code req.*} because some other command already succeeded.
  *
- * <p>Tickets are {@code ticket.<scope>} (argv0) only. {@code ticket.exec} is a
- * 15s enterd one-shot — not skip-bio. Strict mode + TTL=0 = auth every call.
+ * <p>Tickets are {@code ticket.<scope>} (argv0) only. {@code ticket.exec}
+ * lifetime is the Settings slider. Strict / TTL=0 = auth every call.
  *
  * Protocol under super LP {@link NativeBin#AUTH_ON_LP}.
  */
@@ -32,8 +32,6 @@ public final class AtlasAuth {
 
     /** Default ticket lifetime when not strict (seconds). Prefs override. */
     public static final int TICKET_TTL_SEC = 60;
-    /** enterd one-shot after a grant — not a skip-bio ticket. */
-    public static final int EXEC_TOKEN_TTL_SEC = 15;
 
     private AtlasAuth() {}
 
@@ -82,6 +80,14 @@ public final class AtlasAuth {
             case "settings":
             case "setprop":
             case "wm":
+            case "service":
+            case "content":
+            case "appops":
+            case "nsenter":
+            case "unshare":
+            case "reboot":
+            case "sm":
+            case "bm":
             case "sudo":
             case "su":
             case "exec":
@@ -143,15 +149,22 @@ public final class AtlasAuth {
             File claimed = new File(dir, "busy." + id);
             if (!f.renameTo(claimed)) continue;
             String body = readText(claimed);
+            /* Unreadable req (root 0600) looks like empty scope=ask — that
+             * silent-granted screencap while bio=off (log host-claim ask). */
+            if (body == null) {
+                appendLog(c, "host-claim", "unread", "Atlas privilege", "", "busy");
+                launchAuthUi(c, id, "Atlas privilege");
+                continue;
+            }
             String reason = firstLine(body);
             String scope = parseField(body, "scope");
             String cmd = parseField(body, "cmd");
             if (reason == null || reason.isEmpty()) reason = "Atlas privilege";
             appendLog(c, "host-claim", scope, reason, cmd, "busy");
-            /* Capture/mutate never silent-grant. Bio off still asks (Approve).
-             * Silent grant when bio=off minted ticket.screencap for Grok. */
-            if (!biometricsOn && !isCaptureOrMutateScope(scope,
-                    (reason == null ? "" : reason) + " " + (cmd == null ? "" : cmd))) {
+            /* Capture/mutate never silent-grant. Empty scope = unread/unknown. */
+            if (!biometricsOn && scope != null && !scope.isEmpty()
+                    && !isCaptureOrMutateScope(scope,
+                    reason + " " + (cmd == null ? "" : cmd))) {
                 writeResult(c, id, true, scope, reason, cmd);
                 continue;
             }
@@ -191,22 +204,24 @@ public final class AtlasAuth {
     }
 
     public static void writeExecToken(Context c) {
-        writeTicketFile(new File(authDir(c), "ticket.exec"), EXEC_TOKEN_TTL_SEC);
+        int ttl = AtlasPrefs.ticketTtlSec(c);
+        if (ttl <= 0) return;
+        writeTicketFile(new File(authDir(c), "ticket.exec"), ttl);
     }
 
     public static void writeTicket(Context c, String scope) {
-        writeExecToken(c);
         if (AtlasPrefs.authStrict(c)) return;
         int ttl = AtlasPrefs.ticketTtlSec(c);
         if (ttl <= 0) return;
         String sc = sanitizeScope(scope);
-        if ("exec".equals(sc)) return;
+        if ("exec".equals(sc) || "ask".equals(sc)) return;
+        if (isCaptureOrMutateScope(sc, null)) writeExecToken(c);
         writeTicketFile(new File(authDir(c), "ticket." + sc), ttl);
     }
 
     /** @deprecated unscoped write — use {@link #writeTicket(Context, String)} */
     public static void writeTicket(Context c, int ttlSec) {
-        writeExecToken(c);
+        if (ttlSec > 0) writeTicketFile(new File(authDir(c), "ticket.exec"), ttlSec);
     }
 
     private static void writeTicketFile(File ticket, int ttlSec) {
@@ -283,9 +298,12 @@ public final class AtlasAuth {
         target.setReadable(true, false);
         if (grant) {
             String sc = sanitizeScope(scope);
+            // Observe/ask silent grants must not mint ticket.exec (screencap hall pass).
             // ADB host allow is not an enterd elevate hall pass.
-            if (!"adb".equals(sc) && !"remoteadb".equals(sc) && !"remote_adb".equals(sc)) {
-                writeTicket(c, scope != null ? scope : "ask");
+            if (isCaptureOrMutateScope(sc, cmd)
+                    && !"adb".equals(sc) && !"remoteadb".equals(sc)
+                    && !"remote_adb".equals(sc)) {
+                writeTicket(c, sc);
             }
         }
         appendLog(c, grant ? "grant" : "deny", scope, reason, cmd, grant ? "ok" : "fail");

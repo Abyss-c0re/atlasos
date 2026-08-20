@@ -42,7 +42,7 @@
 #endif
 
 #ifndef ATLAS_VERSION
-#define ATLAS_VERSION "1.2.14-login"
+#define ATLAS_VERSION "1.2.18-ttl-ui"
 #endif
 
 #define ABS_NAME "atlasenter"
@@ -302,9 +302,33 @@ static int observe_class(const char *cmd) {
   return atlas_bridge_observe_cmd(cmd);
 }
 
-/* enterd accepts ticket.exec only (15s one-shot after atlas-auth grant).
- * A leftover ticket.screencap / blanket ticket must not elevate. */
+/* Plane TTL is the Settings slider. ticket.exec must not outlive it.
+ * Hard 15/30 was the UI-mismatch heresy (slider 60s, enterd 15s). */
+static int plane_ticket_ttl(void) {
+  static const char *p[] = {
+      "/data/local/atlas-linux/var/lib/atlas-auth/titan2_atlas_ticket_ttl",
+      "/var/lib/atlas-auth/titan2_atlas_ticket_ttl",
+      "/data/misc/titan2/titan2_atlas_ticket_ttl",
+      "/data/local/tmp/titan2_atlas_ticket_ttl",
+      NULL};
+  for (int i = 0; p[i]; i++) {
+    FILE *f = fopen(p[i], "r");
+    if (!f) continue;
+    int t = -1;
+    int n = fscanf(f, "%d", &t);
+    fclose(f);
+    if (n == 1 && t >= 0) {
+      if (t > 1800) t = 1800;
+      return t;
+    }
+  }
+  return 60;
+}
+
+/* enterd accepts ticket.exec only, lifetime <= Settings TTL. */
 static int auth_ticket_ok(void) {
+  int plane = plane_ticket_ttl();
+  if (plane <= 0) return 0;
   static const char *cands[] = {
       "/data/local/atlas-linux/var/lib/atlas-auth/ticket.exec",
       "/var/lib/atlas-auth/ticket.exec",
@@ -317,7 +341,7 @@ static int auth_ticket_ok(void) {
     int ttl = 0;
     int n = fscanf(f, "%ld %d", &exp, &ttl);
     fclose(f);
-    if (n >= 2 && ttl > 0 && ttl <= 30 && exp > now && exp <= now + ttl + 5)
+    if (n >= 2 && ttl > 0 && ttl <= plane && exp > now && exp <= now + ttl + 5)
       return 1;
   }
   return 0;
@@ -964,7 +988,25 @@ static int listen_fs(void) {
   return s;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+  /* LAW: --version/--help must exit. main(void) ignored argv and each
+   * audit `atlas-enterd --version` became a second daemon + hybrid ensure. */
+  if (argc > 1 && argv[1] && argv[1][0]) {
+    const char *a = argv[1];
+    if (!strcmp(a, "--version") || !strcmp(a, "-V") || !strcmp(a, "-v")) {
+      printf("atlas-enterd %s\n", ATLAS_VERSION);
+      return 0;
+    }
+    if (!strcmp(a, "--help") || !strcmp(a, "-h")) {
+      fprintf(stderr,
+              "atlas-enterd %s — init-root Deb enter (@atlasenter)\n"
+              "  no args: listen @atlasenter + 127.0.0.1:17999\n",
+              ATLAS_VERSION);
+      return 0;
+    }
+    fprintf(stderr, "atlas-enterd: unknown arg %s (not a daemon flag)\n", a);
+    return 2;
+  }
   if (geteuid() != 0) {
     fprintf(stderr, "atlas-enterd: need root\n");
     return 79;
@@ -989,7 +1031,12 @@ int main(void) {
     if (a < 0) usleep(100 * 1000);
   }
   if (a >= 0) socks[ns++] = a;
-  else logf("WARN no abstract @atlasenter — Deb ENTER will fail");
+  else {
+    /* Abstract in use = another enterd already owns the plane.
+     * Do not fall through to listen_fs() (that unlinks and steals the sock). */
+    logf("already listening @atlasenter — exit (not a second daemon)");
+    return 0;
+  }
   int f = listen_fs();
   if (f >= 0) socks[ns++] = f;
   else logf("WARN no fs sock");

@@ -34,6 +34,7 @@ public final class AtlasPrefs {
 
     public static void setFgColor(Context c, int argb) {
         p(c).edit().putInt("fg_color", argb | 0xFF000000).apply();
+        publishTermPlane(c);
     }
 
     public static int bgColor(Context c) {
@@ -42,6 +43,7 @@ public final class AtlasPrefs {
 
     public static void setBgColor(Context c, int argb) {
         p(c).edit().putInt("bg_color", argb | 0xFF000000).apply();
+        publishTermPlane(c);
     }
 
     public static int cursorColor(Context c) {
@@ -50,9 +52,10 @@ public final class AtlasPrefs {
 
     public static void setCursorColor(Context c, int argb) {
         p(c).edit().putInt("cursor_color", argb | 0xFF000000).apply();
+        publishTermPlane(c);
     }
 
-    /** Preset themes: dark, light, green, amber, cyan */
+    /** Preset themes: dark, light, green, amber, cube. Leftover cyan still applies. */
     public static void applyThemePreset(Context c, String name) {
         if (name == null) name = "dark";
         switch (name) {
@@ -71,6 +74,11 @@ public final class AtlasPrefs {
                 setBgColor(c, 0xFF1A1200);
                 setCursorColor(c, 0xFFFFB000);
                 break;
+            case "cube":
+                setFgColor(c, 0xFFFF141A);
+                setBgColor(c, 0xFF000000);
+                setCursorColor(c, 0xFFFF141A);
+                break;
             case "cyan":
                 setFgColor(c, 0xFFB2EBF2);
                 setBgColor(c, 0xFF0D1B1E);
@@ -84,6 +92,20 @@ public final class AtlasPrefs {
                 break;
         }
         p(c).edit().putString("theme_preset", name).apply();
+        publishTermPlane(c);
+    }
+
+    /** Publish term fg/bg/cursor so Controls Theme can match app icons. */
+    public static void publishTermPlane(Context c) {
+        if (c == null) return;
+        try {
+            android.provider.Settings.Global.putString(c.getContentResolver(),
+                "titan2_term_fg_argb", String.format("%06x", 0xFFFFFF & fgColor(c)));
+            android.provider.Settings.Global.putString(c.getContentResolver(),
+                "titan2_term_bg_argb", String.format("%06x", 0xFFFFFF & bgColor(c)));
+            android.provider.Settings.Global.putString(c.getContentResolver(),
+                "titan2_term_cursor_argb", String.format("%06x", 0xFFFFFF & cursorColor(c)));
+        } catch (Exception ignored) {}
     }
 
     public static String themePreset(Context c) {
@@ -291,7 +313,8 @@ public final class AtlasPrefs {
     /**
      * Master biometric enforcement. Default <b>off</b> — privileges are granted
      * by the Privilege section; bio is optional enforcement on top.
-     * When false, agent auto-grants auth reqs (lab / agent screencap heal).
+     * When false, observe-class reqs auto-ok. Capture/mutate still shows the
+     * Atlas sheet — never silent-grant glass.
      */
     public static boolean biometricAuth(Context c) {
         return p(c).getBoolean("biometric_auth", false);

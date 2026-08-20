@@ -2,24 +2,17 @@ package com.titanus2.atlas;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.TypedValue;
-import android.view.Gravity;
-import android.view.View;
-import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.titanus2.atlas.ui.UiKit;
+import com.titanus2.ui.ThemeSliders;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -33,12 +26,11 @@ public class SettingsActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
     private ExecutorService io = Executors.newSingleThreadExecutor();
 
-    private TextView fontLab;
     private TextView[] themeTiles;
     private LinearLayout usersNav;
-    private LinearLayout fgNav;
-    private LinearLayout bgNav;
-    private LinearLayout curNav;
+    private ThemeSliders.ColorField fgField;
+    private ThemeSliders.ColorField bgField;
+    private ThemeSliders.ColorField curField;
     private TextView hybridStatus;
     private TextView debianUserStatus;
     private TextView sizeLab;
@@ -48,10 +40,10 @@ public class SettingsActivity extends Activity {
     private LinearLayout authBinsNav;
 
     private static final String[] THEMES = {
-        "dark", "light", "green", "amber", "cyan"
+        "dark", "light", "green", "amber", "cube"
     };
     private static final String[] THEME_LABELS = {
-        "Dark", "Light", "Green", "Amber", "Cyan"
+        "Dark", "Light", "Green", "Amber", "Cube"
     };
 
     @Override
@@ -68,45 +60,24 @@ public class SettingsActivity extends Activity {
             ScrollView.LayoutParams.WRAP_CONTENT));
 
         UiKit.section(root, "Appearance");
-        fontLab = UiKit.sliderLabel(root, AtlasPrefs.fontSp(this) + " sp");
-        UiKit.slider(root, 24, AtlasPrefs.fontSp(this) - 8,
-            new SeekBar.OnSeekBarChangeListener() {
-                @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
-                    int sp = p + 8;
-                    AtlasPrefs.setFontSp(SettingsActivity.this, sp);
-                    fontLab.setText(sp + " sp");
-                }
-                @Override public void onStartTrackingTouch(SeekBar s) {}
-                @Override public void onStopTrackingTouch(SeekBar s) {}
-            });
-
-        LinearLayout themeRow = UiKit.row(root);
-        themeTiles = new TextView[THEMES.length];
-        for (int i = 0; i < THEMES.length; i++) {
-            final String key = THEMES[i];
-            themeTiles[i] = UiKit.flexButton(themeRow, THEME_LABELS[i], () -> {
-                AtlasPrefs.applyThemePreset(this, key);
-                paintThemeTiles();
-                refreshColorNav();
-            });
-        }
-        paintThemeTiles();
-
-        fgNav = UiKit.navRow(root, "Text", AtlasPrefs.colorHex(AtlasPrefs.fgColor(this)),
-            () -> openColorPicker("Text", AtlasPrefs.fgColor(this), c -> {
-                AtlasPrefs.setFgColor(this, c);
-                refreshColorNav();
-            }));
-        bgNav = UiKit.navRow(root, "Background", AtlasPrefs.colorHex(AtlasPrefs.bgColor(this)),
-            () -> openColorPicker("Background", AtlasPrefs.bgColor(this), c -> {
-                AtlasPrefs.setBgColor(this, c);
-                refreshColorNav();
-            }));
-        curNav = UiKit.navRow(root, "Cursor", AtlasPrefs.colorHex(AtlasPrefs.cursorColor(this)),
-            () -> openColorPicker("Cursor", AtlasPrefs.cursorColor(this), c -> {
-                AtlasPrefs.setCursorColor(this, c);
-                refreshColorNav();
-            }));
+        ThemeSliders.fontSlider(root, AtlasPrefs.fontSp(this),
+            sp -> AtlasPrefs.setFontSp(SettingsActivity.this, sp));
+        themeTiles = ThemeSliders.presetRow(root, THEME_LABELS, themeIndex(), i -> {
+            AtlasPrefs.applyThemePreset(this, THEMES[i]);
+            refreshColorNav();
+        });
+        fgField = ThemeSliders.colorField(root, "Text", AtlasPrefs.fgColor(this), c -> {
+            AtlasPrefs.setFgColor(this, c);
+            ThemeSliders.selectPreset(themeTiles, -1);
+        });
+        bgField = ThemeSliders.colorField(root, "Background", AtlasPrefs.bgColor(this), c -> {
+            AtlasPrefs.setBgColor(this, c);
+            ThemeSliders.selectPreset(themeTiles, -1);
+        });
+        curField = ThemeSliders.colorField(root, "Cursor", AtlasPrefs.cursorColor(this), c -> {
+            AtlasPrefs.setCursorColor(this, c);
+            ThemeSliders.selectPreset(themeTiles, -1);
+        });
         UiKit.toggle(root, "Keep screen on", AtlasPrefs.keepScreenOn(this),
             on -> AtlasPrefs.setKeepScreenOn(this, on));
 
@@ -213,7 +184,7 @@ public class SettingsActivity extends Activity {
                     @Override public void onStartTrackingTouch(SeekBar s) {}
                     @Override public void onStopTrackingTouch(SeekBar s) {}
                 });
-            UiKit.note(root, "per command · not a blanket grant");
+            UiKit.note(root, "same clock as ticket.exec · not a 15s leftover");
         }
         UiKit.navRow(root, "Access", "allow · ask · deny",
             () -> startActivity(new Intent(this, AuthAccessActivity.class)));
@@ -277,167 +248,18 @@ public class SettingsActivity extends Activity {
         refreshHybridStatus();
     }
 
-    private static int[] themePreviewColors(String key) {
-        switch (key) {
-            case "light": return new int[] {0xFF212121, 0xFFFAFAFA};
-            case "green": return new int[] {0xFF33FF33, 0xFF0A0A0A};
-            case "amber": return new int[] {0xFFFFB000, 0xFF1A1200};
-            case "cyan": return new int[] {0xFFB2EBF2, 0xFF0D1B1E};
-            default: return new int[] {0xFFFFFFFF, 0xFF000000};
-        }
-    }
-
-    private String themeLabel(String key) {
-        for (int i = 0; i < THEMES.length; i++) {
-            if (THEMES[i].equals(key)) return THEME_LABELS[i];
-        }
-        return key;
-    }
-
-    private LinearLayout colorRow(LinearLayout root, String title, int color,
-                                  ColorConsumer onPicked) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, dp(10), 0, dp(10));
-        row.setClickable(true);
-
-        TextView left = AtlasUi.body(this, title);
-        row.addView(left, new LinearLayout.LayoutParams(
-            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-        TextView hex = new TextView(this);
-        hex.setText(AtlasPrefs.colorHex(color));
-        hex.setTypeface(Typeface.MONOSPACE);
-        hex.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        hex.setTextColor(AtlasUi.textSecondary(this));
-        hex.setPadding(0, 0, dp(10), 0);
-        row.addView(hex);
-
-        View swatch = new View(this);
-        GradientDrawable sw = new GradientDrawable();
-        sw.setShape(GradientDrawable.OVAL);
-        sw.setColor(color);
-        sw.setStroke(dp(1), 0x44000000);
-        swatch.setBackground(sw);
-        row.addView(swatch, new LinearLayout.LayoutParams(dp(36), dp(36)));
-
-        row.setTag(swatch);
-        row.setOnClickListener(v -> openColorPicker(title, color, picked -> {
-            hex.setText(AtlasPrefs.colorHex(picked));
-            GradientDrawable g = new GradientDrawable();
-            g.setShape(GradientDrawable.OVAL);
-            g.setColor(picked);
-            g.setStroke(dp(1), 0x44000000);
-            swatch.setBackground(g);
-            onPicked.accept(picked);
-        }));
-        root.addView(row, AtlasUi.match());
-        return row;
-    }
-
-    private interface ColorConsumer {
-        void accept(int color);
-    }
-
-    private void openColorPicker(String title, int initial, ColorConsumer onOk) {
-        final float[] hsv = new float[3];
-        Color.colorToHSV(initial | 0xFF000000, hsv);
-
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(20), dp(12), dp(20), dp(8));
-
-        View big = new View(this);
-        GradientDrawable bigGd = new GradientDrawable();
-        bigGd.setCornerRadius(0f);
-        bigGd.setColor(Color.HSVToColor(hsv));
-        big.setBackground(bigGd);
-        box.addView(big, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(72)));
-
-        TextView hexLab = new TextView(this);
-        hexLab.setTypeface(Typeface.MONOSPACE);
-        hexLab.setGravity(Gravity.CENTER);
-        hexLab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        hexLab.setPadding(0, dp(10), 0, dp(8));
-        hexLab.setText(AtlasPrefs.colorHex(Color.HSVToColor(hsv)));
-        box.addView(hexLab, AtlasUi.match());
-
-        final Runnable update = () -> {
-            int c = Color.HSVToColor(hsv);
-            bigGd.setColor(c);
-            big.setBackground(bigGd);
-            hexLab.setText(AtlasPrefs.colorHex(c));
-        };
-
-        box.addView(labeledSeek(box.getContext(), "Hue", 0, 360, (int) hsv[0], p -> {
-            hsv[0] = p;
-            update.run();
-        }), AtlasUi.match());
-        box.addView(labeledSeek(box.getContext(), "Saturation", 0, 100, (int) (hsv[1] * 100), p -> {
-            hsv[1] = p / 100f;
-            update.run();
-        }), AtlasUi.match());
-        box.addView(labeledSeek(box.getContext(), "Value", 0, 100, (int) (hsv[2] * 100), p -> {
-            hsv[2] = p / 100f;
-            update.run();
-        }), AtlasUi.match());
-
-        new AlertDialog.Builder(this)
-            .setTitle(title)
-            .setView(box)
-            .setPositiveButton("Apply", (d, w) -> onOk.accept(Color.HSVToColor(hsv) | 0xFF000000))
-            .setNegativeButton("Cancel", null)
-            .show();
-    }
-
-    private interface IntConsumer {
-        void accept(int v);
-    }
-
-    private LinearLayout labeledSeek(Context c, String label, int min, int max, int value,
-                                     IntConsumer onChange) {
-        LinearLayout col = new LinearLayout(c);
-        col.setOrientation(LinearLayout.VERTICAL);
-        col.setPadding(0, dp(4), 0, dp(4));
-        TextView t = new TextView(c);
-        t.setText(label);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        t.setTextColor(AtlasUi.textSecondary(c));
-        col.addView(t, AtlasUi.match());
-        SeekBar sb = new SeekBar(c);
-        sb.setMax(max - min);
-        sb.setProgress(Math.max(0, Math.min(max - min, value - min)));
-        sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                onChange.accept(progress + min);
-            }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
-        col.addView(sb, AtlasUi.match());
-        return col;
-    }
-
-    private void paintThemeTiles() {
-        if (themeTiles == null) return;
+    private int themeIndex() {
         String cur = AtlasPrefs.themePreset(this);
-        for (int i = 0; i < THEMES.length && i < themeTiles.length; i++) {
-            UiKit.setSelected(themeTiles[i], THEMES[i].equals(cur));
+        for (int i = 0; i < THEMES.length; i++) {
+            if (THEMES[i].equals(cur)) return i;
         }
+        return -1;
     }
 
     private void refreshColorNav() {
-        if (fgNav != null) {
-            UiKit.setNavSummary(fgNav, AtlasPrefs.colorHex(AtlasPrefs.fgColor(this)));
-        }
-        if (bgNav != null) {
-            UiKit.setNavSummary(bgNav, AtlasPrefs.colorHex(AtlasPrefs.bgColor(this)));
-        }
-        if (curNav != null) {
-            UiKit.setNavSummary(curNav, AtlasPrefs.colorHex(AtlasPrefs.cursorColor(this)));
-        }
+        if (fgField != null) fgField.setColor(AtlasPrefs.fgColor(this));
+        if (bgField != null) bgField.setColor(AtlasPrefs.bgColor(this));
+        if (curField != null) curField.setColor(AtlasPrefs.cursorColor(this));
     }
 
     private String sizeTargetLabel() {
@@ -716,10 +538,6 @@ public class SettingsActivity extends Activity {
 
     private void toast(String s) {
         AtlasUi.toast(this, s);
-    }
-
-    private int dp(int v) {
-        return AtlasUi.dp(this, v);
     }
 
     @Override
