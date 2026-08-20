@@ -39,7 +39,7 @@
 #include "atlas_bridge_class.h"
 
 #ifndef ATLAS_VERSION
-#define ATLAS_VERSION "1.1.6-grant-exec"
+#define ATLAS_VERSION "1.1.7-screencap-ask"
 #endif
 
 #define AUTH_ON_LP "/data/local/atlas-linux/var/lib/atlas-auth"
@@ -328,10 +328,44 @@ static void touch(const char *path) {
 
 #define ATLAS_AUTH_AM_FLAGS "0x18840000"
 
+static int default_auth_wait(const char *scope, const char *reason, const char *cmd) {
+  int t = policy_ttl();
+  if (t < 90) t = 90;
+  if (t > 1800) t = 1800;
+  if (looks_like_capture(scope, reason, cmd) && t < 120) t = 120;
+  return t;
+}
+
 static void nudge_wake_only(const char *auth_dir) {
   char wake[512];
   snprintf(wake, sizeof wake, "%s/wake", auth_dir);
   touch(wake);
+}
+
+/* AuthWatch is dead after flash if the FGS never came up. Kick it from
+ * Android am (exported). Debian binderfs cannot do this — try anyway. */
+static void kick_auth_agent(void) {
+  pid_t p = fork();
+  if (p == 0) {
+    int devnull = open("/dev/null", O_RDWR);
+    if (devnull >= 0) {
+      dup2(devnull, 1);
+      dup2(devnull, 2);
+      if (devnull > 2) close(devnull);
+    }
+    setenv("PATH", "/system/bin:/system/xbin", 1);
+    setenv("ATLAS_AUTH_RECURSE", "1", 1);
+    execl("/system/bin/am", "am", "start-foreground-service",
+         "--user", "0",
+         "-n", "com.titanus2.atlas/.AtlasSessionService",
+         "-a", "com.titanus2.atlas.ENSURE_AUTH_AGENT",
+         (char *)NULL);
+    _exit(127);
+  }
+  if (p > 0) {
+    int st = 0;
+    waitpid(p, &st, 0);
+  }
 }
 
 static void wake_host(const char *auth_dir, const char *id, const char *reason,
@@ -339,6 +373,7 @@ static void wake_host(const char *auth_dir, const char *id, const char *reason,
   char wake[512];
   snprintf(wake, sizeof wake, "%s/wake", auth_dir);
   touch(wake);
+  kick_auth_agent();
   if (!am_start) return;
 
   char id_arg[128], reason_arg[512];
@@ -380,7 +415,8 @@ static int atlas_auth_request(const char *reason, int timeout_sec,
   char sc[64];
   sanit_scope(scope && scope[0] ? scope : "ask", sc, sizeof sc);
   if (!reason || !reason[0]) reason = "Atlas privilege";
-  if (timeout_sec <= 0) timeout_sec = 25;
+  if (timeout_sec <= 0)
+    timeout_sec = default_auth_wait(scope, reason, cmd);
 
   {
     char tdir[512];
@@ -429,10 +465,15 @@ static int atlas_auth_request(const char *reason, int timeout_sec,
   append_log(auth_dir, "request", sc, reason, cmd, "pending");
 
   {
+    /* Default ON. ATLAS_AUTH_AM=0 was "rely on FileObserver" — after a
+     * flash the FGS is often dead, so the sheet never opens and agents
+     * spend ten minutes inventing other screenshot religions. */
     const char *want_am = getenv("ATLAS_AUTH_AM");
-    int am = (want_am && want_am[0] == '1') ? 1 : 0;
+    int am = 1;
+    if (want_am && want_am[0] == '0') am = 0;
     wake_host(auth_dir, id, reason, am);
   }
+  fprintf(stderr, "atlas-auth: approve on Titan — %s (%ds)\n", reason, timeout_sec);
 
   time_t deadline = time(NULL) + timeout_sec;
   time_t last_nudge = time(NULL);
@@ -464,7 +505,8 @@ static int atlas_auth_request(const char *reason, int timeout_sec,
     if (am_retries < 2 && now - last_am >= 12
         && !file_exists(busy) && !file_exists(ok) && !file_exists(fail)) {
       const char *want_am = getenv("ATLAS_AUTH_AM");
-      int am = (want_am && want_am[0] == '1') ? 1 : 0;
+      int am = 1;
+      if (want_am && want_am[0] == '0') am = 0;
       wake_host(auth_dir, id, reason, am);
       last_am = now;
       am_retries++;
@@ -499,7 +541,7 @@ static void join_args(char **argv, char *out, size_t n) {
 }
 
 static int cmd_exec(int argc, char **argv) {
-  int timeout = 25;
+  int timeout = 0;
   const char *scope_in = NULL;
   int i = 0;
   while (i < argc) {
@@ -635,7 +677,7 @@ int main(int argc, char **argv) {
   if (!strcmp(cmd, "exec") || !strcmp(cmd, "run") || !strcmp(cmd, "wrap"))
     return cmd_exec(argc - 2, argv + 2);
   if (!strcmp(cmd, "request") || !strcmp(cmd, "ask") || !strcmp(cmd, "sudo")) {
-    int t = 25;
+    int t = 0;
     const char *scope = NULL;
     int i = 2;
     while (i < argc) {

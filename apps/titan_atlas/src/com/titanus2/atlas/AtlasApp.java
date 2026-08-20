@@ -37,6 +37,7 @@ public final class AtlasApp extends Application {
             // Never kickAfterCeWipe — that remounted leftover Deb as if
             // Clear data had not happened. HOME reset is CeWipe's job.
             HybridEnsure.ensureLiveUidAsync(this);
+            AtlasSessionService.ensureAuthAgent(this);
         } catch (Throwable t) {
             Log.w(TAG, "native lib warm", t);
         }

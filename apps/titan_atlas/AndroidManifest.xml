@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.atlas"
-    android:versionCode="165"
-    android:versionName="1.0.37-grant-exec">
+    android:versionCode="166"
+    android:versionName="1.0.38-screencap-one">
 
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
 
@@ -114,8 +114,11 @@
 
         <service
             android:name=".AtlasSessionService"
-            android:exported="false"
+            android:exported="true"
             android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="com.titanus2.atlas.ENSURE_AUTH_AGENT" />
+            </intent-filter>
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="atlas_auth_agent_and_sessions" />

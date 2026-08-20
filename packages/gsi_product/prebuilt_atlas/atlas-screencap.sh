@@ -1,4 +1,3 @@
 #!/system/bin/sh
-echo "use: android screencap -p \$HOME/exports/x.png" >&2
-echo "Debian cannot see Android. Run: atlas-agent-status" >&2
-exit 64
+# Same wrap as `screencap` / `android screencap`. Exit 64 was a dam.
+exec /system/bin/atlas-android screencap "$@"

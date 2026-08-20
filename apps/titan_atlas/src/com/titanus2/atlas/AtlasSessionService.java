@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.util.Log;
 
 /**
  * Foreground service: session keep-alive <b>and</b> product Authentication Agent.
@@ -19,6 +20,7 @@ import android.os.Looper;
  * without opening the terminal UI.
  */
 public class AtlasSessionService extends Service {
+    private static final String TAG = "AtlasSession";
     public static final String CHANNEL = "atlas_sessions";
     public static final int NOTIF_ID = 0xA71A5;
     public static final String ACTION_REFRESH = "com.titanus2.atlas.REFRESH_SESSIONS";
@@ -69,7 +71,8 @@ public class AtlasSessionService extends Service {
             } else {
                 c.startService(i);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.w(TAG, "ensureAuthAgent failed", e);
         }
     }
 

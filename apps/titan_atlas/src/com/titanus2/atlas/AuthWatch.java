@@ -26,7 +26,7 @@ public final class AuthWatch {
                 @Override
                 public void onEvent(int event, String path) {
                     if (path == null) return;
-                    if (!path.startsWith("req.")) return;
+                    if (!path.startsWith("req.") && !"wake".equals(path)) return;
                     try {
                         AtlasAuth.pollOnce(app);
                     } catch (Exception e) {

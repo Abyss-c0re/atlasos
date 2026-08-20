@@ -12,6 +12,16 @@
 4. [`docs/UX.md`](docs/UX.md) — UI patches (system-wide only)
 5. [`patches/gsi_source/SERIES`](patches/gsi_source/SERIES)
 
+## Glass
+
+One command. Human Approves. PNG lands.
+
+```
+screencap
+```
+
+Writes `$HOME/exports/atlas-screenshot.png`. Do not invent `nsenter`, bare `/system/bin/screencap`, lab-cam loops, or a second auth religion. If the sheet is not up, `atlas-auth request --scope screencap display capture` and wait.
+
 ## Rules
 
 - **HOLD_FLASH** is owned by the human / workshop. This repo does not flash.

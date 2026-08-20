@@ -20,6 +20,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -27,7 +28,7 @@
 #include "atlas_bridge_class.h"
 
 #ifndef ATLAS_VERSION
-#define ATLAS_VERSION "1.1.8-no-nsenter-capture"
+#define ATLAS_VERSION "1.2.0-screencap-one"
 #endif
 
 static const char *BIN_DIRS[] = {
@@ -520,10 +521,8 @@ int main(int argc, char **argv) {
   char **rest;
   if (!strcmp(me, "atlas-screencap") || !strcmp(me, "screencap")
       || !strcmp(me, "screenshot")) {
-    fprintf(stderr,
-            "atlas: screencap is not a Deb tool\n"
-            "use: android screencap -p $HOME/exports/x.png\n");
-    return 64;
+    name = "screencap";
+    rest = argv + 1;
   } else if (!strcmp(me, "atlas-android") || !strcmp(me, "android") ||
       !strcmp(me, "android-exec") || !strcmp(me, "android-run")) {
     if (argc < 2) {
@@ -539,6 +538,28 @@ int main(int argc, char **argv) {
   } else {
     name = me;
     rest = argv + 1;
+  }
+
+  /* Bare `screencap` writes a PNG. Agents must not invent a second religion. */
+  if (!strcmp(name, "screencap") || !strcmp(name, "screenshot")
+      || !strcmp(name, "atlas-screencap")) {
+    int n = 0;
+    while (rest && rest[n]) n++;
+    if (n == 0) {
+      static char defpng[512];
+      static char *defrest[3];
+      const char *home = getenv("HOME");
+      if (!home || home[0] != '/') home = "/data/local/atlas-home/atlas";
+      char dir[512];
+      snprintf(dir, sizeof dir, "%s/exports", home);
+      mkdir(dir, 0755);
+      snprintf(defpng, sizeof defpng, "%s/atlas-screenshot.png", dir);
+      defrest[0] = "-p";
+      defrest[1] = defpng;
+      defrest[2] = NULL;
+      rest = defrest;
+      fprintf(stderr, "atlas: approve display capture — %s\n", defpng);
+    }
   }
 
   if (blocked_name(name) && name[0] != '/') {
