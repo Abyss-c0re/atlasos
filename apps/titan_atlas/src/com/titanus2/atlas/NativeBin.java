@@ -1071,7 +1071,7 @@ public final class NativeBin {
         //noinspection ResultOfMethodCallIgnored
         lh.mkdirs();
         for (String rel : new String[] {
-            "bin", ".local/bin", ".cargo/bin", ".npm-global/bin"
+            "bin", ".local/bin"
         }) {
             //noinspection ResultOfMethodCallIgnored
             new File(lh, rel).mkdirs();

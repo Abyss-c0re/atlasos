@@ -1319,15 +1319,20 @@ case "${HOME:-}" in
 esac
 export ATLAS_HOME="${ATLAS_HOME:-$HOME}"
 export ATLAS_BIN="${ATLAS_BIN:-$HOME/bin}"
-# Debian + user-install PATH only. Android is /android/* via `android`.
-# Putting /system/bin on this PATH made Linux CLIs pick a ro Android prefix.
+# Debian first. Then any user installer: ~/bin, ~/.local/bin, ~/.<tool>/bin.
+# Official curl|bash CLIs (XDG or ~/.name/bin) just work. No product names.
 _atlas_up=
 for _h in "$HOME" "$ATLAS_LINUX_HOME" /home/atlas; do
   [ -n "$_h" ] && [ -d "$_h" ] || continue
   [ -d "$_h/bin" ] && _atlas_up="${_atlas_up:+$_atlas_up:}$_h/bin"
   [ -d "$_h/.local/bin" ] && _atlas_up="${_atlas_up:+$_atlas_up:}$_h/.local/bin"
+  for _d in "$_h"/.[!.]*/bin; do
+    [ -d "$_d" ] || continue
+    case "$_d" in */.local/bin) continue ;; esac
+    _atlas_up="${_atlas_up:+$_atlas_up:}$_d"
+  done
 done
-export PATH="${_atlas_up:+$_atlas_up:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${_atlas_up:+:$_atlas_up}"
 unset ANDROID_ROOT ANDROID_DATA ANDROID_STORAGE 2>/dev/null || true
 unset _atlas_up _h _d
 export ATLAS_REPORTS="${HOME}/reports"
@@ -1821,22 +1826,16 @@ user_home_candidates() {
   echo ""
 }
 
-# Standard curl/install destinations (XDG + common vendor layouts).
+# Standard curl/install destinations: XDG + $HOME/.<tool>/bin.
 user_bin_dirs() {
   h=`user_home_candidates`
   [ -n "$h" ] || return 0
   echo "$h/bin"
   echo "$h/.local/bin"
-  echo "$h/.cargo/bin"
-  echo "$h/.npm-global/bin"
-  # any user tool that uses ~/.tool/bin
-  for d in "$h"/.* /dev/null; do
-    [ -d "$d/bin" ] || continue
-    case "$d" in
-      */.local|*/.cargo|*/.npm-global) continue ;; # already listed
-      */.) continue ;;
-    esac
-    echo "$d/bin"
+  for d in "$h"/.[!.]*/bin; do
+    [ -d "$d" ] || continue
+    case "$d" in */.local/bin) continue ;; esac
+    echo "$d"
   done
 }
 
@@ -2942,13 +2941,18 @@ case "${HOME:-}" in
     ;;
 esac
 export HOME ATLAS_HOME="${ATLAS_HOME:-$HOME}"
-# Fast PATH: only bin + .local/bin. Never glob $HOME/.* (lag on Deb enter).
+# User installs: ~/bin, ~/.local/bin, ~/.<tool>/bin. One scan at login.
 mkdir -p "${HOME}/bin" "${HOME}/.local/bin" 2>/dev/null || true
 _USER_PATH=
 for _h in "$HOME" "$ATLAS_LINUX_HOME"; do
   [ -n "$_h" ] && [ -d "$_h" ] || continue
   [ -d "$_h/bin" ] && _USER_PATH="${_USER_PATH:+$_USER_PATH:}$_h/bin"
   [ -d "$_h/.local/bin" ] && _USER_PATH="${_USER_PATH:+$_USER_PATH:}$_h/.local/bin"
+  for _d in "$_h"/.[!.]*/bin; do
+    [ -d "$_d" ] || continue
+    case "$_d" in */.local/bin) continue ;; esac
+    _USER_PATH="${_USER_PATH:+$_USER_PATH:}$_d"
+  done
 done
 # Debian first, then user installs, then agent bin. Never let $HOME/bin/apt shadow /usr/bin/apt.
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${_USER_PATH:+:$_USER_PATH}${_AB:+:$_AB}"
