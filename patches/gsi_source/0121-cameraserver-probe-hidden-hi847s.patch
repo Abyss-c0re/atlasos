@@ -1,0 +1,85 @@
+diff --git a/services/camera/libcameraservice/common/aidl/AidlProviderInfo.cpp b/services/camera/libcameraservice/common/aidl/AidlProviderInfo.cpp
+index 8f2f3aff6c..9f5a87e9bd 100644
+--- a/services/camera/libcameraservice/common/aidl/AidlProviderInfo.cpp
++++ b/services/camera/libcameraservice/common/aidl/AidlProviderInfo.cpp
+@@ -220,6 +220,39 @@ status_t AidlProviderInfo::initializeAidlProvider(
+         }
+     }
+ 
++    // Titan 2: MTK getCameraIdList returns only 0+1. HI847S (2) and SAT (3)
++    // exist as virtual devices (torch status "unknown device@1.1/internal/2")
++    // but are hidden. include_all_cameras probes them so CameraService ADDs.
++    // addDevice fails closed if HAL refuses the interface.
++    if (property_get_bool("persist.sys.phh.include_all_cameras", false)) {
++        std::string prefix = "device@1.1/internal/";
++        if (!devices.empty()) {
++            auto slash = devices[0].rfind('/');
++            if (slash != std::string::npos) {
++                prefix = devices[0].substr(0, slash + 1);
++            }
++        }
++        for (const char *extra : {"2", "3"}) {
++            bool have = false;
++            for (const auto &id : mProviderPublicCameraIds) {
++                if (id == extra) {
++                    have = true;
++                    break;
++                }
++            }
++            if (have) continue;
++            std::string name = prefix + extra;
++            uint16_t major, minor;
++            std::string type, id;
++            if (parseDeviceName(name, &major, &minor, &type, &id) != OK) {
++                continue;
++            }
++            ALOGI("TitanCam: probing HAL-hidden camera %s", name.c_str());
++            devices.push_back(name);
++            mProviderPublicCameraIds.push_back(id);
++        }
++    }
++
+     // Get list of concurrent streaming camera device combinations
+     res = getConcurrentCameraIdsInternalLocked(interface);
+     if (res != OK) {
+diff --git a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp
+index 446195f637..578273a038 100644
+--- a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp
++++ b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp
+@@ -250,6 +250,36 @@ status_t HidlProviderInfo::initializeHidlProvider(
+         return mapToStatusT(status);
+     }
+ 
++    // Titan 2: same HAL-hidden HI847S / SAT probe as AidlProviderInfo.
++    if (property_get_bool("persist.sys.phh.include_all_cameras", false)) {
++        std::string prefix = "device@1.1/internal/";
++        if (!devices.empty()) {
++            auto slash = devices[0].rfind('/');
++            if (slash != std::string::npos) {
++                prefix = devices[0].substr(0, slash + 1);
++            }
++        }
++        for (const char *extra : {"2", "3"}) {
++            bool have = false;
++            for (const auto &id : mProviderPublicCameraIds) {
++                if (id == extra) {
++                    have = true;
++                    break;
++                }
++            }
++            if (have) continue;
++            std::string name = prefix + extra;
++            uint16_t major, minor;
++            std::string type, id;
++            if (parseDeviceName(name, &major, &minor, &type, &id) != OK) {
++                continue;
++            }
++            ALOGI("TitanCam: probing HAL-hidden camera %s", name.c_str());
++            devices.push_back(name);
++            mProviderPublicCameraIds.push_back(id);
++        }
++    }
++
+     // Get list of concurrent streaming camera device combinations
+     if (mMinorVersion >= 6) {
+         res = getConcurrentCameraIdsInternalLocked(interface2_6);

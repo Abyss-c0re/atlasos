@@ -1,0 +1,65 @@
+# project:frameworks/base
+# Mic privacy ON disconnects INPUT devices only. Never DEVICE_OUT (speaker).
+diff --git a/services/core/java/com/android/server/audio/AudioService.java b/services/core/java/com/android/server/audio/AudioService.java
+index 358f17028764..daaffc1b64f4 100644
+--- a/services/core/java/com/android/server/audio/AudioService.java
++++ b/services/core/java/com/android/server/audio/AudioService.java
+@@ -1992,6 +1992,8 @@ public class AudioService extends IAudioService.Stub
+                         if (userId == getCurrentUserId()) {
+                             mMicMuteFromPrivacyToggle = enabled;
+                             setMicrophoneMuteNoCallerCheck(getCurrentUserId());
++                            // Disconnect INPUT devices only. Speaker / HP stay up.
++                            applyMicPrivacyInputDisconnect(enabled);
+                         }
+                     });
+         }
+@@ -6543,6 +6545,41 @@ public class AudioService extends IAudioService.Stub
+                 || mMicMuteFromPrivacyToggle;
+     }
+ 
++    /**
++     * Software mic privacy = unplug capture. Never touch DEVICE_OUT_*
++     * (playback shares Hostless_Spk / FS19XX capture PCM on this MTK —
++     * chmod pcm*c silences the speaker).
++     */
++    private void applyMicPrivacyInputDisconnect(boolean privacyOn) {
++        final int state = privacyOn
++                ? AudioSystem.DEVICE_STATE_UNAVAILABLE
++                : AudioSystem.DEVICE_STATE_AVAILABLE;
++        // Input-only. Not SCO (bidirectional call). Not TELEPHONY_RX (downlink).
++        final int[] inputs = new int[] {
++                AudioSystem.DEVICE_IN_BUILTIN_MIC,
++                AudioSystem.DEVICE_IN_BACK_MIC,
++                AudioSystem.DEVICE_IN_WIRED_HEADSET,
++                AudioSystem.DEVICE_IN_USB_HEADSET,
++                AudioSystem.DEVICE_IN_USB_DEVICE,
++                AudioSystem.DEVICE_IN_HDMI,
++                AudioSystem.DEVICE_IN_BLUETOOTH_BLE,
++        };
++        for (int type : inputs) {
++            try {
++                int res = mAudioSystem.setDeviceConnectionState(
++                        new AudioDeviceAttributes(type, ""),
++                        state, 0 /* codecFormat */, false /* deviceSwitch */);
++                if (res != AudioSystem.AUDIO_STATUS_OK) {
++                    Log.w(TAG, "mic privacy input type=0x" + Integer.toHexString(type)
++                            + " state=" + state + " res=" + res);
++                }
++            } catch (RuntimeException e) {
++                Log.w(TAG, "mic privacy input type=0x" + Integer.toHexString(type), e);
++            }
++        }
++        Log.i(TAG, "mic privacy input disconnect=" + privacyOn);
++    }
++
+     private void setMicrophoneMuteNoCallerCheck(int userId) {
+         final boolean muted = isMicrophoneSupposedToBeMuted();
+         if (DEBUG_VOL) {
+@@ -11579,6 +11616,7 @@ public class AudioService extends IAudioService.Stub
+                             .isSensorPrivacyEnabled(getCurrentUserId(),
+                                     SensorPrivacyManager.Sensors.MICROPHONE);
+                     setMicrophoneMuteNoCallerCheck(getCurrentUserId());
++                    applyMicPrivacyInputDisconnect(mMicMuteFromPrivacyToggle);
+                 }
+ 
+                 // load volume settings for new user

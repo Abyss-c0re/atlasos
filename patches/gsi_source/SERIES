@@ -129,3 +129,8 @@
 # Titan printed keyboard: HW Enter must submit the password. IME-on-bouncer
 # turned Enter into cancel (event != null, not IME_ACTION_DONE).
 0111-keyguard-hw-enter-submits-password.patch
+
+# project:frameworks/av
+# MTK getCameraIdList hides HI847S (2) + SAT (3). Probe them when
+# persist.sys.phh.include_all_cameras=true so CameraService ADDs Device 2.
+0121-cameraserver-probe-hidden-hi847s.patch

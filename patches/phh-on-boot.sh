@@ -130,7 +130,8 @@ setprop persist.sys.agui.touchpad_function 0 2>/dev/null
 # Titan 2: stamp Aperture onto aux packagelist. HAL bounce is owned by
 # titan2-sensor-privacy v25 (privacy OFF → all lenses; ON → no bounce).
 # Never dumpsys media.camera here — it hangs and skips the stamp.
-_titan2_aux_pkgs="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
+# PROP_VALUE_MAX=91. ApertureLensLauncher is fishfood, not *.lenslauncher.
+_titan2_aux_pkgs="org.lineageos.aperture,com.google.android.apps.googlecamera.fishfood"
 _titan2_stamp_aux() {
   setprop persist.sys.phh.include_all_cameras true 2>/dev/null || true
   setprop camera.aux.packagelist "$_titan2_aux_pkgs" 2>/dev/null || true
@@ -165,7 +166,7 @@ _titan2_stamp_aux
   while [ "$i" -lt 30 ]; do
     if pm path com.mediatek.camera >/dev/null 2>&1; then
       pm enable com.mediatek.camera >/dev/null 2>&1 || true
-      for pkg in org.lineageos.aperture org.lineageos.aperture.lenslauncher; do
+      for pkg in org.lineageos.aperture com.google.android.apps.googlecamera.fishfood; do
         pm disable-user --user 0 "$pkg" >/dev/null 2>&1 || true
       done
       echo "titan2: prefer stock camera com.mediatek.camera" \

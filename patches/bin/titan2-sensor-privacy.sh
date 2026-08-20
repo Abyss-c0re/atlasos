@@ -207,11 +207,15 @@ cam_block() {
 # when persist.sys.phh.include_all_cameras=true at first enum. Init stamps
 # that + aux packagelist at early-init (before HAL). Never dumpsys-gate.
 # Privacy ON (nodes 000): stamp only — do not bounce HAL.
-# Privacy OFF edge / HAL death: one init recycle so 0+1+2+3 publish.
+# Privacy OFF / camera-on event: cam_on_heal force-recycles so HI847S remaps
+# (boot-with-privacy-on leaves CS at 0+1 until this edge).
 # NEVER treat logcat rotation as "lens missing" (v34 heresy: recycled HAL
 # every ~45s under Aperture → black preview).
-_AUX_PKGS="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
+# PROP_VALUE_MAX=91. Fake org.lineageos.aperture.lenslauncher never
+# existed — ApertureLensLauncher is com.google.android.apps.googlecamera.fishfood.
+_AUX_PKGS="org.lineageos.aperture,com.google.android.apps.googlecamera.fishfood"
 _AUX_PUB_TS=0
+_AUX_WD_TS=0
 _AUX_PUB_PIDF=/data/local/tmp/titan2_aux_pub.pid
 _AUX_HALPIDF=/data/local/tmp/titan2_hi847s.halpid
 aux_cam_stamp() {
@@ -220,7 +224,7 @@ aux_cam_stamp() {
   setprop vendor.camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
   setprop persist.camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
   setprop persist.vendor.camera.aux.packagelist "$_AUX_PKGS" 2>/dev/null || true
-  setprop persist.vendor.camera.privapp.list org.lineageos.aperture 2>/dev/null || true
+  setprop persist.vendor.camera.privapp.list "$_AUX_PKGS" 2>/dev/null || true
 }
 aux_cam_nodes_blocked() {
   mode=$(ls -l /dev/video0 2>/dev/null | cut -c1-10)
@@ -242,10 +246,24 @@ _aux_mark_hal() {
   [ -n "$hp" ] && echo "$hp" >"$_AUX_HALPIDF" 2>/dev/null || true
   chmod 644 "$_AUX_HALPIDF" 2>/dev/null || true
 }
-# CameraService real add (main). Not HAL "HI847S_MIPI_RAW:2 is installed"
-# (that tag is not in main — v34 grepped empty forever and never stopped).
+# CameraService public map. HAL "HI847S installed" is not enough.
+# Logcat cameraId=2 was v34 heresy (rotation miss → recycle loop).
+_aux_cs_dump() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 3 dumpsys media.camera 2>/dev/null
+  else
+    dumpsys media.camera 2>/dev/null
+  fi
+}
 _aux_cs_has_id2() {
-  logcat -d -t 200 -b main 2>/dev/null | grep -q 'cameraId=2'
+  _aux_cs_dump | grep -q 'Device 2 maps'
+}
+# True only when CS answered and Device 2 is absent. Failed dumpsys ≠ missing.
+_aux_cs_id2_missing() {
+  _map=$(_aux_cs_dump)
+  echo "$_map" | grep -q 'Device 0 maps' || return 1
+  echo "$_map" | grep -q 'Device 2 maps' && return 1
+  return 0
 }
 # Preview open — killing HAL here is a black screen.
 _aux_camera_in_use() {
@@ -258,6 +276,36 @@ _aux_privacy_blocks() {
   privacy_cam_on && return 0
   aux_cam_nodes_blocked && return 0
   return 1
+}
+
+# Bust the 2s SPM cache. Toggle-on ImpulseSnap races the cached ON bit and
+# v37 aborted the HI847S recycle ("aux stamp only") — Device 2 stayed dead
+# until a reboot with camera already allowed.
+refresh_desire_now() {
+  SP_TS=0
+  SP_OK=0
+  SP_CACHE=""
+  refresh_desire
+}
+
+# Wait for a real allow after the human camera-on event. Restore nodes
+# while SPM catches up. Privacy that stays ON wins — do not recycle.
+_aux_wait_allow() {
+  _w=0
+  while [ "$_w" -lt 6 ]; do
+    refresh_desire_now
+    restore_camera_nodes
+    if ! privacy_cam_on && ! aux_cam_nodes_blocked; then
+      return 0
+    fi
+    sleep 1
+    _w=$((_w + 1))
+  done
+  refresh_desire_now
+  if privacy_cam_on || aux_cam_nodes_blocked; then
+    return 1
+  fi
+  return 0
 }
 
 aux_pub_running() {
@@ -281,7 +329,9 @@ aux_pub_abort() {
 # $1=force — privacy-off edge (one bounce). Never a periodic logcat miss.
 aux_cam_publish() {
   aux_cam_stamp
-  if _aux_privacy_blocks; then
+  # force: never block the belt on SPM cache — child waits. Non-force
+  # still refuse immediately if privacy is ON.
+  if [ "${1:-}" != "force" ] && _aux_privacy_blocks; then
     log "aux stamp only (privacy on / nodes 000)"
     return 0
   fi
@@ -310,7 +360,12 @@ aux_cam_publish() {
     chmod 666 "$_AUX_PUB_PIDF" 2>/dev/null || true
     _die() { rm -f "$_AUX_PUB_PIDF" 2>/dev/null; setprop sys.titan2.aux_pub 0 2>/dev/null; }
     trap '_die' EXIT
-    if _aux_privacy_blocks; then
+    if [ "${1:-}" = "force" ]; then
+      if ! _aux_wait_allow; then
+        log "aux child abort before stop (privacy on after wait)"
+        exit 0
+      fi
+    elif _aux_privacy_blocks; then
       log "aux child abort before stop (privacy on)"
       exit 0
     fi
@@ -363,9 +418,52 @@ aux_cam_publish() {
     if _aux_cs_has_id2; then
       log "aux published cameraId=2"
     else
-      log "aux recycle done (cameraId=2 not in tail — HAL left running)"
+      log "aux recycle done (cameraId=2 not in tail — one more cycle)"
+      # Second pass: CS often enumerates after the first 10s window when
+      # HAL just came back from a privacy-on (000) boot.
+      if ! _aux_privacy_blocks; then
+        aux_cam_stamp
+        setprop sys.titan2.aux_pub 1
+        sleep 2
+        if ! _aux_privacy_blocks; then
+          setprop sys.titan2.aux_pub 2
+          sleep 3
+        fi
+        if ! _aux_privacy_blocks; then
+          setprop sys.titan2.aux_pub 3
+          _w=0
+          while [ "$_w" -lt 12 ]; do
+            if _aux_privacy_blocks; then break; fi
+            if _aux_svc_up && _aux_cs_has_id2; then break; fi
+            sleep 1
+            _w=$((_w + 1))
+          done
+        fi
+      fi
+      restore_camera_nodes
+      aux_cam_stamp
+      _aux_mark_hal
+      if _aux_cs_has_id2; then
+        log "aux published cameraId=2 (retry)"
+      else
+        log "aux recycle done (cameraId=2 still missing — watchdog will retry)"
+      fi
     fi
   ) &
+}
+
+# Camera-on event: nodes open + force HI847S recycle. Call on every
+# privacy-off edge / ImpulseSnap cam_allow. Privacy ON still aborts inside.
+# Skip bounce when Device 2 is already public (no preview flash).
+cam_on_heal() {
+  cam_allow
+  if _aux_cs_has_id2; then
+    log "CAM on heal — Device 2 already public"
+    _aux_mark_hal
+    return 0
+  fi
+  log "CAM on heal — recycle HAL+CS so HI847S (id 2) remaps"
+  aux_cam_publish force
 }
 
 cam_allow() {
@@ -550,14 +648,16 @@ else
   aux_cam_stamp
   log "boot CAM allowed (SPM OFF)"
 fi
-# Boot: if HAL+CS already up, do not bounce (black screen on first open).
-# Recycle only when services are down after privacy-on crash-loop.
+# Boot: privacy OFF. If CameraService never ADD device 2, one recycle.
+# Skipping just because HAL+CS are up is how KEEP_DATA flash lost HI847S
+# (services up with 0+1 only — "no recycle" heresy).
 if [ "$last_cam" = "0" ]; then
-  if _aux_svc_up; then
+  if _aux_svc_up && _aux_cs_has_id2; then
     _aux_mark_hal
-    log "boot camera services up — no recycle"
+    log "boot cameras include id 2 — no recycle"
   else
-    aux_cam_publish force
+    log "boot HI847S missing from CameraService — camera-on heal"
+    cam_on_heal
   fi
 fi
 privacy_mic_on
@@ -572,7 +672,9 @@ else
   log "boot MIC allowed"
 fi
 
-log "titan2-sensor-privacy ONLINE v35-aux-hold (heal on privacy-off/HAL death only; abort if privacy on)"
+# v35-aux-hold marker (preflight). v36 stamps real fishfood pkg.
+# v37: boot recycle when Device 2 is not public (KEEP_DATA regression).
+log "titan2-sensor-privacy ONLINE v38-cam-allow-heal (HI847S recycle on every camera-on)"
 seed_qs_tiles
 TICK=0
 [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 200000 ] && : >"$LOG"
@@ -592,8 +694,15 @@ while true; do
     chmod 666 "$_sp_wake" 2>/dev/null || true
     case "$_w" in
       cam_block) aux_pub_abort; cam_block; last_cam=1; aux_cam_stamp ;;
-      cam_allow) cam_allow; last_cam=0; aux_cam_publish force ;;
+      cam_allow|cam_heal) last_cam=0; cam_on_heal ;;
       aux_pub) aux_cam_publish force ;;
+      settings_icons)
+        if [ -x /system/bin/titan2-cube-icons.sh ]; then
+          sh /system/bin/titan2-cube-icons.sh settings-on >/dev/null 2>&1 || \
+            sh /system/bin/titan2-cube-icons.sh apply >/dev/null 2>&1 || true
+        fi
+        log "settings icons apply (wake)"
+        ;;
       mic_block) mic_block 2>/dev/null || true; last_mic=1 ;;
       mic_allow) mic_allow 2>/dev/null || true; last_mic=0 ;;
     esac
@@ -605,11 +714,10 @@ while true; do
     if [ "$last_cam" = "1" ] || [ "$last_mic" = "1" ] \
         || [ ! -f "${MARKER}.idle" ] || ! cam_nodes_open; then
       log "belt DISABLED — allow cam+mic (restore leftover 000)"
-      cam_allow
-      mic_allow
       last_cam=0
       last_mic=0
-      aux_cam_publish force
+      cam_on_heal
+      mic_allow
       touch "${MARKER}.idle" 2>/dev/null
     fi
     torch_bridge_tick
@@ -645,24 +753,33 @@ while true; do
     fi
   else
     if [ "$last_cam" = "1" ]; then
-      log "CAM allow — chmod 660 instant + publish all lenses"
-      cam_allow
-      aux_cam_publish force
+      log "CAM allow — camera-on heal (HI847S remap)"
+      cam_on_heal
     else
       # Privacy OFF: keep nodes open. Re-heal leftover 000 every tick.
       if ! cam_nodes_open; then
         log "CAM re-allow — nodes still 000 while toggle allowed"
-        cam_allow
-        aux_cam_publish
+        cam_on_heal
       fi
-      # Watchdog: restamp packagelist. Recycle only if HAL/CS died, never
-      # because a log line aged out, and never under a live camera client.
+      # Watchdog: restamp packagelist. Recycle if Device 2 never mapped
+      # after a privacy-on boot, or if HAL/CS died. Never on logcat miss.
       aux_cam_stamp
       if [ $((TICK % 8)) -eq 0 ] && ! aux_pub_running; then
-        if ! _aux_svc_up; then
+        if _aux_cs_id2_missing; then
+          _now=$(date +%s 2>/dev/null || echo 0)
+          _wd_ok=1
+          if [ "$_now" -gt 0 ] && [ "$_AUX_WD_TS" -gt 0 ]; then
+            _age=$((_now - _AUX_WD_TS))
+            [ "$_age" -ge 0 ] && [ "$_age" -lt 60 ] && _wd_ok=0
+          fi
+          if [ "$_wd_ok" = "1" ]; then
+            _AUX_WD_TS=$_now
+            log "aux watchdog — Device 2 missing while allowed, camera-on heal"
+            cam_on_heal
+          fi
+        elif ! _aux_svc_up; then
           log "aux watchdog — camera service down, heal"
-          cam_allow
-          aux_cam_publish
+          cam_on_heal
         else
           hp=$(_aux_hal_pid)
           old=$(tr -d '\r\n ' <"$_AUX_HALPIDF" 2>/dev/null)
