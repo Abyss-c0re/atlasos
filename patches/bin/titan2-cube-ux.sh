@@ -3,7 +3,7 @@
 # Geometry: square chrome RROs DROPPED 2026-07-21 (FGS pill NPE + mangled Settings).
 # Product: night + spike #FF141A via theme seed — never re-enable Titan*Square*.
 # Cyan #00E5FF was leftover OS seed; CubeAI/CubeUI ticket is mesh/cage/spike/void.
-# Called from titan2-display. Version: 15 (Cube spike default; migrate leftover cyan)
+# Called from titan2-display. Version: 16 (honor user theme/icons/font; no boot restamp)
 # Glow/mode from leftover Look (ThemePrefs) when the human picked a non-default:
 #   settings global titan2_ui_accent_argb  (hex without #, e.g. ffff141a or FF141A)
 #   settings global titan2_ui_day_night    day | night | auto
@@ -17,7 +17,7 @@ mkdir -p /data/local/tmp 2>/dev/null || true
 rm -f "$LOG" 2>/dev/null || true
 : >"$LOG" 2>/dev/null || true
 chmod 666 "$LOG" 2>/dev/null || true
-logm "start v15 theme=$(getprop ro.titanus2.theme) profile=$(getprop ro.titanus2.profile)"
+logm "start v16 theme=$(getprop ro.titanus2.theme) profile=$(getprop ro.titanus2.profile)"
 
 # Seed Look plane defaults after wipe so SystemUI/cube match Cube spike.
 # Leftover product cyan #00E5FF is not a human pick — migrate to spike.
@@ -66,15 +66,62 @@ case "$DAYNIGHT" in
 esac
 logm "glow=#$ACCENT_HEX day_night=${DAYNIGHT:-night}"
 
-# --- Cube seed: monochromatic black + spike glow (not Material pastels) ---
-# PRODUCT_UX 2026-08-20: CubeAI/CubeUI spike. No Titan square shape package (FGS).
-# Stock adaptive shape stays; night + #FF141A only.
-theme_json="{\"android.theme.customization.theme_style\":\"MONOCHROMATIC\",\"android.theme.customization.color_source\":\"preset\",\"android.theme.customization.system_palette\":\"$ACCENT_HEX\",\"android.theme.customization.accent_color\":\"$ACCENT_HEX\"}"
-settings put secure theme_customization_overlay_packages "$theme_json" 2>/dev/null || true
-if ! settings get secure theme_customization_overlay_packages 2>/dev/null | grep -q MONOCHROMATIC; then
-  theme_json="{\"android.theme.customization.theme_style\":\"TONAL_SPOT\",\"android.theme.customization.color_source\":\"preset\",\"android.theme.customization.system_palette\":\"$ACCENT_HEX\",\"android.theme.customization.accent_color\":\"$ACCENT_HEX\"}"
-  settings put secure theme_customization_overlay_packages "$theme_json" 2>/dev/null || true
+# Theme / icons: user SoT. Wipe seeds Cube spike once. Never restamp on boot.
+# icons-preset deletes theme_customization_* and rewrites Monet — banned here.
+_seed=$(echo "${ACCENT_HEX:-ff141a}" | tr -d '# ' | tr 'a-f' 'A-F')
+_ig=$(settings get global titan2_icon_glyph_argb 2>/dev/null | tr -d '\r# ')
+case "$_ig" in ??????) _seed=$(echo "$_ig" | tr 'a-f' 'A-F') ;; esac
+theme_got=$(settings get secure theme_customization_overlay_packages 2>/dev/null | tr -d '\r')
+case "$theme_got" in
+  null|""|*" "*)
+    _ts=$(date +%s 2>/dev/null || echo 0)000
+    theme_json="{\"_applied_timestamp\":$_ts,\"android.theme.customization.theme_style\":\"MONOCHROMATIC\",\"android.theme.customization.color_source\":\"preset\",\"android.theme.customization.system_palette\":\"$_seed\",\"android.theme.customization.accent_color\":\"$_seed\"}"
+    settings put secure theme_customization_overlay_packages "$theme_json" 2>/dev/null || true
+    logm "theme first-boot seed #$_seed"
+    ;;
+  *)
+    logm "theme honor (not rewritten)"
+    ;;
+esac
+_icons=
+if [ -x /system/bin/titan2-cube-icons.sh ]; then
+  _icons=/system/bin/titan2-cube-icons.sh
+elif [ -x /data/local/tmp/titan2-cube-icons.sh ]; then
+  _icons=/data/local/tmp/titan2-cube-icons.sh
 fi
+if [ -n "$_icons" ]; then
+  # Restore user icon plane only. Never icons-preset (deletes theme JSON).
+  case "$_ig" in
+    ??????)
+      sh "$_icons" icons-restore >/dev/null 2>&1 || true
+      logm "icons-restore glyph=$_ig"
+      ;;
+    *)
+      logm "icons honor (no user glyph — not restamped)"
+      ;;
+  esac
+  _sm=$(settings get global titan2_settings_mono 2>/dev/null | tr -d '\r')
+  case "$_sm" in
+    1|true|on)
+      sh "$_icons" settings-on >/dev/null 2>&1 || true
+      logm "settings-icons restore"
+      ;;
+    0|false|off)
+      logm "settings-icons honor off"
+      ;;
+    *)
+      logm "settings-icons honor unset"
+      ;;
+  esac
+  _apps=$(settings get global titan2_icon_apps 2>/dev/null | tr -d '\r')
+  case "$_apps" in
+    1|true|on)
+      sh "$_icons" apps-on >/dev/null 2>&1 || true
+      logm "apps-icons restore"
+      ;;
+  esac
+fi
+unset _icons _sm _apps
 # Full zero-radius square chrome DROPPED — disable leftovers every boot.
 # Product Cube uses static cubemask (icon only); never re-arm Settings/SystemUI RROs.
 for _ov in com.titanus2.overlay.iconshape com.titanus2.overlay.settings_square com.titanus2.overlay.systemui_square; do
@@ -299,10 +346,22 @@ else
 fi
 
 settings put global search_global 0 2>/dev/null || true
-settings put system font_scale 0.95 2>/dev/null || true
 
-setprop persist.titanus2.cube_ux 15 2>/dev/null || true
-settings put global titanus2_cube_ux 15 2>/dev/null || true
+# Font size is user SoT (Settings → Display). Seed 0.95 only after wipe.
+_fs=$(settings get system font_scale 2>/dev/null | tr -d '\r')
+case "$_fs" in
+  null|""|0|0.0|0.00)
+    settings put system font_scale 0.95 2>/dev/null || true
+    logm "font_scale first-boot 0.95"
+    ;;
+  *)
+    logm "font_scale honor $_fs"
+    ;;
+esac
+unset _fs
+
+setprop persist.titanus2.cube_ux 16 2>/dev/null || true
+settings put global titanus2_cube_ux 16 2>/dev/null || true
 setprop persist.titanus2.theme cube 2>/dev/null || true
 
 night=$(settings get secure ui_night_mode 2>/dev/null | tr -d '\r')
@@ -310,7 +369,8 @@ nav=$(settings get secure navigation_mode 2>/dev/null | tr -d '\r')
 tb=$(settings get system enable_taskbar 2>/dev/null | tr -d '\r')
 ime=$(settings get secure show_ime_with_hard_keyboard 2>/dev/null | tr -d '\r')
 def_ime=$(settings get secure default_input_method 2>/dev/null | tr -d '\r')
-logm "done v15 night=$night nav=$nav taskbar=$tb cube=15 ime=$ime def_ime=$def_ime glow=#$ACCENT_HEX no-square"
+fs=$(settings get system font_scale 2>/dev/null | tr -d '\r')
+logm "done v16 night=$night nav=$nav taskbar=$tb cube=16 ime=$ime def_ime=$def_ime font=$fs glow=#$ACCENT_HEX honor-user"
 
 # Waves: Launcher3 re-enables taskbar after first boot; re-pin at 15s/45s/90s.
 # Re-assert dim=0 on each wave so a late polish / residual root 0.92 cannot

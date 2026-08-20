@@ -89,6 +89,7 @@ PRODUCT_PACKAGES += \
     titan2-pad-idc.sh \
     titan2-plane-heal.sh \
     titan2-cube-load-land.sh \
+    titan2-cube-icons.sh \
     titan2-cool-park.sh \
     titan2-ui-plane.sh \
     titan2-pad-apply.sh \
@@ -153,8 +154,8 @@ PRODUCT_SYSTEM_PROPERTIES += \
     ro.atlasos.version=23.2 \
     persist.sys.titan2.tether_ipv4=192.168.6.1/24 \
     persist.sys.phh.include_all_cameras=true \
-    camera.aux.packagelist=org.lineageos.aperture,org.lineageos.aperture.lenslauncher \
-    vendor.camera.aux.packagelist=org.lineageos.aperture,org.lineageos.aperture.lenslauncher
+    camera.aux.packagelist=org.lineageos.aperture,com.google.android.apps.googlecamera.fishfood \
+    vendor.camera.aux.packagelist=org.lineageos.aperture,com.google.android.apps.googlecamera.fishfood
 
 # Dated display id (AtlasOS-23.2-YYYYMMDD) — only here, never also in this file.
 -include device/phh/treble/atlasos_stamp.mk

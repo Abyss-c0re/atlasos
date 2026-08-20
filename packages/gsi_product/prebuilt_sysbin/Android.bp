@@ -86,6 +86,11 @@ sh_binary {
 }
 
 sh_binary {
+    name: "titan2-cube-icons.sh",
+    src: "titan2-cube-icons.sh",
+}
+
+sh_binary {
     name: "titan2-cool-park.sh",
     src: "titan2-cool-park.sh",
 }

@@ -1,0 +1,1 @@
+../../../patches/bin/titan2-cube-icons.sh
