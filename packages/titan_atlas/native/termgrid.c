@@ -1,6 +1,6 @@
 /*
  * termgrid — pure C VT-ish cell buffer for Atlas (no WebView).
- * Enough CSI for TUI apps (cursor, erase, SGR colors, alt-screen ignore).
+ * CSI: cursor, erase, SGR 16/256/truecolor, alt-screen ?1049. Paint via nativeFill.
  */
 #define _GNU_SOURCE
 #include <stdint.h>
@@ -32,8 +32,9 @@ typedef struct {
     int esc; /* 0 normal 1 esc 2 csi 3 osc */
     char csi[64];
     int csin;
-    Cell *cells; /* rows * cols */
-    Cell *alt;   /* optional alt screen */
+    Cell *cells;    /* current front */
+    Cell *main_buf;
+    Cell *alt_buf;
     int use_alt;
 } Term;
 
@@ -53,6 +54,23 @@ static uint32_t ansi_fg(int n) {
 static uint32_t ansi_bg(int n) {
     if (n == 0) return 0xFF0A0A0A;
     return ansi_fg(n);
+}
+static uint32_t rgb(int r, int g, int b) {
+    if (r < 0) r = 0; if (r > 255) r = 255;
+    if (g < 0) g = 0; if (g > 255) g = 255;
+    if (b < 0) b = 0; if (b > 255) b = 255;
+    return 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+}
+static uint32_t xterm256(int c) {
+    if (c < 0) c = 0;
+    if (c < 16) return ansi_fg(c);
+    if (c < 232) {
+        c -= 16;
+        return rgb((c / 36) * 51, ((c / 6) % 6) * 51, (c % 6) * 51);
+    }
+    if (c > 255) c = 255;
+    int g = 8 + (c - 232) * 10;
+    return rgb(g, g, g);
 }
 
 static Cell *cell_at(int y, int x) {
@@ -79,14 +97,15 @@ void term_init(int cols, int rows) {
     if (rows < 10) rows = 10;
     if (cols > 200) cols = 200;
     if (rows > 80) rows = 80;
-    free(G.cells);
-    free(G.alt);
+    free(G.main_buf);
+    free(G.alt_buf);
     memset(&G, 0, sizeof G);
     G.cols = cols;
     G.rows = rows;
     G.fg = 0xFFECEFF1;
     G.bg = 0xFF0A0A0A;
-    G.cells = calloc((size_t)cols * (size_t)rows, sizeof(Cell));
+    G.main_buf = calloc((size_t)cols * (size_t)rows, sizeof(Cell));
+    G.cells = G.main_buf;
     term_clear_region(0, rows);
     G.cx = G.cy = 0;
     G.dirty = 1;
@@ -95,6 +114,23 @@ void term_init(int cols, int rows) {
 
 void term_resize(int cols, int rows) {
     term_init(cols, rows);
+}
+
+static void switch_alt(int on) {
+    size_t n = (size_t)G.cols * (size_t)G.rows;
+    if (on) {
+        if (!G.alt_buf) G.alt_buf = calloc(n, sizeof(Cell));
+        if (!G.alt_buf) return;
+        G.cells = G.alt_buf;
+        G.use_alt = 1;
+        term_clear_region(0, G.rows);
+        G.cx = G.cy = 0;
+    } else {
+        if (!G.main_buf) return;
+        G.cells = G.main_buf;
+        G.use_alt = 0;
+    }
+    G.dirty = 1;
 }
 
 static void put_cp(uint32_t cp) {
@@ -170,16 +206,17 @@ static void apply_sgr(int *p, int n) {
         else if (v == 39) G.fg = 0xFFECEFF1;
         else if (v == 49) G.bg = 0xFF0A0A0A;
         else if (v == 38 && i + 2 < n && p[i + 1] == 5) {
-            /* 256-color approx → gray scale */
-            int c = p[i + 2];
-            if (c < 16) G.fg = ansi_fg(c);
-            else G.fg = 0xFFB0BEC5;
+            G.fg = xterm256(p[i + 2]);
             i += 2;
         } else if (v == 48 && i + 2 < n && p[i + 1] == 5) {
-            int c = p[i + 2];
-            if (c < 16) G.bg = ansi_bg(c);
-            else G.bg = 0xFF121212;
+            G.bg = xterm256(p[i + 2]);
             i += 2;
+        } else if (v == 38 && i + 4 < n && p[i + 1] == 2) {
+            G.fg = rgb(p[i + 2], p[i + 3], p[i + 4]);
+            i += 4;
+        } else if (v == 48 && i + 4 < n && p[i + 1] == 2) {
+            G.bg = rgb(p[i + 2], p[i + 3], p[i + 4]);
+            i += 4;
         }
     }
 }
@@ -278,9 +315,15 @@ static void exec_csi(char final) {
         apply_sgr(params, np);
         break;
     case 'n': /* DSR ignore */
-    case 'h':
-    case 'l':
     case 'r':
+        break;
+    case 'h':
+    case 'l': {
+        int priv = (G.csin > 0 && G.csi[0] == '?');
+        if (priv && (a == 1049 || a == 1047 || a == 47))
+            switch_alt(final == 'h');
+        break;
+    }
     default:
         break;
     }
@@ -395,7 +438,31 @@ int term_copy_row(int row, uint32_t *ch, uint32_t *fg, uint32_t *bg, int maxc) {
     return n;
 }
 
-/* Simple snapshot for Java: UTF-16-ish dump not used — Java will call per-row */
+int term_frame_ints(void) {
+    if (!inited) return 0;
+    return 4 + G.cols * G.rows * 3;
+}
+
+/* [cols, rows, cx, cy, then (ch,fg,bg)*cols*rows] — one JNI copy, no per-row malloc. */
+int term_fill_frame(int32_t *out, int max) {
+    if (!inited || !out || !G.cells) return 0;
+    int need = term_frame_ints();
+    if (need <= 0 || max < need) return 0;
+    out[0] = G.cols;
+    out[1] = G.rows;
+    out[2] = G.cx;
+    out[3] = G.cy;
+    int o = 4;
+    int n = G.cols * G.rows;
+    for (int i = 0; i < n; i++) {
+        Cell *c = &G.cells[i];
+        out[o++] = (int32_t)(c->ch ? c->ch : ' ');
+        out[o++] = (int32_t)c->fg;
+        out[o++] = (int32_t)c->bg;
+    }
+    return o;
+}
+
 void term_reset(void) {
     if (!inited) return;
     term_clear_region(0, G.rows);

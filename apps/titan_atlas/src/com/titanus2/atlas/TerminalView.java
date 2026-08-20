@@ -34,7 +34,13 @@ public class TerminalView extends View {
     private boolean gridReady;
     private float cellW, cellH, baseline;
     private int lastCols, lastRows;
-    private final Runnable redraw = this::invalidate;
+    private int[] frame;
+    private final char[] runChars = new char[256];
+    private boolean redrawPosted;
+    private final Runnable redraw = () -> {
+        redrawPosted = false;
+        invalidate();
+    };
 
     /* selection: 0-based cell coords, inclusive */
     private int selC0 = -1, selR0 = -1, selC1 = -1, selR1 = -1;
@@ -55,6 +61,10 @@ public class TerminalView extends View {
         setFocusable(true);
         setFocusableInTouchMode(true);
         setBackgroundColor(0xFF0A0A0A);
+        setLayerType(LAYER_TYPE_HARDWARE, null);
+        paint.setAntiAlias(false);
+        paint.setSubpixelText(false);
+        paint.setLinearText(false);
         paint.setTypeface(Typeface.MONOSPACE);
         paint.setTextSize(TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_SP, 13, getResources().getDisplayMetrics()));
@@ -102,7 +112,10 @@ public class TerminalView extends View {
         }
         flushPending();
         TermGrid.nativeFeed(data);
-        if (TermGrid.nativeDirty()) post(redraw);
+        if (TermGrid.nativeDirty() && !redrawPosted) {
+            redrawPosted = true;
+            postDelayed(redraw, 16);
+        }
     }
 
     public void reset() {
@@ -293,6 +306,64 @@ public class TerminalView extends View {
         }
     }
 
+    private void paintFrame(Canvas canvas, int cols, int rows, int cx, int cy) {
+        int o = 4;
+        for (int y = 0; y < rows; y++) {
+            float py = y * cellH;
+            int x = 0;
+            while (x < cols) {
+                int base = o + x * 3;
+                int ch = frame[base];
+                int fg = frame[base + 1];
+                int bg = frame[base + 2];
+                int n = 1;
+                while (x + n < cols) {
+                    int b2 = o + (x + n) * 3;
+                    if (frame[b2 + 1] != fg || frame[b2 + 2] != bg) break;
+                    n++;
+                }
+                float px = x * cellW;
+                float pr = px + n * cellW;
+                boolean sel = false;
+                for (int i = 0; i < n && !sel; i++) {
+                    if (inSelection(x + i, y)) sel = true;
+                }
+                if (sel) {
+                    canvas.drawRect(px, py, pr, py + cellH, selPaint);
+                } else if (bg != 0 && (bg & 0x00FFFFFF) != 0x000A0A0A) {
+                    bgPaint.setColor(bg);
+                    canvas.drawRect(px, py, pr, py + cellH, bgPaint);
+                }
+                int rc = 0;
+                for (int i = 0; i < n && rc < runChars.length - 2; i++) {
+                    int c = frame[o + (x + i) * 3];
+                    if (c <= 0) c = ' ';
+                    if (c <= 0xFFFF) {
+                        runChars[rc++] = (char) c;
+                    } else if (Character.isValidCodePoint(c)) {
+                        char[] pair = Character.toChars(c);
+                        runChars[rc++] = pair[0];
+                        if (rc < runChars.length) runChars[rc++] = pair[1];
+                    } else {
+                        runChars[rc++] = ' ';
+                    }
+                }
+                if (rc > 0) {
+                    paint.setColor(fg != 0 ? fg : 0xFFECEFF1);
+                    canvas.drawText(runChars, 0, rc, px, py + baseline, paint);
+                }
+                x += n;
+            }
+            o += cols * 3;
+        }
+        if (cx >= 0 && cy >= 0 && cy < rows) {
+            paint.setColor(0xFF80CBC4);
+            float px = cx * cellW;
+            float py = cy * cellH;
+            canvas.drawRect(px, py + cellH - 2f, px + cellW, py + cellH, paint);
+        }
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -307,39 +378,18 @@ public class TerminalView extends View {
             canvas.drawText("…", 12, 40, paint);
             return;
         }
-        int rows = TermGrid.nativeRows();
-        int cols = TermGrid.nativeCols();
-        for (int y = 0; y < rows; y++) {
-            int[] row = TermGrid.nativeRow(y);
-            if (row == null || row.length < 1) continue;
-            int n = row[0];
-            float py = y * cellH;
-            for (int x = 0; x < cols; x++) {
-                float px = x * cellW;
-                if (inSelection(x, y)) {
-                    canvas.drawRect(px, py, px + cellW, py + cellH, selPaint);
+        int need = TermGrid.nativeFrameInts();
+        if (need > 4) {
+            if (frame == null || frame.length < need) frame = new int[need];
+            if (TermGrid.nativeFill(frame) >= 4) {
+                int cols = frame[0];
+                int rows = frame[1];
+                int cx = frame[2];
+                int cy = frame[3];
+                if (cols > 0 && rows > 0) {
+                    paintFrame(canvas, cols, rows, cx, cy);
                 }
-                if (x >= n) continue;
-                int ch = row[1 + x * 3];
-                int fg = row[2 + x * 3];
-                int bg = row[3 + x * 3];
-                if (bg != 0 && (bg & 0x00FFFFFF) != 0x000A0A0A && !inSelection(x, y)) {
-                    bgPaint.setColor(bg);
-                    canvas.drawRect(px, py, px + cellW, py + cellH, bgPaint);
-                }
-                if (ch <= 0 || ch == ' ') continue;
-                paint.setColor(fg != 0 ? fg : 0xFFECEFF1);
-                char[] one = Character.toChars(ch);
-                canvas.drawText(one, 0, one.length, px, py + baseline, paint);
             }
-        }
-        int cx = TermGrid.nativeCx();
-        int cy = TermGrid.nativeCy();
-        if (cx >= 0 && cy >= 0 && cy < rows) {
-            paint.setColor(0xFF80CBC4);
-            float px = cx * cellW;
-            float py = cy * cellH;
-            canvas.drawRect(px, py + cellH - 2f, px + cellW, py + cellH, paint);
         }
         TermGrid.nativeClearDirty();
     }

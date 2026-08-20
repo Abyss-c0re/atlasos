@@ -41,4 +41,8 @@ public final class TermGrid {
     public static native int nativeCy();
     /** [n, ch,fg,bg, ch,fg,bg, ...] */
     public static native int[] nativeRow(int row);
+    /** ints needed for {@link #nativeFill(int[])}. */
+    public static native int nativeFrameInts();
+    /** One C copy of the visible grid into a reused Java array. */
+    public static native int nativeFill(int[] frame);
 }

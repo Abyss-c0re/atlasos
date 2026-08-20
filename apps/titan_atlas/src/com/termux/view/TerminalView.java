@@ -86,6 +86,14 @@ public final class TerminalView extends View {
     /** If non-zero, this is the last unicode code point received if that was a combining character. */
     int mCombiningAccent;
 
+    /** Titan: cap paints at ~60 Hz. Grok TUI / SSH firehose used to invalidate per PTY chunk. */
+    private boolean mPaintPosted;
+    private long mLastPtyPaintAt;
+    private final Runnable mCoalescedPaint = () -> {
+        mPaintPosted = false;
+        invalidate();
+    };
+
     /**
      * The current AutoFill type returned for {@link View#getAutofillType()} by {@link #getAutofillType()}.
      *
@@ -135,6 +143,7 @@ public final class TerminalView extends View {
 
     public TerminalView(Context context, AttributeSet attributes) { // NO_UCD (unused code)
         super(context, attributes);
+        setLayerType(LAYER_TYPE_HARDWARE, null);
         mGestureRecognizer = new GestureAndScaleRecognizer(context, new GestureAndScaleRecognizer.Listener() {
 
             boolean scrolledWithFinger;
@@ -515,7 +524,11 @@ public final class TerminalView extends View {
 
         mEmulator.clearScrollCounter();
 
-        invalidate();
+        mLastPtyPaintAt = SystemClock.uptimeMillis();
+        if (!mPaintPosted) {
+            mPaintPosted = true;
+            postDelayed(mCoalescedPaint, 16);
+        }
         if (mAccessibilityEnabled) setContentDescription(getText());
     }
 
@@ -1397,7 +1410,9 @@ public final class TerminalView extends View {
                     mCursorVisible = !mCursorVisible;
                     //mClient.logVerbose(LOG_TAG, "Toggling cursor blink state to " + mCursorVisible);
                     mEmulator.setCursorBlinkState(mCursorVisible);
-                    invalidate();
+                    if (SystemClock.uptimeMillis() - mLastPtyPaintAt >= 80) {
+                        invalidate();
+                    }
                 }
             } finally {
                 // Recall the Runnable after mBlinkRate milliseconds to toggle the blink state
