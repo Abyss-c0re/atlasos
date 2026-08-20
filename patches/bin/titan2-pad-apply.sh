@@ -179,6 +179,7 @@ virt_source_mouse_up() {
 _input_unlocked_ok() {
   case "`getprop sys.boot_completed 2>/dev/null | tr -d '\r'`" in 1) ;; *) return 1 ;; esac
   case "`read_first titan2_input_lock 2>/dev/null`" in 1|true|on|yes) return 1 ;; esac
+  case "`settings get global titan2_input_lock 2>/dev/null | tr -d '\r'`" in 1|true|on|yes) return 1 ;; esac
   ce=`getprop sys.user.0.ce_available 2>/dev/null | tr -d '\r' | tr 'A-Z' 'a-z'`
   case "$ce" in 0|false) return 1 ;; esac
   return 0

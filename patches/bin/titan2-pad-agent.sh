@@ -115,12 +115,12 @@ LAST_FN=""; LAST_CHAR_MOD=""; LAST_CHAR_SCAN=""; LAST_HOST_LAYOUT=""
 LAST_CM_MT=""; LAST_SC_MT=""; LAST_FN_MT=""; LAST_HL_MT=""; LAST_SM_MT=""
 LAST_IDC_KIND=""; LAST_PAD_MT=0; LAST_CLICK_MT=0; LAST_FOLLOW_MT=0
 # peels 2.160–2.212: see OPTIMIZE_SOURCE_PRODUCT.md
-AGENT_VER="${AGENT_VER:-2.222-recents-cool}"
+AGENT_VER="${AGENT_VER:-2.227-no-icon-loop}"
 # Force pin: refuse non-2.x garbage + force upgrade sticky env older than 2.160
 # (lab residual: sticky 2.6x/2.12x never picked tip peels). hot_reload still 2.NN*.
 case "$AGENT_VER" in
   2.20[0-9]*|2.21[0-9]*|2.19[0-9]*|2.18[0-9]*|2.17[0-9]*|2.16[0-9]*) ;;
-  *) AGENT_VER="2.222-recents-cool" ;;
+  *) AGENT_VER="2.227-no-icon-loop" ;;
 esac
 log() { echo "pad-agent $AGENT_VER live $1" > "$AGENT_STATUS" 2>/dev/null; chmod 666 "$AGENT_STATUS" 2>/dev/null; }
 # Lightweight status stamp (no chmod every tick — 2.34+ heartbeat path).
@@ -733,7 +733,16 @@ read_sub_mode() {
   case "`read_first titan2_subdisplay_on`" in 1|true|on|ON) echo face ;; *) echo off ;; esac
 }
 read_subtouch_inhibit() {
-  case "`read_sub_mode`" in apps|cube) echo 0 ;; *) echo 1 ;; esac
+  case "`read_sub_mode`" in
+    apps|cube)
+      sa=`cat "$ST/titan2_subtouch_assoc_state" 2>/dev/null | tr -d '\r\n '`
+      case "$sa" in
+        "assoc:"*">local:"*|"assoc:"*">unique:"*) echo 0 ;;
+        *) echo 1 ;;
+      esac
+      ;;
+    *) echo 1 ;;
+  esac
 }
 
 # Clear one-shot control on T2+ST + Settings.Global mirror.
@@ -1172,13 +1181,41 @@ _specials_live_kl_heal() {
 }
 
 # --- Keycode inject drain (2.179): peeled to titan2-keycode-inject.sh ---
-# 2.179/2.198: keycode inject drain via shared peel daemon ensure
+# 2.223 Cube one-energy: pad=off + HID=0 + empty queue → park (no 20ms poll).
+_cube_want_inject() {
+  hid_session_on && return 0
+  case "`_read_pad_mode_files`" in mouse|trackpad) return 0 ;; esac
+  [ -s "$ST/titan2_keycode_inject" ] && return 0
+  [ -s "$T2/titan2_keycode_inject" ] && return 0
+  [ -s "$ST/titan2_mouse_btn_q" ] && return 0
+  [ -s "$T2/titan2_mouse_btn_q" ] && return 0
+  return 1
+}
+
+_park_keycode_drain() {
+  dp=`cat "$ST/titan2_keycode_drain.pid" 2>/dev/null | tr -d '\r\n '`
+  if [ -n "$dp" ] && kill -0 "$dp" 2>/dev/null; then
+    kill "$dp" 2>/dev/null || true
+    log "pad-agent: park keycode inject (pad off hid 0)"
+  fi
+  for p in `pgrep -f titan2-keycode-inject 2>/dev/null`; do
+    case "$p" in ''|*[!0-9]*) continue ;; esac
+    kill "$p" 2>/dev/null || true
+  done
+  return 0
+}
+
 _spawn_keycode_inject_drain() {
+  _cube_want_inject || { _park_keycode_drain; return 0; }
   _ensure_peel_daemon titan2-keycode-inject.sh titan2-keycode-inject titan2_keycode_drain.pid titan2_keycode_inject.log run
 }
 
-# Keep single keycode inject drain alive (no multi-spawn thrash). 2.201 densify.
+# Keep single keycode inject drain alive (no multi-spawn thrash). 2.223 park idle.
 _ensure_keycode_drain_alive() {
+  if ! _cube_want_inject; then
+    _park_keycode_drain
+    return 0
+  fi
   dp=`cat "$ST/titan2_keycode_drain.pid" 2>/dev/null | tr -d '\r\n '`
   if [ -z "$dp" ] || ! kill -0 "$dp" 2>/dev/null; then
     log "pad-agent: start keycode inject drain (single)"
@@ -1187,7 +1224,7 @@ _ensure_keycode_drain_alive() {
   return 0
 }
 
-_spawn_keycode_inject_drain
+_ensure_keycode_drain_alive
 
 # --- Pad apply stack (2.187): peeled to titan2-pad-apply.sh ---
 # Covers: orient-rel, mouse/caret/trackpad/stop, apply_pad.
@@ -1666,7 +1703,13 @@ _getevent_count() {
 }
 
 # Heat thin-body getevent heal (dead=0 → reexec; thrash>8 → kill+reexec).
+# 2.223: pad off + HID 0 is Cube idle — do not restore getevent pile.
 _heat_getevent_heal_tick() {
+  if ! hid_session_on; then
+    case "`_read_pad_mode_files`" in
+      off) return 0 ;;
+    esac
+  fi
   ge_n=`_getevent_count`
   if [ "$ge_n" -eq 0 ] 2>/dev/null; then
     _heat_reexec_if_aged "heat_input_dead getevent=0 re-exec (restore key/side watchers)" 30 0 || true
@@ -1754,6 +1797,10 @@ _heat_idle_sleep() {
 }
 
 
+# Removed: titan2_icon_apply watcher. Magisk 2s loop + unique timestamps
+# re-ran icons-preset until SystemUI froze. Apply is Controls one-shot only.
+_icon_apply_tick() { return 0; }
+
 # --- Cube dual-plane UI (2.186): peeled to titan2-ui-plane.sh ---
 LAST_UI_PLANE=""
 
@@ -1790,6 +1837,7 @@ while true; do
   # Dev actions every loop top — before any continue (heat/pad/tight).
   apply_dev_action
   apply_fw_action
+  _icon_apply_tick
 
   _pad_edge_sample
   if [ "$pad_dirty" = "1" ]; then

@@ -253,6 +253,14 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
     public void setLevitate(boolean on) { levitate = on; }
     public boolean isLevitate() { return levitate; }
 
+    /**
+     * Wallpaper is a full-bleed surface. App cube sits in a pane.
+     * Pull the camera back so the lattice reads as the same object, not a room.
+     */
+    public void setEngineFraming(boolean wallpaper) {
+        userZoom = wallpaper ? 1.65f : 1f;
+    }
+
     public String selectionText() {
         return matrix.describeCell(selectCell);
     }
@@ -1118,6 +1126,29 @@ public class CubeGLView extends GLSurfaceView implements GLSurfaceView.Renderer 
             if (listener != null)
                 listener.onSelection(bi, matrix.describeCell(bi));
         }
+    }
+
+    /**
+     * Wallpaper / engine: same attach path without a View tree
+     * ({@code GLSurfaceView.getHolder()} is the Engine surface).
+     */
+    public void startEngineFace() {
+        attached = true;
+        setLevitate(true);
+        setEngineFraming(true);
+        matrix.setPreferredPlane(plane);
+        try { matrix.ensureCrimsonLattice(); } catch (Exception ignored) {}
+        manifestProphecy();
+        onResume();
+        frameH.removeCallbacks(frameKick);
+        frameH.post(frameKick);
+        requestRender();
+    }
+
+    public void stopEngineFace() {
+        attached = false;
+        frameH.removeCallbacks(frameKick);
+        try { onPause(); } catch (Exception ignored) {}
     }
 
     @Override protected void onAttachedToWindow() {

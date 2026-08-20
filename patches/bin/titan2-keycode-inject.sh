@@ -6,7 +6,7 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-KI_VER=2.199-mouse-hold
+KI_VER=2.223-cube-one-energy
 KI_STATUS=$ST/titan2_keycode_inject_status
 KI_PID=$ST/titan2_keycode_drain.pid
 
@@ -287,24 +287,30 @@ run_inject_drain() {
     else
       fail_streak=0
       empty_streak=`expr $empty_streak + 1 2>/dev/null` || empty_streak=1
+      # Cube one-energy: pad off + HID 0 + empty queue → exit. Agent respawns on need.
+      _hid=`cat "$ST/titan2_usb_hid_session" 2>/dev/null | tr -d '\r\n '`
+      [ -n "$_hid" ] || _hid=`cat "$T2/titan2_usb_hid_session" 2>/dev/null | tr -d '\r\n '`
+      _pm=`cat "$ST/titan2_pad_mode" 2>/dev/null | tr -d '\r\n '`
+      [ -n "$_pm" ] || _pm=`cat "$T2/titan2_pad_mode" 2>/dev/null | tr -d '\r\n '`
+      case "$_hid" in 1|true|on|yes|ON) ;; *)
+        case "$_pm" in mouse|trackpad|MOUSE|TRACKPAD) ;; *)
+          if [ "$empty_streak" -ge 8 ] 2>/dev/null; then
+            log "park idle pad=${_pm:-off} hid=${_hid:-0}"
+            exit 0
+          fi
+          ;;
+        esac
+        ;;
+      esac
       if command -v inotifywait >/dev/null 2>&1; then
-        inotifywait -qq -t 1 -e modify,close_write,create,moved_to \
+        inotifywait -qq -t 2 -e modify,close_write,create,moved_to \
           "$ST/titan2_keycode_inject" "$T2/titan2_keycode_inject" \
           /data/local/tmp/titan2_keycode_wake \
           "$ST/titan2_keycode_wake" \
           "$ST/titan2_mouse_btn_q" "$T2/titan2_mouse_btn_q" \
           /data/local/tmp/titan2_mouse_btn_q 2>/dev/null || true
       else
-        if [ $((empty_streak % 8)) -eq 1 ] 2>/dev/null || [ -z "${_drain_heat_c:-}" ]; then
-          _drain_heat_c=0
-          set -- $(cat /proc/loadavg 2>/dev/null)
-          _dl=${1%%.*}
-          case "$_dl" in ''|*[!0-9]*) _dl=0 ;; esac
-          [ "$_dl" -ge 8 ] 2>/dev/null && _drain_heat_c=1
-        fi
-        # Input (mouse:left/right) cannot wait on the 2s heat sleep.
-        # Cap idle at 20ms even when loadavg is high.
-        if command -v usleep >/dev/null 2>&1; then usleep 20000; else sleep 0.02; fi
+        if command -v usleep >/dev/null 2>&1; then usleep 250000; else sleep 0.25; fi
       fi
     fi
   done

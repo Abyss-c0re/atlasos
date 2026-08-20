@@ -429,6 +429,51 @@ public final class Titan2Client {
         ControlPlane.put(app, Titan2ApiContract.FILE_KEY_ACTIVITY, String.valueOf(now));
     }
 
+    /**
+     * Settings icon overlay API. Writes plane then asks Controls to apply
+     * fabricate overlays (rebootless). Hex is RRGGBB without #.
+     */
+    public boolean setIconOverlay(String plateHex, String glyphHex) {
+        if (plateHex == null) plateHex = "140308";
+        if (glyphHex == null) glyphHex = "ff141a";
+        plateHex = plateHex.replace("#", "").toLowerCase();
+        glyphHex = glyphHex.replace("#", "").toLowerCase();
+        ControlPlane.put(app, Titan2ApiContract.FILE_ICON_PLATE, plateHex);
+        ControlPlane.put(app, Titan2ApiContract.FILE_ICON_GLYPH, glyphHex);
+        try {
+            android.provider.Settings.Global.putString(
+                app.getContentResolver(), Titan2ApiContract.FILE_ICON_PLATE, plateHex);
+            android.provider.Settings.Global.putString(
+                app.getContentResolver(), Titan2ApiContract.FILE_ICON_GLYPH, glyphHex);
+        } catch (Exception ignored) {}
+        Bundle req = new Bundle();
+        req.putString(Titan2ApiContract.KEY_PLATE, plateHex);
+        req.putString(Titan2ApiContract.KEY_GLYPH, glyphHex);
+        Bundle r = call(Titan2ApiContract.MSG_SET_ICON_OVERLAY, req, 4000, false);
+        return r != null && r.getBoolean(Titan2ApiContract.KEY_OK, false);
+    }
+
+    public String[] getIconOverlay() {
+        String plate = ControlPlane.get(app, Titan2ApiContract.FILE_ICON_PLATE, "140308");
+        String glyph = ControlPlane.get(app, Titan2ApiContract.FILE_ICON_GLYPH, "ff141a");
+        try {
+            String g = android.provider.Settings.Global.getString(
+                app.getContentResolver(), Titan2ApiContract.FILE_ICON_PLATE);
+            if (g != null && !g.isEmpty()) plate = g;
+            g = android.provider.Settings.Global.getString(
+                app.getContentResolver(), Titan2ApiContract.FILE_ICON_GLYPH);
+            if (g != null && !g.isEmpty()) glyph = g;
+        } catch (Exception ignored) {}
+        Bundle r = call(Titan2ApiContract.MSG_GET_ICON_OVERLAY, null, 300, false);
+        if (r != null) {
+            if (r.getString(Titan2ApiContract.KEY_PLATE) != null)
+                plate = r.getString(Titan2ApiContract.KEY_PLATE);
+            if (r.getString(Titan2ApiContract.KEY_GLYPH) != null)
+                glyph = r.getString(Titan2ApiContract.KEY_GLYPH);
+        }
+        return new String[]{plate, glyph};
+    }
+
     public void ensureLedDefaults() {
         String bl = ControlPlane.get(app, Titan2ApiContract.FILE_LED_LEVEL, null);
         if (bl == null || bl.isEmpty()) {

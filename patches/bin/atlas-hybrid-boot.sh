@@ -254,10 +254,14 @@ chmod 644 "$LOG" 2>/dev/null || true
 
 # Deb enter: overlay up is not enough — atlas-enterd must listen @atlasenter.
 # T2138Z shipped the ELF without atlas-enterd.rc; Deb tap then died exit 79.
+# pidof is not live — hung `atlas-enterd --version` is still named atlas-enterd.
+enterd_sock_live() {
+  grep -q '@atlasenter' /proc/net/unix 2>/dev/null \
+    || [ -S /dev/socket/atlasenter ]
+}
+
 start_enterd() {
-  if pidof atlas-enterd >/dev/null 2>&1 \
-    || [ -S /dev/socket/atlasenter ] \
-    || grep -q '@atlasenter' /proc/net/unix 2>/dev/null; then
+  if enterd_sock_live; then
     echo "=== $(date) enterd already live ===" >>"$LOG" 2>/dev/null || true
     return 0
   fi
@@ -268,8 +272,7 @@ start_enterd() {
   setprop ctl.start atlas-enterd 2>/dev/null || true
   w=0
   while [ "$w" -lt 20 ]; do
-    if pidof atlas-enterd >/dev/null 2>&1 \
-      || [ -S /dev/socket/atlasenter ]; then
+    if enterd_sock_live; then
       echo "=== $(date) enterd live via init ===" >>"$LOG" 2>/dev/null || true
       return 0
     fi
@@ -283,8 +286,7 @@ start_enterd() {
       >>/data/local/tmp/atlas-hybrid-watch.log 2>&1 &
     sleep 0.4
   fi
-  if pidof atlas-enterd >/dev/null 2>&1 \
-    || [ -S /dev/socket/atlasenter ]; then
+  if enterd_sock_live; then
     echo "=== $(date) enterd live via watch ===" >>"$LOG" 2>/dev/null || true
     return 0
   fi

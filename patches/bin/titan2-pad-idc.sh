@@ -6,7 +6,7 @@
 #   subtouch <ignore|native|flipx|apps>
 #   associate          — bind sub_touch → rear display
 #   clear              — drop sub_touch association
-#   digitizer_post     — apps|cube → apps idc+assoc; else clear
+#   digitizer_post     — apps|cube → touchScreen only if assoc binds; else ignore
 #   inhibit <0|1> [force] — set_pad_inhibited sysfs park (2.186)
 #   kind               — print last touchPad kind
 #   version
@@ -15,7 +15,7 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-IDC_VER=2.200-off-assert
+IDC_VER=2.224-subtouch-failclosed
 _IDC_STAGE=/data/adb/titan2/idc
 KIND_FILE=$ST/titan2_idc_kind
 ASSOC_FILE=$ST/titan2_subtouch_assoc_state
@@ -316,10 +316,17 @@ clear_sub_touch_display() {
 digitizer_post() {
   case "`read_sub_mode`" in
     apps|cube)
+      # Never leave touchScreen unbound — pending assoc = main-display ghost.
       set_subtouch_idc apps 2>/dev/null || true
-      associate_sub_touch_display 2>/dev/null || true
+      if associate_sub_touch_display; then
+        return 0
+      fi
+      _hb "subtouch fail-closed (assoc pending/fail) — ignore"
+      set_subtouch_idc ignore 2>/dev/null || true
+      clear_sub_touch_display 2>/dev/null || true
       ;;
     *)
+      set_subtouch_idc ignore 2>/dev/null || true
       clear_sub_touch_display 2>/dev/null || true
       ;;
   esac
@@ -452,7 +459,14 @@ set_pad_inhibited() {
       ;;
   esac
   case "`read_sub_mode`" in
-    apps|cube) subtouch_inh=0 ;;
+    apps|cube)
+      # Fail closed: only pad-idc last-assoc (not Cube Global, which lies).
+      sa=`_last_assoc`
+      case "$sa" in
+        "assoc:"*">local:"*|"assoc:"*">unique:"*) subtouch_inh=0 ;;
+        *) subtouch_inh=1 ;;
+      esac
+      ;;
     *) subtouch_inh=1 ;;
   esac
   virt_inh="$hw_inh"

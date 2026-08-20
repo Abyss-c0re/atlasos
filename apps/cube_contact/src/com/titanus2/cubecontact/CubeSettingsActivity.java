@@ -94,7 +94,7 @@ public class CubeSettingsActivity extends Activity {
         pill(root, "Set live wallpaper…", this::openWallpaperPicker, accent);
         pill(root, "Daydream / screensaver…", this::openDreamSettings, accent);
         TextView wpNote = mono(root, mut);
-        wpNote.setText("Wallpaper & screensaver use the front lattice source.\n"
+        wpNote.setText("Wallpaper = same OpenGL cube as Neural Cube.\n"
             + "Subscreen cube stays independent.");
 
         // Advanced

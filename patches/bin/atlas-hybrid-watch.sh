@@ -14,10 +14,10 @@ log() { echo "atlas-hybrid-watch: $*" >>"$LOG" 2>/dev/null || true; }
 # LAW: Deb enter is the ROM daemon. Never prefer /data/local/tmp tip —
 # tip-prefer killed system enterd and Atlas fell back to Android toybox sh.
 # Init must own the process so ANDROID_SOCKET_atlasenter (/dev/socket) exists.
+# pidof is not live — hung `atlas-enterd --version` is still named atlas-enterd.
 enterd_live() {
-  pidof atlas-enterd >/dev/null 2>&1 \
-    || [ -S /dev/socket/atlasenter ] \
-    || grep -q '@atlasenter' /proc/net/unix 2>/dev/null
+  grep -q '@atlasenter' /proc/net/unix 2>/dev/null \
+    || [ -S /dev/socket/atlasenter ]
 }
 
 ensure_enterd() {

@@ -268,7 +268,7 @@ agui_follow_pad() {
 # HI847S stamp only. HAL bounce is titan2-sensor-privacy v25 (honors
 # camera privacy). Never dumpsys media.camera — hang skips the stamp.
 stamp_aux_cam() {
-  _pkgs="org.lineageos.aperture,org.lineageos.aperture.lenslauncher"
+  _pkgs="org.lineageos.aperture,com.google.android.apps.googlecamera.fishfood"
   setprop camera.aux.packagelist "$_pkgs" 2>/dev/null || true
   setprop vendor.camera.aux.packagelist "$_pkgs" 2>/dev/null || true
   setprop persist.camera.aux.packagelist "$_pkgs" 2>/dev/null || true

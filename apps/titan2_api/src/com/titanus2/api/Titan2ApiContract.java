@@ -61,6 +61,10 @@ public final class Titan2ApiContract {
     public static final int MSG_SET_LED_TIMEOUT = 33;
     public static final int MSG_BUMP_KEY_ACTIVITY = 34;
 
+    /** Settings icon overlay (fabricate). KEY_PLATE / KEY_GLYPH hex RRGGBB. */
+    public static final int MSG_GET_ICON_OVERLAY = 40;
+    public static final int MSG_SET_ICON_OVERLAY = 41;
+
     // --- Reply what (service → client) ---
     public static final int MSG_REPLY_OK = 100;
     public static final int MSG_REPLY_ERR = 101;
@@ -85,6 +89,13 @@ public final class Titan2ApiContract {
     public static final String KEY_OK = "ok";
     public static final String KEY_LAYERS = "layers";     // String[] layer ids bottom→top
     public static final String KEY_VALUE = "value";
+    /** Icon overlay plate (homepage background) hex RRGGBB. */
+    public static final String KEY_PLATE = "plate";
+    /** Icon overlay glyph (homepage / list) hex RRGGBB. */
+    public static final String KEY_GLYPH = "glyph";
+
+    public static final String FILE_ICON_PLATE = "titan2_icon_plate_argb";
+    public static final String FILE_ICON_GLYPH = "titan2_icon_glyph_argb";
 
     // --- Control-plane file names (shared with pad-agent / HID service) ---
     // Single source of truth: both Titan Controls and USB HID read/write these
