@@ -5,6 +5,123 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.55-button-plane (655) — 2026-08-21T20:05Z
+
+- Build stamp (ALLOW_ROOT=0)
+
+---
+
+## 16.54-nav-buttons (654) — 2026-08-21T19:45Z
+
+- Build stamp (ALLOW_ROOT=0)
+
+---
+
+## 16.49-chrome (649) — 2026-08-21T13:03Z
+
+- Theme: Navbar tint and QS background are their own Apply rows. shade_panel_fallback was Monet crimson.
+
+---
+
+## 16.48-sysui-accent (648) — 2026-08-21T12:58Z
+
+- Apply accent tints navbar/QS via system_accent1_*_dark and primary. Disables Monet systemui:accent grey. No JSON rewrite.
+
+---
+
+## 16.47-launcher-tint (647) — 2026-08-21T12:54Z
+
+- Accent Apply is OS highlight only. App icons fabricate launcher themed_icon_* (Monet crimson was winning).
+
+---
+
+## 16.46-icon-split (646) — 2026-08-21T12:42Z
+
+- Theme: split Settings vs App icons. App icons apply background, color, shape. Removed dead Accent Apply.
+
+---
+
+## 16.45-fast-theme (645) — 2026-08-21T07:36Z
+
+- Theme apply: four accent overlays, no Monet JSON rewrite, no SystemUI crash.
+
+---
+
+## 16.44-icon-apply (644) — 2026-08-21T07:25Z
+
+- Apply icons: persist pick, wake root belt, succeed only when accent matches.
+
+---
+
+## 16.43-icon-wake (643) — 2026-08-21T07:23Z
+
+- Apply icons wakes root belt; success only if accent matches the picked color.
+
+---
+
+## 16.42-theme-apply (642) — 2026-08-21T07:18Z
+
+### rebuild 2026-08-21T07:23Z · 16.42-theme-apply (642)
+
+- Apply icons stamps root belt app_icons; waits until accent matches the picked color.
+
+
+- Theme: pick then Apply. Apply icons uses the picked glyph on themed app icons. No cubeicon. No auto-apply.
+
+---
+
+## 16.41-icon-color (641) — 2026-08-21T07:08Z
+
+- Apply icons is color-only (icons-preset). Reverted cursed cubeicon apps-on.
+
+---
+
+## 16.40-app-icons (640) — 2026-08-21T07:04Z
+
+- Apply icons enables and tones cubeicon app overlays (unique cplate/cglyph per app).
+
+---
+
+## 16.39-dpi-min120 (639) — 2026-08-21T06:56Z
+
+- Remove dpi intent extra that re-applied 260 on recreate. Slider min 120.
+
+---
+
+## 16.38-dpi-binder (638) — 2026-08-21T06:43Z
+
+- Apply density via IWindowManager transact 12 user 0. Never ratio/0. Bootloop was dens 0 persist.
+
+---
+
+## 16.37-dpi-wm (637) — 2026-08-21T06:29Z
+
+### rebuild 2026-08-21T06:30Z · 16.37-dpi-wm (637)
+
+- Display size Apply uses IWindowManager user 0 like Settings; do not lie on Settings write.
+
+
+### rebuild 2026-08-21T06:30Z · 16.37-dpi-wm (637)
+
+- Display size Apply uses IWindowManager user 0 like Settings; do not lie on Settings write.
+
+
+- Display size Apply uses IWindowManager user 0 like Settings; do not lie on Settings write.
+
+---
+
+## 16.36-dpi-apply (636) — 2026-08-21T06:14Z
+
+- Tweaks Display size: Apply writes wm density live (slider was paint-only heresy).
+
+---
+
+## 16.35-dpi (635) — 2026-08-21T05:54Z
+
+- Tweaks Display size: live dpi on top, slider, Reset. No two-pane clamp.
+
+---
+
 ## 16.27-settings-mono (627) — 2026-08-20T15:49Z
 
 - Settings mono fabricate in Controls (no Magisk, no tmp). Purged cube_crimson.

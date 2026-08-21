@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.controls"
-    android:versionCode="634"
-    android:versionName="16.34-nav-bind">
+    android:versionCode="658"
+    android:versionName="16.58-pwm-pass">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
     <!-- Framework API: host declares + holds USE_TITAN2_API -->
     <permission
@@ -26,6 +26,8 @@
     <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW"/>
     <uses-permission android:name="android.permission.FLASHLIGHT"/>
     <uses-permission android:name="android.permission.INJECT_EVENTS"/>
+    <uses-permission android:name="android.permission.STATUS_BAR"/>
+    <uses-permission android:name="android.permission.STATUS_BAR_SERVICE"/>
     <!-- OEM space-bar / shortcut parity: answer, end, mute (no Agui) -->
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS"/>
     <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS"/>
@@ -223,7 +225,8 @@
         <activity
             android:name=".NetworkActivity"
             android:exported="false"
-            android:label="Tweaks"/>
+            android:label="Tweaks"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboardHidden"/>
         <receiver
             android:name=".layouts.LayoutNotif$OffReceiver"
             android:exported="false"

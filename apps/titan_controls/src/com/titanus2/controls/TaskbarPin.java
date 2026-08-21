@@ -25,6 +25,40 @@ public final class TaskbarPin {
     public static void pinOff(Context ctx) {
         if (ctx == null) return;
         android.content.ContentResolver cr = ctx.getContentResolver();
+        int nav = 0;
+        try {
+            nav = Settings.Secure.getInt(cr, "navigation_mode", 0);
+        } catch (Exception ignored) {}
+        // On this GSI the Taskbar window IS the 3-button bar
+        // (TaskbarDelegate.mUsingThreeButtonNav). hide_taskbar=1 deletes Home/Back/Recents.
+        if (nav == 0 || nav == 1) {
+            try {
+                // enable_taskbar=0 is Lineage phone-mode. Do not hide the bar.
+                Settings.System.putInt(cr, "force_show_navbar", 1);
+                Settings.System.putInt(cr, "enable_taskbar", 0);
+                Settings.System.putInt(cr, "lineage_enable_taskbar", 0);
+                Settings.Secure.putInt(cr, "hide_taskbar", 0);
+                Settings.Secure.putInt(cr, "taskbar_hidden", 0);
+                Settings.Secure.putInt(cr, "taskbar_pinned", 1);
+                Settings.Secure.putInt(cr, "launcher_taskbar_pinning", 1);
+                Settings.Secure.putInt(cr, "transient_taskbar", 0);
+                Settings.Secure.putInt(cr, "taskbar_force_visible", 1);
+                Settings.Secure.putInt(cr, "is_taskbar_visible", 1);
+                Settings.System.putInt(cr, "hide_taskbar", 0);
+                Settings.System.putInt(cr, "transient_taskbar", 0);
+                Settings.Global.putInt(cr, "hide_taskbar", 0);
+                Settings.Global.putInt(cr, "taskbar_hidden", 0);
+                Settings.Global.putInt(cr, "transient_taskbar", 0);
+            } catch (Exception ignored) {}
+            // Still kill desktop/freeform strip residuals — not the 3-button window.
+            try {
+                Settings.Global.putInt(cr, "desktop_mode_enabled", 0);
+                Settings.Global.putInt(cr, "enable_freeform_support", 0);
+                Settings.Secure.putInt(cr, "desktop_mode_enabled", 0);
+            } catch (Exception ignored) {}
+            return;
+        }
+        // Gestural: hide extra task strip. Never write navigation_mode.
         // System keys (Lineage + AOSP launcher residual)
         try {
             Settings.System.putInt(cr, "enable_taskbar", 0);

@@ -134,3 +134,23 @@
 # MTK getCameraIdList hides HI847S (2) + SAT (3). Probe them when
 # persist.sys.phh.include_all_cameras=true so CameraService ADDs Device 2.
 0121-cameraserver-probe-hidden-hi847s.patch
+
+# project:frameworks/base
+# 3-button is SystemUI NavigationBar, not large-screen Taskbar.
+# Taskbar stash on keyguard deleted Back/Home/Recents.
+0131-systemui-threebutton-use-navbar-not-taskbar.patch
+# TitanKey 580 is F24. PWM short=Home, long=showRecentApps. Not a11y.
+0181-pwm-titan-f24-home-recents.patch
+
+# project:packages/apps/Launcher3
+# Belt: if Taskbar still owns 3-button, do not lock-stash it.
+0141-launcher-threebutton-no-lock-stash.patch
+0151-launcher-taskbar-pin-default-on.patch
+# SystemUI navbar already owns TYPE_NAVIGATION_BAR on 3-button (0131).
+# Taskbar addView(2019) then crashes TouchInteractionService — Recents dies.
+0171-launcher-threebutton-no-taskbar-window.patch
+
+# project:packages/modules/Bluetooth
+# sysbta + default-on optional codecs picked LDAC 96k/32 and A2DP died.
+# Unknown pref → SBC when persist.bluetooth.system_audio_hal.enabled=true.
+0161-bluetooth-sysbta-no-ldac-default.patch

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="dark_mode_icon_color_single_tone">#ffff0000</color>
+    <color name="light_mode_icon_color_single_tone">#ffff0000</color>
+    <color name="shade_panel_fallback">#ff140308</color>
+    <color name="navigation_bar_home_handle_dark_color">#ffff0000</color>
+    <color name="navigation_bar_home_handle_light_color">#ffff0000</color>
+</resources>

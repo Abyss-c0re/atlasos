@@ -123,6 +123,8 @@ PRODUCT_PACKAGES += \
 # (/system/product/overlay/Titan*.apk). Built as runtime_resource_overlay.
 PRODUCT_PACKAGES += \
     TitanCubeIconMask \
+    TitanThemeChrome \
+    TitanThemeSystemUI \
     TitanSensorPrivacyOverlay \
     TitanCubeIcon_settings \
     TitanCubeIcon_com_android_calculator2 \
@@ -154,6 +156,10 @@ PRODUCT_SYSTEM_PROPERTIES += \
     ro.atlasos.version=23.2 \
     persist.sys.titan2.tether_ipv4=192.168.6.1/24 \
     persist.sys.phh.include_all_cameras=true \
+    bluetooth.profile.bap.unicast.client.enabled=false \
+    bluetooth.profile.bap.broadcast.source.enabled=false \
+    bluetooth.profile.bap.broadcast.assist.enabled=false \
+    persist.bluetooth.leaudio_offload.disabled=true \
     camera.aux.packagelist=org.lineageos.aperture,com.google.android.apps.googlecamera.fishfood \
     vendor.camera.aux.packagelist=org.lineageos.aperture,com.google.android.apps.googlecamera.fishfood
 

@@ -75,39 +75,41 @@ public final class KeyActions {
             }
             switch (action) {
                 case KeyMapPrefs.ACT_HOME:
-                    // Prefer a11y global Home. `input keyevent 3` / inject HOME
-                    // is a no-op on this GSI (shade stays, launcher never homes).
+                    // TITAN_RECENTS_LAW: screen-on HW = GLOBAL_ACTION_HOME.
+                    // ButtonPlane KEYCODE_HOME is a GSI no-op and starved this.
                     if (svc != null) {
                         global(ctx, svc, AccessibilityService.GLOBAL_ACTION_HOME);
-                    } else if (!injectKeyCode(ctx, KeyEvent.KEYCODE_HOME)) {
-                        statusBar(ctx, "collapsePanels");
+                    } else if (!ButtonPlane.home(ctx)) {
+                        global(ctx, svc, AccessibilityService.GLOBAL_ACTION_HOME);
                     }
                     break;
                 case KeyMapPrefs.ACT_BACK:
-                    // GLOBAL_ACTION first. inject BACK re-enters the interceptor
-                    // and dies when Key a11y owns the filter (nav dead after flash).
                     if (svc != null) {
                         global(ctx, svc, AccessibilityService.GLOBAL_ACTION_BACK);
-                    } else if (!injectKeyCode(ctx, KeyEvent.KEYCODE_BACK)) {
-                        statusBar(ctx, "collapsePanels");
+                    } else if (!ButtonPlane.back(ctx)) {
+                        global(ctx, svc, AccessibilityService.GLOBAL_ACTION_BACK);
                     }
                     break;
                 case KeyMapPrefs.ACT_RECENTS:
-                    // Controls map long-Recents: GLOBAL_ACTION_RECENTS only.
-                    // Never 187. Never RecentsActivity. Never toggleRecentApps
-                    // (that is a toggle — release / dual fire closes overview).
+                    // LAW: only GLOBAL_ACTION_RECENTS. Never RecentsActivity / 187.
                     armOverviewCool(ctx);
                     if (svc != null) {
+                        global(ctx, svc, AccessibilityService.GLOBAL_ACTION_RECENTS);
+                    } else if (!ButtonPlane.recents(ctx)) {
                         global(ctx, svc, AccessibilityService.GLOBAL_ACTION_RECENTS);
                     }
                     break;
                 case KeyMapPrefs.ACT_NOTIFICATIONS:
-                    if (!statusBar(ctx, "expandNotificationsPanel")) {
+                    if (svc != null) {
+                        global(ctx, svc, AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS);
+                    } else if (!ButtonPlane.notifications(ctx)) {
                         global(ctx, svc, AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS);
                     }
                     break;
                 case KeyMapPrefs.ACT_QUICK_SETTINGS:
-                    if (!statusBar(ctx, "expandSettingsPanel")) {
+                    if (svc != null) {
+                        global(ctx, svc, AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS);
+                    } else if (!ButtonPlane.quickSettings(ctx)) {
                         global(ctx, svc, AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS);
                     }
                     break;
@@ -1469,22 +1471,9 @@ public final class KeyActions {
             invokeInject(m, im, up, mode);
             return true;
         } catch (Exception e) {
-            AccessibilityService svc = TrackpadAccessService.get();
-            if (svc != null) {
-                if (keyCode == KeyEvent.KEYCODE_HOME) {
-                    svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME);
-                    return true;
-                }
-                if (keyCode == KeyEvent.KEYCODE_BACK) {
-                    svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK);
-                    return true;
-                }
-                if (keyCode == KeyEvent.KEYCODE_APP_SWITCH) {
-                    // Prefer overview global action over statusbar no-op (same as ACT_RECENTS).
-                    svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS);
-                    return true;
-                }
-            }
+            if (keyCode == KeyEvent.KEYCODE_HOME) return ButtonPlane.home(ctx);
+            if (keyCode == KeyEvent.KEYCODE_BACK) return ButtonPlane.back(ctx);
+            if (keyCode == KeyEvent.KEYCODE_APP_SWITCH) return ButtonPlane.recents(ctx);
             return false;
         }
     }

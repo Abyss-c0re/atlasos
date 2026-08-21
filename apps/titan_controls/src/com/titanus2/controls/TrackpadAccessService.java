@@ -1190,8 +1190,15 @@ public class TrackpadAccessService extends AccessibilityService {
                     || keyCode == KeyEvent.KEYCODE_APP_SWITCH
                     || KeyMapPrefs.isRecentsScan(scan)
                     || KeyMapPrefs.isRecentsScan(rawScan))) {
-            scan = KeyMapPrefs.SCAN_APP_SWITCH;
-            if (rawScan <= 0) rawScan = scan;
+            // PWM TitanNavKeyRule owns factory 580/F24 (short Home, long Recents).
+            // Do not steal. Remaps stay on other managed scans.
+            return false;
+        }
+        if (!isSideInputDevice(event)
+                && (keyCode == KeyEvent.KEYCODE_BACK
+                    || scan == KeyMapPrefs.SCAN_BACK
+                    || rawScan == KeyMapPrefs.SCAN_BACK)) {
+            return false;
         }
 
         // Same side-rail identity remaps already use (gpio 250 / ff_key 249).

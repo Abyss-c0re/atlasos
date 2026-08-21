@@ -1,4 +1,4 @@
-versionName=16.27-settings-mono
-versionCode=627
-built_utc=2026-08-20T15:49Z
+versionName=16.55-button-plane
+versionCode=655
+built_utc=2026-08-21T20:05Z
 allow_root=0

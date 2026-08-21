@@ -1,0 +1,15 @@
+diff --git a/src/com/android/launcher3/LauncherPrefs.kt b/src/com/android/launcher3/LauncherPrefs.kt
+index 0295ae75d9..0a1c33c48e 100644
+--- a/src/com/android/launcher3/LauncherPrefs.kt
++++ b/src/com/android/launcher3/LauncherPrefs.kt
+@@ -264,8 +264,9 @@ constructor(@ApplicationContext private val encryptedContext: Context) {
+         val HOTSEAT_COUNT =
+             backedUpItem(DeviceGridState.KEY_HOTSEAT_COUNT, -1, EncryptionType.ENCRYPTED)
+         @JvmField
++        // Titan 2: pin by default. Unpinned Taskbar stashes and deletes 3-button nav.
+         val TASKBAR_PINNING =
+-            backedUpItem(TASKBAR_PINNING_KEY, false, EncryptionType.DEVICE_PROTECTED)
++            backedUpItem(TASKBAR_PINNING_KEY, true, EncryptionType.DEVICE_PROTECTED)
+         @JvmField
+         val TASKBAR_PINNING_IN_DESKTOP_MODE =
+             backedUpItem(TASKBAR_PINNING_DESKTOP_MODE_KEY, true, EncryptionType.DEVICE_PROTECTED)

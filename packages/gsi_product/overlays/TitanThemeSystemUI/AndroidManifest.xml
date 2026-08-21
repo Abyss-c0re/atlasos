@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.titanus2.overlay.theme_systemui"
+    android:versionCode="1"
+    android:versionName="1.0-cube-systemui">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35"/>
+    <overlay
+        android:targetPackage="com.android.systemui"
+        android:priority="900"
+        android:isStatic="true"/>
+    <application android:hasCode="false" android:label="Titan cube SystemUI chrome"/>
+</manifest>

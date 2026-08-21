@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Cube default accent. ThemeActivity still fabs user picks on top. -->
+    <color name="system_accent1_100">#ffff141a</color>
+    <color name="system_accent1_200">#ffff141a</color>
+    <color name="system_accent1_100_dark">#ffff141a</color>
+    <color name="system_accent1_200_dark">#ffff141a</color>
+    <color name="system_accent1_100_light">#ffff141a</color>
+    <color name="system_accent1_200_light">#ffff141a</color>
+</resources>

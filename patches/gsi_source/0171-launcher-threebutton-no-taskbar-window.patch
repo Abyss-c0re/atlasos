@@ -1,0 +1,41 @@
+diff --git a/quickstep/src/com/android/launcher3/taskbar/TaskbarManagerImpl.java b/quickstep/src/com/android/launcher3/taskbar/TaskbarManagerImpl.java
+index 5ed45bb8bd..f4ec626bc0 100644
+--- a/quickstep/src/com/android/launcher3/taskbar/TaskbarManagerImpl.java
++++ b/quickstep/src/com/android/launcher3/taskbar/TaskbarManagerImpl.java
+@@ -104,6 +104,7 @@ import com.android.launcher3.taskbar.unfold.NonDestroyableScopedUnfoldTransition
+ import com.android.launcher3.uioverrides.QuickstepLauncher;
+ import com.android.launcher3.util.DisplayController;
+ import com.android.launcher3.util.LockedUserState;
++import com.android.launcher3.util.NavigationMode;
+ import com.android.launcher3.util.LooperExecutor;
+ import com.android.launcher3.util.SettingsCache;
+ import com.android.launcher3.util.SimpleBroadcastReceiver;
+@@ -981,6 +982,13 @@ public class TaskbarManagerImpl implements DisplayDecorationListener {
+     }
+ 
+     private boolean isTaskbarEnabled(int displayId, DeviceProfile deviceProfile) {
++        // Titan 2: 3/2-button is SystemUI NavigationBar (gsi_source 0131).
++        // Taskbar window type 2019 then crashes launcher (BadTokenException).
++        NavigationMode nav = DisplayController.getNavigationMode(mBaseContext);
++        if (nav == NavigationMode.THREE_BUTTONS || nav == NavigationMode.TWO_BUTTONS) {
++            debugTaskbarManager("No taskbar — SystemUI navbar owns 3/2-button", displayId);
++            return false;
++        }
+         boolean taskbarDisallowedByDisplayPolicy = (getSharedStateForDisplay(displayId)
+                 .sysuiStateFlags & SYSUI_STATE_NAVIGATION_BAR_DISABLED) != 0;
+         if (taskbarDisallowedByDisplayPolicy) {
+@@ -1276,6 +1284,14 @@ public class TaskbarManagerImpl implements DisplayDecorationListener {
+             return;
+         }
+         int displayId = taskbar.getDisplayId();
++        // Titan 2: SystemUI already added TYPE_NAVIGATION_BAR (NavigationBar0).
++        NavigationMode nav = DisplayController.getNavigationMode(mBaseContext);
++        if (nav == NavigationMode.THREE_BUTTONS || nav == NavigationMode.TWO_BUTTONS) {
++            debugTaskbarManager(
++                    "addTaskbarRootViewToWindow: skip — SystemUI navbar owns 3/2-button",
++                    displayId);
++            return;
++        }
+         debugTaskbarManager("addTaskbarRootViewToWindow:", displayId);
+ 
+         if (getDisplay(displayId) == null) {

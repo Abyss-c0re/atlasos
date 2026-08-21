@@ -1,0 +1,15 @@
+diff --git a/quickstep/src/com/android/launcher3/taskbar/TaskbarStashController.java b/quickstep/src/com/android/launcher3/taskbar/TaskbarStashController.java
+index d6196688bf..ae034a8f46 100644
+--- a/quickstep/src/com/android/launcher3/taskbar/TaskbarStashController.java
++++ b/quickstep/src/com/android/launcher3/taskbar/TaskbarStashController.java
+@@ -1325,8 +1325,9 @@ public class TaskbarStashController implements TaskbarControllers.LoggableTaskba
+         updateStateForFlag(FLAG_STASHED_SYSUI,
+                 hasAnyFlag(systemUiStateFlags, SYSUI_STATE_SCREEN_PINNING) || stashForBubbles);
+ 
++        // Titan 2: 3-button Taskbar IS the navbar. Lock-stash deletes Back/Home/Recents.
+         updateStateForFlag(FLAG_STASHED_DEVICE_LOCKED,
+-                SystemUiFlagUtils.isLocked(systemUiStateFlags));
++                !mActivity.isThreeButtonNav() && SystemUiFlagUtils.isLocked(systemUiStateFlags));
+ 
+         mIsImeVisible = hasAnyFlag(systemUiStateFlags, SYSUI_STATE_IME_VISIBLE);
+         if (updateStateForFlag(FLAG_STASHED_IME, shouldStashForIme())) {

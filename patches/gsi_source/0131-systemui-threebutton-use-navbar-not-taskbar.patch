@@ -1,0 +1,26 @@
+diff --git a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarControllerImpl.java b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarControllerImpl.java
+index 3864f18fab0a..40557d60cb41 100644
+--- a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarControllerImpl.java
++++ b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarControllerImpl.java
+@@ -16,6 +16,8 @@
+ 
+ package com.android.systemui.navigationbar;
+ 
++import static android.view.WindowManagerPolicyConstants.NAV_BAR_MODE_2BUTTON;
++import static android.view.WindowManagerPolicyConstants.NAV_BAR_MODE_3BUTTON;
+ import static com.android.systemui.navigationbar.gestural.EdgeBackGestureHandler.DEBUG_MISSING_GESTURE_TAG;
+ import static com.android.systemui.shared.recents.utilities.Utilities.isLargeScreen;
+ import static com.android.wm.shell.Flags.enableTaskbarOnPhones;
+@@ -288,6 +290,12 @@ public class NavigationBarControllerImpl implements
+ 
+     @VisibleForTesting
+     boolean supportsTaskbar() {
++        // Titan 2: 3-button / 2-button must be SystemUI NavigationBar.
++        // Large-screen Taskbar IS the only bar on this GSI; stashing it
++        // on keyguard deletes Back/Home/Recents.
++        if (mNavMode == NAV_BAR_MODE_3BUTTON || mNavMode == NAV_BAR_MODE_2BUTTON) {
++            return false;
++        }
+         // Enable for tablets, unfolded state on a foldable device, (non handheld AND flag is set),
+         // or handheld when enableTaskbarOnPhones() returns true.
+         boolean foldedOrPhone = !mIsPhone || enableTaskbarOnPhones();
