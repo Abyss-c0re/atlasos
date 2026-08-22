@@ -424,7 +424,9 @@ setprop persist.dbg.vt_avail_ovr 1 2>/dev/null || true
 setprop persist.dbg.wfc_avail_ovr 1 2>/dev/null || true
 setprop persist.dbg.allow_ims_off 1 2>/dev/null || true
 setprop persist.dbg.ims_volte_enable 1 2>/dev/null || true
-setprop persist.radio.calls.on.ims 1 2>/dev/null || true
+# Never pin calls onto IMS until MMTEL Voice is actually up. calls.on.ims=1
+# with only EMERGENCY_OVER_MMTEL hangs DIALING and the InCall UI cannot close.
+setprop persist.radio.calls.on.ims 0 2>/dev/null || true
 setprop persist.data.iwlan.enable true 2>/dev/null || true
 # 3 = VoLTE on both trays. 1 killed incoming on SIM 2; 2 killed slot 1.
 setprop persist.vendor.mtk.volte.enable 3 2>/dev/null || true
@@ -461,12 +463,14 @@ case "$_vnum" in
     ;;
   *)
     _op=`getprop persist.vendor.operator.optr 2>/dev/null | tr -d '\r\n '`
-    if [ "$_op" = "OP08" ]; then
+    if [ "$_op" = "OP08" ] || [ "`getprop persist.vendor.radio.mtk_dsbp_id 2>/dev/null | tr -d '\r\n '`" = "8" ]; then
       ims_set_vendor_prop persist.vendor.operator.optr ""
       ims_set_vendor_prop persist.vendor.operator.spec ""
       ims_set_vendor_prop persist.vendor.operator.seg ""
       ims_set_vendor_prop persist.vendor.mtk_usp_operator ""
-      logt "cleared leftover OP08 — Settings Calls SIM is ${_vnum:-none}"
+      ims_set_vendor_prop persist.vendor.radio.mtk_dsbp_id "0"
+      ims_set_vendor_prop vendor.mtk.md.sbp "0"
+      logt "cleared leftover OP08/SBP8 — Settings Calls SIM is ${_vnum:-none}"
     fi
     ;;
 esac
@@ -578,6 +582,16 @@ logt "qns wfc activation kicked sub=${SUB:-1}"
 if [ -z "$NUM" ]; then
   rm -f "$STAMP" 2>/dev/null || true
   logt "no SIM — stamp cleared for later re-run"
+fi
+
+# CS unless MMTEL Voice is really up. calls.on.ims=1 + emergency-only MMTEL
+# left DIALING hung and the human could not close the dialer.
+if dumpsys phone 2>/dev/null | grep -qE 'VOICE_OVER_LTE|VOICE_OVER_WIFI|VOICE_OVER_NR'; then
+  setprop persist.radio.calls.on.ims 1 2>/dev/null || true
+  logt "IMS Voice advertised — calls.on.ims=1"
+else
+  setprop persist.radio.calls.on.ims 0 2>/dev/null || true
+  logt "IMS Voice not advertised — calls.on.ims=0 (CS, no DIALING hang)"
 fi
 
 logt "done slot=$ASLOT sub=$SUB num=$NUM mtk=$(getprop persist.sys.phh.ims.mtk) multi=$(settings get global multi_sim_voice_call) d=$(cmd phone ims get-ims-service -s $ASLOT -d 2>/dev/null)"
