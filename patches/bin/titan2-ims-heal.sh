@@ -342,12 +342,10 @@ ims_bind_slot() {
   cmd phone ims enable -s "$_s" 2>/dev/null || true
 }
 
-# Active slot first, then both DSDS slots (cheap; empty slot ok).
+# Settings Calls tray only. Empty-slot bind flaps MMTEL (null IInterface).
 ims_bind_all_slots() {
   _as=`ims_active_slot`
   ims_bind_slot "$_as"
-  ims_bind_slot 0
-  ims_bind_slot 1
 }
 
 ims_wait_phone() {

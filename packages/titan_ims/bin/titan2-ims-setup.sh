@@ -303,13 +303,12 @@ ims_restart_registration() {
   ims_bind_slot "$_s"
 }
 
-# Lineage idmap miss → force bind MMTEL on active + both slots
+# Bind MMTEL only on Settings → Calls tray. Binding the empty slot
+# reports null IInterface and flaps Voice off the live SIM (slot switch heresy).
 ASLOT=$(ims_active_slot)
 j=0
 while [ $j -lt 15 ]; do
   ims_bind_slot "$ASLOT"
-  ims_bind_slot 0
-  ims_bind_slot 1
   got=$(cmd phone ims get-ims-service -s "$ASLOT" -d 2>/dev/null)
   if echo "$got" | grep -q mediatek; then
     logt "ims bind OK slot=$ASLOT d=$got"
@@ -564,19 +563,16 @@ if [ ! -S /dev/socket/volte_clientapi ]; then
 fi
 logt "volte stack start requested"
 
-# Pixel IMS restartIMSRegistration equivalent after config apply
+# Recreate MMTEL on the Calls tray only (0096 + Settings pin).
 ims_restart_registration "$ASLOT"
-ims_restart_registration 0
-ims_restart_registration 1
-logt "ims re-register after pixel-ims config"
+logt "ims re-register Calls slot=$ASLOT"
 
-# QNS WFC activation (sets mAllowIwlanForWfcActivation). Without this, IWLAN is
-# qualified but transport stays INVALID and ePDG never opens (Tello abroad lab).
-# QNS gate: extras must be SUB_ID + TRY_STATUS=1 (not subId). No WfcActivationActivity UI.
-am broadcast -a com.android.qns.wfcactivation.TRY_WFC_CONNECTION --ei SUB_ID 1 --ei TRY_STATUS 1 2>/dev/null || true
-am broadcast -a com.android.qns.wfcactivation.TRY_WFC_CONNECTION \
-  --ei android.telephony.extra.SUBSCRIPTION_INDEX "${SUB:-1}" 2>/dev/null || true
-logt "qns wfc activation kicked sub=${SUB:-1}"
+# QNS on the Settings voice sub — never hardcoded TMO sub 1.
+if [ -n "$SUB" ]; then
+  am broadcast -a com.android.qns.wfcactivation.TRY_WFC_CONNECTION \
+    --ei SUB_ID "$SUB" --ei TRY_STATUS 1 2>/dev/null || true
+  logt "qns wfc activation kicked sub=$SUB"
+fi
 
 # If no SIM yet, clear stamp so pad-agent heal / next trigger can re-run fully
 if [ -z "$NUM" ]; then
