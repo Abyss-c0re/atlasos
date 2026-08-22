@@ -21,15 +21,14 @@
 # Capture order when landing — keep comments for agent SoT.
 
 # project:device/phh/treble
-# PRODUCT_PACKAGES: confirmed Mouse Mode titan2-touchpadd + apps + sysbins
-# ELF/APKs staged by scripts/misterztr/stage_gsi_product.sh (not in this patch)
-# Pad runtime SoT: third_party/titan2-touchpadd — NOT pad-agent shell
+# PRODUCT_PACKAGES: titan2-touchpadd ELF + disabled init (pad-agent starts mouse).
+# ELF/APKs staged by scripts/misterztr/stage_gsi_product.sh (not in this patch).
+# Owner: pad-agent starts/stops touchpadd in mouse; trackpad is native IDC.
+# Default touchPad.idc = ignore. Never EventHub-exclude (0191 killed both modes).
+# Flip WITH_TOUCHPADD_INJECT off only after a pin boot-proves ELF + pad-agent.
 # Apps SoT: apps/titan_controls|titan_usb_hid|cube_contact
 # 0040 mk matches packages/gsi_product/titanus2.mk at capture; stage always
 # re-writes device/phh/treble/titanus2.mk from that file.
-# AtlasOS: stage ELF+IDC then m systemimage (inject off on that export).
-# Workshop pin 20260804 image still lacks the ELF — inject stays on there.
-# Do not treat 20260806 inject-off prove as applying to the old pin.
 0040-prebuilt-titan2-touchpadd-product-mk.patch
 
 # project:system/sepolicy (or device sepolicy)
@@ -50,7 +49,7 @@
 0070-systemui-torch-sysfs-under-camera-privacy.patch
 
 # project:treble_app
-# Incoming calls: Misc binder-thread + auto restart RIL default ON
+# Incoming calls: Misc binder-thread default ON (pairs with 0210/0211)
 0080-trebleapp-incoming-call-defaults.patch
 
 # project:packages/modules/Connectivity
@@ -154,3 +153,16 @@
 # sysbta + default-on optional codecs picked LDAC 96k/32 and A2DP died.
 # Unknown pref → SBC when persist.bluetooth.system_audio_hal.enabled=true.
 0161-bluetooth-sysbta-no-ldac-default.patch
+# sysbta + vendor BAP=true drops A2DP (sink unavailable). Force LE Audio off.
+0201-bluetooth-sysbta-no-le-audio.patch
+
+# project:frameworks/opt/telephony
+# Dual-SIM: ImsPhoneCallTracker default allow binder thread on incoming
+# (both slots). TrebleApp toggle remains via 0080 + 0211.
+0210-telephony-incoming-binder-thread-both-phones.patch
+
+# project:device/phh/treble
+# product.prop persist=1 / ro=false at image time.
+0211-phh-incoming-binder-thread-product-props.patch
+0212-phh-prop-handler-incoming-binder-off-sets-block.patch
+

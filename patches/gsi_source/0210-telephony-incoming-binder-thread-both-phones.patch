@@ -1,0 +1,13 @@
+diff --git a/src/java/com/android/internal/telephony/imsphone/ImsPhoneCallTracker.java b/src/java/com/android/internal/telephony/imsphone/ImsPhoneCallTracker.java
+index c500a19818..fc19cc46ad 100644
+--- a/src/java/com/android/internal/telephony/imsphone/ImsPhoneCallTracker.java
++++ b/src/java/com/android/internal/telephony/imsphone/ImsPhoneCallTracker.java
+@@ -384,7 +384,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
+         public IImsCallSessionListener onIncomingCall(
+                 @NonNull IImsCallSession c, @Nullable String callId, @Nullable Bundle extras) {
+             final boolean shouldBlockBinderThreadOnIncomingCalls = SystemProperties.getBoolean(
+-                    "ro.telephony.block_binder_thread_on_incoming_calls", true);
++                    "ro.telephony.block_binder_thread_on_incoming_calls", false);
+             if (shouldBlockBinderThreadOnIncomingCalls) {
+                 return executeAndWaitForReturn(()-> processIncomingCall(c, callId, extras));
+             } else {

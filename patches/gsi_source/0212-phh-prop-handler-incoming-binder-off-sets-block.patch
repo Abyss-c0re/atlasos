@@ -1,0 +1,13 @@
+diff --git a/phh-prop-handler.sh b/phh-prop-handler.sh
+--- a/phh-prop-handler.sh
++++ b/phh-prop-handler.sh
+@@ -185,7 +185,8 @@
+     if [[ "$prop_value" == 1 ]];then
+         resetprop_phh ro.telephony.block_binder_thread_on_incoming_calls false
+     else
+-        resetprop_phh --delete ro.telephony.block_binder_thread_on_incoming_calls
++        # 0210 Java default is allow. Off must set true, not delete.
++        resetprop_phh ro.telephony.block_binder_thread_on_incoming_calls true
+     fi
+     exit
+ fi

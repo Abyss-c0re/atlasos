@@ -1,0 +1,11 @@
+diff --git a/product.prop b/product.prop
+--- a/product.prop
++++ b/product.prop
+@@ -53,3 +53,8 @@
+ ro.lineage.maintainer=Abyss-c0re
+ ro.titanus2.maintainer=Abyss-c0re
+ ro.titanus2.gsi_source=1
++
++# Dual-SIM incoming: allow binder thread on every ImsPhone (see 0210).
++ro.telephony.block_binder_thread_on_incoming_calls=false
++persist.sys.phh.allow_binder_thread_on_incoming_calls=1
