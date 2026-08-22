@@ -1,0 +1,14 @@
+# project:packages/apps/Settings
+# Physically removed SIM (no tray) must not stay in Settings → SIMs.
+# Disable-does-not-delete is only for UICC-off while the card is still inserted.
+diff --git a/src/com/android/settings/network/telephony/SubscriptionRepository.kt b/src/com/android/settings/network/telephony/SubscriptionRepository.kt
+--- a/src/com/android/settings/network/telephony/SubscriptionRepository.kt
++++ b/src/com/android/settings/network/telephony/SubscriptionRepository.kt
+@@ -80,6 +80,9 @@
+         }
+         val visibleList =
+             availableList.filter { subInfo ->
++                if (subInfo.simSlotIndex == SubscriptionManager.INVALID_SIM_SLOT_INDEX) {
++                    return@filter false
++                }
+                 // Opportunistic subscriptions are considered invisible to users so they should

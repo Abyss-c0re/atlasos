@@ -66,18 +66,20 @@ public final class SimCards {
         Set<Integer> available = sm != null ? availableIds(sm) : new HashSet<Integer>();
         Map<Integer, Card> byId = new HashMap<Integer, Card>();
 
-        for (Card mem : loadMemory(ctx)) {
-            byId.put(mem.subId, mem);
-        }
-
         if (sm != null) {
             for (SubscriptionInfo s : allInfos(sm)) {
                 Card c = fromInfo(s, available, false);
-                if (c == null) continue;
-                Card old = byId.get(c.subId);
-                int slot = c.slot >= 0 ? c.slot : (old != null ? old.slot : -1);
-                byId.put(c.subId, new Card(c.subId, slot, c.uicc, c.inSettings, false));
+                if (c == null || c.slot < 0) continue;
+                byId.put(c.subId, c);
             }
+        }
+
+        // Memory only keeps SIMs still in a tray. Pulled cards (slot -1 / ABSENT)
+        // are not "disabled" — they are gone.
+        for (Card mem : loadMemory(ctx)) {
+            if (mem.slot < 0 || byId.containsKey(mem.subId)) continue;
+            if (slotAbsent(mem.slot)) continue;
+            byId.put(mem.subId, mem);
         }
 
         Set<Integer> slotsTaken = new HashSet<Integer>();
@@ -155,7 +157,8 @@ public final class SimCards {
         try {
             if (s.getDisplayName() != null) shown = s.getDisplayName().toString();
         } catch (Throwable ignored) {}
-        if ((icc == null || icc.isEmpty()) && slot < 0 && shown.isEmpty()) {
+        if (slot < 0) return null;
+        if ((icc == null || icc.isEmpty()) && shown.isEmpty()) {
             return null;
         }
         return new Card(id, slot, uiccOn(s), available.contains(id), remembered);
@@ -182,11 +185,6 @@ public final class SimCards {
                     if (seen.add(s.getSubscriptionId())) out.add(s);
                 }
             } catch (Throwable ignored) {}
-        }
-        for (int id = 1; id <= 16; id++) {
-            if (seen.contains(id)) continue;
-            SubscriptionInfo s = infoById(sm, id);
-            if (s != null && seen.add(id)) out.add(s);
         }
         return out;
     }
@@ -243,6 +241,14 @@ public final class SimCards {
             android.provider.Settings.Global.putString(
                 ctx.getContentResolver(), "titan2_sim_memory", sb.toString());
         } catch (Exception ignored) {}
+    }
+
+    private static boolean slotAbsent(int slot) {
+        if (slot < 0) return true;
+        String[] st = gsmSimState();
+        if (slot >= st.length) return true;
+        String s = st[slot];
+        return s == null || s.isEmpty() || "ABSENT".equals(s);
     }
 
     private static String[] gsmSimState() {
