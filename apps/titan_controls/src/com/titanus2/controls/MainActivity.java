@@ -57,7 +57,7 @@ public class MainActivity extends Activity {
     private TextView bIdleTimeout;
     private TextView bLedTest;
 
-    private LinearLayout navKeys, navSub, navNotif, navTweaks, navSims;
+    private LinearLayout navKeys, navSub, navNotif, navTweaks, navSims, navCalls;
     private UiKit.Toggle tCalls;
     private ScrollView scroll;
     private LinearLayout sectionPad;
@@ -169,8 +169,10 @@ public class MainActivity extends Activity {
                 }
             });
         // HW stays here. TrebleApp (hidden) owns GSI IMS/misc call paths; Tweaks wraps it.
-        navTweaks = UiKit.navRow(root, "Tweaks", "Display size · Calls · keyboard",
+        navTweaks = UiKit.navRow(root, "Tweaks", "Display size · keyboard",
             () -> startActivity(new Intent(this, NetworkActivity.class)));
+        navCalls = UiKit.navRow(root, "Calls", "IMS · binder · heal",
+            () -> startActivity(new Intent(this, CallsActivity.class)));
         navSims = UiKit.navRow(root, "SIMs", "On / Off — disable does not delete",
             () -> startActivity(new Intent(this, SimActivity.class)));
         UiKit.navRow(root, "Diagnostics", "Calls + nav, no test call",
@@ -708,6 +710,12 @@ public class MainActivity extends Activity {
         UiKit.setNavSummary(navSub, SubDisplayPrefs.getMode(this).label());
         try {
             UiKit.setNavSummary(navSims, simHubSummary());
+        } catch (Exception ignored) {}
+        try {
+            if (navCalls != null) {
+                ImsCalls.Detect d = ImsCalls.detect(this);
+                UiKit.setNavSummary(navCalls, d.ok ? d.verdict : d.verdict);
+            }
         } catch (Exception ignored) {}
         if (tCalls != null) {
             try { tCalls.setChecked(PhoneCalls.isDisabled(this)); } catch (Exception ignored) {}

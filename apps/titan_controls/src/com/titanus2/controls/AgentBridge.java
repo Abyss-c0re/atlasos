@@ -462,8 +462,14 @@ public final class AgentBridge {
             case A11Y_LIVE:
             case UI_PLANE:
             case DEV_ACTION:
+            case IMS_ACTION:
+            case IMS_MTK:
+            case IMS_FORCE_VOLTE:
+            case IMS_BINDER:
+            case IMS_REQUEST_NET:
                 // 12.54: one-shot reload_agent / wireless ADB must hit Global so
                 // pad-agent read_first is not blocked by empty T2 clear shells.
+                // 16.60: IMS heal/tweaks must hit Global — rootless cannot write T2.
                 return true;
             case SUBDISPLAY_ON:
             case SUBDISPLAY_BRI:

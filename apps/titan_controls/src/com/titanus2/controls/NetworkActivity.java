@@ -29,9 +29,6 @@ public class NetworkActivity extends Activity {
 
     private TextView trebleStatus;
     private TextView imsStatus;
-    private UiKit.Toggle tImsBinder;
-    private UiKit.Toggle tImsMtk;
-    private UiKit.Toggle tImsForce;
     private TextView vpnHotspotStatus;
     private TextView dpiValue;
     private SeekBar dpiBar;
@@ -103,27 +100,8 @@ public class NetworkActivity extends Activity {
 
         UiKit.section(root, "Calls");
         imsStatus = UiKit.mono(root);
-        tImsBinder = UiKit.toggle(root, "Binder thread on incoming",
-            ImsCalls.planeOn(this, AgentBridge.IMS_BINDER),
-            on -> {
-                ImsCalls.setPlane(this, AgentBridge.IMS_BINDER, on);
-                h.postDelayed(this::refreshIms, 600);
-            });
-        tImsMtk = UiKit.toggle(root, "MTK IMS",
-            ImsCalls.planeOn(this, AgentBridge.IMS_MTK),
-            on -> {
-                ImsCalls.setPlane(this, AgentBridge.IMS_MTK, on);
-                h.postDelayed(this::refreshIms, 600);
-            });
-        tImsForce = UiKit.toggle(root, "Force VoLTE overlays",
-            ImsCalls.planeOn(this, AgentBridge.IMS_FORCE_VOLTE),
-            on -> {
-                ImsCalls.setPlane(this, AgentBridge.IMS_FORCE_VOLTE, on);
-                h.postDelayed(this::refreshIms, 600);
-            });
-        LinearLayout imsBtns = UiKit.row(root);
-        UiKit.flexButton(imsBtns, "Heal calls", this::healCalls);
-        UiKit.flexButton(imsBtns, "Refresh", this::refreshIms);
+        UiKit.button(root, "Open Calls", () ->
+            startActivity(new android.content.Intent(this, CallsActivity.class)));
         UiKit.section(root, "Treble");
         trebleStatus = UiKit.mono(root);
         UiKit.button(root, "Open Treble settings", this::openTrebleSettings);
@@ -173,7 +151,7 @@ public class NetworkActivity extends Activity {
         });
 
         TextView kbHint = UiKit.mono(root);
-        kbHint.setText("A dpi · H heal calls · T Treble · V VPN · W soft KB · K switcher · R · Esc");
+        kbHint.setText("A dpi · C Calls · T Treble · V VPN · W soft KB · K switcher · R · Esc");
 
         setContentView(sc);
         TrebleAppBridge.hideFromSettings(this);
@@ -220,8 +198,8 @@ public class NetworkActivity extends Activity {
                 UiKit.toast(this, "Status refreshed");
                 return true;
             }
-            if (kc == KeyEvent.KEYCODE_H) {
-                healCalls();
+            if (kc == KeyEvent.KEYCODE_C) {
+                startActivity(new android.content.Intent(this, CallsActivity.class));
                 return true;
             }
             if (kc == KeyEvent.KEYCODE_T) {
@@ -335,26 +313,10 @@ public class NetworkActivity extends Activity {
     private void refreshIms() {
         if (imsStatus == null) return;
         try {
-            ImsCalls.Detect d = ImsCalls.detect(this);
-            imsStatus.setText(d.line());
-            syncToggle(tImsBinder, ImsCalls.planeOn(this, AgentBridge.IMS_BINDER));
-            syncToggle(tImsMtk, ImsCalls.planeOn(this, AgentBridge.IMS_MTK));
-            syncToggle(tImsForce, ImsCalls.planeOn(this, AgentBridge.IMS_FORCE_VOLTE));
+            imsStatus.setText(ImsCalls.detect(this).line());
         } catch (Exception e) {
             imsStatus.setText("Calls: detect error");
         }
-    }
-
-    private static void syncToggle(UiKit.Toggle t, boolean on) {
-        if (t != null && t.isChecked() != on) t.setChecked(on);
-    }
-
-    private void healCalls() {
-        ImsCalls.requestHeal(this);
-        UiKit.toast(this, "Heal queued");
-        h.postDelayed(this::refreshIms, 800);
-        h.postDelayed(this::refreshIms, 2500);
-        h.postDelayed(this::refreshIms, 6000);
     }
 
     private void hideKeyboardSwitcher() {
