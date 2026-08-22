@@ -113,14 +113,14 @@ fi
 LAST_BRIGHT=""; LAST_TO=""; LAST_SCREEN=1; LAST_PAD=""
 LAST_FN=""; LAST_CHAR_MOD=""; LAST_CHAR_SCAN=""; LAST_HOST_LAYOUT=""
 LAST_CM_MT=""; LAST_SC_MT=""; LAST_FN_MT=""; LAST_HL_MT=""; LAST_SM_MT=""
-LAST_IDC_KIND=""; LAST_PAD_MT=0; LAST_CLICK_MT=0; LAST_FOLLOW_MT=0
+LAST_IDC_KIND=""; LAST_PAD_MT=0; LAST_CLICK_MT=0; LAST_FOLLOW_MT=0; LAST_LOCK_MT=0; LAST_CE=""
 # peels 2.160–2.212: see OPTIMIZE_SOURCE_PRODUCT.md
-AGENT_VER="${AGENT_VER:-2.227-no-icon-loop}"
+AGENT_VER="${AGENT_VER:-2.230-rom-lock}"
 # Force pin: refuse non-2.x garbage + force upgrade sticky env older than 2.160
 # (lab residual: sticky 2.6x/2.12x never picked tip peels). hot_reload still 2.NN*.
 case "$AGENT_VER" in
-  2.20[0-9]*|2.21[0-9]*|2.19[0-9]*|2.18[0-9]*|2.17[0-9]*|2.16[0-9]*) ;;
-  *) AGENT_VER="2.227-no-icon-loop" ;;
+  2.20[0-9]*|2.21[0-9]*|2.22[0-9]*|2.23[0-9]*|2.19[0-9]*|2.18[0-9]*|2.17[0-9]*|2.16[0-9]*) ;;
+  *) AGENT_VER="2.230-rom-lock" ;;
 esac
 log() { echo "pad-agent $AGENT_VER live $1" > "$AGENT_STATUS" 2>/dev/null; chmod 666 "$AGENT_STATUS" 2>/dev/null; }
 # Lightweight status stamp (no chmod every tick — 2.34+ heartbeat path).
@@ -1579,6 +1579,9 @@ _pad_edge_sample() {
   pad_dirty=0
   pad_mt=`mtime_max titan2_pad_mode`
   [ "$pad_mt" != "$LAST_PAD_MT" ] && pad_dirty=1
+  lock_mt=`mtime_max titan2_input_lock`
+  [ "$lock_mt" != "$LAST_LOCK_MT" ] && pad_dirty=1
+  LAST_LOCK_MT=$lock_mt
   if [ "$HEAT_PARK" = "1" ]; then
     mode_now=`_read_pad_mode_files`
     [ "$mode_now" != "$LAST_PAD" ] && pad_dirty=1
@@ -1840,6 +1843,11 @@ while true; do
   _icon_apply_tick
 
   _pad_edge_sample
+  _ce_now=`getprop sys.user.0.ce_available 2>/dev/null | tr -d '\r'`
+  if [ -n "$_ce_now" ] && [ "$_ce_now" != "$LAST_CE" ]; then
+    LAST_CE=$_ce_now
+    pad_dirty=1
+  fi
   if [ "$pad_dirty" = "1" ]; then
     _schedule_apply_pad
     LAST_PAD_MT=$pad_mt

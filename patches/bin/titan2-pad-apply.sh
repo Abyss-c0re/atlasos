@@ -18,7 +18,7 @@ PAD_STATUS=$ST/titan2_pad_status
 TP_LOG=$ST/titan2_touchpadd.log
 CARET_STATUS=$ST/titan2_caret_status
 APPLY_LAST=$ST/titan2_pad_apply_last
-PAD_APPLY_VER=2.215-rot-0-3
+PAD_APPLY_VER=2.218-rom-lock
 
 # Prefer GSI/system binary (Phase 1.5 SoT); tip only for lab iteration.
 TOUCHPADD=/system/bin/titan2-touchpadd
@@ -176,10 +176,30 @@ virt_source_mouse_up() {
   return 1
 }
 
+# KEEP_DATA / reboot leaves lock=1 and a11y_live=1 on disk. a11y may not bind
+# until later. Stale 1 parks mouse and trackpad for every user. Forget on boot;
+# Key a11y restamps live keyguard when it actually connects.
+_forget_persisted_input_lock() {
+  settings put global titan2_input_lock 0 2>/dev/null || true
+  settings put global titan2_a11y_live 0 2>/dev/null || true
+  for _d in "$T2" "$ST"; do
+    printf '0\n' >"$_d/titan2_input_lock" 2>/dev/null || true
+    printf '0\n' >"$_d/titan2_a11y_live" 2>/dev/null || true
+    chmod 666 "$_d/titan2_input_lock" "$_d/titan2_a11y_live" 2>/dev/null || true
+  done
+}
+
+_a11y_live_ok() {
+  case "`read_first titan2_a11y_live 2>/dev/null`" in 1|true|on|yes) return 0 ;; esac
+  return 1
+}
+
 _input_unlocked_ok() {
   case "`getprop sys.boot_completed 2>/dev/null | tr -d '\r'`" in 1) ;; *) return 1 ;; esac
-  case "`read_first titan2_input_lock 2>/dev/null`" in 1|true|on|yes) return 1 ;; esac
-  case "`settings get global titan2_input_lock 2>/dev/null | tr -d '\r'`" in 1|true|on|yes) return 1 ;; esac
+  if _a11y_live_ok; then
+    case "`read_first titan2_input_lock 2>/dev/null`" in 1|true|on|yes) return 1 ;; esac
+    case "`settings get global titan2_input_lock 2>/dev/null | tr -d '\r'`" in 1|true|on|yes) return 1 ;; esac
+  fi
   ce=`getprop sys.user.0.ce_available 2>/dev/null | tr -d '\r' | tr 'A-Z' 'a-z'`
   case "$ce" in 0|false) return 1 ;; esac
   return 0
@@ -844,6 +864,7 @@ _after() {
 
 boot_pad_safe() {
   mkdir -p "$T2" "$ST" 2>/dev/null || true
+  _forget_persisted_input_lock
   cur=`read_pad_mode`
   case "$cur" in
     mouse|trackpad) ;;

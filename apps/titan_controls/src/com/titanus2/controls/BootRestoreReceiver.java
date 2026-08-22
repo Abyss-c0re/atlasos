@@ -33,8 +33,9 @@ public class BootRestoreReceiver extends BroadcastReceiver {
 
         final Context app = context.getApplicationContext();
         pinAndHeal(app);
-        // adb install / CE unlock: listed-but-unbound leaves F24 Home dead.
-        if (replaced || unlocked) {
+        // KEEP_DATA already-CE boot never sends USER_UNLOCKED again.
+        // Listed-but-unbound a11y leaves titan2_input_lock stuck → pad park.
+        if (boot || replaced) {
             try { AccessServiceHelper.forceRebindAfterReplace(app); } catch (Exception ignored) {}
         }
         // P0: Settings.Secure can lag after wipe / modular reflash — retry a11y

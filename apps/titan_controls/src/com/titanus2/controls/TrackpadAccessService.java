@@ -2185,6 +2185,13 @@ public class TrackpadAccessService extends AccessibilityService {
     /** Keyguard / bouncer / password field — never remap Shift or Enter. */
     private boolean isCredentialSurface() {
         try {
+            String dis = android.provider.Settings.Secure.getString(
+                getContentResolver(), "lockscreen.disabled");
+            if ("1".equals(dis) || "true".equalsIgnoreCase(dis)) {
+                return false;
+            }
+        } catch (Exception ignored) {}
+        try {
             android.app.KeyguardManager km =
                 (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
             if (km != null && (km.isKeyguardLocked() || km.isDeviceLocked())) {
