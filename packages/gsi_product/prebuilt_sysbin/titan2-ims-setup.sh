@@ -136,27 +136,12 @@ ims_sim_numeric() {
   echo "$_out"
 }
 
-# Settings → SIMs → Calls is SoT. Never invent slot 2 / TMO.
-ims_settings_voice_sub() {
-  _v=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
-  case "$_v" in
-    [0-9]|[0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]) echo "$_v" ;;
-    *) echo "" ;;
-  esac
-}
-
-ims_slot_for_sub() {
-  _sub=$1
-  [ -n "$_sub" ] || return 1
-  dumpsys isub 2>/dev/null | sed -n "s/.*Logical SIM slot \([0-9][0-9]*\): subId=${_sub}.*/\1/p" | head -1
-}
-
 ims_active_slot() {
   _slot=
-  _dv=`ims_settings_voice_sub`
-  [ -n "$_dv" ] || _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
+  _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
+  [ -n "$_dv" ] || _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
   if [ -n "$_dv" ] && [ "$_dv" != "-1" ]; then
-    _slot=`ims_slot_for_sub "$_dv"`
+    _slot=`dumpsys isub 2>/dev/null | sed -n "s/.*Logical SIM slot \([0-9][0-9]*\): subId=${_dv}.*/\1/p" | head -1`
   fi
   if [ -z "$_slot" ]; then
     _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
@@ -210,21 +195,29 @@ ims_align_simswitch() {
   chmod 644 /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
 }
 
-# Settings Calls first. Never prefer a leftover TMO 310 row over the pin.
+# Resolve live subId (never leave multi_sim at -1 when a US/TMO row exists).
 ims_active_subid() {
-  _dv=`ims_settings_voice_sub`
-  if [ -z "$_dv" ]; then
-    _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  fi
+  _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
   if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
     _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
   fi
   if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`settings get global multi_sim_data_call 2>/dev/null | tr -d '\r\n '`
+    _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultDataSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
+  fi
+  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
+    _dv=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
   fi
   if [ -z "$_dv" ] || [ "$_dv" = "-1" ] || [ "$_dv" = "null" ]; then
+    _dv=`settings get global multi_sim_data_call 2>/dev/null | tr -d '\r\n '`
+  fi
+  # siminfo: prefer latest US T-Mobile/Tello (310/240|260), else highest _id with real MCC
+  if [ -z "$_dv" ] || [ "$_dv" = "-1" ] || [ "$_dv" = "null" ]; then
     _dv=`content query --uri content://telephony/siminfo 2>/dev/null \
-      | grep -E 'sim_id=[01]' \
+      | grep 'mcc_string=310' \
+      | sed -n 's/.*_id=\([0-9][0-9]*\).*/\1/p' | tail -1`
+  fi
+  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
+    _dv=`content query --uri content://telephony/siminfo 2>/dev/null \
       | grep -E 'mcc_string=[1-9]' \
       | grep -v 'mcc_string=001' \
       | sed -n 's/.*_id=\([0-9][0-9]*\).*/\1/p' | tail -1`
@@ -303,12 +296,13 @@ ims_restart_registration() {
   ims_bind_slot "$_s"
 }
 
-# Bind MMTEL only on Settings → Calls tray. Binding the empty slot
-# reports null IInterface and flaps Voice off the live SIM (slot switch heresy).
+# Lineage idmap miss → force bind MMTEL on active + both slots
 ASLOT=$(ims_active_slot)
 j=0
 while [ $j -lt 15 ]; do
   ims_bind_slot "$ASLOT"
+  ims_bind_slot 0
+  ims_bind_slot 1
   got=$(cmd phone ims get-ims-service -s "$ASLOT" -d 2>/dev/null)
   if echo "$got" | grep -q mediatek; then
     logt "ims bind OK slot=$ASLOT d=$got"
@@ -319,24 +313,12 @@ while [ $j -lt 15 ]; do
   j=$((j+1))
 done
 
-# Settings Calls/Data/SMS stay. Only seed when unset after wipe.
+# Point multi-sim prefs at live voice sub (siminfo fallback when defaultVoice=-1)
 SUB=$(ims_active_subid)
 if [ -n "$SUB" ]; then
-  _cv=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
-  _cd=`settings get global multi_sim_data_call 2>/dev/null | tr -d '\r\n '`
-  _cs=`settings get global multi_sim_sms 2>/dev/null | tr -d '\r\n '`
-  case "$_cv" in
-    [0-9]*) logt "Settings Calls pin=$_cv — not overwritten" ;;
-    *) settings put global multi_sim_voice_call "$SUB" 2>/dev/null || true ;;
-  esac
-  case "$_cd" in
-    [0-9]*) ;;
-    *) settings put global multi_sim_data_call "$SUB" 2>/dev/null || true ;;
-  esac
-  case "$_cs" in
-    [0-9]*) ;;
-    *) settings put global multi_sim_sms "$SUB" 2>/dev/null || true ;;
-  esac
+  settings put global multi_sim_data_call "$SUB" 2>/dev/null || true
+  settings put global multi_sim_voice_call "$SUB" 2>/dev/null || true
+  settings put global multi_sim_sms "$SUB" 2>/dev/null || true
   settings put global "mobile_data${SUB}" 1 2>/dev/null || true
   settings put global data_roaming 1 2>/dev/null || true
   settings put global "data_roaming${SUB}" 1 2>/dev/null || true
@@ -423,13 +405,9 @@ setprop persist.dbg.vt_avail_ovr 1 2>/dev/null || true
 setprop persist.dbg.wfc_avail_ovr 1 2>/dev/null || true
 setprop persist.dbg.allow_ims_off 1 2>/dev/null || true
 setprop persist.dbg.ims_volte_enable 1 2>/dev/null || true
-# Never pin calls onto IMS until MMTEL Voice is actually up. calls.on.ims=1
-# with only EMERGENCY_OVER_MMTEL hangs DIALING and the InCall UI cannot close.
-setprop persist.radio.calls.on.ims 0 2>/dev/null || true
+setprop persist.radio.calls.on.ims 1 2>/dev/null || true
 setprop persist.data.iwlan.enable true 2>/dev/null || true
-# 3 = VoLTE on both trays. 1 killed incoming on SIM 2; 2 killed slot 1.
-setprop persist.vendor.mtk.volte.enable 3 2>/dev/null || true
-ims_set_vendor_prop persist.vendor.mtk.volte.enable 3
+setprop persist.vendor.mtk.volte.enable 1 2>/dev/null || true
 # WFC on for US MVNO abroad (VoWiFi when WWAN only emergency-camps)
 setprop persist.vendor.mtk.wfc.enable 1 2>/dev/null || true
 setprop persist.vendor.mtk_wfc_support 1 2>/dev/null || true
@@ -440,37 +418,18 @@ setprop persist.vendor.radio.wfc_state 3 2>/dev/null || true
 setprop persist.vendor.radio.volte_state 3 2>/dev/null || true
 setprop persist.vendor.radio.wfc_enable 1 2>/dev/null || true
 setprop persist.vendor.clientapi_support 1 2>/dev/null || true
-# OP08 only when Settings Calls SIM is T-Mobile. Leftover OP08 on PILDYK
-# (24603) is HERESY — MMTEL Voice never advertises, incoming dies.
-_vsub=`ims_settings_voice_sub`
-_vnum=
-if [ -n "$_vsub" ]; then
-  _vnum=`content query --uri content://telephony/siminfo 2>/dev/null \
-    | grep "_id=$_vsub" | head -1 \
-    | sed -n 's/.*mcc_string=\([0-9]*\).*mnc_string=\([0-9]*\).*/\1\2/p'`
-fi
-[ -n "$_vnum" ] || _vnum=$NUM
-case "$_vnum" in
-  310240*|310260*)
+# MTK DSBP: load OP08 (T-Mobile US) modem profile when US SIM present
+NUM_ALL=$(getprop gsm.sim.operator.numeric 2>/dev/null | tr -d '\r')
+[ -n "$NUM_ALL" ] || NUM_ALL=$NUM
+case "$NUM_ALL" in
+  *310240*|*310260*)
     setprop persist.vendor.operator.optr OP08 2>/dev/null || true
     setprop persist.vendor.operator.spec SPEC0200 2>/dev/null || true
     setprop persist.vendor.operator.seg SEGDEFAULT 2>/dev/null || true
     setprop persist.vendor.mtk_usp_operator OP08 2>/dev/null || true
     setprop persist.vendor.radio.mtk_dsbp_id 8 2>/dev/null || true
     setprop vendor.mtk.md.sbp 8 2>/dev/null || true
-    logt "Settings Calls SIM $_vsub $_vnum → OP08/SBP8"
-    ;;
-  *)
-    _op=`getprop persist.vendor.operator.optr 2>/dev/null | tr -d '\r\n '`
-    if [ "$_op" = "OP08" ] || [ "`getprop persist.vendor.radio.mtk_dsbp_id 2>/dev/null | tr -d '\r\n '`" = "8" ]; then
-      ims_set_vendor_prop persist.vendor.operator.optr ""
-      ims_set_vendor_prop persist.vendor.operator.spec ""
-      ims_set_vendor_prop persist.vendor.operator.seg ""
-      ims_set_vendor_prop persist.vendor.mtk_usp_operator ""
-      ims_set_vendor_prop persist.vendor.radio.mtk_dsbp_id "0"
-      ims_set_vendor_prop vendor.mtk.md.sbp "0"
-      logt "cleared leftover OP08/SBP8 — Settings Calls SIM is ${_vnum:-none}"
-    fi
+    logt "US TMO SIM → OP08/SBP8 forced"
     ;;
 esac
 
@@ -563,31 +522,24 @@ if [ ! -S /dev/socket/volte_clientapi ]; then
 fi
 logt "volte stack start requested"
 
-# Recreate MMTEL on the Calls tray only (0096 + Settings pin).
+# Pixel IMS restartIMSRegistration equivalent after config apply
 ims_restart_registration "$ASLOT"
-logt "ims re-register Calls slot=$ASLOT"
+ims_restart_registration 0
+ims_restart_registration 1
+logt "ims re-register after pixel-ims config"
 
-# QNS on the Settings voice sub — never hardcoded TMO sub 1.
-if [ -n "$SUB" ]; then
-  am broadcast -a com.android.qns.wfcactivation.TRY_WFC_CONNECTION \
-    --ei SUB_ID "$SUB" --ei TRY_STATUS 1 2>/dev/null || true
-  logt "qns wfc activation kicked sub=$SUB"
-fi
+# QNS WFC activation (sets mAllowIwlanForWfcActivation). Without this, IWLAN is
+# qualified but transport stays INVALID and ePDG never opens (Tello abroad lab).
+# QNS gate: extras must be SUB_ID + TRY_STATUS=1 (not subId). No WfcActivationActivity UI.
+am broadcast -a com.android.qns.wfcactivation.TRY_WFC_CONNECTION --ei SUB_ID 1 --ei TRY_STATUS 1 2>/dev/null || true
+am broadcast -a com.android.qns.wfcactivation.TRY_WFC_CONNECTION \
+  --ei android.telephony.extra.SUBSCRIPTION_INDEX "${SUB:-1}" 2>/dev/null || true
+logt "qns wfc activation kicked sub=${SUB:-1}"
 
 # If no SIM yet, clear stamp so pad-agent heal / next trigger can re-run fully
 if [ -z "$NUM" ]; then
   rm -f "$STAMP" 2>/dev/null || true
   logt "no SIM — stamp cleared for later re-run"
-fi
-
-# CS unless MMTEL Voice is really up. calls.on.ims=1 + emergency-only MMTEL
-# left DIALING hung and the human could not close the dialer.
-if dumpsys phone 2>/dev/null | grep -qE 'VOICE_OVER_LTE|VOICE_OVER_WIFI|VOICE_OVER_NR'; then
-  setprop persist.radio.calls.on.ims 1 2>/dev/null || true
-  logt "IMS Voice advertised — calls.on.ims=1"
-else
-  setprop persist.radio.calls.on.ims 0 2>/dev/null || true
-  logt "IMS Voice not advertised — calls.on.ims=0 (CS, no DIALING hang)"
 fi
 
 logt "done slot=$ASLOT sub=$SUB num=$NUM mtk=$(getprop persist.sys.phh.ims.mtk) multi=$(settings get global multi_sim_voice_call) d=$(cmd phone ims get-ims-service -s $ASLOT -d 2>/dev/null)"
