@@ -869,6 +869,12 @@ _after() {
 
 boot_pad_safe() {
   mkdir -p "$T2" "$ST" 2>/dev/null || true
+  # KEEP_DATA: drop leftover tip apply if it is not this ROM script.
+  if [ -f "$ST/titan2-pad-apply.sh" ]; then
+    _tv=`grep -m1 '^PAD_APPLY_VER=' "$ST/titan2-pad-apply.sh" 2>/dev/null`
+    _sv=`grep -m1 '^PAD_APPLY_VER=' /system/bin/titan2-pad-apply.sh 2>/dev/null`
+    [ "$_tv" = "$_sv" ] || rm -f "$ST/titan2-pad-apply.sh" 2>/dev/null || true
+  fi
   _forget_persisted_input_lock
   cur=`read_pad_mode`
   case "$cur" in

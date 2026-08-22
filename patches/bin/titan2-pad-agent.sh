@@ -115,12 +115,12 @@ LAST_FN=""; LAST_CHAR_MOD=""; LAST_CHAR_SCAN=""; LAST_HOST_LAYOUT=""
 LAST_CM_MT=""; LAST_SC_MT=""; LAST_FN_MT=""; LAST_HL_MT=""; LAST_SM_MT=""
 LAST_IDC_KIND=""; LAST_PAD_MT=0; LAST_CLICK_MT=0; LAST_FOLLOW_MT=0; LAST_LOCK_MT=0; LAST_CE=""
 # peels 2.160–2.212: see OPTIMIZE_SOURCE_PRODUCT.md
-AGENT_VER="${AGENT_VER:-2.232-rom-lock}"
+AGENT_VER="${AGENT_VER:-2.233-rom-lock}"
 # Force pin: refuse non-2.x garbage + force upgrade sticky env older than 2.160
 # (lab residual: sticky 2.6x/2.12x never picked tip peels). hot_reload still 2.NN*.
 case "$AGENT_VER" in
   2.20[0-9]*|2.21[0-9]*|2.22[0-9]*|2.23[0-9]*|2.19[0-9]*|2.18[0-9]*|2.17[0-9]*|2.16[0-9]*) ;;
-  *) AGENT_VER="2.232-rom-lock" ;;
+  *) AGENT_VER="2.233-rom-lock" ;;
 esac
 log() { echo "pad-agent $AGENT_VER live $1" > "$AGENT_STATUS" 2>/dev/null; chmod 666 "$AGENT_STATUS" 2>/dev/null; }
 # Lightweight status stamp (no chmod every tick — 2.34+ heartbeat path).
@@ -1230,10 +1230,15 @@ _ensure_keycode_drain_alive
 # Covers: orient-rel, mouse/caret/trackpad/stop, apply_pad.
 
 _run_pad_apply() {
-  _s=`_sysbin titan2-pad-apply.sh` || {
-    log "pad-apply missing — install titan2-pad-apply.sh"
-    return 1
-  }
+  # KEEP_DATA leftover /data/local/tmp/titan2-pad-apply.sh (2.215) outranked
+  # /system 2.219 and lockparked every boot. Product apply is the ROM script.
+  _s=/system/bin/titan2-pad-apply.sh
+  if [ ! -f "$_s" ]; then
+    _s=`_sysbin titan2-pad-apply.sh` || {
+      log "pad-apply missing — install titan2-pad-apply.sh"
+      return 1
+    }
+  fi
   /system/bin/sh "$_s" "$@"
   _rc=$?
   # Reload LAST_* mirrors for main loop
