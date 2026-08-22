@@ -136,12 +136,27 @@ ims_sim_numeric() {
   echo "$_out"
 }
 
+# Settings → SIMs → Calls is SoT. Never invent slot 2 / TMO.
+ims_settings_voice_sub() {
+  _v=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
+  case "$_v" in
+    [0-9]|[0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]) echo "$_v" ;;
+    *) echo "" ;;
+  esac
+}
+
+ims_slot_for_sub() {
+  _sub=$1
+  [ -n "$_sub" ] || return 1
+  dumpsys isub 2>/dev/null | sed -n "s/.*Logical SIM slot \([0-9][0-9]*\): subId=${_sub}.*/\1/p" | head -1
+}
+
 ims_active_slot() {
   _slot=
-  _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  [ -n "$_dv" ] || _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
+  _dv=`ims_settings_voice_sub`
+  [ -n "$_dv" ] || _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
   if [ -n "$_dv" ] && [ "$_dv" != "-1" ]; then
-    _slot=`dumpsys isub 2>/dev/null | sed -n "s/.*Logical SIM slot \([0-9][0-9]*\): subId=${_dv}.*/\1/p" | head -1`
+    _slot=`ims_slot_for_sub "$_dv"`
   fi
   if [ -z "$_slot" ]; then
     _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
@@ -195,29 +210,21 @@ ims_align_simswitch() {
   chmod 644 /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
 }
 
-# Resolve live subId (never leave multi_sim at -1 when a US/TMO row exists).
+# Settings Calls first. Never prefer a leftover TMO 310 row over the pin.
 ims_active_subid() {
-  _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
+  _dv=`ims_settings_voice_sub`
+  if [ -z "$_dv" ]; then
+    _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
+  fi
   if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
     _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
   fi
   if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultDataSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ] || [ "$_dv" = "null" ]; then
     _dv=`settings get global multi_sim_data_call 2>/dev/null | tr -d '\r\n '`
   fi
-  # siminfo: prefer latest US T-Mobile/Tello (310/240|260), else highest _id with real MCC
   if [ -z "$_dv" ] || [ "$_dv" = "-1" ] || [ "$_dv" = "null" ]; then
     _dv=`content query --uri content://telephony/siminfo 2>/dev/null \
-      | grep 'mcc_string=310' \
-      | sed -n 's/.*_id=\([0-9][0-9]*\).*/\1/p' | tail -1`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`content query --uri content://telephony/siminfo 2>/dev/null \
+      | grep -E 'sim_id=[01]' \
       | grep -E 'mcc_string=[1-9]' \
       | grep -v 'mcc_string=001' \
       | sed -n 's/.*_id=\([0-9][0-9]*\).*/\1/p' | tail -1`
@@ -313,12 +320,24 @@ while [ $j -lt 15 ]; do
   j=$((j+1))
 done
 
-# Point multi-sim prefs at live voice sub (siminfo fallback when defaultVoice=-1)
+# Settings Calls/Data/SMS stay. Only seed when unset after wipe.
 SUB=$(ims_active_subid)
 if [ -n "$SUB" ]; then
-  settings put global multi_sim_data_call "$SUB" 2>/dev/null || true
-  settings put global multi_sim_voice_call "$SUB" 2>/dev/null || true
-  settings put global multi_sim_sms "$SUB" 2>/dev/null || true
+  _cv=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
+  _cd=`settings get global multi_sim_data_call 2>/dev/null | tr -d '\r\n '`
+  _cs=`settings get global multi_sim_sms 2>/dev/null | tr -d '\r\n '`
+  case "$_cv" in
+    [0-9]*) logt "Settings Calls pin=$_cv — not overwritten" ;;
+    *) settings put global multi_sim_voice_call "$SUB" 2>/dev/null || true ;;
+  esac
+  case "$_cd" in
+    [0-9]*) ;;
+    *) settings put global multi_sim_data_call "$SUB" 2>/dev/null || true ;;
+  esac
+  case "$_cs" in
+    [0-9]*) ;;
+    *) settings put global multi_sim_sms "$SUB" 2>/dev/null || true ;;
+  esac
   settings put global "mobile_data${SUB}" 1 2>/dev/null || true
   settings put global data_roaming 1 2>/dev/null || true
   settings put global "data_roaming${SUB}" 1 2>/dev/null || true
@@ -407,7 +426,9 @@ setprop persist.dbg.allow_ims_off 1 2>/dev/null || true
 setprop persist.dbg.ims_volte_enable 1 2>/dev/null || true
 setprop persist.radio.calls.on.ims 1 2>/dev/null || true
 setprop persist.data.iwlan.enable true 2>/dev/null || true
-setprop persist.vendor.mtk.volte.enable 1 2>/dev/null || true
+# 3 = VoLTE on both trays. 1 killed incoming on SIM 2; 2 killed slot 1.
+setprop persist.vendor.mtk.volte.enable 3 2>/dev/null || true
+ims_set_vendor_prop persist.vendor.mtk.volte.enable 3
 # WFC on for US MVNO abroad (VoWiFi when WWAN only emergency-camps)
 setprop persist.vendor.mtk.wfc.enable 1 2>/dev/null || true
 setprop persist.vendor.mtk_wfc_support 1 2>/dev/null || true
@@ -418,18 +439,35 @@ setprop persist.vendor.radio.wfc_state 3 2>/dev/null || true
 setprop persist.vendor.radio.volte_state 3 2>/dev/null || true
 setprop persist.vendor.radio.wfc_enable 1 2>/dev/null || true
 setprop persist.vendor.clientapi_support 1 2>/dev/null || true
-# MTK DSBP: load OP08 (T-Mobile US) modem profile when US SIM present
-NUM_ALL=$(getprop gsm.sim.operator.numeric 2>/dev/null | tr -d '\r')
-[ -n "$NUM_ALL" ] || NUM_ALL=$NUM
-case "$NUM_ALL" in
-  *310240*|*310260*)
+# OP08 only when Settings Calls SIM is T-Mobile. Leftover OP08 on PILDYK
+# (24603) is HERESY — MMTEL Voice never advertises, incoming dies.
+_vsub=`ims_settings_voice_sub`
+_vnum=
+if [ -n "$_vsub" ]; then
+  _vnum=`content query --uri content://telephony/siminfo 2>/dev/null \
+    | grep "_id=$_vsub" | head -1 \
+    | sed -n 's/.*mcc_string=\([0-9]*\).*mnc_string=\([0-9]*\).*/\1\2/p'`
+fi
+[ -n "$_vnum" ] || _vnum=$NUM
+case "$_vnum" in
+  310240*|310260*)
     setprop persist.vendor.operator.optr OP08 2>/dev/null || true
     setprop persist.vendor.operator.spec SPEC0200 2>/dev/null || true
     setprop persist.vendor.operator.seg SEGDEFAULT 2>/dev/null || true
     setprop persist.vendor.mtk_usp_operator OP08 2>/dev/null || true
     setprop persist.vendor.radio.mtk_dsbp_id 8 2>/dev/null || true
     setprop vendor.mtk.md.sbp 8 2>/dev/null || true
-    logt "US TMO SIM → OP08/SBP8 forced"
+    logt "Settings Calls SIM $_vsub $_vnum → OP08/SBP8"
+    ;;
+  *)
+    _op=`getprop persist.vendor.operator.optr 2>/dev/null | tr -d '\r\n '`
+    if [ "$_op" = "OP08" ]; then
+      ims_set_vendor_prop persist.vendor.operator.optr ""
+      ims_set_vendor_prop persist.vendor.operator.spec ""
+      ims_set_vendor_prop persist.vendor.operator.seg ""
+      ims_set_vendor_prop persist.vendor.mtk_usp_operator ""
+      logt "cleared leftover OP08 — Settings Calls SIM is ${_vnum:-none}"
+    fi
     ;;
 esac
 

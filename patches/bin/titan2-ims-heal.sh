@@ -249,10 +249,14 @@ ims_split_mccmnc() {
   esac
 }
 
-# Logical slot with LOADED/READY SIM, prefer default voice sub mapping.
+# Logical slot: Settings Calls pin first.
 ims_active_slot() {
   _slot=
-  _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
+  _dv=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
+  case "$_dv" in
+    [0-9]*) ;;
+    *) _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1` ;;
+  esac
   [ -n "$_dv" ] || _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
   if [ -n "$_dv" ] && [ "$_dv" != "-1" ]; then
     _slot=`dumpsys isub 2>/dev/null | sed -n "s/.*Logical SIM slot \([0-9][0-9]*\): subId=${_dv}.*/\1/p" | head -1`
@@ -279,28 +283,20 @@ ims_active_slot() {
 }
 
 ims_active_subid() {
-  _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
+  _dv=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
+  if [ -z "$_dv" ] || [ "$_dv" = "-1" ] || [ "$_dv" = "null" ]; then
+    _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
+  fi
   if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
     _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultDataSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    # settings fallback (survives brief phone binder death)
-    _dv=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
   fi
   if [ -z "$_dv" ] || [ "$_dv" = "-1" ] || [ "$_dv" = "null" ]; then
     _dv=`settings get global multi_sim_data_call 2>/dev/null | tr -d '\r\n '`
   fi
-  # siminfo: prefer latest US T-Mobile/Tello (310/*), else any real MCC (not 001 test)
+  # Inserted trays only — never a leftover TMO 310 row that is not in a slot.
   if [ -z "$_dv" ] || [ "$_dv" = "-1" ] || [ "$_dv" = "null" ]; then
     _dv=`content query --uri content://telephony/siminfo 2>/dev/null \
-      | grep 'mcc_string=310' \
-      | sed -n 's/.*_id=\([0-9][0-9]*\).*/\1/p' | tail -1`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`content query --uri content://telephony/siminfo 2>/dev/null \
+      | grep -E 'sim_id=[01]' \
       | grep -E 'mcc_string=[1-9]' \
       | grep -v 'mcc_string=001' \
       | sed -n 's/.*_id=\([0-9][0-9]*\).*/\1/p' | tail -1`
@@ -404,14 +400,26 @@ ims_insert_ims_apn() {
   return 0
 }
 
-# Point default voice/data/SMS + per-sub data/WFC at the live subId.
+# Point per-sub data/WFC at the live subId. Settings Calls/Data/SMS stay.
 ims_apply_sub_defaults() {
   _sub=`ims_active_subid`
   _slot=`ims_active_slot`
   if [ -n "$_sub" ]; then
-    settings put global multi_sim_data_call "$_sub" 2>/dev/null || true
-    settings put global multi_sim_voice_call "$_sub" 2>/dev/null || true
-    settings put global multi_sim_sms "$_sub" 2>/dev/null || true
+    _cv=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
+    _cd=`settings get global multi_sim_data_call 2>/dev/null | tr -d '\r\n '`
+    _cs=`settings get global multi_sim_sms 2>/dev/null | tr -d '\r\n '`
+    case "$_cv" in
+      [0-9]*) ;;
+      *) settings put global multi_sim_voice_call "$_sub" 2>/dev/null || true ;;
+    esac
+    case "$_cd" in
+      [0-9]*) ;;
+      *) settings put global multi_sim_data_call "$_sub" 2>/dev/null || true ;;
+    esac
+    case "$_cs" in
+      [0-9]*) ;;
+      *) settings put global multi_sim_sms "$_sub" 2>/dev/null || true ;;
+    esac
     settings put global "mobile_data${_sub}" 1 2>/dev/null || true
     settings put global "data_roaming${_sub}" 1 2>/dev/null || true
     settings put global "preferred_network_mode${_sub}" 9 2>/dev/null || true
