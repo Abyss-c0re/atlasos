@@ -2194,7 +2194,10 @@ public class TrackpadAccessService extends AccessibilityService {
         try {
             android.app.KeyguardManager km =
                 (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
-            if (km != null && (km.isKeyguardLocked() || km.isDeviceLocked())) {
+            if (km == null) return false;
+            // DreamingLockscreen / FallbackHome can stay "showing" with no PIN.
+            if (!km.isDeviceSecure()) return false;
+            if (km.isKeyguardLocked() || km.isDeviceLocked()) {
                 return true;
             }
         } catch (Exception ignored) {}

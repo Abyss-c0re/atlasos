@@ -18,7 +18,7 @@ PAD_STATUS=$ST/titan2_pad_status
 TP_LOG=$ST/titan2_touchpadd.log
 CARET_STATUS=$ST/titan2_caret_status
 APPLY_LAST=$ST/titan2_pad_apply_last
-PAD_APPLY_VER=2.218-rom-lock
+PAD_APPLY_VER=2.219-rom-lock
 
 # Prefer GSI/system binary (Phase 1.5 SoT); tip only for lab iteration.
 TOUCHPADD=/system/bin/titan2-touchpadd
@@ -196,6 +196,11 @@ _a11y_live_ok() {
 
 _input_unlocked_ok() {
   case "`getprop sys.boot_completed 2>/dev/null | tr -d '\r'`" in 1) ;; *) return 1 ;; esac
+  # No PIN/pattern: leftover lock=1 after KEEP_DATA is not a credential park.
+  # Same as the live heal — apply must run without a settings put.
+  case "`settings get secure lockscreen.disabled 2>/dev/null | tr -d '\r'`" in
+    1|true|TRUE) return 0 ;;
+  esac
   if _a11y_live_ok; then
     case "`read_first titan2_input_lock 2>/dev/null`" in 1|true|on|yes) return 1 ;; esac
     case "`settings get global titan2_input_lock 2>/dev/null | tr -d '\r'`" in 1|true|on|yes) return 1 ;; esac
