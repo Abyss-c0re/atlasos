@@ -1,7 +1,6 @@
 #!/system/bin/sh
 # Standing hold: vendor NVRAM resets persist.vendor.radio.simswitch to tray 1.
-# Settings → SIMs → Calls is SoT. Re-apply without restarting RIL or ImsService.
-# Incoming must stay registered without a human or agent knowing a call is coming.
+# Re-read Settings → SIMs → Calls every tick. Never invent a tray.
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 INTERVAL_S=${INTERVAL_S:-5}
 EARLY=/system/bin/titan2-ims-simswitch-early.sh
