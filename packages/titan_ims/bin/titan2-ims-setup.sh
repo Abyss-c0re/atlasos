@@ -278,8 +278,12 @@ while [ $j -lt 15 ]; do
     2) ims_bind_slot 1 ;;
     *)
       ims_bind_slot "$ASLOT"
-      ims_bind_slot 0
-      ims_bind_slot 1
+      for _bs in 0 1; do
+        case $(getprop gsm.sim.state 2>/dev/null | cut -d, -f$((_bs+1))) in
+          ABSENT|"") continue ;;
+        esac
+        ims_bind_slot "$_bs"
+      done
       ;;
   esac
   _chk=$ASLOT
