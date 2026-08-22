@@ -171,9 +171,11 @@ public final class PhoneCalls {
                 cls.getMethod("setVoWiFiSettingEnabled", boolean.class)
                     .invoke(mgr, Boolean.valueOf(on));
             } catch (Throwable ignored) {}
+            // Cross-SIM calling sends MO to the other tray. Empty T-Mobile
+            // leftover → DIALING / ImsCallSession UNINITIALIZED until timeout.
             try {
                 cls.getMethod("setCrossSimCallingEnabled", boolean.class)
-                    .invoke(mgr, Boolean.valueOf(on));
+                    .invoke(mgr, Boolean.FALSE);
             } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
