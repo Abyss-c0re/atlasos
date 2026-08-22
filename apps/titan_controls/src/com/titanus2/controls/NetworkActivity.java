@@ -1,25 +1,24 @@
 package com.titanus2.controls;
 
 import android.app.Activity;
-import android.content.Intent;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.titanus2.controls.network.VpnHotspotHeal;
 import com.titanus2.controls.ui.UiKit;
 
 /**
- * Tweaks hub — Cube flow: wrap TrebleApp for GSI/IMS/misc, keep Titan-only pieces here.
- * <p>
- * Do not reimplement TrebleApp IMS/telephony/BT panels. Open Treble as hidden UI;
- * focus Controls on missing product surface (Wi‑Fi shortcuts, HW keyboard IME,
- * optional VPN-over-hotspot heal).
+ * Tweaks hub. IMS plane lives here: Settings → Calls is SoT.
+ * TrebleApp stays a hidden extra for vendor quirks, not the call heal path.
  */
 public class NetworkActivity extends Activity {
     private static final String PREFS_TWEAKS = "titan2_tweaks";
@@ -29,7 +28,14 @@ public class NetworkActivity extends Activity {
     private final Handler h = new Handler(Looper.getMainLooper());
 
     private TextView trebleStatus;
+    private TextView imsStatus;
+    private UiKit.Toggle tImsBinder;
+    private UiKit.Toggle tImsMtk;
+    private UiKit.Toggle tImsForce;
     private TextView vpnHotspotStatus;
+    private TextView dpiValue;
+    private SeekBar dpiBar;
+    private boolean dpiDragging;
     private UiKit.Toggle tImeSwitcher;
     private UiKit.Toggle tSoftIme;
     private UiKit.Toggle tVpnHotspot;
@@ -44,14 +50,83 @@ public class NetworkActivity extends Activity {
 
         UiKit.title(root, "Tweaks");
 
-        // --- TrebleApp only for IMS/misc/vendor (no reimplemented panels) ---
-        UiKit.section(root, "Treble / IMS");
+        UiKit.section(root, "Display size");
+        dpiValue = new TextView(this);
+        dpiValue.setTextSize(22f);
+        dpiValue.setTypeface(Typeface.SANS_SERIF, Typeface.BOLD);
+        dpiValue.setTextColor(UiKit.textColor(this));
+        dpiValue.setPadding(0, 0, 0, UiKit.dp(dpiValue, 4));
+        root.addView(dpiValue);
+        int live = DisplayDensity.current(this);
+        int progress = live - DisplayDensity.MIN;
+        if (progress < 0) progress = 0;
+        int span = DisplayDensity.MAX - DisplayDensity.MIN;
+        if (progress > span) progress = span;
+        dpiBar = UiKit.slider(root, span, progress, new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int p, boolean fromUser) {
+                paintDpi(DisplayDensity.MIN + p);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                dpiDragging = true;
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                dpiDragging = false;
+            }
+        });
+        dpiBar.setFocusable(true);
+        dpiBar.setFocusableInTouchMode(true);
+        LinearLayout ends = UiKit.row(root);
+        TextView smaller = new TextView(this);
+        smaller.setText("Smaller");
+        smaller.setTextColor(UiKit.mutedColor(this));
+        smaller.setTextSize(13f);
+        smaller.setLayoutParams(new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView larger = new TextView(this);
+        larger.setText("Larger");
+        larger.setTextColor(UiKit.mutedColor(this));
+        larger.setTextSize(13f);
+        larger.setGravity(Gravity.END);
+        larger.setLayoutParams(new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        ends.addView(smaller);
+        ends.addView(larger);
+        LinearLayout dpiBtns = UiKit.row(root);
+        UiKit.flexButton(dpiBtns, "Apply", this::applyDpiFromBar);
+        UiKit.flexButton(dpiBtns, "Reset", this::resetDpi);
+        paintDpi(live);
+
+        UiKit.section(root, "Calls");
+        imsStatus = UiKit.mono(root);
+        tImsBinder = UiKit.toggle(root, "Binder thread on incoming",
+            ImsCalls.planeOn(this, AgentBridge.IMS_BINDER),
+            on -> {
+                ImsCalls.setPlane(this, AgentBridge.IMS_BINDER, on);
+                h.postDelayed(this::refreshIms, 600);
+            });
+        tImsMtk = UiKit.toggle(root, "MTK IMS",
+            ImsCalls.planeOn(this, AgentBridge.IMS_MTK),
+            on -> {
+                ImsCalls.setPlane(this, AgentBridge.IMS_MTK, on);
+                h.postDelayed(this::refreshIms, 600);
+            });
+        tImsForce = UiKit.toggle(root, "Force VoLTE overlays",
+            ImsCalls.planeOn(this, AgentBridge.IMS_FORCE_VOLTE),
+            on -> {
+                ImsCalls.setPlane(this, AgentBridge.IMS_FORCE_VOLTE, on);
+                h.postDelayed(this::refreshIms, 600);
+            });
+        LinearLayout imsBtns = UiKit.row(root);
+        UiKit.flexButton(imsBtns, "Heal calls", this::healCalls);
+        UiKit.flexButton(imsBtns, "Refresh", this::refreshIms);
+        UiKit.section(root, "Treble");
         trebleStatus = UiKit.mono(root);
         UiKit.button(root, "Open Treble settings", this::openTrebleSettings);
-        TextView trebleHint = UiKit.mono(root);
-        trebleHint.setText(
-            "Full TrebleApp UI — IMS, VoLTE/WFC, misc, vendor quirks.\n"
-                + "Controls does not duplicate those panels.");
 
         // --- Optional: share VPN (Tailscale TUN) with SoftAP clients ---
         UiKit.section(root, "Hotspot + VPN");
@@ -98,19 +173,16 @@ public class NetworkActivity extends Activity {
         });
 
         TextView kbHint = UiKit.mono(root);
-        kbHint.setText("T Treble · V VPN hotspot · W soft KB · K switcher · R · Esc");
+        kbHint.setText("A dpi · H heal calls · T Treble · V VPN · W soft KB · K switcher · R · Esc");
 
         setContentView(sc);
         TrebleAppBridge.hideFromSettings(this);
         refreshTrebleStatus();
+        refreshIms();
         refreshVpnHotspotStatus();
-        if (tVpnHotspot != null && tVpnHotspot.row != null) {
-            tVpnHotspot.row.post(() -> {
-                try { tVpnHotspot.row.requestFocus(); } catch (Exception ignored) {}
-            });
-        } else if (tSoftIme != null && tSoftIme.row != null) {
-            tSoftIme.row.post(() -> {
-                try { tSoftIme.row.requestFocus(); } catch (Exception ignored) {}
+        if (dpiBar != null) {
+            dpiBar.post(() -> {
+                try { dpiBar.requestFocus(); } catch (Exception ignored) {}
             });
         }
     }
@@ -120,7 +192,9 @@ public class NetworkActivity extends Activity {
         super.onResume();
         TrebleAppBridge.hideFromSettings(this);
         refreshTrebleStatus();
+        refreshIms();
         refreshVpnHotspotStatus();
+        if (!dpiDragging) refreshDpi();
     }
 
     @Override
@@ -134,10 +208,20 @@ public class NetworkActivity extends Activity {
                 finish();
                 return true;
             }
+            if (kc == KeyEvent.KEYCODE_A) {
+                applyDpiFromBar();
+                return true;
+            }
             if (kc == KeyEvent.KEYCODE_R) {
                 refreshTrebleStatus();
+                refreshIms();
                 refreshVpnHotspotStatus();
+                refreshDpi();
                 UiKit.toast(this, "Status refreshed");
+                return true;
+            }
+            if (kc == KeyEvent.KEYCODE_H) {
+                healCalls();
                 return true;
             }
             if (kc == KeyEvent.KEYCODE_T) {
@@ -175,6 +259,48 @@ public class NetworkActivity extends Activity {
         return super.dispatchKeyEvent(event);
     }
 
+    private void paintDpi(int dpi) {
+        if (dpiValue == null) return;
+        dpiValue.setText(dpi + " dpi");
+    }
+
+    private void refreshDpi() {
+        int live = DisplayDensity.current(this);
+        paintDpi(live);
+        if (dpiBar == null) return;
+        int p = live - DisplayDensity.MIN;
+        if (p < 0) p = 0;
+        int span = DisplayDensity.MAX - DisplayDensity.MIN;
+        if (p > span) p = span;
+        if (dpiBar.getProgress() != p) dpiBar.setProgress(p);
+    }
+
+    private int dpiFromBar() {
+        if (dpiBar == null) return DisplayDensity.current(this);
+        return DisplayDensity.MIN + dpiBar.getProgress();
+    }
+
+    private void applyDpiFromBar() {
+        int dpi = dpiFromBar();
+        boolean ok = DisplayDensity.apply(this, dpi);
+        int live = DisplayDensity.liveOverride();
+        if (live <= 0) live = DisplayDensity.current(this);
+        paintDpi(ok ? dpi : live);
+        String err = DisplayDensity.lastWmError;
+        UiKit.toast(this, ok ? ("Applied " + dpi + " dpi")
+            : ("Apply failed" + (err.isEmpty() ? "" : (": " + err))));
+        if (!ok) refreshDpi();
+    }
+
+    private void resetDpi() {
+        if (!DisplayDensity.reset(this)) {
+            UiKit.toast(this, "Reset failed");
+            refreshDpi();
+            return;
+        }
+        h.postDelayed(this::refreshDpi, 200);
+    }
+
     private void refreshVpnHotspotStatus() {
         if (vpnHotspotStatus == null) return;
         try {
@@ -200,10 +326,35 @@ public class NetworkActivity extends Activity {
     private void refreshTrebleStatus() {
         if (trebleStatus == null) return;
         if (TrebleAppBridge.isInstalled(this)) {
-            trebleStatus.setText("TrebleApp: installed (hidden; open for IMS / misc)");
+            trebleStatus.setText("TrebleApp: installed (hidden)");
         } else {
             trebleStatus.setText("TrebleApp: missing on this ROM");
         }
+    }
+
+    private void refreshIms() {
+        if (imsStatus == null) return;
+        try {
+            ImsCalls.Detect d = ImsCalls.detect(this);
+            imsStatus.setText(d.line());
+            syncToggle(tImsBinder, ImsCalls.planeOn(this, AgentBridge.IMS_BINDER));
+            syncToggle(tImsMtk, ImsCalls.planeOn(this, AgentBridge.IMS_MTK));
+            syncToggle(tImsForce, ImsCalls.planeOn(this, AgentBridge.IMS_FORCE_VOLTE));
+        } catch (Exception e) {
+            imsStatus.setText("Calls: detect error");
+        }
+    }
+
+    private static void syncToggle(UiKit.Toggle t, boolean on) {
+        if (t != null && t.isChecked() != on) t.setChecked(on);
+    }
+
+    private void healCalls() {
+        ImsCalls.requestHeal(this);
+        UiKit.toast(this, "Heal queued");
+        h.postDelayed(this::refreshIms, 800);
+        h.postDelayed(this::refreshIms, 2500);
+        h.postDelayed(this::refreshIms, 6000);
     }
 
     private void hideKeyboardSwitcher() {

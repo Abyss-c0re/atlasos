@@ -77,6 +77,9 @@ public class SimActivity extends Activity {
         root.removeAllViews();
         UiKit.title(root, "SIMs");
         UiKit.note(root, "Disable stays Off. Row is not deleted.");
+        ImsCalls.Detect ims = ImsCalls.detect(this);
+        TextView callsFact = UiKit.mono(root);
+        callsFact.setText(ims.line());
         UiKit.toggle(root, "Disable phone calls", PhoneCalls.isDisabled(this), on -> {
             PhoneCalls.setDisabled(this, on);
             UiKit.toast(this, on ? "Phone calls Off" : "Phone calls On");

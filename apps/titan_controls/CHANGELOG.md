@@ -5,6 +5,19 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.59-ims-calls (659) — 2026-08-22T17:56Z
+
+### rebuild 2026-08-22T17:57Z · 16.59-ims-calls (659)
+
+- Rebuild (ALLOW_ROOT=0)
+
+
+- IMS tweaks + Settings Calls heal
+- Tweaks: IMS plane (binder / MTK / VoLTE) + Heal calls
+- Detect/heal follow Settings → Calls; never overwrite the pin
+
+---
+
 ## 16.55-button-plane (655) — 2026-08-21T20:05Z
 
 - Build stamp (ALLOW_ROOT=0)

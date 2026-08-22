@@ -81,9 +81,14 @@ public final class PlaneHealth {
         r.calls.add(new Row("SIM", simLoaded, simProp.isEmpty() ? "empty" : simProp));
 
         String binder = prop("persist.sys.phh.allow_binder_thread_on_incoming_calls", "");
-        r.calls.add(new Row("Binder-thread prop", true,
-            binder.isEmpty() ? "unset (not incoming)" : (binder + " (not incoming)"),
-            "INFO"));
+        boolean binderOn = "1".equals(binder) || "true".equalsIgnoreCase(binder);
+        r.calls.add(new Row("Binder thread", binderOn,
+            binder.isEmpty() ? "unset" : binder));
+
+        String callsIms = prop("persist.radio.calls.on.ims", "");
+        boolean callsOnIms = "1".equals(callsIms);
+        r.calls.add(new Row("calls.on.ims", callsOnIms,
+            callsIms.isEmpty() ? "unset" : callsIms));
 
         String imsPath = "";
         try {
@@ -186,27 +191,46 @@ public final class PlaneHealth {
         String t2 = prop("persist.radio.titan2_simswitch", "");
         String radioSw = prop("persist.radio.simswitch", "");
         String capSw = prop("persist.vendor.radio.c_capability_slot", "");
+        int settingsSub = PhoneCalls.defaultVoiceSubId(ctx);
+        int settingsSlot = -1;
+        try {
+            String raw = Settings.Global.getString(ctx.getContentResolver(),
+                "multi_sim_voice_call");
+            if (raw != null && raw.matches("[1-9][0-9]*")) {
+                settingsSub = Integer.parseInt(raw);
+            }
+        } catch (Exception ignored) {}
+        try {
+            for (SimCards.Card c : SimCards.list(ctx)) {
+                if (c != null && c.subId == settingsSub) {
+                    settingsSlot = c.slot;
+                    break;
+                }
+            }
+        } catch (Exception ignored) {}
         boolean swOk = true;
         String swDetail = "vendor=" + sw;
-        if (voiceSlot >= 0) {
-            int want = voiceSlot + 1;
+        if (settingsSlot >= 0) {
+            int want = settingsSlot + 1;
             swOk = String.valueOf(want).equals(sw);
-            swDetail += " voiceSlot=" + voiceSlot + " want=" + want
+            swDetail += " SettingsCalls=SIM " + want + " sub=" + settingsSub
                 + (swOk ? "" : " (IMS major is the other slot)");
         }
         r.calls.add(new Row("IMS capability slot", swOk, swDetail));
 
         boolean sotSplit = false;
-        if (!t2.isEmpty()) {
-            if (!t2.equals(sw)) sotSplit = true;
-            if (!radioSw.isEmpty() && !t2.equals(radioSw)) sotSplit = true;
-            if (!capSw.isEmpty() && !t2.equals(capSw)) sotSplit = true;
+        if (settingsSlot >= 0) {
+            String want = String.valueOf(settingsSlot + 1);
+            if (!want.equals(sw)) sotSplit = true;
+            if (!t2.isEmpty() && !want.equals(t2)) sotSplit = true;
+            if (!capSw.isEmpty() && !want.equals(capSw)) sotSplit = true;
         }
-        String sotDetail = "Calls=" + t2 + " vendor=" + sw
-            + " radio=" + radioSw + " cap=" + capSw;
+        String sotDetail = "SettingsCalls=" + (settingsSlot >= 0 ? (settingsSlot + 1) : "?")
+            + " vendor=" + sw + " radio=" + radioSw + " cap=" + capSw
+            + " titan2=" + t2;
         if (sotSplit) {
             r.calls.add(new Row("Calls tray vs vendor", false,
-                sotDetail + " — NVRAM reset tray 1 while Settings Calls stayed",
+                sotDetail + " — Settings Calls is SoT",
                 "HERESY"));
             swOk = false;
         } else {
@@ -282,7 +306,7 @@ public final class PlaneHealth {
         boolean packetVoice = radioTech == 14 || radioTech == 20; // LTE / NR
         boolean incomingReady = !airplane && simLoaded && inService
             && (mmtelOk || (!packetVoice && inService))
-            && swOk && !sotSplit;
+            && swOk && !sotSplit && callsOnIms && binderOn;
 
         if (disabled) {
             r.callsOk = true;
@@ -295,6 +319,10 @@ public final class PlaneHealth {
             r.callsVerdict = "FAIL incoming — radio not in service";
         } else if (sotSplit) {
             r.callsVerdict = "FAIL incoming — Settings Calls vs vendor simswitch split";
+        } else if (!callsOnIms) {
+            r.callsVerdict = "FAIL incoming — calls.on.ims=0";
+        } else if (!binderOn) {
+            r.callsVerdict = "FAIL incoming — binder thread off";
         } else if (!mmtelOk && packetVoice) {
             r.callsVerdict = "FAIL incoming — LTE/NR and MMTEL has no VOICE";
         } else if (!swOk) {

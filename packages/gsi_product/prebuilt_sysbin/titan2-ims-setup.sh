@@ -137,27 +137,7 @@ ims_sim_numeric() {
 }
 
 ims_active_slot() {
-  _slot=
-  _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  [ -n "$_dv" ] || _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  if [ -n "$_dv" ] && [ "$_dv" != "-1" ]; then
-    _slot=`dumpsys isub 2>/dev/null | sed -n "s/.*Logical SIM slot \([0-9][0-9]*\): subId=${_dv}.*/\1/p" | head -1`
-  fi
-  if [ -z "$_slot" ]; then
-    _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
-    _i=0
-    _oldifs=$IFS
-    IFS=,
-    for _s in $_st; do
-      case "$_s" in
-        LOADED|READY|IMSI|LOADED*|READY*) _slot=$_i; break ;;
-      esac
-      _i=$((_i + 1))
-    done
-    IFS=$_oldifs
-  fi
-  [ -n "$_slot" ] || _slot=0
-  echo "$_slot"
+  ims_slot_for_sub "$(ims_active_subid)"
 }
 
 # MTK 4G/IMS capability is 1-indexed persist.vendor.radio.simswitch.
@@ -179,7 +159,10 @@ ims_align_simswitch() {
   _slot=`ims_active_slot`
   case "$_slot" in
     0|1|2|3) _want=$((_slot + 1)) ;;
-    *) return 0 ;;
+    *)
+      logt "simswitch skip: Settings Calls has no slot"
+      return 0
+      ;;
   esac
   _cur=`getprop persist.vendor.radio.simswitch 2>/dev/null | tr -d '\r\n '`
   logt "simswitch $_cur -> $_want (voice slot $_slot). reboot applies modem cap; no ril restart"
@@ -195,35 +178,23 @@ ims_align_simswitch() {
   chmod 644 /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
 }
 
-# Resolve live subId (never leave multi_sim at -1 when a US/TMO row exists).
+# Settings → SIMs → Calls is the only voice pin. Never invent a subId.
 ims_active_subid() {
-  _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultDataSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ] || [ "$_dv" = "null" ]; then
-    _dv=`settings get global multi_sim_data_call 2>/dev/null | tr -d '\r\n '`
-  fi
-  # siminfo: prefer latest US T-Mobile/Tello (310/240|260), else highest _id with real MCC
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ] || [ "$_dv" = "null" ]; then
-    _dv=`content query --uri content://telephony/siminfo 2>/dev/null \
-      | grep 'mcc_string=310' \
-      | sed -n 's/.*_id=\([0-9][0-9]*\).*/\1/p' | tail -1`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`content query --uri content://telephony/siminfo 2>/dev/null \
-      | grep -E 'mcc_string=[1-9]' \
-      | grep -v 'mcc_string=001' \
-      | sed -n 's/.*_id=\([0-9][0-9]*\).*/\1/p' | tail -1`
-  fi
+  _dv=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
   case "$_dv" in
-    [0-9]|[0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]) echo "$_dv" ;;
+    [1-9]|[1-9][0-9]|[1-9][0-9][0-9]|[1-9][0-9][0-9][0-9]) echo "$_dv" ;;
+    *) echo "" ;;
+  esac
+}
+
+ims_slot_for_sub() {
+  _sub=$1
+  [ -n "$_sub" ] || { echo ""; return 0; }
+  _slot=`content query --uri content://telephony/siminfo --projection sim_id \
+    --where "_id=$_sub" 2>/dev/null \
+    | sed -n 's/.*sim_id=\([0-9][0-9]*\).*/\1/p' | head -1`
+  case "$_slot" in
+    [0-9]|[0-9][0-9]) echo "$_slot" ;;
     *) echo "" ;;
   esac
 }
@@ -313,11 +284,10 @@ while [ $j -lt 15 ]; do
   j=$((j+1))
 done
 
-# Point multi-sim prefs at live voice sub (siminfo fallback when defaultVoice=-1)
+# Follow Settings Calls. Never write multi_sim_voice_call.
 SUB=$(ims_active_subid)
 if [ -n "$SUB" ]; then
   settings put global multi_sim_data_call "$SUB" 2>/dev/null || true
-  settings put global multi_sim_voice_call "$SUB" 2>/dev/null || true
   settings put global multi_sim_sms "$SUB" 2>/dev/null || true
   settings put global "mobile_data${SUB}" 1 2>/dev/null || true
   settings put global data_roaming 1 2>/dev/null || true

@@ -169,7 +169,7 @@ public class MainActivity extends Activity {
                 }
             });
         // HW stays here. TrebleApp (hidden) owns GSI IMS/misc call paths; Tweaks wraps it.
-        navTweaks = UiKit.navRow(root, "Tweaks", "Treble/IMS + keyboard",
+        navTweaks = UiKit.navRow(root, "Tweaks", "Display size · Calls · keyboard",
             () -> startActivity(new Intent(this, NetworkActivity.class)));
         navSims = UiKit.navRow(root, "SIMs", "On / Off — disable does not delete",
             () -> startActivity(new Intent(this, SimActivity.class)));

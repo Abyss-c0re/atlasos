@@ -12,7 +12,7 @@ T2=/data/misc/titan2
 ST=/data/local/tmp
 IMS_STATUS=$ST/titan2_ims_status
 IMS_PROPS_STATE=$ST/titan2_ims_props_last
-IMS_VER=2.173-bt-noforce
+IMS_VER=2.174-calls-sot
 
 log() {
   echo "ims-heal: $*" >>"$ST/titan2_pad_agent.log" 2>/dev/null || true
@@ -249,66 +249,67 @@ ims_split_mccmnc() {
   esac
 }
 
-# Logical slot with LOADED/READY SIM, prefer default voice sub mapping.
-ims_active_slot() {
-  _slot=
-  _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  [ -n "$_dv" ] || _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  if [ -n "$_dv" ] && [ "$_dv" != "-1" ]; then
-    _slot=`dumpsys isub 2>/dev/null | sed -n "s/.*Logical SIM slot \([0-9][0-9]*\): subId=${_dv}.*/\1/p" | head -1`
-    if [ -z "$_slot" ]; then
-      _slot=`dumpsys isub 2>/dev/null | tr '\n' ' ' \
-        | sed -n "s/.*id=${_dv}[^[]*simSlotIndex=\([0-9][0-9]*\).*/\1/p" | head -1`
-    fi
-  fi
-  if [ -z "$_slot" ]; then
-    _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
-    _i=0
-    _oldifs=$IFS
-    IFS=,
-    for _s in $_st; do
-      case "$_s" in
-        LOADED|READY|IMSI|LOADED*|READY*) _slot=$_i; break ;;
-      esac
-      _i=`expr $_i + 1 2>/dev/null` || _i=0
-    done
-    IFS=$_oldifs
-  fi
-  [ -n "$_slot" ] || _slot=0
-  echo "$_slot"
-}
-
+# Settings → SIMs → Calls is the only voice pin. Never dumpsys isub (hangs).
+# Never first-LOADED (picks tray 1 when a dead US SIM is in slot 0).
+# Never invent a subId from T-Mobile numeric.
 ims_active_subid() {
-  _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultVoiceSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`dumpsys isub 2>/dev/null | sed -n 's/.*defaultDataSubId=\([0-9][0-9]*\).*/\1/p' | head -1`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    # settings fallback (survives brief phone binder death)
-    _dv=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ] || [ "$_dv" = "null" ]; then
-    _dv=`settings get global multi_sim_data_call 2>/dev/null | tr -d '\r\n '`
-  fi
-  # siminfo: prefer latest US T-Mobile/Tello (310/*), else any real MCC (not 001 test)
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ] || [ "$_dv" = "null" ]; then
-    _dv=`content query --uri content://telephony/siminfo 2>/dev/null \
-      | grep 'mcc_string=310' \
-      | sed -n 's/.*_id=\([0-9][0-9]*\).*/\1/p' | tail -1`
-  fi
-  if [ -z "$_dv" ] || [ "$_dv" = "-1" ]; then
-    _dv=`content query --uri content://telephony/siminfo 2>/dev/null \
-      | grep -E 'mcc_string=[1-9]' \
-      | grep -v 'mcc_string=001' \
-      | sed -n 's/.*_id=\([0-9][0-9]*\).*/\1/p' | tail -1`
-  fi
+  _dv=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
   case "$_dv" in
-    [0-9]|[0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]) echo "$_dv" ;;
+    [1-9]|[1-9][0-9]|[1-9][0-9][0-9]|[1-9][0-9][0-9][0-9]) echo "$_dv" ;;
     *) echo "" ;;
   esac
+}
+
+ims_slot_for_sub() {
+  _sub=$1
+  [ -n "$_sub" ] || { echo ""; return 0; }
+  _slot=`content query --uri content://telephony/siminfo --projection sim_id \
+    --where "_id=$_sub" 2>/dev/null \
+    | sed -n 's/.*sim_id=\([0-9][0-9]*\).*/\1/p' | head -1`
+  case "$_slot" in
+    [0-9]|[0-9][0-9]) echo "$_slot" ;;
+    *) echo "" ;;
+  esac
+}
+
+ims_active_slot() {
+  _slot=`ims_slot_for_sub "$(ims_active_subid)"`
+  [ -n "$_slot" ] && echo "$_slot"
+}
+
+ims_set_vendor_prop() {
+  _k=$1; _v=$2
+  if [ -x /system/bin/resetprop_phh ]; then
+    /system/bin/resetprop_phh "$_k" "$_v" 2>/dev/null || true
+  elif [ -x /data/adb/ksu/bin/resetprop ]; then
+    /data/adb/ksu/bin/resetprop "$_k" "$_v" 2>/dev/null || true
+  else
+    setprop "$_k" "$_v" 2>/dev/null || true
+  fi
+}
+
+# Align vendor simswitch to Settings Calls. Never write multi_sim_voice_call.
+ims_align_calls_tray() {
+  _sub=`ims_active_subid`
+  _slot=`ims_slot_for_sub "$_sub"`
+  case "$_slot" in
+    0|1|2|3) _want=$((_slot + 1)) ;;
+    *)
+      log "align skip: Settings Calls sub=$_sub has no slot"
+      return 1
+      ;;
+  esac
+  ims_set_vendor_prop persist.vendor.radio.simswitch "$_want"
+  ims_set_vendor_prop persist.vendor.radio.c_capability_slot "$_want"
+  setprop persist.radio.simswitch "$_want" 2>/dev/null || true
+  setprop persist.radio.titan2_simswitch "$_want" 2>/dev/null || true
+  mkdir -p /data/misc/titan2 /data/unencrypted 2>/dev/null || true
+  echo "$_want" > /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
+  echo "$_want" > /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
+  chmod 666 /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
+  chmod 644 /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
+  log "align Calls sub=$_sub slot=$_slot simswitch=$_want"
+  return 0
 }
 
 # Pixel IMS (kyujin-cho/pixel-volte-patch) carrier-config key set via shell override.
@@ -404,32 +405,21 @@ ims_insert_ims_apn() {
   return 0
 }
 
-# Point default voice/data/SMS + per-sub data/WFC at the live subId.
+# VoLTE/WFC on the Settings Calls sub only. Never write multi_sim_voice_call.
 ims_apply_sub_defaults() {
   _sub=`ims_active_subid`
-  _slot=`ims_active_slot`
+  _slot=`ims_slot_for_sub "$_sub"`
   if [ -n "$_sub" ]; then
-    settings put global multi_sim_data_call "$_sub" 2>/dev/null || true
-    settings put global multi_sim_voice_call "$_sub" 2>/dev/null || true
-    settings put global multi_sim_sms "$_sub" 2>/dev/null || true
-    settings put global "mobile_data${_sub}" 1 2>/dev/null || true
-    settings put global "data_roaming${_sub}" 1 2>/dev/null || true
-    settings put global "preferred_network_mode${_sub}" 9 2>/dev/null || true
     settings put global "volte_vt_enabled${_sub}" 1 2>/dev/null || true
     settings put global "wfc_ims_enabled${_sub}" 1 2>/dev/null || true
-    settings put global "wfc_ims_mode${_sub}" 2 2>/dev/null || true
     settings put global "wfc_ims_roaming_enabled${_sub}" 1 2>/dev/null || true
-    settings put global "wfc_ims_roaming_mode${_sub}" 1 2>/dev/null || true
     content update --uri content://telephony/siminfo \
       --bind volte_vt_enabled:i:1 \
       --bind wfc_ims_enabled:i:1 \
-      --bind wfc_ims_mode:i:2 \
-      --bind wfc_ims_roaming_enabled:i:1 \
-      --bind wfc_ims_roaming_mode:i:1 \
       --where "_id=$_sub" 2>/dev/null || true
-    log "ims sub defaults sub=$_sub slot=$_slot"
+    log "ims sub defaults Calls sub=$_sub slot=$_slot (voice pin untouched)"
   else
-    log "ims sub defaults: no active subId (slot=$_slot)"
+    log "ims sub defaults: Settings Calls unset — not inventing a pin"
   fi
   # Slot-scoped preferred network for active modem
   settings put global preferred_network_mode 9 2>/dev/null || true
@@ -521,98 +511,33 @@ apply_ims_action() {
       ims_write_status "install+rebind slot=$(ims_active_slot) $(date +%s)"
       ;;
     heal)
-      # Cube SMS/IMS heal: UICC apps can be silently disabled (Settings) → SIMs greyed + no SMS.
-      # Re-enable every known sub, force data/roaming/VoLTE, IMS APN + rebind MtkIms.
+      # Follow Settings Calls. Bind both trays. Restore plane. No modem restart.
+      # Never write multi_sim_voice_call. Never enable-physical-subscription.
       log "ims_heal start"
-      for sid in 1 2 3 4 5 6 7 8 9 10; do
-        cmd phone enable-physical-subscription "$sid" 2>/dev/null && log "ims_heal enable sub=$sid" || true
-      done
+      _sub=`ims_active_subid`
+      _slot=`ims_slot_for_sub "$_sub"`
       setprop persist.sys.phh.ims.mtk true 2>/dev/null || true
       setprop persist.dbg.volte_avail_ovr 1 2>/dev/null || true
-      setprop persist.dbg.vt_avail_ovr 1 2>/dev/null || true
-      setprop persist.dbg.wfc_avail_ovr 1 2>/dev/null || true
-      setprop persist.dbg.allow_ims_off 1 2>/dev/null || true
       setprop persist.dbg.ims_volte_enable 1 2>/dev/null || true
+      setprop persist.radio.calls.on.ims 1 2>/dev/null || true
       setprop persist.sys.phh.allow_binder_thread_on_incoming_calls 1 2>/dev/null || true
-      setprop persist.sys.phh.ims.floss false 2>/dev/null || true
-      setprop persist.data.iwlan.enable true 2>/dev/null || true
       setprop persist.vendor.mtk.volte.enable 1 2>/dev/null || true
-      setprop persist.vendor.mtk.wfc.enable 1 2>/dev/null || true
-      settings put global enhanced_4g_mode_enabled 1 2>/dev/null || true
-      settings put global volte_vt_enabled 1 2>/dev/null || true
-      settings put global mobile_data 1 2>/dev/null || true
-      settings put global data_roaming 1 2>/dev/null || true
-      settings put global wfc_ims_enabled 1 2>/dev/null || true
-      settings put global wfc_ims_roaming_enabled 1 2>/dev/null || true
-      settings put global wfc_ims_roaming_mode 1 2>/dev/null || true
-      # Cellular preferred first, then Wi‑Fi preferred after rebind (US MVNO)
-      settings put global wfc_ims_mode 1 2>/dev/null || true
-      # Product privacy: never force GPS on heal. Clear sticky lab flag if present.
-      settings delete global titan2_force_location_for_wfc 2>/dev/null || true
+      persist_ctrl titan2_ims_mtk 1
+      persist_ctrl titan2_ims_force_volte 1
+      persist_ctrl titan2_ims_binder 1
+      ims_align_calls_tray || true
       ims_apply_sub_defaults
-      cmd overlay enable me.phh.treble.overlay.mtkims 2>/dev/null || true
-      cmd overlay enable me.phh.treble.overlay.mtkims_telephony 2>/dev/null || true
-      ims_insert_ims_apn || true
-      NUM=`ims_sim_numeric`
-      _slot=`ims_active_slot`
-      if [ "$NUM" = "310240" ] || [ "$NUM" = "310260" ]; then
-        ims_split_mccmnc "$NUM"
-        setprop persist.vendor.operator.optr OP08 2>/dev/null || true
-        setprop persist.vendor.operator.spec SPEC0200 2>/dev/null || true
-        setprop persist.vendor.operator.seg SEGDEFAULT 2>/dev/null || true
-        setprop persist.vendor.mtk_usp_operator OP08 2>/dev/null || true
-        setprop persist.vendor.radio.mtk_dsbp_id 8 2>/dev/null || true
-        setprop vendor.mtk.md.sbp 8 2>/dev/null || true
-        content insert --uri content://telephony/carriers \
-          --bind name:s:"Tello wholesale" --bind apn:s:"wholesale" \
-          --bind type:s:"default,supl,mms,ia,hipri" \
-          --bind protocol:s:"IPV4V6" --bind roaming_protocol:s:"IPV4V6" \
-          --bind mmsc:s:"http://wholesale.mmsmvno.com/mms/wapenc" \
-          --bind carrier_enabled:i:1 --bind numeric:s:"$NUM" \
-          --bind mcc:s:"$IMS_MCC" --bind mnc:s:"$IMS_MNC" 2>/dev/null || true
-        tid=$(content query --uri content://telephony/carriers --projection _id \
-          --where "apn=\"wholesale\" AND numeric=\"$NUM\"" 2>/dev/null \
-          | sed -n "s/.*_id=\([0-9][0-9]*\).*/\1/p" | head -1)
-        [ -n "$tid" ] && content insert --uri content://telephony/carriers/preferapn \
-          --bind apn_id:i:"$tid" 2>/dev/null || true
-        cmd phone set-allowed-network-types-for-users -s "$_slot" 916479 2>/dev/null || true
-        log "ims_heal tello/tmobile apn numeric=$NUM slot=$_slot op08"
-      fi
-      # Restart modem first so UICC re-enable is visible, THEN wait for phone
-      # service recovery. Restart-modem was leaving cmd phone in Failed transaction
-      # so IMS rebind never stuck (lab 2026-07-31 Tello).
-      cmd phone restart-modem 2>/dev/null || true
-      ims_wait_phone 30 && log "ims_heal phone_ok" || log "ims_heal phone_wait timeout"
-      # Re-resolve slot/sub after modem — isub often empty mid-restart
-      _slot=`ims_active_slot`
       ims_bind_all_slots
-      ims_apply_sub_defaults
-      # Pixel IMS re-register after carrier config
-      cmd phone ims disable -s "$_slot" 2>/dev/null || true
-      sleep 1
-      cmd phone ims enable -s "$_slot" 2>/dev/null || true
-      ims_bind_all_slots
-      # Prefer Wi‑Fi calling path when WWAN rejects (US MVNO roaming)
-      settings put global wfc_ims_enabled 1 2>/dev/null || true
-      settings put global wfc_ims_roaming_enabled 1 2>/dev/null || true
-      settings put global wfc_ims_mode 2 2>/dev/null || true
-      _sub=`ims_active_subid`
-      if [ -n "$_sub" ]; then
-        settings put global "wfc_ims_enabled${_sub}" 1 2>/dev/null || true
-        settings put global "wfc_ims_mode${_sub}" 2 2>/dev/null || true
-        settings put global "volte_vt_enabled${_sub}" 1 2>/dev/null || true
+      if [ -n "$_slot" ]; then
+        cmd phone ims enable -s "$_slot" 2>/dev/null || true
+        ims_bind_slot "$_slot"
       fi
-      # Kick vendor VoLTE UA (missing stock init.volte.rc)
-      setprop ctl.start titan2_rcs_volte_stack 2>/dev/null || true
-      setprop ctl.start titan2_volte_rcs_ua 2>/dev/null || true
-      setprop ctl.start titan2_volte_clientapi_ua 2>/dev/null || true
-      NUM=`ims_sim_numeric`
-      voice=$(dumpsys telephony.registry 2>/dev/null | grep -o 'mVoiceRegState=[^(]*([^)]*)' | head -1)
-      emerg=$(dumpsys telephony.registry 2>/dev/null | grep -o 'mIsEmergencyOnly=[a-z]*' | head -1)
-      dsvc=$(cmd phone ims get-ims-service -s "$_slot" -d 2>/dev/null | tr '\n' ' ')
+      d0=$(cmd phone ims get-ims-service -s 0 -d 2>/dev/null | tr '\n' ' ')
+      d1=$(cmd phone ims get-ims-service -s 1 -d 2>/dev/null | tr '\n' ' ')
+      sw=$(getprop persist.vendor.radio.simswitch)
       multi=$(settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n ')
-      ims_write_status "heal slot=$_slot sub=$_sub multi=$multi numeric=$NUM $voice $emerg d=$dsvc $(date +%s)"
-      log "ims_heal done slot=$_slot sub=$_sub multi=$multi numeric=$NUM $voice $emerg d=$dsvc"
+      ims_write_status "heal Calls=$multi slot=$_slot sw=$sw d0=$d0 d1=$d1 $(date +%s)"
+      log "ims_heal done Calls=$multi slot=$_slot sw=$sw d0=$d0 d1=$d1"
       ;;
     *)
       log "ims_action unknown: $act"
@@ -638,6 +563,17 @@ case "$cmd" in
   auto_sub)
     ims_apply_sub_defaults
     ims_bind_all_slots
+    ;;
+  detect)
+    _sub=`ims_active_subid`
+    _slot=`ims_slot_for_sub "$_sub"`
+    echo "Calls=$_sub slot=$_slot vendor=$(getprop persist.vendor.radio.simswitch) titan2=$(getprop persist.radio.titan2_simswitch) calls_on_ims=$(getprop persist.radio.calls.on.ims) binder=$(getprop persist.sys.phh.allow_binder_thread_on_incoming_calls)"
+    ;;
+  align)
+    ims_align_calls_tray || true
+    _sub=`ims_active_subid`
+    _slot=`ims_slot_for_sub "$_sub"`
+    echo "Calls=$_sub slot=$_slot vendor=$(getprop persist.vendor.radio.simswitch) titan2=$(getprop persist.radio.titan2_simswitch) calls_on_ims=$(getprop persist.radio.calls.on.ims) binder=$(getprop persist.sys.phh.allow_binder_thread_on_incoming_calls)"
     ;;
   version)
     echo "$IMS_VER"

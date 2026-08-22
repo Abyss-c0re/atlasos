@@ -74,8 +74,20 @@ public class DiagnosticsActivity extends Activity {
                 refresh();
                 return true;
             }
+            if (kc == KeyEvent.KEYCODE_H) {
+                healCalls();
+                return true;
+            }
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    private void healCalls() {
+        ImsCalls.requestHeal(this);
+        UiKit.toast(this, "Heal queued");
+        h.postDelayed(this::refresh, 800);
+        h.postDelayed(this::refresh, 2500);
+        h.postDelayed(this::refresh, 6000);
     }
 
     private void refresh() {
@@ -102,13 +114,15 @@ public class DiagnosticsActivity extends Activity {
         root.removeAllViews();
         UiKit.section(root, "Pain points");
         stamp = UiKit.mono(root);
-        stamp.setText("R refresh · Esc   (no test call)");
+        stamp.setText("R refresh · H heal · Esc   (no test call)");
 
         paint(root, "Incoming calls", r.calls);
         paint(root, "Keyboard / nav", r.keys);
         paint(root, "SIMs", r.sims);
         paint(root, "Host", r.host);
-        UiKit.button(root, "Refresh", this::refresh);
+        LinearLayout btns = UiKit.row(root);
+        UiKit.flexButton(btns, "Refresh", this::refresh);
+        UiKit.flexButton(btns, "Heal calls", this::healCalls);
     }
 
     private void paint(LinearLayout parent, String title, List<PlaneHealth.Row> rows) {
