@@ -9,8 +9,8 @@ service titan2_ims_setup /system/bin/titan2-ims-setup.sh
 # Vendor NVRAM resets persist.vendor.radio.simswitch to tray 1.
 # Apply last Settings → Calls want as early as possible, then again after
 # nvram Ready, so MMTEL is not created against the empty tray.
-# persist.radio.titan2_simswitch is written by SubscriptionManagerService
-# when the user picks SIM 1/2 for Calls.
+# persist.radio.titan2_simswitch is a boot-early cache of Settings → Calls.
+# Early/hold re-read Settings once phone is up so a stale cache cannot win.
 on post-fs-data
     exec -- /system/bin/titan2-ims-simswitch-early.sh
 
