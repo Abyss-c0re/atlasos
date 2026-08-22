@@ -115,12 +115,12 @@ LAST_FN=""; LAST_CHAR_MOD=""; LAST_CHAR_SCAN=""; LAST_HOST_LAYOUT=""
 LAST_CM_MT=""; LAST_SC_MT=""; LAST_FN_MT=""; LAST_HL_MT=""; LAST_SM_MT=""
 LAST_IDC_KIND=""; LAST_PAD_MT=0; LAST_CLICK_MT=0; LAST_FOLLOW_MT=0; LAST_LOCK_MT=0; LAST_CE=""
 # peels 2.160–2.212: see OPTIMIZE_SOURCE_PRODUCT.md
-AGENT_VER="${AGENT_VER:-2.230-rom-lock}"
+AGENT_VER="${AGENT_VER:-2.231-rom-lock}"
 # Force pin: refuse non-2.x garbage + force upgrade sticky env older than 2.160
 # (lab residual: sticky 2.6x/2.12x never picked tip peels). hot_reload still 2.NN*.
 case "$AGENT_VER" in
   2.20[0-9]*|2.21[0-9]*|2.22[0-9]*|2.23[0-9]*|2.19[0-9]*|2.18[0-9]*|2.17[0-9]*|2.16[0-9]*) ;;
-  *) AGENT_VER="2.230-rom-lock" ;;
+  *) AGENT_VER="2.231-rom-lock" ;;
 esac
 log() { echo "pad-agent $AGENT_VER live $1" > "$AGENT_STATUS" 2>/dev/null; chmod 666 "$AGENT_STATUS" 2>/dev/null; }
 # Lightweight status stamp (no chmod every tick — 2.34+ heartbeat path).
@@ -1283,6 +1283,15 @@ _agent_boot_full() {
   _boot_pad_safe
   log "boot_pad_modes_only"
   apply_pad
+  # First apply often races sys.boot_completed and writes lockpark. Wait
+  # then apply again so KEEP_DATA boot matches the live heal (apply after up).
+  _n=0
+  while [ $_n -lt 25 ]; do
+    case "`getprop sys.boot_completed 2>/dev/null | tr -d '\r'`" in 1) break ;; esac
+    sleep 1
+    _n=`expr $_n + 1 2>/dev/null` || break
+  done
+  apply_pad
   log "boot_pad_applied mode=`read_pad_mode`"
   LAST_SUBDISP=""
   SUBDISP_REASSERT_FAILS=0
@@ -1847,6 +1856,14 @@ while true; do
   if [ -n "$_ce_now" ] && [ "$_ce_now" != "$LAST_CE" ]; then
     LAST_CE=$_ce_now
     pad_dirty=1
+  fi
+  # Early boot apply writes lockpark; no plane mtime after that. Retry
+  # once the system is up so the ROM path matches a post-boot apply.
+  if [ "$pad_dirty" != "1" ] && [ -f "$PAD_STATUS" ] \
+      && grep -q 'applied=lockpark' "$PAD_STATUS" 2>/dev/null; then
+    case "`getprop sys.boot_completed 2>/dev/null | tr -d '\r'`" in
+      1) [ $((loop_n % 5)) -eq 1 ] && pad_dirty=1 ;;
+    esac
   fi
   if [ "$pad_dirty" = "1" ]; then
     _schedule_apply_pad
