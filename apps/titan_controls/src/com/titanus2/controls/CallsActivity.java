@@ -62,6 +62,12 @@ public class CallsActivity extends Activity {
                 h.postDelayed(this::refresh, 600);
             });
 
+        UiKit.section(root, "Bind IMS");
+        LinearLayout bindRow = UiKit.row(root);
+        UiKit.flexButton(bindRow, "SIM 1", () -> pickBind(ImsCalls.BIND_1));
+        UiKit.flexButton(bindRow, "SIM 2", () -> pickBind(ImsCalls.BIND_2));
+        UiKit.flexButton(bindRow, "Both", () -> pickBind(ImsCalls.BIND_BOTH));
+
         LinearLayout btns = UiKit.row(root);
         UiKit.flexButton(btns, "Heal", this::heal);
         UiKit.flexButton(btns, "Refresh", this::refresh);
@@ -131,6 +137,13 @@ public class CallsActivity extends Activity {
 
     private static void sync(UiKit.Toggle t, boolean on) {
         if (t != null && t.isChecked() != on) t.setChecked(on);
+    }
+
+    private void pickBind(String slots) {
+        ImsCalls.setBindSlots(this, slots);
+        UiKit.toast(this, "Bind " + ImsCalls.bindLabel(slots));
+        h.postDelayed(this::refresh, 600);
+        h.postDelayed(this::refresh, 2200);
     }
 
     private void heal() {

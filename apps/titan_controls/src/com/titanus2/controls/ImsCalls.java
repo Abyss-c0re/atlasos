@@ -12,6 +12,10 @@ import android.telephony.TelephonyManager;
 public final class ImsCalls {
     private ImsCalls() {}
 
+    public static final String BIND_1 = "1";
+    public static final String BIND_2 = "2";
+    public static final String BIND_BOTH = "both";
+
     public static final class Detect {
         public int callsSub = -1;
         public int callsSlot = -1;
@@ -29,12 +33,14 @@ public final class ImsCalls {
         public boolean planeBinder = true;
         public boolean planeMtk = true;
         public boolean planeForce = true;
+        public String bindSlots = BIND_BOTH;
         public boolean ok;
         public String verdict = "";
 
         public String line() {
             String tray = callsSlot >= 0 ? ("SIM " + (callsSlot + 1)) : "none";
             return "Calls=" + tray
+                + " bind=" + bindLabel(bindSlots)
                 + " sub=" + (callsSub > 0 ? callsSub : "—")
                 + " sw=" + vendorSw
                 + (split ? " SPLIT" : "")
@@ -79,6 +85,29 @@ public final class ImsCalls {
         AgentBridge.put(ctx, key, on ? "1" : "0");
     }
 
+    public static String bindSlots(Context ctx) {
+        String v = AgentBridge.get(ctx, AgentBridge.IMS_BIND_SLOTS, BIND_BOTH);
+        if (v == null) return BIND_BOTH;
+        v = v.trim().toLowerCase();
+        if (BIND_1.equals(v) || BIND_2.equals(v) || BIND_BOTH.equals(v)) return v;
+        return BIND_BOTH;
+    }
+
+    public static void setBindSlots(Context ctx, String slots) {
+        String v = BIND_BOTH;
+        if (BIND_1.equals(slots) || BIND_2.equals(slots) || BIND_BOTH.equals(slots)) {
+            v = slots;
+        }
+        AgentBridge.put(ctx, AgentBridge.IMS_BIND_SLOTS, v);
+        AgentBridge.put(ctx, AgentBridge.IMS_ACTION, "rebind");
+    }
+
+    public static String bindLabel(String slots) {
+        if (BIND_1.equals(slots)) return "SIM 1";
+        if (BIND_2.equals(slots)) return "SIM 2";
+        return "Both";
+    }
+
     public static void requestHeal(Context ctx) {
         AgentBridge.put(ctx, AgentBridge.IMS_ACTION, "heal");
     }
@@ -102,6 +131,7 @@ public final class ImsCalls {
         d.planeBinder = planeOn(ctx, AgentBridge.IMS_BINDER);
         d.planeMtk = planeOn(ctx, AgentBridge.IMS_MTK);
         d.planeForce = planeOn(ctx, AgentBridge.IMS_FORCE_VOLTE);
+        d.bindSlots = bindSlots(ctx);
 
         if (d.wantSw > 0) {
             String want = String.valueOf(d.wantSw);

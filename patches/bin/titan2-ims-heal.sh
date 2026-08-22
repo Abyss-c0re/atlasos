@@ -347,12 +347,21 @@ ims_bind_slot() {
   cmd phone ims enable -s "$_s" 2>/dev/null || true
 }
 
-# Active slot first, then both DSDS slots (cheap; empty slot ok).
+# Controls plane: 1 | 2 | both (default both). 1=slot0, 2=slot1.
+ims_wanted_slots() {
+  _w=`read_first titan2_ims_bind_slots`
+  [ -n "$_w" ] || _w=`settings get global titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n '`
+  case "$_w" in
+    1) echo 0 ;;
+    2) echo 1 ;;
+    *) echo "0 1" ;;
+  esac
+}
+
 ims_bind_all_slots() {
-  _as=`ims_active_slot`
-  ims_bind_slot "$_as"
-  ims_bind_slot 0
-  ims_bind_slot 1
+  for _s in `ims_wanted_slots`; do
+    ims_bind_slot "$_s"
+  done
 }
 
 ims_wait_phone() {

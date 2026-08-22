@@ -133,6 +133,8 @@ public final class AgentBridge {
     public static final String IMS_REQUEST_NET = "titan2_ims_request_net"; // 0|1 hint only
     /** One-shot: rebind|create_apn|install|heal|force_lte (pad-agent 2.144+ slot-aware). */
     public static final String IMS_ACTION = "titan2_ims_action";
+    /** 1 | 2 | both — which tray(s) get MMTEL bind. Default both. */
+    public static final String IMS_BIND_SLOTS = "titan2_ims_bind_slots";
     public static final String TEL_FORCE_5G = "titan2_tel_force_5g";
     public static final String TEL_DISABLE_VCI = "titan2_tel_disable_vci";
     public static final String TEL_RESTART_RIL = "titan2_tel_restart_ril";
@@ -463,6 +465,7 @@ public final class AgentBridge {
             case UI_PLANE:
             case DEV_ACTION:
             case IMS_ACTION:
+            case IMS_BIND_SLOTS:
             case IMS_MTK:
             case IMS_FORCE_VOLTE:
             case IMS_BINDER:

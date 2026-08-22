@@ -40,13 +40,29 @@ public final class AccessServiceHelper {
         return component(ctx).flattenToString();
     }
 
+    /** False until CE is up. Locked-boot CE prefs crash the process. */
+    public static boolean userUnlocked(Context ctx) {
+        if (ctx == null) return false;
+        try {
+            android.os.UserManager um = ctx.getSystemService(android.os.UserManager.class);
+            return um == null || um.isUserUnlocked();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private static SharedPreferences prefs(Context ctx) {
         return ctx.getApplicationContext().getSharedPreferences(PREF, Context.MODE_PRIVATE);
     }
 
     /** True when the user turned Key service off in Titan Controls → Keys. */
     public static boolean isUserDisabled(Context ctx) {
-        return prefs(ctx).getBoolean(KEY_USER_DISABLED, false);
+        if (!userUnlocked(ctx)) return false;
+        try {
+            return prefs(ctx).getBoolean(KEY_USER_DISABLED, false);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public static void setUserDisabled(Context ctx, boolean disabled) {
@@ -104,6 +120,7 @@ public final class AccessServiceHelper {
      */
     /** Package replace / crash: drop rebind throttle and admit the service is dead. */
     public static void forceRebindAfterReplace(Context ctx) {
+        if (!userUnlocked(ctx)) return;
         lastRebindElapsed = 0L;
         lastFollowupScheduleElapsed = 0L;
         lastHeavyEnsureElapsed = 0L;

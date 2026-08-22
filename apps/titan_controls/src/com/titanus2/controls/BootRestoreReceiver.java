@@ -25,13 +25,16 @@ public class BootRestoreReceiver extends BroadcastReceiver {
         if (intent == null || intent.getAction() == null) return;
         String action = intent.getAction();
         boolean unlocked = Intent.ACTION_USER_UNLOCKED.equals(action);
-        boolean boot = Intent.ACTION_BOOT_COMPLETED.equals(action)
-            || Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action)
-            || unlocked;
+        boolean lockedBoot = Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action);
+        boolean boot = Intent.ACTION_BOOT_COMPLETED.equals(action) || unlocked;
         boolean replaced = Intent.ACTION_MY_PACKAGE_REPLACED.equals(action);
+        // LOCKED_BOOT_COMPLETED is DE-only. CE SharedPreferences throw and AMS
+        // marks TrackpadAccessService "malfunctioning" (Crashed services).
+        if (lockedBoot) return;
         if (!boot && !replaced) return;
 
         final Context app = context.getApplicationContext();
+        if (!AccessServiceHelper.userUnlocked(app)) return;
         pinAndHeal(app);
         // KEEP_DATA already-CE boot never sends USER_UNLOCKED again.
         // Listed-but-unbound a11y leaves titan2_input_lock stuck → pad park.

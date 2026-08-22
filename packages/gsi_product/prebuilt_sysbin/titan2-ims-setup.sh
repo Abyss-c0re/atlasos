@@ -267,19 +267,29 @@ ims_restart_registration() {
   ims_bind_slot "$_s"
 }
 
-# Lineage idmap miss → force bind MMTEL on active + both slots
+# Bind MMTEL on the trays Controls asked for (1 | 2 | both).
 ASLOT=$(ims_active_slot)
+BIND_WANT=$(cat /data/misc/titan2/titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n ')
+[ -n "$BIND_WANT" ] || BIND_WANT=$(settings get global titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n ')
 j=0
 while [ $j -lt 15 ]; do
-  ims_bind_slot "$ASLOT"
-  ims_bind_slot 0
-  ims_bind_slot 1
-  got=$(cmd phone ims get-ims-service -s "$ASLOT" -d 2>/dev/null)
+  case "$BIND_WANT" in
+    1) ims_bind_slot 0 ;;
+    2) ims_bind_slot 1 ;;
+    *)
+      ims_bind_slot "$ASLOT"
+      ims_bind_slot 0
+      ims_bind_slot 1
+      ;;
+  esac
+  _chk=$ASLOT
+  case "$BIND_WANT" in 1) _chk=0 ;; 2) _chk=1 ;; esac
+  got=$(cmd phone ims get-ims-service -s "$_chk" -d 2>/dev/null)
   if echo "$got" | grep -q mediatek; then
-    logt "ims bind OK slot=$ASLOT d=$got"
+    logt "ims bind OK want=$BIND_WANT slot=$_chk d=$got"
     break
   fi
-  logt "ims bind retry $j slot=$ASLOT"
+  logt "ims bind retry $j want=$BIND_WANT"
   sleep 2
   j=$((j+1))
 done
