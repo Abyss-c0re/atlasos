@@ -158,7 +158,7 @@ ims_set_vendor_prop() {
 ims_align_simswitch() {
   _slot=`ims_active_slot`
   case "$_slot" in
-    0|1|2|3) _want=$((_slot + 1)) ;;
+    0|1) _want=$((_slot + 1)) ;;
     *)
       logt "simswitch skip: Settings Calls has no slot"
       return 0

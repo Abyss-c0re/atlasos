@@ -293,7 +293,7 @@ ims_align_calls_tray() {
   _sub=`ims_active_subid`
   _slot=`ims_slot_for_sub "$_sub"`
   case "$_slot" in
-    0|1|2|3) _want=$((_slot + 1)) ;;
+    0|1) _want=$((_slot + 1)) ;;
     *)
       log "align skip: Settings Calls sub=$_sub has no slot"
       return 1
