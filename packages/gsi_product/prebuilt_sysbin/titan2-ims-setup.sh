@@ -194,7 +194,7 @@ ims_slot_for_sub() {
     --where "_id=$_sub" 2>/dev/null \
     | sed -n 's/.*sim_id=\([0-9][0-9]*\).*/\1/p' | head -1`
   case "$_slot" in
-    [0-9]|[0-9][0-9]) echo "$_slot" ;;
+    0|1) echo "$_slot" ;;
     *) echo "" ;;
   esac
 }
