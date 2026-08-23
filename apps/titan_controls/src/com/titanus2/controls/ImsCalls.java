@@ -121,7 +121,7 @@ public final class ImsCalls {
         }
         d.callsSub = settingsCallsSubId(ctx);
         d.callsSlot = slotForSub(ctx, d.callsSub);
-        d.wantSw = d.callsSlot >= 0 ? d.callsSlot + 1 : -1;
+        d.wantSw = wantSimswitch(ctx);
         d.vendorSw = prop("persist.vendor.radio.simswitch", "");
         d.titan2Sw = prop("persist.radio.titan2_simswitch", "");
         d.radioSw = prop("persist.radio.simswitch", "");
