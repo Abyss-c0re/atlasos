@@ -39,6 +39,8 @@ from PyQt5.QtWidgets import (
 
 from cube_widget import CrimsonCube
 
+HERE = Path(__file__).resolve().parent
+TOOLS = HERE / "platform-tools"
 ROOT = Path("/home/voldemar/Dev/device-workshop/products/titanus2")
 OUT = ROOT / "out"
 GSI_DIR = ROOT / "gsi"
@@ -190,26 +192,90 @@ def list_gsi(how: str = "date ↓") -> list[Path]:
     return _sort_imgs(list(by_ino.values()), how)
 
 
-def adb_serials() -> list[str]:
+def adb_bin() -> str:
+    p = TOOLS / "adb"
+    return str(p) if p.is_file() else "adb"
+
+
+def fastboot_bin() -> str:
+    p = TOOLS / "fastboot"
+    return str(p) if p.is_file() else "fastboot"
+
+
+def tool_env(base: dict | None = None) -> dict:
+    env = dict(base or os.environ)
+    env["PATH"] = str(TOOLS) + os.pathsep + env.get("PATH", "")
+    return env
+
+
+def is_usb_serial(serial: str) -> bool:
+    """USB serials have no host:port. Never treat tcpip as USB."""
+    if not serial or ":" in serial:
+        return False
+    if serial.startswith("emulator-"):
+        return False
+    return True
+
+
+def usb_adb() -> list[str]:
+    """Live USB adb only. No hardcoded serials."""
     try:
-        out = subprocess.check_output(["adb", "devices"], text=True, timeout=5)
+        out = subprocess.check_output(
+            [adb_bin(), "devices", "-l"],
+            text=True,
+            timeout=5,
+            env=tool_env(),
+        )
     except Exception:
         return []
     ser = []
     for line in out.splitlines()[1:]:
         p = line.split()
-        if len(p) >= 2 and p[1] == "device":
+        if len(p) < 2 or p[1] != "device":
+            continue
+        if "usb:" not in line:
+            continue
+        if is_usb_serial(p[0]):
             ser.append(p[0])
-    ser.sort(key=lambda s: (0 if s.startswith("TITAN") else 1, ":" in s))
     return ser
 
 
-def loader_serials() -> list[str]:
+def usb_fastboot() -> list[str]:
+    """Live USB fastboot only. No hardcoded serials."""
     try:
-        out = subprocess.check_output(["fastboot", "devices"], text=True, timeout=5)
+        out = subprocess.check_output(
+            [fastboot_bin(), "devices", "-l"],
+            text=True,
+            timeout=5,
+            env=tool_env(),
+        )
     except Exception:
         return []
-    return [ln.split()[0] for ln in out.splitlines() if ln.split()]
+    ser = []
+    for line in out.splitlines():
+        p = line.split()
+        if len(p) < 2:
+            continue
+        if not is_usb_serial(p[0]):
+            continue
+        if "usb:" in line or p[1] in ("fastboot", "bootloader"):
+            ser.append(p[0])
+    return ser
+
+
+def usb_targets() -> list[str]:
+    seen: list[str] = []
+    for s in usb_adb() + usb_fastboot():
+        if s not in seen:
+            seen.append(s)
+    return seen
+
+
+def pick_usb(prefer: str = "") -> str:
+    live = usb_targets()
+    if prefer and prefer in live:
+        return prefer
+    return live[0] if live else ""
 
 
 def fmt_img(p: Path) -> str:
@@ -484,7 +550,7 @@ class Worker(threading.Thread):
                     if not img:
                         continue
                     save_eta("cook", time.time() - t0)
-                    if not adb_serials() and not loader_serials():
+                    if not usb_targets():
                         self._st("cooked — connect Titan, then FLASH SELECTED")
                         self._say("Pin cooked. Connect the Titan to flash.")
                         self.bridge.finished.emit(True, img)
@@ -506,7 +572,7 @@ class Worker(threading.Thread):
                 self.bridge.finished.emit(False, str(e))
 
     def _pipe(self, cmd: list[str], env: dict, lo: float, hi: float, cwd: Path | None = None) -> tuple[int, str]:
-        env = dict(env)
+        env = tool_env(env)
         env["PYTHONUNBUFFERED"] = "1"
         env["TERM"] = env.get("TERM") or "xterm"
         if hi <= lo:
@@ -756,18 +822,25 @@ class Worker(threading.Thread):
         if job.get("keep_data", True):
             env["KEEP" + "_DATA"] = "1"
         env["SKIP" + "_GIT_GATE"] = "1"
-        adb = adb_serials()
-        fb = loader_serials()
-        if adb and not fb:
-            serial = adb[0]
-            env["SERIAL"] = serial
-            env["ANDROID_SERIAL"] = serial
-            self._st("reboot -s " + serial)
+        env = tool_env(env)
+        serial = pick_usb(job.get("serial") or "")
+        adb = usb_adb()
+        fb = usb_fastboot()
+        if not serial:
+            self._ph("fail", 0.05)
+            self._say("No USB device.")
+            self.bridge.finished.emit(False, "no usb")
+            return
+        env["SERIAL"] = serial
+        env["ANDROID_SERIAL"] = serial
+        if serial in adb and serial not in fb:
+            self._st("usb reboot " + serial)
             r = subprocess.run(
-                ["adb", "-s", serial, "reboot", "boot" + "loader"],
+                [adb_bin(), "-s", serial, "reboot", "boot" + "loader"],
                 capture_output=True,
                 text=True,
                 timeout=30,
+                env=env,
             )
             if r.returncode != 0:
                 err = (r.stderr or r.stdout or "rc").strip()
@@ -777,15 +850,15 @@ class Worker(threading.Thread):
                 self.bridge.finished.emit(False, err)
                 return
             for i in range(45):
-                if loader_serials():
+                if pick_usb(serial) and usb_fastboot():
                     break
                 self._st("waiting loader %ss" % i)
                 self._pct(min(0.08, 0.01 + i * 0.0015))
                 self._stop.wait(1.0)
-            if not loader_serials():
+            if not usb_fastboot():
                 self._ph("fail", 0.05)
-                self._say("No loader.")
-                self.bridge.finished.emit(False, "no loader")
+                self._say("No USB loader.")
+                self.bridge.finished.emit(False, "no usb loader")
                 return
         self._ph("write", 0.85)
         rc, _blob = self._pipe([str(WRITER), img], env, 0.10, 0.96)
@@ -887,6 +960,12 @@ class Flasher(QMainWindow):
         self.dev.setAlignment(Qt.AlignCenter)
         self.dev.setStyleSheet("color:#9A4044; font: 11px monospace;")
         left.addWidget(self.dev)
+        usb_row = QHBoxLayout()
+        usb_row.addWidget(QLabel("usb"))
+        self.usb = QComboBox()
+        self.usb.setEditable(False)
+        usb_row.addWidget(self.usb, 1)
+        left.addLayout(usb_row)
         self.said = QLabel("")
         self.said.setAlignment(Qt.AlignCenter)
         self.said.setStyleSheet("color:#7A3034; font: italic 11px monospace;")
@@ -1220,6 +1299,7 @@ class Flasher(QMainWindow):
                 return
         self._arm(eta)
         job["kind"] = "cook_write" if then_flash else "cook"
+        job["serial"] = pick_usb(self.usb.currentText())
         self.worker.submit(job)
 
     def build_gsi(self) -> None:
@@ -1253,8 +1333,8 @@ class Flasher(QMainWindow):
             QMessageBox.information(self, "Cube Flasher", "Select a pin.")
             return
         n = len(self._selected_paths(self.builds))
-        if not adb_serials() and not loader_serials():
-            QMessageBox.information(self, "Cube Flasher", "Connect the Titan first.")
+        if not usb_targets():
+            QMessageBox.information(self, "Cube Flasher", "Connect the Titan over USB.")
             return
         eta = estimate_flash(path, self.keep_data.isChecked())
         note = Path(path).name
@@ -1276,6 +1356,7 @@ class Flasher(QMainWindow):
                 "kind": "write",
                 "image": path,
                 "keep_data": self.keep_data.isChecked(),
+                "serial": pick_usb(self.usb.currentText()),
             }
         )
 
@@ -1323,14 +1404,23 @@ class Flasher(QMainWindow):
         )
 
     def _tick_dev(self) -> None:
-        adb, fb = adb_serials(), loader_serials()
+        adb, fb = usb_adb(), usb_fastboot()
+        live = usb_targets()
+        cur = self.usb.currentText()
+        self.usb.blockSignals(True)
+        self.usb.clear()
+        for s in live:
+            self.usb.addItem(s)
+        if cur and cur in live:
+            self.usb.setCurrentText(cur)
+        self.usb.blockSignals(False)
         parts = []
         if adb:
-            parts.append("adb " + ",".join(adb))
+            parts.append("usb adb " + ",".join(adb))
         if fb:
-            parts.append("fastboot " + ",".join(fb))
+            parts.append("usb fastboot " + ",".join(fb))
         if not parts:
-            parts.append("no titan")
+            parts.append("no usb")
         parts.append("%d pins" % self.builds.count())
         parts.append("%d gsi" % self.gsi_list.count())
         nsel = len(self._selected_paths(self.builds))
@@ -1351,7 +1441,21 @@ class Flasher(QMainWindow):
         ev.accept()
 
 
+def ensure_adb() -> None:
+    try:
+        subprocess.run(
+            [adb_bin(), "start-server"],
+            env=tool_env(),
+            timeout=8,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
 def main() -> None:
+    ensure_adb()
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("Fusion"))
     app.setApplicationName("Cube Flasher")

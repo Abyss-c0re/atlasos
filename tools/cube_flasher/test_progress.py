@@ -19,11 +19,15 @@ def main() -> int:
     assert marker_unit("Flashing super...") == 0.18
     assert marker_unit("==> GSI systemimage (vanilla)") == 0.12
     assert marker_unit("exported pin: /tmp/x.img") == 0.92
-    from cube_flasher import fmt_secs, estimate_flash
+    from cube_flasher import fmt_secs, estimate_flash, is_usb_serial
 
     assert fmt_secs(0) == "0s"
     assert fmt_secs(90) == "1m30s"
     assert estimate_flash(keep_data=True) > 0
+    assert is_usb_serial("ABC123")
+    assert not is_usb_serial("10.0.0.1:5555")
+    assert not is_usb_serial("emulator-5554")
+    assert not is_usb_serial("")
     print("progress parser ok")
     return 0
 
