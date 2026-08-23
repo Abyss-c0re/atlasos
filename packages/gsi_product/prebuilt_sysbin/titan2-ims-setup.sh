@@ -450,8 +450,14 @@ case "$NUM_ALL" in
     ;;
 esac
 
-# Pixel IMS carrier-config force (both slots + any active)
-for SLOT in 0 1; do
+# Pixel IMS carrier-config force on the bind pin only (1|2|both).
+# Never poke both trays as a fix. ABSENT skip is inside the primitive.
+case "$BIND_WANT" in
+  1) _cc_slots=0 ;;
+  2) _cc_slots=1 ;;
+  *) _cc_slots="0 1" ;;
+esac
+for SLOT in $_cc_slots; do
   if ims_slot_absent "$SLOT"; then
     logt "pixel-cc skip absent slot=$SLOT"
     continue
