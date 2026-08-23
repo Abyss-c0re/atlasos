@@ -495,8 +495,7 @@ settings put global restricted_networking_mode 0 2>/dev/null || true
 setprop persist.vendor.radio.sim.mode 3 2>/dev/null || true
 svc data enable 2>/dev/null || true
 cmd phone data enable 2>/dev/null || true
-# Prefer WFC wifi mode when US SIM + non-US NITZ (Telia LT etc.) so VoWiFi can
-# carry service while LTE only emergency-camps abroad.
+# US SIM abroad: keep cellular-preferred. WIFI_PREFERRED starved LTE (A10).
 _nitz=$(getprop persist.vendor.radio.nitz_oper_code_0 2>/dev/null | tr -d '\r')
 _simn=$(getprop gsm.sim.operator.numeric 2>/dev/null | cut -d, -f1 | tr -d '\r')
 case "$_simn" in
@@ -507,13 +506,13 @@ case "$_simn" in
         settings put global wfc_ims_mode 1 2>/dev/null || true
         ;;
       *)
-        logt "US SIM abroad nitz=$_nitz → WFC wifi-preferred + enable"
+        logt "US SIM abroad nitz=$_nitz - keep cellular-preferred WFC"
         settings put global wfc_ims_enabled 1 2>/dev/null || true
-        settings put global wfc_ims_mode 2 2>/dev/null || true
+        settings put global wfc_ims_mode 1 2>/dev/null || true
         settings put global wfc_ims_roaming_enabled 1 2>/dev/null || true
         setprop persist.vendor.mtk.wfc.enable 1 2>/dev/null || true
         content update --uri content://telephony/siminfo \
-          --bind wfc_ims_enabled:i:1 --bind wfc_ims_mode:i:2 \
+          --bind wfc_ims_enabled:i:1 --bind wfc_ims_mode:i:1 \
           --bind wfc_ims_roaming_enabled:i:1 --where "mcc_string=310" 2>/dev/null || true
         ;;
     esac
