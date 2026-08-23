@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cube Flasher — kitchen cook + pin manager. Live percent only."""
+"""Cube Flasher — pin/GSI manager + kitchen. Live percent only."""
 from __future__ import annotations
 
 import json
@@ -17,9 +17,11 @@ from pathlib import Path
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QColor, QFont, QPalette
 from PyQt5.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QCheckBox,
     QComboBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -30,6 +32,7 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QScrollArea,
     QStyleFactory,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -41,8 +44,18 @@ OUT = ROOT / "out"
 GSI_DIR = ROOT / "gsi"
 KITCHEN = ROOT / "scripts" / "kitchen.py"
 WRITER = ROOT / "scripts" / ("flash" + "_titan2_eea.sh")
+ETA_FILE = OUT / "cube_flasher_eta.json"
 
-# Honest live tokens only. 100% from a finished log is ignored.
+
+def _atlasos() -> Path:
+    for cand in (ROOT / "product", ROOT.parent / "atlasos"):
+        if (cand / "scripts" / "build.sh").is_file():
+            return cand
+    return ROOT.parent / "atlasos"
+
+
+ATLASOS = _atlasos()
+
 BRACKET_PCT = re.compile(r"\[\s*(\d{1,3})\s*%")
 FASTBOOT_PCT = re.compile(r"(?:Sending|Writing).{0,80}?(?<![0-9])(\d{1,3})\s*%")
 CR_PCT = re.compile(r"^\s*(\d{1,3})\s*%\s*$")
@@ -63,6 +76,11 @@ COOK_MARKERS = (
     (re.compile(r"dirty flash: skipping kernel", re.I), 0.14),
     (re.compile(r"KEEP_DATA", re.I), 0.92),
     (re.compile(r"^Done\. Flashed"), 0.96),
+    (re.compile(r"GSI systemimage", re.I), 0.12),
+    (re.compile(r"ninja: no work", re.I), 0.72),
+    (re.compile(r"target .*systemimage|build_gsi", re.I), 0.55),
+    (re.compile(r"exported pin", re.I), 0.92),
+    (re.compile(r"gsi-only done", re.I), 0.96),
 )
 
 PRESET_FALLBACK = [
@@ -89,7 +107,11 @@ FEATURE_FALLBACK = [
     ("with_nanobot", "Nanobot agent (lab)", False),
 ]
 ROOT_ENGINES = ["none", "magisk_release", "magisk_source", "kernelsu_source"]
+GSI_FLAVORS = ["vanilla", "microg", "gapps"]
+SORTS = ("newest", "oldest", "name", "size")
 EXPECT_SUPER = 4.4 * 1024 * 1024 * 1024
+EXPECT_GSI = 2.75 * 1024 * 1024 * 1024
+ETA_DEFAULTS = {"cook_s": 720, "flash_s": 180, "gsi_s": 2700}
 
 
 def kitchen_presets() -> list[str]:
@@ -126,20 +148,46 @@ def speak(text: str) -> None:
         pass
 
 
-def list_supers() -> list[Path]:
+def _sort_imgs(imgs: list[Path], how: str) -> list[Path]:
+    if how == "name":
+        imgs.sort(key=lambda p: p.name.lower())
+    elif how == "size":
+        imgs.sort(key=lambda p: p.stat().st_size, reverse=True)
+    elif how == "oldest":
+        imgs.sort(key=lambda p: p.stat().st_mtime)
+    else:
+        imgs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return imgs
+
+
+def list_supers(how: str = "date ↓") -> list[Path]:
     if not OUT.is_dir():
         return []
     imgs = [p for p in OUT.glob("*super*.img") if p.is_file()]
-    imgs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    return imgs
+    return _sort_imgs(imgs, how)
 
 
-def list_gsi() -> list[Path]:
-    if not GSI_DIR.is_dir():
-        return []
-    imgs = [p for p in GSI_DIR.glob("*.img") if p.is_file() and not p.is_symlink()]
-    imgs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    return imgs
+def list_gsi(how: str = "date ↓") -> list[Path]:
+    """Unique inodes; prefer LineageOS-23.2-* names. Skip aliases/symlinks."""
+    dirs = []
+    for d in (GSI_DIR, ATLASOS / "gsi"):
+        if d.is_dir() and d not in dirs:
+            dirs.append(d)
+    by_ino: dict[int, Path] = {}
+    for d in dirs:
+        for p in d.glob("*.img"):
+            if not p.is_file() or p.is_symlink():
+                continue
+            if "misterztr-src" in p.name:
+                continue
+            try:
+                ino = p.stat().st_ino
+            except OSError:
+                continue
+            cur = by_ino.get(ino)
+            if cur is None or p.name.startswith("LineageOS-23.2"):
+                by_ino[ino] = p
+    return _sort_imgs(list(by_ino.values()), how)
 
 
 def adb_serials() -> list[str]:
@@ -169,6 +217,84 @@ def fmt_img(p: Path) -> str:
     mb = st.st_size / (1024 * 1024)
     ts = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M")
     return f"{p.name}   {mb:.0f}M   {ts}"
+
+
+def fmt_secs(sec: float) -> str:
+    sec = max(0, int(sec))
+    if sec < 60:
+        return "%ss" % sec
+    m, s = divmod(sec, 60)
+    if m < 60:
+        return "%dm%02ds" % (m, s) if s else "%dm" % m
+    h, m = divmod(m, 60)
+    return "%dh%02dm" % (h, m)
+
+
+def load_eta() -> dict:
+    data = dict(ETA_DEFAULTS)
+    if ETA_FILE.is_file():
+        try:
+            got = json.loads(ETA_FILE.read_text())
+            for k in ETA_DEFAULTS:
+                if k in got and isinstance(got[k], (int, float)) and got[k] > 10:
+                    data[k] = float(got[k])
+        except Exception:
+            pass
+    return data
+
+
+def save_eta(kind: str, seconds: float) -> None:
+    if seconds < 15:
+        return
+    data = load_eta()
+    key = {"cook": "cook_s", "write": "flash_s", "gsi": "gsi_s"}.get(kind)
+    if not key:
+        return
+    prev = data[key]
+    data[key] = prev * 0.6 + float(seconds) * 0.4
+    try:
+        OUT.mkdir(parents=True, exist_ok=True)
+        ETA_FILE.write_text(json.dumps(data, indent=2) + "\n")
+    except Exception:
+        pass
+
+
+def estimate_cook(features: dict, root: str, also_gsi: bool = False) -> int:
+    data = load_eta()
+    sec = data["cook_s"]
+    if features.get("with_nanobot"):
+        sec += 120
+    if features.get("with_square_chrome"):
+        sec += 60
+    if (root or "none") != "none":
+        sec += 180
+    if also_gsi:
+        sec += data["gsi_s"]
+    return int(sec)
+
+
+def estimate_flash(path: str = "", keep_data: bool = True) -> int:
+    data = load_eta()
+    sec = data["flash_s"]
+    if path:
+        try:
+            size = Path(path).stat().st_size
+            sec = 45 + int(size / EXPECT_SUPER * 120)
+        except OSError:
+            pass
+    if not keep_data:
+        sec += 40
+    return int(sec)
+
+
+def estimate_gsi(flavor: str) -> int:
+    data = load_eta()
+    sec = data["gsi_s"]
+    if flavor == "microg":
+        sec += 180
+    elif flavor == "gapps":
+        sec += 420
+    return int(sec)
 
 
 def live_unit(line: str) -> float | None:
@@ -213,27 +339,75 @@ def extract_super(blob: str) -> str:
     return ""
 
 
-def growing_super_bytes(since: float) -> int:
+def extract_gsi(blob: str) -> str:
+    m = re.search(r"exported pin:\s+(\S+\.img)", blob)
+    if m and Path(m.group(1)).is_file():
+        return m.group(1)
+    ptr = ATLASOS / "out" / "misterztr_exported_gsi.path"
+    if ptr.is_file():
+        p = ptr.read_text(errors="replace").strip()
+        if p and Path(p).is_file():
+            return p
+    gs = list_gsi()
+    return str(gs[0]) if gs else ""
+
+
+def growing_bytes(since: float) -> int:
     best = 0
-    if not OUT.is_dir():
-        return 0
-    for p in OUT.glob("*super*.img"):
+    paths: list[Path] = []
+    if OUT.is_dir():
+        paths += list(OUT.glob("*super*.img"))
+    build = ROOT / "build"
+    if build.is_dir():
+        paths += list(build.glob("super*.img"))
+    for d in (GSI_DIR, ATLASOS / "gsi"):
+        if d.is_dir():
+            paths += list(d.glob("*.img"))
+    lineage = ATLASOS / ".links" / "lineage" / "out" / "target" / "product" / "tdgsi_arm64_ab" / "system.img"
+    if lineage.is_file():
+        paths.append(lineage)
+    for p in paths:
         try:
             st = p.stat()
         except OSError:
             continue
         if st.st_mtime >= since - 2 and st.st_size > best:
             best = st.st_size
-    build = ROOT / "build"
-    if build.is_dir():
-        for p in build.glob("super*.img"):
-            try:
-                st = p.stat()
-            except OSError:
-                continue
-            if st.st_mtime >= since - 2 and st.st_size > best:
-                best = st.st_size
     return best
+
+
+def mirror_gsi(src: str) -> str:
+    """Hard-link an AtlasOS GSI export into the workshop gsi/ dir."""
+    p = Path(src)
+    if not p.is_file():
+        return src
+    GSI_DIR.mkdir(parents=True, exist_ok=True)
+    dest = GSI_DIR / p.name
+    if dest.resolve() == p.resolve():
+        return str(dest)
+    try:
+        if dest.exists():
+            dest.unlink()
+        os.link(p, dest)
+    except OSError:
+        import shutil
+
+        shutil.copy2(p, dest)
+    alias = GSI_DIR / ("LineageOS-misterztr-src-" + p.name.replace("LineageOS-23.2-", ""))
+    try:
+        if alias.exists() or alias.is_symlink():
+            alias.unlink()
+        os.link(dest, alias)
+    except OSError:
+        pass
+    latest = GSI_DIR / "LineageOS-misterztr-src-latest-VANILLA-EXT4-GSI.img"
+    try:
+        if latest.exists() or latest.is_symlink():
+            latest.unlink()
+        latest.symlink_to(dest.name)
+    except OSError:
+        pass
+    return str(dest)
 
 
 class Bridge(QObject):
@@ -242,6 +416,7 @@ class Bridge(QObject):
     progress = pyqtSignal(float)
     spoken = pyqtSignal(str)
     built = pyqtSignal(str)
+    gsi_built = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
 
 
@@ -296,31 +471,41 @@ class Worker(threading.Thread):
                 self._stop.wait(0.15)
                 continue
             kind = job.get("kind")
+            t0 = time.time()
             try:
                 if kind == "cook":
                     self._cook(job, emit_done=True)
+                    save_eta("cook", time.time() - t0)
                 elif kind == "write":
                     self._write(job)
+                    save_eta("write", time.time() - t0)
                 elif kind == "cook_write":
                     img = self._cook(job, emit_done=False)
                     if not img:
                         continue
+                    save_eta("cook", time.time() - t0)
                     if not adb_serials() and not loader_serials():
                         self._st("cooked — connect Titan, then FLASH SELECTED")
                         self._say("Pin cooked. Connect the Titan to flash.")
                         self.bridge.finished.emit(True, img)
                         continue
+                    t1 = time.time()
                     job = dict(job)
                     job["image"] = img
                     self._write(job)
+                    save_eta("write", time.time() - t1)
+                elif kind == "gsi":
+                    self._gsi(job)
+                    save_eta("gsi", time.time() - t0)
+                elif kind == "pull":
+                    self._pull()
             except Exception as e:
                 self._ph("fail", 0.05)
                 self._st("error: %s" % e)
                 self._say("Failed.")
                 self.bridge.finished.emit(False, str(e))
 
-    def _pipe(self, cmd: list[str], env: dict, lo: float, hi: float) -> tuple[int, str]:
-        """Run cmd on a PTY. Map live tokens into [lo, hi). Never emit 1.0."""
+    def _pipe(self, cmd: list[str], env: dict, lo: float, hi: float, cwd: Path | None = None) -> tuple[int, str]:
         env = dict(env)
         env["PYTHONUNBUFFERED"] = "1"
         env["TERM"] = env.get("TERM") or "xterm"
@@ -332,7 +517,7 @@ class Worker(threading.Thread):
         try:
             proc = subprocess.Popen(
                 cmd,
-                cwd=str(ROOT),
+                cwd=str(cwd or ROOT),
                 env=env,
                 stdin=slave,
                 stdout=slave,
@@ -350,6 +535,7 @@ class Worker(threading.Thread):
         started = time.time()
         buf = b""
         text = []
+        expect = EXPECT_SUPER
         try:
             while True:
                 if self._stop.is_set():
@@ -373,8 +559,7 @@ class Worker(threading.Thread):
                         if not line:
                             continue
                         text.append(line)
-                        show = line[-200:]
-                        self._st(show)
+                        self._st(line[-200:])
                         unit = live_unit(line)
                         if unit is not None:
                             last = lo + (hi - lo) * unit
@@ -393,9 +578,9 @@ class Worker(threading.Thread):
                         buf = b""
                     break
                 else:
-                    grew = growing_super_bytes(started)
+                    grew = growing_bytes(started)
                     if grew > 8 * 1024 * 1024:
-                        file_u = min(0.90, grew / EXPECT_SUPER)
+                        file_u = min(0.90, grew / expect)
                         mapped = lo + (hi - lo) * file_u
                         if mapped > last:
                             last = mapped
@@ -462,6 +647,98 @@ class Worker(threading.Thread):
         if emit_done:
             self.bridge.finished.emit(True, img)
         return img
+
+    def _gsi(self, job: dict) -> None:
+        flavor = job.get("flavor") or "vanilla"
+        self._ph("build", 0.3)
+        self._pct(0.0)
+        self._say("Building GSI.")
+        env = os.environ.copy()
+        env["ATLASOS_FLAVOR"] = flavor
+        build = ATLASOS / "scripts" / "build.sh"
+        self._st("gsi flavor=" + flavor)
+        rc, blob = self._pipe(
+            ["bash", str(build), "--flavor", flavor, "--gsi-only"],
+            env,
+            0.02,
+            0.94,
+            cwd=ATLASOS,
+        )
+        if rc != 0 and ("DIRTY" in blob or "check_clean" in blob):
+            self._st("tree dirty — GSI pipeline without clean gate")
+            pipe = ATLASOS / "scripts" / "misterztr" / "pipeline.sh"
+            rc, blob = self._pipe(
+                ["bash", str(pipe), "--from=patch"],
+                env,
+                0.02,
+                0.94,
+                cwd=ATLASOS,
+            )
+        if rc != 0:
+            self._ph("fail", 0.05)
+            self._say("GSI failed.")
+            self.bridge.finished.emit(False, "gsi rc=%s" % rc)
+            return
+        img = extract_gsi(blob)
+        if img:
+            img = mirror_gsi(img)
+        if not img:
+            self._ph("fail", 0.05)
+            self._say("GSI produced no image.")
+            self.bridge.finished.emit(False, "no gsi")
+            return
+        self._done_pct()
+        self._ph("idle", 0.4)
+        self._st("gsi " + Path(img).name)
+        self._say("GSI ready.")
+        self.bridge.gsi_built.emit(img)
+        self.bridge.finished.emit(True, img)
+
+    def _pull(self) -> None:
+        self._ph("build", 0.2)
+        self._pct(0.0)
+        self._say("Pulling AtlasOS from GitHub.")
+        env = os.environ.copy()
+        git = ["git", "-C", str(ATLASOS)]
+        rc, blob = self._pipe(git + ["fetch", "origin"], env, 0.05, 0.45, cwd=ATLASOS)
+        if rc != 0:
+            self._ph("fail", 0.05)
+            self.bridge.finished.emit(False, "fetch rc=%s" % rc)
+            return
+        st = subprocess.run(
+            git + ["status", "-sb"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        head = (st.stdout or "").strip().splitlines()
+        summary = head[0] if head else "fetched"
+        merge = subprocess.run(
+            git + ["merge", "--ff-only", "@{u}"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if merge.returncode == 0:
+            msg = (merge.stdout or merge.stderr or "fast-forward").strip().splitlines()
+            tail = msg[-1] if msg else "up to date"
+            self._st(summary + " · " + tail)
+            subprocess.run(
+                git + ["submodule", "update", "--init", "--recursive"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            self._done_pct()
+            self._ph("idle", 0.4)
+            self._say("AtlasOS pulled.")
+            self.bridge.finished.emit(True, tail)
+            return
+        err = (merge.stderr or merge.stdout or "not fast-forward").strip().splitlines()
+        tail = err[-1] if err else "diverged"
+        self._st(summary + " · " + tail)
+        self._ph("idle", 0.3)
+        self.bridge.finished.emit(True, summary + " — " + tail)
 
     def _write(self, job: dict) -> None:
         img = job.get("image") or ""
@@ -530,7 +807,7 @@ class Flasher(QMainWindow):
         super().__init__()
         self.setWindowTitle("Cube Flasher")
         self.setObjectName("CubeFlasher")
-        self.resize(1140, 780)
+        self.resize(1220, 800)
         pal = self.palette()
         pal.setColor(QPalette.Window, QColor("#060001"))
         pal.setColor(QPalette.WindowText, QColor("#FF141A"))
@@ -556,6 +833,20 @@ class Flasher(QMainWindow):
             "QScrollArea,QScrollArea>QWidget>QWidget{background:#120204;border:1px solid #5A1014;}"
             "QScrollBar:vertical{background:#120204;width:10px;}"
             "QScrollBar::handle:vertical{background:#5A1014;min-height:24px;}"
+            "QTabWidget::pane{border:1px solid #5A1014;background:#060001;}"
+            "QTabBar::tab{background:#120204;color:#FF141A;padding:6px 14px;"
+            "border:1px solid #5A1014;font:bold 11px monospace;}"
+            "QTabBar::tab:selected{background:#3A080C;}"
+        )
+
+        combo_css = (
+            "QComboBox{background:#120204;color:#FFD0D2;border:1px solid #5A1014;"
+            "padding:4px;font: 11px monospace;}"
+        )
+        list_css = (
+            "QListWidget{background:#120204;color:#FFD0D2;border:1px solid #5A1014;"
+            "font: 11px monospace;}"
+            "QListWidget::item:selected{background:#3A080C;color:#FF141A;}"
         )
 
         root = QWidget()
@@ -587,6 +878,11 @@ class Flasher(QMainWindow):
             "QProgressBar::chunk{background:#FF141A;}"
         )
         left.addWidget(self.bar)
+        self.eta = QLabel("")
+        self.eta.setAlignment(Qt.AlignCenter)
+        self.eta.setWordWrap(True)
+        self.eta.setStyleSheet("color:#C07074; font: 11px monospace;")
+        left.addWidget(self.eta)
         self.dev = QLabel("")
         self.dev.setAlignment(Qt.AlignCenter)
         self.dev.setStyleSheet("color:#9A4044; font: 11px monospace;")
@@ -595,34 +891,16 @@ class Flasher(QMainWindow):
         self.said.setAlignment(Qt.AlignCenter)
         self.said.setStyleSheet("color:#7A3034; font: italic 11px monospace;")
         left.addWidget(self.said)
+        self.btn_pull = self._btn("PULL GITHUB")
+        self.btn_pull.clicked.connect(self.pull_github)
+        left.addWidget(self.btn_pull)
         outer.addLayout(left, 2)
 
-        combo_css = (
-            "QComboBox{background:#120204;color:#FFD0D2;border:1px solid #5A1014;"
-            "padding:4px;font: 11px monospace;}"
-            "QComboBox QAbstractItemView{background:#120204;color:#FFD0D2;}"
-        )
-
         right = QVBoxLayout()
-        right.addWidget(self._lbl("BUILDS"))
-        self.builds = QListWidget()
-        self.builds.setStyleSheet(
-            "QListWidget{background:#120204;color:#FFD0D2;border:1px solid #5A1014;"
-            "font: 11px monospace;}"
-            "QListWidget::item:selected{background:#3A080C;color:#FF141A;}"
-        )
-        right.addWidget(self.builds, 2)
-        row = QHBoxLayout()
-        self.btn_refresh = self._btn("REFRESH")
-        self.btn_del = self._btn("DELETE")
-        self.btn_write = self._btn("FLASH SELECTED")
-        self.btn_refresh.clicked.connect(self.refresh_builds)
-        self.btn_del.clicked.connect(self.delete_selected)
-        self.btn_write.clicked.connect(self.write_selected)
-        row.addWidget(self.btn_refresh)
-        row.addWidget(self.btn_del)
-        row.addWidget(self.btn_write)
-        right.addLayout(row)
+        tabs = QTabWidget()
+        tabs.addTab(self._pins_tab(combo_css, list_css), "PINS")
+        tabs.addTab(self._gsi_tab(combo_css, list_css), "GSI")
+        right.addWidget(tabs, 3)
 
         right.addWidget(self._lbl("KITCHEN"))
         cfg = QHBoxLayout()
@@ -635,37 +913,36 @@ class Flasher(QMainWindow):
         self.root_eng = QComboBox()
         self.root_eng.setStyleSheet(combo_css)
         self.root_eng.addItems(ROOT_ENGINES)
+        self.gsi = QComboBox()
+        self.gsi.setStyleSheet(combo_css)
         cfg.addWidget(QLabel("preset"))
         cfg.addWidget(self.preset, 1)
         cfg.addWidget(QLabel("root"))
         cfg.addWidget(self.root_eng)
         right.addLayout(cfg)
         gsi_row = QHBoxLayout()
-        self.gsi = QComboBox()
-        self.gsi.setStyleSheet(combo_css)
         gsi_row.addWidget(QLabel("gsi"))
         gsi_row.addWidget(self.gsi, 1)
         right.addLayout(gsi_row)
 
         feat_box = QWidget()
-        feat_l = QVBoxLayout(feat_box)
-        feat_l.setContentsMargins(0, 0, 0, 0)
+        feat_l = QGridLayout(feat_box)
+        feat_l.setContentsMargins(4, 4, 4, 4)
         self.feat = {}
-        for key, label, default in kitchen_features():
+        for i, (key, label, default) in enumerate(kitchen_features()):
             cb = QCheckBox(label)
             cb.setChecked(default)
-            cb.setStyleSheet("color:#FFD0D2; font: 11px monospace;")
             self.feat[key] = cb
-            feat_l.addWidget(cb)
-        self.keep_data = QCheckBox("Keep userdata (dirty flash)")
-        self.keep_data.setChecked(True)
-        self.keep_data.setStyleSheet("color:#FFD0D2; font: 11px monospace;")
-        feat_l.addWidget(self.keep_data)
+            feat_l.addWidget(cb, i // 2, i % 2)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(feat_box)
-        scroll.setStyleSheet("QScrollArea{border:1px solid #5A1014;}")
-        right.addWidget(scroll, 1)
+        scroll.setMaximumHeight(150)
+        right.addWidget(scroll)
+
+        self.keep_data = QCheckBox("Keep userdata")
+        self.keep_data.setChecked(True)
+        right.addWidget(self.keep_data)
 
         brow = QHBoxLayout()
         self.btn_build = self._btn("BUILD")
@@ -677,17 +954,25 @@ class Flasher(QMainWindow):
         right.addLayout(brow)
         outer.addLayout(right, 3)
 
+        for w in (self.preset, self.root_eng, self.gsi, self.gsi_flavor):
+            w.currentIndexChanged.connect(self._refresh_eta)
+        for cb in list(self.feat.values()) + [self.keep_data]:
+            cb.toggled.connect(self._refresh_eta)
+
         self.bridge = Bridge()
         self.bridge.status.connect(self.line.setText)
         self.bridge.phase.connect(self._phase)
         self.bridge.progress.connect(self._prog)
         self.bridge.spoken.connect(self.said.setText)
         self.bridge.built.connect(self._on_built)
+        self.bridge.gsi_built.connect(self._on_gsi_built)
         self.bridge.finished.connect(self._on_done)
         self.worker = Worker(self.bridge)
         self.worker.start()
         self._busy = False
         self._job_phase = "idle"
+        self._job_t0 = 0.0
+        self._job_eta = 0.0
 
         self.dev_timer = QTimer(self)
         self.dev_timer.timeout.connect(self._tick_dev)
@@ -695,7 +980,79 @@ class Flasher(QMainWindow):
 
         self.refresh_builds()
         self.refresh_gsi()
+        self._refresh_eta()
         self._tick_dev()
+
+    def _pins_tab(self, combo_css: str, list_css: str) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(6, 8, 6, 6)
+        head = QHBoxLayout()
+        head.addWidget(self._lbl("PINS"))
+        head.addStretch(1)
+        head.addWidget(QLabel("sort"))
+        self.sort_pins = QComboBox()
+        self.sort_pins.setStyleSheet(combo_css)
+        self.sort_pins.addItems(SORTS)
+        self.sort_pins.currentTextChanged.connect(lambda *_: self.refresh_builds())
+        head.addWidget(self.sort_pins)
+        v.addLayout(head)
+        self.builds = QListWidget()
+        self.builds.setStyleSheet(list_css)
+        self.builds.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.builds.itemSelectionChanged.connect(self._refresh_eta)
+        v.addWidget(self.builds, 1)
+        row = QHBoxLayout()
+        self.btn_refresh = self._btn("REFRESH")
+        self.btn_del = self._btn("DELETE")
+        self.btn_write = self._btn("FLASH SELECTED")
+        self.btn_refresh.clicked.connect(self.refresh_builds)
+        self.btn_del.clicked.connect(self.delete_selected)
+        self.btn_write.clicked.connect(self.write_selected)
+        row.addWidget(self.btn_refresh)
+        row.addWidget(self.btn_del)
+        row.addWidget(self.btn_write)
+        v.addLayout(row)
+        return w
+
+    def _gsi_tab(self, combo_css: str, list_css: str) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(6, 8, 6, 6)
+        head = QHBoxLayout()
+        head.addWidget(self._lbl("GSI"))
+        head.addStretch(1)
+        head.addWidget(QLabel("sort"))
+        self.sort_gsi = QComboBox()
+        self.sort_gsi.setStyleSheet(combo_css)
+        self.sort_gsi.addItems(SORTS)
+        self.sort_gsi.currentTextChanged.connect(lambda *_: self.refresh_gsi())
+        head.addWidget(self.sort_gsi)
+        v.addLayout(head)
+        self.gsi_list = QListWidget()
+        self.gsi_list.setStyleSheet(list_css)
+        self.gsi_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.gsi_list.itemSelectionChanged.connect(self._gsi_picked)
+        v.addWidget(self.gsi_list, 1)
+        flav = QHBoxLayout()
+        flav.addWidget(QLabel("flavor"))
+        self.gsi_flavor = QComboBox()
+        self.gsi_flavor.setStyleSheet(combo_css)
+        self.gsi_flavor.addItems(GSI_FLAVORS)
+        flav.addWidget(self.gsi_flavor, 1)
+        v.addLayout(flav)
+        row = QHBoxLayout()
+        self.btn_gsi_refresh = self._btn("REFRESH")
+        self.btn_gsi_del = self._btn("DELETE")
+        self.btn_gsi_build = self._btn("BUILD GSI")
+        self.btn_gsi_refresh.clicked.connect(self.refresh_gsi)
+        self.btn_gsi_del.clicked.connect(self.delete_gsi)
+        self.btn_gsi_build.clicked.connect(self.build_gsi)
+        row.addWidget(self.btn_gsi_refresh)
+        row.addWidget(self.btn_gsi_del)
+        row.addWidget(self.btn_gsi_build)
+        v.addLayout(row)
+        return w
 
     def _lbl(self, t: str) -> QLabel:
         x = QLabel(t)
@@ -719,6 +1076,15 @@ class Flasher(QMainWindow):
     def _prog(self, f: float) -> None:
         f = max(0.0, min(1.0, float(f)))
         self.bar.setValue(int(round(f * 1000)))
+        if self._busy and self._job_eta > 0:
+            left = max(0.0, self._job_eta * (1.0 - f))
+            elapsed = time.time() - self._job_t0
+            if elapsed > 8 and f > 0.08:
+                left = max(0.0, elapsed / f - elapsed)
+            self.bar.setFormat("%p%   ~" + fmt_secs(left) + " left")
+            self.eta.setText("running · ~%s remaining" % fmt_secs(left))
+        else:
+            self.bar.setFormat("%p%")
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
@@ -728,50 +1094,96 @@ class Flasher(QMainWindow):
             self.btn_write,
             self.btn_del,
             self.btn_refresh,
+            self.btn_gsi_build,
+            self.btn_gsi_del,
+            self.btn_gsi_refresh,
+            self.btn_pull,
         ):
             b.setEnabled(not busy)
 
-    def refresh_builds(self) -> None:
-        cur = self._selected_path()
-        self.builds.clear()
-        for p in list_supers():
+    def _fill_list(self, widget: QListWidget, paths: list[Path], keep: set[str]) -> None:
+        widget.clear()
+        first = None
+        for p in paths:
             it = QListWidgetItem(fmt_img(p))
             it.setData(Qt.UserRole, str(p))
-            self.builds.addItem(it)
-            if cur and str(p) == cur:
-                self.builds.setCurrentItem(it)
-        if self.builds.currentItem() is None and self.builds.count():
-            self.builds.setCurrentRow(0)
+            widget.addItem(it)
+            if str(p) in keep:
+                it.setSelected(True)
+                if first is None:
+                    first = it
+        if first is not None:
+            widget.setCurrentItem(first)
+        elif widget.count():
+            widget.setCurrentRow(0)
+
+    def refresh_builds(self) -> None:
+        keep = {it.data(Qt.UserRole) for it in self.builds.selectedItems()}
+        self._fill_list(self.builds, list_supers(self.sort_pins.currentText()), keep)
+        self._refresh_eta()
 
     def refresh_gsi(self) -> None:
+        keep = {it.data(Qt.UserRole) for it in self.gsi_list.selectedItems()}
+        imgs = list_gsi(self.sort_gsi.currentText())
+        self._fill_list(self.gsi_list, imgs, keep)
+        cur = self.gsi.currentData() if self.gsi.count() else ""
+        self.gsi.blockSignals(True)
         self.gsi.clear()
         self.gsi.addItem("(default)", "")
-        for p in list_gsi():
+        for p in imgs:
             self.gsi.addItem(p.name, str(p))
+            if cur and str(p) == cur:
+                self.gsi.setCurrentIndex(self.gsi.count() - 1)
+        self.gsi.blockSignals(False)
+        self._refresh_eta()
 
-    def _selected_path(self) -> str:
-        it = self.builds.currentItem()
-        return it.data(Qt.UserRole) if it else ""
+    def _selected_paths(self, widget: QListWidget) -> list[str]:
+        paths = [it.data(Qt.UserRole) for it in widget.selectedItems()]
+        return [p for p in paths if p]
+
+    def _primary_path(self, widget: QListWidget) -> str:
+        it = widget.currentItem()
+        if it and it.isSelected():
+            return it.data(Qt.UserRole) or ""
+        sel = self._selected_paths(widget)
+        return sel[0] if sel else ""
 
     def delete_selected(self) -> None:
-        path = self._selected_path()
-        if not path:
+        self._delete_paths(self._selected_paths(self.builds), "pin", self.refresh_builds)
+
+    def delete_gsi(self) -> None:
+        self._delete_paths(self._selected_paths(self.gsi_list), "GSI", self.refresh_gsi)
+
+    def _delete_paths(self, paths: list[str], kind: str, after) -> None:
+        if not paths:
             return
+        names = "\n".join(Path(p).name for p in paths[:12])
+        extra = "" if len(paths) <= 12 else "\n… +%d" % (len(paths) - 12)
         if (
             QMessageBox.question(
                 self,
-                "Delete pin",
-                "Delete\n%s ?" % Path(path).name,
+                "Delete %s" % kind,
+                "Delete %d %s?\n%s%s" % (len(paths), kind, names, extra),
             )
             != QMessageBox.Yes
         ):
             return
-        try:
-            Path(path).unlink()
-            self.line.setText("deleted " + Path(path).name)
-        except Exception as e:
-            QMessageBox.warning(self, "Delete failed", str(e))
-        self.refresh_builds()
+        for p in paths:
+            try:
+                Path(p).unlink()
+            except Exception as e:
+                QMessageBox.warning(self, "Delete failed", "%s\n%s" % (p, e))
+        self.line.setText("deleted %d %s" % (len(paths), kind))
+        after()
+
+    def _gsi_picked(self) -> None:
+        path = self._primary_path(self.gsi_list)
+        if path:
+            for i in range(self.gsi.count()):
+                if self.gsi.itemData(i) == path:
+                    self.gsi.setCurrentIndex(i)
+                    break
+        self._refresh_eta()
 
     def _cook_job(self) -> dict:
         feats = {k: cb.isChecked() for k, cb in self.feat.items()}
@@ -783,47 +1195,82 @@ class Flasher(QMainWindow):
             "keep_data": self.keep_data.isChecked(),
         }
 
+    def _arm(self, eta: int) -> None:
+        self._set_busy(True)
+        self._job_t0 = time.time()
+        self._job_eta = float(eta)
+        self._prog(0.0)
+
     def start_job(self, then_flash: bool) -> None:
         if self._busy:
             return
+        job = self._cook_job()
+        eta = estimate_cook(job["features"], job["root"])
         if then_flash:
-            path_note = "kitchen cook → then flash the new pin"
+            eta += estimate_flash(keep_data=job["keep_data"])
             if (
                 QMessageBox.question(
                     self,
                     "Build and flash",
-                    path_note + "\nKeep data: %s" % self.keep_data.isChecked(),
+                    "Cook then flash the new pin.\nKeep data: %s\nETA ~%s"
+                    % (job["keep_data"], fmt_secs(eta)),
                 )
                 != QMessageBox.Yes
             ):
                 return
-        self._set_busy(True)
-        self._prog(0.0)
-        job = self._cook_job()
+        self._arm(eta)
         job["kind"] = "cook_write" if then_flash else "cook"
         self.worker.submit(job)
 
-    def write_selected(self) -> None:
+    def build_gsi(self) -> None:
         if self._busy:
             return
-        path = self._selected_path()
-        if not path:
-            QMessageBox.information(self, "Cube Flasher", "Select a build.")
-            return
-        if not adb_serials() and not loader_serials():
-            QMessageBox.information(self, "Cube Flasher", "Connect the Titan first.")
-            return
+        flavor = self.gsi_flavor.currentText()
+        eta = estimate_gsi(flavor)
         if (
             QMessageBox.question(
                 self,
-                "Flash selected",
-                "Flash\n%s\nKeep data: %s" % (Path(path).name, self.keep_data.isChecked()),
+                "Build GSI",
+                "Build AtlasOS GSI flavor=%s\nETA ~%s" % (flavor, fmt_secs(eta)),
             )
             != QMessageBox.Yes
         ):
             return
-        self._set_busy(True)
-        self._prog(0.0)
+        self._arm(eta)
+        self.worker.submit({"kind": "gsi", "flavor": flavor})
+
+    def pull_github(self) -> None:
+        if self._busy:
+            return
+        self._arm(90)
+        self.worker.submit({"kind": "pull"})
+
+    def write_selected(self) -> None:
+        if self._busy:
+            return
+        path = self._primary_path(self.builds)
+        if not path:
+            QMessageBox.information(self, "Cube Flasher", "Select a pin.")
+            return
+        n = len(self._selected_paths(self.builds))
+        if not adb_serials() and not loader_serials():
+            QMessageBox.information(self, "Cube Flasher", "Connect the Titan first.")
+            return
+        eta = estimate_flash(path, self.keep_data.isChecked())
+        note = Path(path).name
+        if n > 1:
+            note += "\n(%d selected — flashing the highlighted one)" % n
+        if (
+            QMessageBox.question(
+                self,
+                "Flash selected",
+                "Flash\n%s\nKeep data: %s\nETA ~%s"
+                % (note, self.keep_data.isChecked(), fmt_secs(eta)),
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        self._arm(eta)
         self.worker.submit(
             {
                 "kind": "write",
@@ -839,11 +1286,41 @@ class Flasher(QMainWindow):
                 self.builds.setCurrentRow(i)
                 break
 
+    def _on_gsi_built(self, img: str) -> None:
+        self.refresh_gsi()
+        for i in range(self.gsi_list.count()):
+            if self.gsi_list.item(i).data(Qt.UserRole) == img:
+                self.gsi_list.setCurrentRow(i)
+                break
+        for i in range(self.gsi.count()):
+            if self.gsi.itemData(i) == img:
+                self.gsi.setCurrentIndex(i)
+                break
+
     def _on_done(self, ok: bool, msg: str) -> None:
         self._set_busy(False)
+        self._job_eta = 0.0
+        self.bar.setFormat("%p%")
         self.refresh_builds()
+        self.refresh_gsi()
+        self._refresh_eta()
         if not ok:
             self.line.setText(msg)
+
+    def _refresh_eta(self) -> None:
+        if self._busy:
+            return
+        job = {
+            "features": {k: cb.isChecked() for k, cb in self.feat.items()},
+            "root": self.root_eng.currentText(),
+        }
+        cook = estimate_cook(job["features"], job["root"])
+        flash = estimate_flash(self._primary_path(self.builds), self.keep_data.isChecked())
+        gsi = estimate_gsi(self.gsi_flavor.currentText())
+        self.eta.setText(
+            "ETA  cook %s  ·  flash %s  ·  gsi %s"
+            % (fmt_secs(cook), fmt_secs(flash), fmt_secs(gsi))
+        )
 
     def _tick_dev(self) -> None:
         adb, fb = adb_serials(), loader_serials()
@@ -855,6 +1332,10 @@ class Flasher(QMainWindow):
         if not parts:
             parts.append("no titan")
         parts.append("%d pins" % self.builds.count())
+        parts.append("%d gsi" % self.gsi_list.count())
+        nsel = len(self._selected_paths(self.builds))
+        if nsel > 1:
+            parts.append("%d selected" % nsel)
         self.dev.setText("  ·  ".join(parts))
         if self._busy:
             return
