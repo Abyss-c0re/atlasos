@@ -50,6 +50,12 @@ while IFS= read -r f; do
         atlas|atlas-*|ptyexec|su|sudo|hid_bridge|openwrt-lpctl|titan2-*)
           ok "own ELF $f"
           ;;
+        git|adb|fastboot)
+          case "$f" in
+            tools/cube_flasher/*) ok "cube_flasher tool $f" ;;
+            *) bad "unexpected ELF tracked: $f ($ft)" ;;
+          esac
+          ;;
         *)
           bad "unexpected ELF tracked: $f ($ft)"
           ;;

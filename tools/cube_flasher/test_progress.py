@@ -49,6 +49,28 @@ def main() -> int:
     report = format_rom_report(props, rec, ["c2b1617 analog acc"], [])
     assert "Updates since last flash (1)" in report
     assert "c2b1617 analog acc" in report
+    from titan_diag import redact, detect, serial_tag
+    from titan_issues import origin_repo, git_bin
+    from pathlib import Path
+
+    assert "<email>" in redact("mail me@x.com please")
+    assert "ABC123" not in redact("serial ABC123 here", "ABC123")
+    assert serial_tag("ABC123") == serial_tag("ABC123")
+    assert serial_tag("ABC123") != serial_tag("OTHER")
+    found = detect({
+        "analog": "analog_audio",
+        "acc_sh": "0",
+        "wired": "[BUILTIN_SPEAKER]",
+        "policy": "1",
+        "log_hits": "",
+        "crash": "",
+        "controls": "package:/system/priv-app/TitanControls",
+        "usbhid": "package:/system/priv-app/TitanUsbHid",
+    })
+    ids = {f["id"] for f in found}
+    assert "analog-acc-missing" in ids
+    assert "analog-not-routed" in ids
+    assert Path(git_bin()).name == "git"
     print("progress parser ok")
     return 0
 

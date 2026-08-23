@@ -39,6 +39,8 @@ from PyQt5.QtWidgets import (
 )
 
 from cube_widget import CrimsonCube
+from titan_diag import collect as diag_collect, detect as diag_detect, format_diag
+from titan_issues import nanobot_classify, post_finding, existing_fingerprints, github_token, origin_repo
 from titan_rom import (
     LEDGER_NAME,
     PROP_KEYS,
@@ -295,6 +297,21 @@ def pick_usb(prefer: str = "") -> str:
     if prefer and prefer in live:
         return prefer
     return live[0] if live else ""
+
+
+def adb_shell(serial: str, script: str, timeout: int = 12) -> str:
+    if not serial:
+        return ""
+    try:
+        out = subprocess.check_output(
+            [adb_bin(), "-s", serial, "shell", script],
+            text=True,
+            timeout=timeout,
+            env=tool_env(),
+        )
+        return out.replace("\r", "")
+    except Exception:
+        return ""
 
 
 def ledger_path() -> Path:
@@ -574,6 +591,7 @@ class Bridge(QObject):
     built = pyqtSignal(str)
     gsi_built = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
+    diag = pyqtSignal(str)
 
 
 class Worker(threading.Thread):
@@ -1175,10 +1193,12 @@ class Flasher(QMainWindow):
         self.bridge.built.connect(self._on_built)
         self.bridge.gsi_built.connect(self._on_gsi_built)
         self.bridge.finished.connect(self._on_done)
+        self.bridge.diag.connect(self._on_diag)
         self.worker = Worker(self.bridge)
         self.worker.start()
         self._busy = False
         self._rom_cache = {"serial": "", "t": 0.0, "props": {}}
+        self._diag_serial = ""
         self._job_phase = "idle"
         self._job_t0 = 0.0
         self._job_eta = 0.0
@@ -1202,6 +1222,9 @@ class Flasher(QMainWindow):
         self.titan_view.setStyleSheet(list_css.replace("QListWidget", "QPlainTextEdit"))
         self.titan_view.setPlaceholderText("Plug Titan over USB to read the ROM and updates since last flash.")
         v.addWidget(self.titan_view, 1)
+        self.btn_diag = self._btn("RUN DIAGNOSTICS")
+        self.btn_diag.clicked.connect(self._force_diag)
+        v.addWidget(self.btn_diag)
         return w
 
     def _pins_tab(self, combo_css: str, list_css: str) -> QWidget:
@@ -1566,8 +1589,63 @@ class Flasher(QMainWindow):
             % (fmt_secs(cook), fmt_secs(flash), fmt_secs(gsi))
         )
 
+    def _force_diag(self) -> None:
+        self._diag_serial = ""
+        ser = ""
+        if self.usb.currentText() and self.usb.currentText() in usb_adb():
+            ser = self.usb.currentText()
+        elif usb_adb():
+            ser = usb_adb()[0]
+        if not ser:
+            self.line.setText("no usb adb for diag")
+            return
+        self._maybe_diag(ser)
+
+    def _maybe_diag(self, serial: str) -> None:
+        if self._busy:
+            return
+        if not serial:
+            self._diag_serial = ""
+            return
+        if serial == self._diag_serial:
+            return
+        self._diag_serial = serial
+        self.line.setText("diag USB")
+        threading.Thread(target=self._diag_worker, args=(serial,), daemon=True).start()
+
+    def _diag_worker(self, serial: str) -> None:
+        try:
+            snap = diag_collect(serial, adb_shell)
+            findings = diag_detect(snap)
+            extra = nanobot_classify(snap, findings)
+            seen_ids = {f["id"] for f in findings}
+            for e in extra:
+                if e.get("id") and e["id"] not in seen_ids:
+                    findings.append(e)
+                    seen_ids.add(e["id"])
+            posts = []
+            if findings:
+                owner, repo = origin_repo(ATLASOS)
+                token = github_token()
+                have = existing_fingerprints(owner, repo, token) if owner and token else set()
+                for f in findings:
+                    posts.append("%s u2192 %s" % (f["id"], post_finding(f, snap, ATLASOS, have)))
+            note = "Issues\n  " + "\n  ".join(posts) if posts else "Host nanobot + local rules. No user data pulled."
+            self.bridge.diag.emit(format_diag(snap, findings, note))
+        except Exception as e:
+            self.bridge.diag.emit("diag failed: %s\n" % e)
+
+    def _on_diag(self, text: str) -> None:
+        if hasattr(self, "titan_view"):
+            cur = self.titan_view.toPlainText().rstrip()
+            self.titan_view.setPlainText((cur + "\n\n" if cur else "") + text)
+        self._diag_ran = True
+        self.line.setText("diag done")
+
     def _refresh_titan(self, serial: str, loader: bool) -> None:
         if not serial:
+            self._diag_serial = ""
+            self._diag_ran = False
             self.rom.setText("USB loader u2014 ROM unread" if loader else "plug Titan USB")
             if hasattr(self, "titan_view"):
                 self.titan_view.setPlainText(
@@ -1589,8 +1667,9 @@ class Flasher(QMainWindow):
         commits = rom_changelog(flash)
         pins = newer_pins(OUT, (flash or {}).get("ts") or "")
         self.rom.setText(format_rom_summary(props, flash) if props else serial)
-        if hasattr(self, "titan_view"):
+        if hasattr(self, "titan_view") and not getattr(self, "_diag_ran", False):
             self.titan_view.setPlainText(format_rom_report(props, flash, commits, pins))
+        self._maybe_diag(serial)
 
     def _tick_dev(self) -> None:
         adb, fb = usb_adb(), usb_fastboot()
