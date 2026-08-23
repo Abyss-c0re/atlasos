@@ -10,7 +10,7 @@ PAD_STATUS=$ST/titan2_pad_status
 ACTIVITY=$ST/titan2_key_activity
 TP_LOG=$ST/titan2_touchpadd.log
 AGENT_LOCKDIR=$T2/pad-agent.lockdir
-TW_VER=2.168-typing-watch-hold
+TW_VER=2.169-typing-watch-plane
 
 echo "typing-watch pid=$$ parent=$PPID ver=$TW_VER" >"$ST/titan2_typing_watch_status" 2>/dev/null
 chmod 666 "$ST/titan2_typing_watch_status" 2>/dev/null || true
@@ -232,13 +232,10 @@ while true; do
     fi
   fi
   _tw_prev_pause=$_pnow
+  # Pause plane only. key_activity is also the LED stamp and used to keep
+  # typing_lock=1 forever, which made pad-apply refuse to change mode.
   _want=0
   if [ "$_pnow" = "1" ]; then
-    _want=1
-    if [ "$_now" -gt 0 ] 2>/dev/null; then
-      _tw_unlock_ms=`expr "$_now" + "$_cool" 2>/dev/null` || true
-    fi
-  elif [ "$_tw_unlock_ms" -gt 0 ] 2>/dev/null && [ "$_now" -lt "$_tw_unlock_ms" ] 2>/dev/null; then
     _want=1
   fi
   if [ "$_want" = "1" ]; then
