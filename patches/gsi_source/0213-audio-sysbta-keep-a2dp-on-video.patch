@@ -1,0 +1,22 @@
+# project:frameworks/av
+# Video HW_AV_SYNC on sysbta A2DP returned no output; headset vanished.
+diff --git a/services/audiopolicy/managerdefault/AudioPolicyManager.cpp b/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
+index 9409efc3c5..3d0871f426 100644
+--- a/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
++++ b/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
+@@ -1494,6 +1494,15 @@ status_t AudioPolicyManager::getOutputForAttrInt(
+         *flags = (audio_output_flags_t)(*flags | AUDIO_OUTPUT_FLAG_HW_AV_SYNC);
+     }
+ 
++    // Titan 2 sysbta: A2DP is PCM mix only. Video HW_AV_SYNC cannot open a
++    // direct BT output; APM then returned NONE, the headset vanished, and
++    // playback jumped to the speaker. Keep A2DP; drop sync/offload/direct.
++    if (!Intersection(outputDevices.types(), getAudioDeviceOutAllA2dpSet()).empty()) {
++        *flags = (audio_output_flags_t)(*flags & ~(AUDIO_OUTPUT_FLAG_HW_AV_SYNC
++                | AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD | AUDIO_OUTPUT_FLAG_DIRECT));
++        resultAttr->flags = (audio_flags_mask_t)(resultAttr->flags & ~AUDIO_FLAG_HW_AV_SYNC);
++    }
++
+     // Set incall music only if device was explicitly set, and fallback to the device which is
+     // chosen by the engine if not.
+     // FIXME: provide a more generic approach which is not device specific and move this back

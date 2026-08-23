@@ -167,3 +167,7 @@
 0211-phh-incoming-binder-thread-product-props.patch
 0212-phh-prop-handler-incoming-binder-off-sets-block.patch
 
+
+# Video during music must not evict A2DP (sysbta).
+0213-audio-sysbta-keep-a2dp-on-video.patch
+0214-bluetooth-sysbta-always-sbc.patch

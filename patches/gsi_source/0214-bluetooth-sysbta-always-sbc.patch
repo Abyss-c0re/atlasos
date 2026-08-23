@@ -1,0 +1,41 @@
+# project:packages/modules/Bluetooth
+# After 0161: sysbta must SBC even when optional-codec pref is ENABLED.
+# Video mid-stream LDAC reconfig dropped A2DP (headset vanished).
+diff --git a/android/app/src/com/android/bluetooth/a2dp/A2dpService.java b/android/app/src/com/android/bluetooth/a2dp/A2dpService.java
+--- a/android/app/src/com/android/bluetooth/a2dp/A2dpService.java
++++ b/android/app/src/com/android/bluetooth/a2dp/A2dpService.java
+@@ -1146,24 +1146,22 @@ public class A2dpService extends ConnectableProfile {
+             setSupportsOptionalCodecs(device, supportsOptional);
+         }
+         if (supportsOptional) {
++            // Titan 2: sysbta cannot hold LDAC/AAC. Video mid-stream reconfig
++            // dropped A2DP (headset vanished, speaker took over). Always SBC.
++            if (android.os.SystemProperties.getBoolean(
++                    "persist.bluetooth.system_audio_hal.enabled", false)) {
++                setOptionalCodecsEnabled(device, BluetoothA2dp.OPTIONAL_CODECS_PREF_DISABLED);
++                disableOptionalCodecs(device);
++                return;
++            }
+             int enabled = getOptionalCodecsEnabled(device);
+             switch (enabled) {
+                 case BluetoothA2dp.OPTIONAL_CODECS_PREF_ENABLED -> enableOptionalCodecs(device);
+                 case BluetoothA2dp.OPTIONAL_CODECS_PREF_DISABLED -> disableOptionalCodecs(device);
+-                // Titan 2: sysbta cannot hold LDAC 96k/32. Unknown pref u2192 SBC, not LDAC.
+                 default -> {
+-                    boolean sysbta =
+-                            android.os.SystemProperties.getBoolean(
+-                                    "persist.bluetooth.system_audio_hal.enabled", false);
+-                    if (sysbta) {
+-                        setOptionalCodecsEnabled(
+-                                device, BluetoothA2dp.OPTIONAL_CODECS_PREF_DISABLED);
+-                        disableOptionalCodecs(device);
+-                    } else {
+-                        setOptionalCodecsEnabled(
+-                                device, BluetoothA2dp.OPTIONAL_CODECS_PREF_ENABLED);
+-                        enableOptionalCodecs(device);
+-                    }
++                    setOptionalCodecsEnabled(device, BluetoothA2dp.OPTIONAL_CODECS_PREF_ENABLED);
++                    enableOptionalCodecs(device);
+                 }
+             }
+         }
