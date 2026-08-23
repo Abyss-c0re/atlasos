@@ -115,6 +115,7 @@ hardcoded serials. The device list is whatever is on the cable right now.
 | **FLASH SELECTED** | Write a listed pin |
 | **BUILD GSI** | AtlasOS GSI (`vanilla` / `microg` / `gapps`) |
 | **PULL GITHUB** | Fast-forward this repo from `origin` |
+| **TITAN** tab | Live USB ROM + changelog since last flash |
 | Pins / GSI tabs | Sort, multi-select, delete |
 
 ETA is estimated from the selected options and last real cook/flash/GSI

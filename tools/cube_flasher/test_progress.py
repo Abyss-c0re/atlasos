@@ -28,6 +28,27 @@ def main() -> int:
     assert not is_usb_serial("10.0.0.1:5555")
     assert not is_usb_serial("emulator-5554")
     assert not is_usb_serial("")
+    from titan_rom import parse_flash_ts, parse_receipt_text, format_rom_summary, format_rom_report
+
+    rec = parse_receipt_text(
+        "# FLASH_DONE 20260823T151454Z\n"
+        "super=/tmp/Titan2-LOS-EEA-fm-super.img\n"
+        "wipe=0\n"
+        "atlasos=c33f763\n"
+    )
+    assert rec["ts"] == "20260823T151454Z"
+    assert rec["pin"] == "Titan2-LOS-EEA-fm-super.img"
+    assert rec["wipe"] == "0"
+    assert rec["atlasos"] == "c33f763"
+    assert parse_flash_ts("20260823T151454Z").year == 2026
+    props = {
+        "ro.product.device": "Titan_2",
+        "ro.lineage.display.version": "23-20260823-VANILLA-EXT4-GSI",
+    }
+    assert "Titan_2" in format_rom_summary(props, rec)
+    report = format_rom_report(props, rec, ["c2b1617 analog acc"], [])
+    assert "Updates since last flash (1)" in report
+    assert "c2b1617 analog acc" in report
     print("progress parser ok")
     return 0
 

@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -38,6 +39,19 @@ from PyQt5.QtWidgets import (
 )
 
 from cube_widget import CrimsonCube
+from titan_rom import (
+    LEDGER_NAME,
+    PROP_KEYS,
+    STAMP_DEV,
+    format_rom_report,
+    format_rom_summary,
+    git_head,
+    git_log_range,
+    last_flash_for,
+    newer_pins,
+    parse_prop_blob,
+    record_flash,
+)
 
 HERE = Path(__file__).resolve().parent
 TOOLS = HERE / "platform-tools"
@@ -280,6 +294,62 @@ def pick_usb(prefer: str = "") -> str:
     if prefer and prefer in live:
         return prefer
     return live[0] if live else ""
+
+
+def ledger_path() -> Path:
+    return OUT / LEDGER_NAME
+
+
+def receipt_dir() -> Path:
+    return OUT / "rd_lead" / "receipts"
+
+
+def probe_usb_rom(serial: str) -> dict:
+    """Live USB adb getprop. Empty if no device."""
+    if not serial:
+        return {}
+    script = ";".join("echo %s=$(getprop %s)" % (k, k) for k in PROP_KEYS)
+    script += "; echo STAMP=$(cat %s 2>/dev/null || cat %s 2>/dev/null)" % (
+        STAMP_DEV,
+        "/data/adb/titan2_last_flash.json",
+    )
+    try:
+        out = subprocess.check_output(
+            [adb_bin(), "-s", serial, "shell", script],
+            text=True,
+            timeout=6,
+            env=tool_env(),
+        )
+    except Exception:
+        return {}
+    return parse_prop_blob(out.replace("\r", ""))
+
+
+def push_flash_stamp(serial: str, rec: dict) -> None:
+    if not serial or not rec:
+        return
+    blob = json.dumps(
+        {k: rec.get(k, "") for k in ("ts", "pin", "atlasos", "titanus2", "wipe")},
+        indent=2,
+    ) + "\n"
+    tmp = OUT / ".titan2_last_flash.json"
+    try:
+        tmp.write_text(blob)
+        subprocess.run(
+            [adb_bin(), "-s", serial, "push", str(tmp), STAMP_DEV],
+            timeout=6,
+            env=tool_env(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
+def rom_changelog(flash: dict) -> list[str]:
+    sha = (flash or {}).get("atlasos") or ""
+    ts = (flash or {}).get("ts") or ""
+    return git_log_range(ATLASOS, since_sha=sha, since_ts="" if sha else ts)
 
 
 def fmt_img(p: Path) -> str:
@@ -897,6 +967,18 @@ class Worker(threading.Thread):
         self._ph("write", 0.85)
         rc, _blob = self._pipe([str(WRITER), img], env, 0.10, 0.96)
         if rc == 0:
+            rec = {
+                "ts": datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
+                "serial": serial,
+                "pin": Path(img).name,
+                "atlasos": git_head(ATLASOS),
+                "titanus2": git_head(ROOT),
+                "wipe": "0" if job.get("keep_data", True) else "1",
+            }
+            try:
+                record_flash(ledger_path(), rec)
+            except Exception:
+                pass
             self._done_pct()
             self._ph("done", 1.0)
             self._st("flash complete " + Path(img).name)
@@ -995,6 +1077,11 @@ class Flasher(QMainWindow):
         self.dev.setAlignment(Qt.AlignCenter)
         self.dev.setStyleSheet("color:#9A4044; font: 11px monospace;")
         left.addWidget(self.dev)
+        self.rom = QLabel("plug Titan USB")
+        self.rom.setWordWrap(True)
+        self.rom.setAlignment(Qt.AlignCenter)
+        self.rom.setStyleSheet("color:#C07074; font: 11px monospace;")
+        left.addWidget(self.rom)
         usb_row = QHBoxLayout()
         usb_row.addWidget(QLabel("usb"))
         self.usb = QComboBox()
@@ -1012,6 +1099,7 @@ class Flasher(QMainWindow):
 
         right = QVBoxLayout()
         tabs = QTabWidget()
+        tabs.addTab(self._titan_tab(list_css), "TITAN")
         tabs.addTab(self._pins_tab(combo_css, list_css), "PINS")
         tabs.addTab(self._gsi_tab(combo_css, list_css), "GSI")
         right.addWidget(tabs, 3)
@@ -1089,6 +1177,7 @@ class Flasher(QMainWindow):
         self.worker = Worker(self.bridge)
         self.worker.start()
         self._busy = False
+        self._rom_cache = {"serial": "", "t": 0.0, "props": {}}
         self._job_phase = "idle"
         self._job_t0 = 0.0
         self._job_eta = 0.0
@@ -1101,6 +1190,18 @@ class Flasher(QMainWindow):
         self.refresh_gsi()
         self._refresh_eta()
         self._tick_dev()
+
+    def _titan_tab(self, list_css: str) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(6, 8, 6, 6)
+        v.addWidget(self._lbl("CONNECTED ROM"))
+        self.titan_view = QPlainTextEdit()
+        self.titan_view.setReadOnly(True)
+        self.titan_view.setStyleSheet(list_css.replace("QListWidget", "QPlainTextEdit"))
+        self.titan_view.setPlaceholderText("Plug Titan over USB to read the ROM and updates since last flash.")
+        v.addWidget(self.titan_view, 1)
+        return w
 
     def _pins_tab(self, combo_css: str, list_css: str) -> QWidget:
         w = QWidget()
@@ -1464,6 +1565,32 @@ class Flasher(QMainWindow):
             % (fmt_secs(cook), fmt_secs(flash), fmt_secs(gsi))
         )
 
+    def _refresh_titan(self, serial: str, loader: bool) -> None:
+        if not serial:
+            self.rom.setText("USB loader u2014 ROM unread" if loader else "plug Titan USB")
+            if hasattr(self, "titan_view"):
+                self.titan_view.setPlainText(
+                    "USB loader u2014 wait for adb after boot.\n" if loader
+                    else "Plug Titan over USB. Cube Flasher is USB-only.\n"
+                )
+            return
+        now = time.time()
+        cache = self._rom_cache
+        if cache.get("serial") != serial or now - float(cache.get("t") or 0) > 8:
+            cache["props"] = probe_usb_rom(serial)
+            cache["serial"] = serial
+            cache["t"] = now
+            flash = last_flash_for(serial, ledger_path(), receipt_dir())
+            if flash:
+                push_flash_stamp(serial, flash)
+        props = cache.get("props") or {}
+        flash = last_flash_for(serial, ledger_path(), receipt_dir())
+        commits = rom_changelog(flash)
+        pins = newer_pins(OUT, (flash or {}).get("ts") or "")
+        self.rom.setText(format_rom_summary(props, flash) if props else serial)
+        if hasattr(self, "titan_view"):
+            self.titan_view.setPlainText(format_rom_report(props, flash, commits, pins))
+
     def _tick_dev(self) -> None:
         adb, fb = usb_adb(), usb_fastboot()
         live = usb_targets()
@@ -1488,14 +1615,14 @@ class Flasher(QMainWindow):
         if nsel > 1:
             parts.append("%d selected" % nsel)
         self.dev.setText("  ·  ".join(parts))
-        if self._busy:
-            return
-        if fb:
-            self.cube.set_phase("connect", 0.85)
-        elif adb:
-            self.cube.set_phase("connect", 0.75)
-        else:
-            self.cube.set_phase("idle", 0.2)
+        if not self._busy:
+            if fb:
+                self.cube.set_phase("connect", 0.85)
+            elif adb:
+                self.cube.set_phase("connect", 0.75)
+            else:
+                self.cube.set_phase("idle", 0.2)
+        self._refresh_titan(adb[0] if adb else "", bool(fb))
 
     def closeEvent(self, ev) -> None:
         self.worker.stop()
