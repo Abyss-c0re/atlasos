@@ -35,7 +35,11 @@ mkdir -p "$BUILD"/{gen,obj}
   -I "$PLATFORM/android.jar" -F "$BUILD/resources.ap_"
 
 "$JAVAC" --release 17 -encoding UTF-8 -cp "$PLATFORM/android.jar" -d "$BUILD/obj" \
-  $(find "$BUILD/gen" "$ROOT/src" -name '*.java')
+  $(find -L "$BUILD/gen" "$ROOT/src" -name '*.java')
+[ -f "$BUILD/obj/com/android/fmradio/MainActivity.class" ] || {
+  echo "javac produced no MainActivity u2014 src not compiled"
+  exit 1
+}
 (cd "$BUILD/obj" && "$JAR" cf "$BUILD/classes.jar" .)
 "$BT/d8" --min-api 28 --output "$BUILD" "$BUILD/classes.jar"
 
