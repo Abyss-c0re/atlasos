@@ -1,0 +1,33 @@
+# project:packages/apps/Settings
+# Two trays must not both be labeled SIM 1. Empty number must not keep the clash.
+diff --git a/src/com/android/settings/network/SubscriptionUtil.java b/src/com/android/settings/network/SubscriptionUtil.java
+--- a/src/com/android/settings/network/SubscriptionUtil.java
++++ b/src/com/android/settings/network/SubscriptionUtil.java
+@@ -311,10 +311,16 @@ public class SubscriptionUtil {
+                             info.subscriptionInfo = i;
+                             // Product: tray names only. Carrier displayName is
+                             // not a Settings label (SIM 1 / SIM 2).
+                             int slot = i.getSimSlotIndex();
+-                            int n = slot >= 0 ? slot + 1 : i.getSubscriptionId();
+-                            if (n < 1) n = 1;
++                            int port = -1;
++                            try { port = i.getPortIndex(); } catch (Throwable ignored) {}
++                            int n;
++                            if (slot == 0 || slot == 1) n = slot + 1;
++                            else if (port == 0 || port == 1) n = port + 1;
++                            else n = i.getSubscriptionId();
++                            if (n < 1) n = i.getSubscriptionId();
+                             info.originalName = "SIM " + n;
+                             return info;
+                         });
+@@ -358,7 +364,7 @@ public class SubscriptionUtil {
+                 if (phoneNumber != null) {
+                     lastFourDigits = (phoneNumber.length() > 4)
+                             ? phoneNumber.substring(phoneNumber.length() - 4) : phoneNumber;
+                 }
+                 if (TextUtils.isEmpty(lastFourDigits)) {
+-                    info.uniqueName = info.originalName;
++                    info.uniqueName = info.originalName + " u00b7 " + infoSubId;
+                 } else {
+                     info.uniqueName = info.originalName + " " + lastFourDigits;
+                     Log.d(TAG, "Cache display name [" + info.uniqueName + "] for sub id "

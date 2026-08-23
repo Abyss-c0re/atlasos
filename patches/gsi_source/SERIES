@@ -61,6 +61,7 @@
 0092a-settings-absent-sim-not-listed.patch
 0093-settings-disable-does-not-delete-sim.patch
 0094-settings-sim-tray-names-keep-listed.patch
+0095-settings-sim-names-unique.patch
 
 # project:packages/apps/Aperture
 # Titan 2: 1:1 fullscreen default photo+video, ignore SAT cam 3,

@@ -86,6 +86,7 @@ public class SimActivity extends Activity {
             h.post(this::render);
         });
 
+        SimCards.pinTrayNames(this);
         List<SimCards.Card> cards = SimCards.list(this);
         if (cards.isEmpty()) {
             UiKit.note(root, "No SIM records.");

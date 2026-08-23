@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.66-sim-tray (666) — 2026-08-23T21:45Z
+
+- SIMs: unique SIM 1/SIM 2; disable stays UICC-off
+
+---
+
 ## 16.65-nanobot-auth (665) — 2026-08-23T16:55Z
 
 ### rebuild 2026-08-23T16:55Z · 16.65-nanobot-auth (665)

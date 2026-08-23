@@ -33,9 +33,14 @@ public final class SimCards {
         public final boolean remembered;
 
         Card(int subId, int slot, boolean uicc, boolean inSettings, boolean remembered) {
+            this(subId, slot, trayName(slot, subId), uicc, inSettings, remembered);
+        }
+
+        Card(int subId, int slot, String name, boolean uicc, boolean inSettings,
+             boolean remembered) {
             this.subId = subId;
             this.slot = slot;
-            this.name = trayName(slot, subId);
+            this.name = name != null && !name.isEmpty() ? name : trayName(slot, subId);
             this.uicc = uicc;
             this.inSettings = inSettings;
             this.remembered = remembered;
@@ -54,9 +59,50 @@ public final class SimCards {
 
     /** Tray label. Slot 0 → SIM 1. Unknown slot falls back to subId. */
     public static String trayName(int slot, int subId) {
-        int n = slot >= 0 ? slot + 1 : subId;
-        if (n < 1) n = 1;
-        return "SIM " + n;
+        if (slot == 0) return "SIM 1";
+        if (slot == 1) return "SIM 2";
+        if (subId > 0) return "SIM " + subId;
+        return "SIM";
+    }
+
+    /** Distinct SIM 1 / SIM 2. Two cards must not share a label. */
+    static void uniquifyNames(List<Card> cards) {
+        if (cards == null || cards.size() < 2) return;
+        java.util.LinkedHashSet<String> taken = new java.util.LinkedHashSet<String>();
+        java.util.ArrayList<Integer> redo = new java.util.ArrayList<Integer>();
+        for (int i = 0; i < cards.size(); i++) {
+            Card c = cards.get(i);
+            String n = (c.slot == 0 || c.slot == 1) ? ("SIM " + (c.slot + 1)) : c.name;
+            if (n == null || n.isEmpty() || !taken.add(n)) {
+                redo.add(i);
+            } else if (!n.equals(c.name)) {
+                cards.set(i, new Card(c.subId, c.slot, n, c.uicc, c.inSettings, c.remembered));
+            }
+        }
+        int next = 1;
+        for (int i : redo) {
+            Card c = cards.get(i);
+            String n;
+            do {
+                n = "SIM " + next;
+                next++;
+            } while (!taken.add(n) && next < 16);
+            cards.set(i, new Card(c.subId, c.slot, n, c.uicc, c.inSettings, c.remembered));
+        }
+    }
+
+    /** Write tray labels onto the subscription records Settings reads. */
+    public static void pinTrayNames(Context ctx) {
+        if (ctx == null) return;
+        SubscriptionManager sm = ctx.getSystemService(SubscriptionManager.class);
+        if (sm == null) return;
+        for (Card c : list(ctx)) {
+            try {
+                sm.getClass()
+                    .getMethod("setDisplayName", String.class, int.class, int.class)
+                    .invoke(sm, c.name, Integer.valueOf(c.subId), Integer.valueOf(1));
+            } catch (Throwable ignored) {}
+        }
     }
 
     public static List<Card> list(Context ctx) {
@@ -106,6 +152,7 @@ public final class SimCards {
         }
 
         out.addAll(byId.values());
+        uniquifyNames(out);
         Collections.sort(out, new Comparator<Card>() {
             @Override public int compare(Card a, Card b) {
                 if (a.slot >= 0 && b.slot >= 0 && a.slot != b.slot) {

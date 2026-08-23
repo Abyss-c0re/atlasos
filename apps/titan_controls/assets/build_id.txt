@@ -1,4 +1,4 @@
-versionName=16.65-nanobot-auth
-versionCode=665
-built_utc=2026-08-23T16:55Z
+versionName=16.66-sim-tray
+versionCode=666
+built_utc=2026-08-23T21:45Z
 allow_root=0
