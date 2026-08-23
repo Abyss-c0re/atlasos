@@ -122,6 +122,7 @@ FEATURE_FALLBACK = [
     ("with_openeuicc", "OpenEUICC eSIM", True),
     ("with_microg", "microG", True),
     ("with_stock_fm_ir", "FM radio (OSS TitanFm)", True),
+    ("with_usb_audio", "USB audio (OEM analog + host)", True),
     ("with_stock_camera", "Prefer stock camera", True),
     ("with_square_chrome", "Square chrome RROs (lab)", False),
     ("with_nanobot", "Nanobot agent (lab)", False),

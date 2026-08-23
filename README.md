@@ -110,7 +110,7 @@ hardcoded serials. The device list is whatever is on the cable right now.
 
 | Control | Job |
 |---------|-----|
-| **BUILD** | Kitchen-cook a hybrid super (Debian + OpenWrt + OSS FM by default) |
+| **BUILD** | Kitchen-cook a hybrid super (Debian + OpenWrt + OSS FM + USB audio by default) |
 | **BUILD AND FLASH** | Cook, then write the new pin over USB |
 | **FLASH SELECTED** | Write a listed pin |
 | **BUILD GSI** | AtlasOS GSI (`vanilla` / `microg` / `gapps`) |
