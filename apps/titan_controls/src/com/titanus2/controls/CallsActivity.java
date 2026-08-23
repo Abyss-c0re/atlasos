@@ -140,7 +140,10 @@ public class CallsActivity extends Activity {
     }
 
     private void pickBind(String slots) {
-        ImsCalls.setBindSlots(this, slots);
+        if (!ImsCalls.setBindSlots(this, slots)) {
+            UiKit.toast(this, "Tray empty -- not bound");
+            return;
+        }
         UiKit.toast(this, "Bind " + ImsCalls.bindLabel(slots));
         h.postDelayed(this::refresh, 600);
         h.postDelayed(this::refresh, 2200);

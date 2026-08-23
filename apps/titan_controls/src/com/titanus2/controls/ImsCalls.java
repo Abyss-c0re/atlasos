@@ -90,17 +90,21 @@ public final class ImsCalls {
         String v = AgentBridge.get(ctx, AgentBridge.IMS_BIND_SLOTS, BIND_BOTH);
         if (v == null) return BIND_BOTH;
         v = v.trim().toLowerCase();
-        if (BIND_1.equals(v) || BIND_2.equals(v) || BIND_BOTH.equals(v)) return v;
+        if (BIND_1.equals(v)) return SimCards.trayPresent(0) ? BIND_1 : BIND_BOTH;
+        if (BIND_2.equals(v)) return SimCards.trayPresent(1) ? BIND_2 : BIND_BOTH;
         return BIND_BOTH;
     }
 
-    public static void setBindSlots(Context ctx, String slots) {
+    public static boolean setBindSlots(Context ctx, String slots) {
         String v = BIND_BOTH;
         if (BIND_1.equals(slots) || BIND_2.equals(slots) || BIND_BOTH.equals(slots)) {
             v = slots;
         }
+        if (BIND_1.equals(v) && !SimCards.trayPresent(0)) return false;
+        if (BIND_2.equals(v) && !SimCards.trayPresent(1)) return false;
         AgentBridge.put(ctx, AgentBridge.IMS_BIND_SLOTS, v);
         AgentBridge.put(ctx, AgentBridge.IMS_ACTION, "rebind");
+        return true;
     }
 
     public static String bindLabel(String slots) {

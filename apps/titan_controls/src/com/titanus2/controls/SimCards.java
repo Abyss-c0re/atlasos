@@ -243,6 +243,11 @@ public final class SimCards {
         } catch (Exception ignored) {}
     }
 
+    /** Slot 0 or 1 with a card. Pulled/ABSENT is gone. */
+    public static boolean trayPresent(int slot) {
+        return (slot == 0 || slot == 1) && !slotAbsent(slot);
+    }
+
     private static boolean slotAbsent(int slot) {
         if (slot < 0) return true;
         String[] st = gsmSimState();
