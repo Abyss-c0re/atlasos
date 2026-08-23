@@ -91,6 +91,20 @@ def main() -> int:
     from titan_reports import reports_as_findings
     fs = reports_as_findings([{"id":"T","kind":"bug","title":"USB hiss","comment":"noise on analog"}])
     assert fs and fs[0]["id"].startswith("report-")
+    from cube_flasher import GSI_LATEST, resolve_gsi, _eta_learned, estimate_cook
+    assert resolve_gsi("") == ""
+    assert resolve_gsi("/tmp/x.img") == "/tmp/x.img"
+    assert _eta_learned({"cook_s": 511}, "cook_s")
+    assert not _eta_learned({"cook_s": 720}, "cook_s")
+    feats = {
+        "with_atlas_lp": True,
+        "with_openwrt_lp": True,
+        "with_stock_fm_ir": True,
+        "with_nanobot": True,
+    }
+    # Learned cook must not stack feature add-ons (was ~22m vs real ~8m).
+    if _eta_learned(__import__("cube_flasher").load_eta(), "cook_s"):
+        assert estimate_cook(feats, "kernelsu_source") < 900
     print("progress parser ok")
     return 0
 

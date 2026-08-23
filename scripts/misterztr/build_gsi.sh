@@ -9,6 +9,12 @@ source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 require_tree
 cd "$MISTERZTR_TREE"
 
+if [ "${GSI_FRESH:-0}" = "1" ]; then
+  PROD_OUT="$MISTERZTR_TREE/out/target/product/tdgsi_arm64_ab"
+  info "fresh: wipe $PROD_OUT"
+  rm -rf "$PROD_OUT"
+fi
+
 [ -f .misterztr_patches_applied ] \
   || warn "no .misterztr_patches_applied marker — did you run apply_patches.sh?"
 

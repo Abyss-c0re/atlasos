@@ -6,16 +6,19 @@
 #   ./scripts/build.sh --flavor microg
 #   ./scripts/build.sh --flavor gapps
 #   ./scripts/build.sh --flavor vanilla --gsi-only
+#   ./scripts/build.sh --flavor vanilla --gsi-only --fresh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FLAVOR="${ATLASOS_FLAVOR:-vanilla}"
 GSI_ONLY=0
+GSI_FRESH=0
 for a in "$@"; do
   case "$a" in
     --flavor=*) FLAVOR="${a#--flavor=}" ;;
     --flavor) : ;;
     vanilla|microg|gapps) FLAVOR="$a" ;;
     --gsi-only) GSI_ONLY=1 ;;
+    --fresh) GSI_FRESH=1 ;;
     -h|--help)
       sed -n '2,14p' "$0"
       exit 0
@@ -69,6 +72,7 @@ fi
 export MISTERZTR_TREE="${MISTERZTR_TREE:-$ROOT/.links/lineage}"
 export LUNCH_TARGET="$LUNCH"
 export ATLASOS_FLAVOR="$FLAVOR"
+export GSI_FRESH="${GSI_FRESH:-0}"
 export WITH_MICROG="${WITH_MICROG:-$FLAVOR_MICROG}"
 export WITH_GAPPS="${WITH_GAPPS:-$FLAVOR_GAPPS}"
 

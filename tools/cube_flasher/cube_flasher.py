@@ -137,7 +137,8 @@ GSI_FLAVORS = ["vanilla", "microg", "gapps"]
 SORTS = ("newest", "oldest", "name", "size")
 EXPECT_SUPER = 4.4 * 1024 * 1024 * 1024
 EXPECT_GSI = 2.75 * 1024 * 1024 * 1024
-ETA_DEFAULTS = {"cook_s": 720, "flash_s": 180, "gsi_s": 2700}
+ETA_DEFAULTS = {"cook_s": 720, "flash_s": 180, "gsi_s": 2700, "gsi_fresh_s": 7200}
+GSI_LATEST = "__latest__"
 
 
 def kitchen_presets() -> list[str]:
@@ -214,6 +215,19 @@ def list_gsi(how: str = "date ↓") -> list[Path]:
             if cur is None or p.name.startswith("LineageOS-23.2"):
                 by_ino[ino] = p
     return _sort_imgs(list(by_ino.values()), how)
+
+
+def latest_gsi() -> Path | None:
+    imgs = list_gsi("newest")
+    return imgs[0] if imgs else None
+
+
+def resolve_gsi(sel: str) -> str:
+    """Map combo value to a real image. latest = newest on disk."""
+    if sel == GSI_LATEST:
+        p = latest_gsi()
+        return str(p) if p else ""
+    return sel or ""
 
 
 def adb_bin() -> str:
@@ -408,7 +422,7 @@ def save_eta(kind: str, seconds: float) -> None:
     if seconds < 15:
         return
     data = load_eta()
-    key = {"cook": "cook_s", "write": "flash_s", "gsi": "gsi_s"}.get(kind)
+    key = {"cook": "cook_s", "write": "flash_s", "gsi": "gsi_s", "gsi_fresh": "gsi_fresh_s"}.get(kind)
     if not key:
         return
     prev = data[key]
@@ -420,21 +434,29 @@ def save_eta(kind: str, seconds: float) -> None:
         pass
 
 
+def _eta_learned(data: dict, key: str) -> bool:
+    cold = float(ETA_DEFAULTS.get(key, 0))
+    got = float(data.get(key, 0) or 0)
+    return abs(got - cold) > 5
+
+
 def estimate_cook(features: dict, root: str, also_gsi: bool = False) -> int:
     data = load_eta()
     sec = data["cook_s"]
-    if features.get("with_nanobot"):
-        sec += 120
-    if features.get("with_square_chrome"):
-        sec += 60
-    if features.get("with_atlas_lp"):
-        sec += 480
-    if features.get("with_openwrt_lp"):
-        sec += 240
-    if features.get("with_stock_fm_ir"):
-        sec += 90
-    if (root or "none") != "none":
-        sec += 180
+    # Feature add-ons only on cold defaults. Learned cook_s already includes them.
+    if not _eta_learned(data, "cook_s"):
+        if features.get("with_nanobot"):
+            sec += 120
+        if features.get("with_square_chrome"):
+            sec += 60
+        if features.get("with_atlas_lp"):
+            sec += 480
+        if features.get("with_openwrt_lp"):
+            sec += 240
+        if features.get("with_stock_fm_ir"):
+            sec += 90
+        if (root or "none") != "none":
+            sec += 180
     if also_gsi:
         sec += data["gsi_s"]
     return int(sec)
@@ -463,13 +485,21 @@ def estimate_flash(path: str = "", keep_data: bool = True) -> int:
     return int(sec)
 
 
-def estimate_gsi(flavor: str) -> int:
+def estimate_gsi(flavor: str, fresh: bool = False) -> int:
     data = load_eta()
-    sec = data["gsi_s"]
-    if flavor == "microg":
-        sec += 180
-    elif flavor == "gapps":
-        sec += 420
+    if fresh:
+        sec = data.get("gsi_fresh_s") or (data["gsi_s"] * 2.2)
+        if not _eta_learned(data, "gsi_fresh_s") and sec < 3600:
+            sec = 3600
+    else:
+        sec = data["gsi_s"]
+    if not (fresh and _eta_learned(data, "gsi_fresh_s")) and not (
+        (not fresh) and _eta_learned(data, "gsi_s")
+    ):
+        if flavor == "microg":
+            sec += 180
+        elif flavor == "gapps":
+            sec += 420
     return int(sec)
 
 
@@ -673,7 +703,7 @@ class Worker(threading.Thread):
                     save_eta("write", time.time() - t1)
                 elif kind == "gsi":
                     self._gsi(job)
-                    save_eta("gsi", time.time() - t0)
+                    save_eta("gsi_fresh" if job.get("fresh") else "gsi", time.time() - t0)
                 elif kind == "pull":
                     self._pull()
             except Exception as e:
@@ -682,7 +712,7 @@ class Worker(threading.Thread):
                 self._say("Failed.")
                 self.bridge.finished.emit(False, str(e))
 
-    def _pipe(self, cmd: list[str], env: dict, lo: float, hi: float, cwd: Path | None = None) -> tuple[int, str]:
+    def _pipe(self, cmd: list[str], env: dict, lo: float, hi: float, cwd: Path | None = None, expect: float | None = None) -> tuple[int, str]:
         env = tool_env(env)
         env["PYTHONUNBUFFERED"] = "1"
         env["TERM"] = env.get("TERM") or "xterm"
@@ -712,7 +742,7 @@ class Worker(threading.Thread):
         started = time.time()
         buf = b""
         text = []
-        expect = EXPECT_SUPER
+        expect = expect if expect and expect > 0 else EXPECT_SUPER
         try:
             while True:
                 if self._stop.is_set():
@@ -762,9 +792,7 @@ class Worker(threading.Thread):
                         if mapped > last:
                             last = mapped
                             self._pct(last)
-                    elif last < hi - 0.04:
-                        last = min(hi - 0.04, last + 0.002)
-                        self._pct(last)
+                    # Stay put. Fake crawl lied about ninja/cook idle.
             rc = proc.wait()
         finally:
             try:
@@ -805,9 +833,10 @@ class Worker(threading.Thread):
             job.get("root") or "none",
             "--skip-git-gate",
         ]
-        gsi = job.get("gsi") or ""
+        gsi = resolve_gsi(job.get("gsi") or "")
         if gsi:
             cmd += ["--gsi", gsi]
+            self._st("gsi " + Path(gsi).name)
         for k, v in feats.items():
             cmd += ["--option", "%s=%s" % (k, "1" if v else "0")]
         self._st("kitchen cook " + (job.get("preset") or "lab_rootless"))
@@ -842,19 +871,26 @@ class Worker(threading.Thread):
 
     def _gsi(self, job: dict) -> None:
         flavor = job.get("flavor") or "vanilla"
+        fresh = bool(job.get("fresh"))
         self._ph("build", 0.3)
         self._pct(0.0)
         self._say("Building GSI.")
         env = os.environ.copy()
         env["ATLASOS_FLAVOR"] = flavor
+        if fresh:
+            env["GSI_FRESH"] = "1"
         build = ATLASOS / "scripts" / "build.sh"
-        self._st("gsi flavor=" + flavor)
+        argv = ["bash", str(build), "--flavor", flavor, "--gsi-only"]
+        if fresh:
+            argv.append("--fresh")
+        self._st("gsi flavor=" + flavor + (" fresh" if fresh else ""))
         rc, blob = self._pipe(
-            ["bash", str(build), "--flavor", flavor, "--gsi-only"],
+            argv,
             env,
             0.02,
             0.94,
             cwd=ATLASOS,
+            expect=EXPECT_GSI,
         )
         if rc != 0 and ("DIRTY" in blob or "check_clean" in blob):
             self._st("tree dirty — GSI pipeline without clean gate")
@@ -865,6 +901,7 @@ class Worker(threading.Thread):
                 0.02,
                 0.94,
                 cwd=ATLASOS,
+                expect=EXPECT_GSI,
             )
         if rc != 0:
             self._ph("fail", 0.05)
@@ -1291,6 +1328,10 @@ class Flasher(QMainWindow):
         self.gsi_flavor.addItems(GSI_FLAVORS)
         flav.addWidget(self.gsi_flavor, 1)
         v.addLayout(flav)
+        self.gsi_fresh = QCheckBox("Fresh (clean product out, full ninja)")
+        self.gsi_fresh.setChecked(False)
+        self.gsi_fresh.toggled.connect(self._refresh_eta)
+        v.addWidget(self.gsi_fresh)
         row = QHBoxLayout()
         self.btn_gsi_refresh = self._btn("REFRESH")
         self.btn_gsi_del = self._btn("DELETE")
@@ -1323,16 +1364,41 @@ class Flasher(QMainWindow):
         self._job_phase = name
         self.cube.set_phase(name, glow)
 
+    def _gsi_choice_label(self) -> str:
+        data = self.gsi.currentData()
+        if data == GSI_LATEST:
+            top = latest_gsi()
+            return "latest (%s)" % (top.name if top else "none on disk")
+        if not data:
+            return "kitchen default"
+        return Path(str(data)).name
+
+    def _paint_clock(self) -> None:
+        if not self._busy:
+            return
+        elapsed = time.time() - self._job_t0
+        eta = float(self._job_eta or 0)
+        if eta > 0:
+            left = eta - elapsed
+            if left > 0:
+                clock = "elapsed %s  ·  ~%s left" % (fmt_secs(elapsed), fmt_secs(left))
+            else:
+                clock = "elapsed %s  ·  still running (est was %s)" % (
+                    fmt_secs(elapsed), fmt_secs(eta)
+                )
+        else:
+            clock = "elapsed %s" % fmt_secs(elapsed)
+        self.eta.setText(clock)
+        if self.bar.value() > 0:
+            self.bar.setFormat("%.0f%%   %s" % (self.bar.value() / 10.0, clock))
+        else:
+            self.bar.setFormat(clock)
+
     def _prog(self, f: float) -> None:
         f = max(0.0, min(1.0, float(f)))
         self.bar.setValue(int(round(f * 1000)))
-        if self._busy and self._job_eta > 0:
-            left = max(0.0, self._job_eta * (1.0 - f))
-            elapsed = time.time() - self._job_t0
-            if elapsed > 8 and f > 0.08:
-                left = max(0.0, elapsed / f - elapsed)
-            self.bar.setFormat("%p%   ~" + fmt_secs(left) + " left")
-            self.eta.setText("running · ~%s remaining" % fmt_secs(left))
+        if self._busy:
+            self._paint_clock()
         else:
             self.bar.setFormat("%p%")
 
@@ -1350,6 +1416,10 @@ class Flasher(QMainWindow):
             self.btn_pull,
         ):
             b.setEnabled(not busy)
+        if getattr(self, "gsi_fresh", None) is not None:
+            self.gsi_fresh.setEnabled(not busy)
+        if getattr(self, "gsi_flavor", None) is not None:
+            self.gsi_flavor.setEnabled(not busy)
 
     def _fill_list(self, widget: QListWidget, paths: list[Path], keep: set[str]) -> None:
         widget.clear()
@@ -1376,14 +1446,21 @@ class Flasher(QMainWindow):
         keep = {it.data(Qt.UserRole) for it in self.gsi_list.selectedItems()}
         imgs = list_gsi(self.sort_gsi.currentText())
         self._fill_list(self.gsi_list, imgs, keep)
-        cur = self.gsi.currentData() if self.gsi.count() else ""
+        cur = self.gsi.currentData() if self.gsi.count() else GSI_LATEST
         self.gsi.blockSignals(True)
         self.gsi.clear()
-        self.gsi.addItem("(default)", "")
-        for p in imgs:
-            self.gsi.addItem(p.name, str(p))
-            if cur and str(p) == cur:
+        top = latest_gsi()
+        latest_lbl = "(latest) " + top.name if top else "(latest)"
+        self.gsi.addItem(latest_lbl, GSI_LATEST)
+        self.gsi.addItem("(kitchen default)", "")
+        for img in imgs:
+            self.gsi.addItem(img.name, str(img))
+            if cur and str(img) == cur:
                 self.gsi.setCurrentIndex(self.gsi.count() - 1)
+        if cur == GSI_LATEST or cur is None:
+            self.gsi.setCurrentIndex(0)
+        elif cur == "":
+            self.gsi.setCurrentIndex(1)
         self.gsi.blockSignals(False)
         self._refresh_eta()
 
@@ -1461,7 +1538,7 @@ class Flasher(QMainWindow):
         return {
             "preset": self.preset.currentText(),
             "root": self.root_eng.currentText(),
-            "gsi": self.gsi.currentData() or "",
+            "gsi": self.gsi.currentData() if self.gsi.currentData() is not None else GSI_LATEST,
             "features": feats,
             "keep_data": self.keep_data.isChecked(),
         }
@@ -1483,8 +1560,8 @@ class Flasher(QMainWindow):
                 QMessageBox.question(
                     self,
                     "Build and flash",
-                    "Cook then flash the new pin.\nKeep data: %s\nETA ~%s"
-                    % (job["keep_data"], fmt_secs(eta)),
+                    "Cook then flash the new pin.\nGSI: %s\nKeep data: %s\nETA ~%s"
+                    % (self._gsi_choice_label(), job["keep_data"], fmt_secs(eta)),
                 )
                 != QMessageBox.Yes
             ):
@@ -1498,18 +1575,20 @@ class Flasher(QMainWindow):
         if self._busy:
             return
         flavor = self.gsi_flavor.currentText()
-        eta = estimate_gsi(flavor)
+        fresh = bool(getattr(self, "gsi_fresh", None) and self.gsi_fresh.isChecked())
+        eta = estimate_gsi(flavor, fresh=fresh)
         if (
             QMessageBox.question(
                 self,
                 "Build GSI",
-                "Build AtlasOS GSI flavor=%s\nETA ~%s" % (flavor, fmt_secs(eta)),
+                "Build AtlasOS GSI flavor=%s%s\nETA ~%s"
+                    % (flavor, " · fresh" if fresh else "", fmt_secs(eta)),
             )
             != QMessageBox.Yes
         ):
             return
         self._arm(eta)
-        self.worker.submit({"kind": "gsi", "flavor": flavor})
+        self.worker.submit({"kind": "gsi", "flavor": flavor, "fresh": fresh})
 
     def pull_github(self) -> None:
         if self._busy:
@@ -1589,10 +1668,12 @@ class Flasher(QMainWindow):
         }
         cook = estimate_cook(job["features"], job["root"])
         flash = estimate_flash(self._primary_path(self.builds), self.keep_data.isChecked())
-        gsi = estimate_gsi(self.gsi_flavor.currentText())
+        fresh = bool(getattr(self, "gsi_fresh", None) and self.gsi_fresh.isChecked())
+        gsi = estimate_gsi(self.gsi_flavor.currentText(), fresh=fresh)
+        gsi_bit = "gsi %s%s" % (fmt_secs(gsi), " fresh" if fresh else "")
         self.eta.setText(
-            "ETA  cook %s  ·  flash %s  ·  gsi %s"
-            % (fmt_secs(cook), fmt_secs(flash), fmt_secs(gsi))
+            "ETA  cook %s  ·  flash %s  ·  %s  ·  %s"
+            % (fmt_secs(cook), fmt_secs(flash), gsi_bit, self._gsi_choice_label())
         )
 
     def _force_diag(self) -> None:
@@ -1712,6 +1793,8 @@ class Flasher(QMainWindow):
         self._maybe_diag(serial)
 
     def _tick_dev(self) -> None:
+        if self._busy:
+            self._paint_clock()
         adb, fb = usb_adb(), usb_fastboot()
         live = usb_targets()
         cur = self.usb.currentText()
