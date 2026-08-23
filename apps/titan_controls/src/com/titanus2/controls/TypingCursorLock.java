@@ -140,25 +140,25 @@ public final class TypingCursorLock {
                 AgentBridge.put(ctx, PLANE, "1");
                 AgentBridge.put(ctx, "titan2_pad_cursor_pause_ms", Integer.toString(cool));
             }
+            try { AgentBridge.bumpKeyActivity(ctx); } catch (Exception ignored) {}
             scheduleClear(ctx, cool);
             return;
         }
-        // Already locked: always extend Handler clear; plane TTL throttled.
+        // Already locked: extend Handler; rewrite pause=1 (watch used to clear it).
         scheduleClear(ctx, cool);
         if (now - lastTtlRefreshMs < TTL_REFRESH_MIN_MS) return;
         lastTtlRefreshMs = now;
         publishCool(ctx, cool);
         try {
-            com.titanus2.api.InputPlane.put(ctx,
-                com.titanus2.api.Titan2ApiContract.FILE_PAD_CURSOR_PAUSE_MS,
-                Integer.toString(cool));
-            long untilSec = (System.currentTimeMillis() + cool + 999L) / 1000L;
-            com.titanus2.api.InputPlane.put(ctx,
-                com.titanus2.api.Titan2ApiContract.FILE_PAD_CURSOR_PAUSE_UNTIL,
-                Long.toString(untilSec));
+            if (!com.titanus2.api.InputPlane.tryArmCursorPause(ctx, cool)) {
+                AgentBridge.put(ctx, PLANE, "1");
+                AgentBridge.put(ctx, "titan2_pad_cursor_pause_ms", Integer.toString(cool));
+            }
         } catch (Exception e) {
+            AgentBridge.put(ctx, PLANE, "1");
             AgentBridge.put(ctx, "titan2_pad_cursor_pause_ms", Integer.toString(cool));
         }
+        try { AgentBridge.bumpKeyActivity(ctx); } catch (Exception ignored) {}
     }
 
     public static void clear(Context ctx) {
@@ -219,12 +219,9 @@ public final class TypingCursorLock {
     }
 
     /**
-     * User is actively using the trackpad/mouse — unlock immediately.
-     * Shared SoT: pad-agent also TTL-expires and may call the same plane clear.
+     * Pad motion must not unlock. Handler TTL after the last key owns clear.
      */
     public static void onPadActivity(Context ctx) {
-        if (ctx == null) return;
-        if (!planePaused && !"1".equals(AgentBridge.get(ctx, PLANE, "0"))) return;
-        clear(ctx);
+        // Palm/micro-move must not unfreeze. Handler TTL after last key owns unlock.
     }
 }

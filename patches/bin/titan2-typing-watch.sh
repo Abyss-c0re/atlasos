@@ -10,7 +10,7 @@ PAD_STATUS=$ST/titan2_pad_status
 ACTIVITY=$ST/titan2_key_activity
 TP_LOG=$ST/titan2_touchpadd.log
 AGENT_LOCKDIR=$T2/pad-agent.lockdir
-TW_VER=2.167-typing-watch-pidfile
+TW_VER=2.168-typing-watch-hold
 
 echo "typing-watch pid=$$ parent=$PPID ver=$TW_VER" >"$ST/titan2_typing_watch_status" 2>/dev/null
 chmod 666 "$ST/titan2_typing_watch_status" 2>/dev/null || true
@@ -69,36 +69,30 @@ _tw_inhibit() {
     [ -e "$inh" ] || continue
     n=`cat "$(dirname "$inh")/name" 2>/dev/null` || continue
     case "$n" in
-      touchPad|titan2-virtual-mouse|titan2-touchpadd|titan2_touchpadd)
+      touchPad|titan2-orient-mouse)
         echo "$_v" >"$inh" 2>/dev/null || true ;;
     esac
   done
 }
 _tw_park() {
-  # 2.162: prefer in-process touchpadd park (PAUSE plane). Kill left native ABS.
-  echo 1 >"$T2/titan2_pad_cursor_pause" 2>/dev/null || true
-  echo 1 >"$ST/titan2_pad_cursor_pause" 2>/dev/null || true
-  chmod 666 "$T2/titan2_pad_cursor_pause" "$ST/titan2_pad_cursor_pause" 2>/dev/null || true
+  # Hold only. Java owns pause=1. Leave TP/orient running so the pointer does not warp.
   _inproc=0
   if pidof titan2-touchpadd >/dev/null 2>&1; then
     if [ -f "$ST/titan2_touchpadd_status" ] \
-        && grep -q 'park=' "$ST/titan2_touchpadd_status" 2>/dev/null; then
+        && grep -q "park=" "$ST/titan2_touchpadd_status" 2>/dev/null; then
       _inproc=1
     fi
   fi
   if [ "$_inproc" = "1" ]; then
     case "$(_tw_mode)" in
-      trackpad) _tw_inhibit 1; _tw_inhibit 1 ;;
-      mouse) ;; # binary parks REL emit; keep TP alive
+      trackpad) _tw_inhibit 1 ;;
+      mouse) ;;
       *) _tw_inhibit 1 ;;
     esac
     echo "mode=$(_tw_mode) typing_lock=1 inproc_park" >"$PAD_STATUS" 2>/dev/null || true
   else
-    for p in `pidof titan2-touchpadd 2>/dev/null`; do kill -9 "$p" 2>/dev/null; done
-    for p in `pidof titan2-orient-rel 2>/dev/null`; do kill -9 "$p" 2>/dev/null; done
     _tw_inhibit 1
-    _tw_inhibit 1
-    echo "mode=$(_tw_mode) typing_lock=1 hard_park" >"$PAD_STATUS" 2>/dev/null || true
+    echo "mode=$(_tw_mode) typing_lock=1 sysfs_park" >"$PAD_STATUS" 2>/dev/null || true
   fi
   chmod 666 "$PAD_STATUS" 2>/dev/null || true
   _tw_locked=1
@@ -140,10 +134,7 @@ _tw_start_mouse() {
 }
 _tw_release() {
   _m=`_tw_mode`
-  # Clear plane WITHOUT treating that write as a key edge (keys-only mtime).
-  echo 0 >"$T2/titan2_pad_cursor_pause" 2>/dev/null || true
-  echo 0 >"$ST/titan2_pad_cursor_pause" 2>/dev/null || true
-  chmod 666 "$T2/titan2_pad_cursor_pause" "$ST/titan2_pad_cursor_pause" 2>/dev/null || true
+  # Java Handler owns pause=0. Writing it here unparked the pointer mid-word.
   case "$_m" in
     mouse)
       # Inproc: TP still running — just unpark emit; only start if dead.
@@ -242,7 +233,12 @@ while true; do
   fi
   _tw_prev_pause=$_pnow
   _want=0
-  if [ "$_tw_unlock_ms" -gt 0 ] 2>/dev/null && [ "$_now" -lt "$_tw_unlock_ms" ] 2>/dev/null; then
+  if [ "$_pnow" = "1" ]; then
+    _want=1
+    if [ "$_now" -gt 0 ] 2>/dev/null; then
+      _tw_unlock_ms=`expr "$_now" + "$_cool" 2>/dev/null` || true
+    fi
+  elif [ "$_tw_unlock_ms" -gt 0 ] 2>/dev/null && [ "$_now" -lt "$_tw_unlock_ms" ] 2>/dev/null; then
     _want=1
   fi
   if [ "$_want" = "1" ]; then

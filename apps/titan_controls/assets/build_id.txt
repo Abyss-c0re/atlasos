@@ -1,4 +1,4 @@
-versionName=16.66-sim-tray
-versionCode=666
-built_utc=2026-08-23T21:45Z
+versionName=16.67-typing-lock
+versionCode=667
+built_utc=2026-08-23T22:01Z
 allow_root=0

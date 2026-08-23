@@ -60,6 +60,8 @@
 /* Controls Unlock delay plane — prefer when user set typing-lock cooldown. */
 #define PAD_PAUSE_MS_PATH "/data/misc/titan2/titan2_pad_cursor_pause_ms"
 #define PAD_PAUSE_MS_PATH2 "/data/local/tmp/titan2_pad_cursor_pause_ms"
+#define PAD_PAUSE_PATH "/data/misc/titan2/titan2_pad_cursor_pause"
+#define PAD_PAUSE_PATH2 "/data/local/tmp/titan2_pad_cursor_pause"
 
 #define _GNU_SOURCE
 #include <errno.h>
@@ -477,6 +479,7 @@ static void note_typing(void) {
  */
 static int mouse_blocked_by_typing(void) {
     if (phys_keys_held > 0) return 1;
+    if (read_int_file(PAD_PAUSE_PATH, PAD_PAUSE_PATH2, 0) == 1) return 1;
     if (typing_guard_ms <= 0) return 0;
     if (last_key_ms <= 0) return 0;
     long long dt = now_ms() - last_key_ms;

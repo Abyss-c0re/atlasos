@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.67-typing-lock (667) — 2026-08-23T22:01Z
+
+- Typing lock holds pause=1 for the whole burst; pad motion does not unlock
+
+---
+
 ## 16.66-sim-tray (666) — 2026-08-23T21:45Z
 
 - SIMs: unique SIM 1/SIM 2; disable stays UICC-off
