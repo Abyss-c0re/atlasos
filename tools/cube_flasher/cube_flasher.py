@@ -1732,7 +1732,10 @@ class Flasher(QMainWindow):
             comments = [r.get("comment") or "" for r in reports if r.get("comment")]
             if comments:
                 snap["user_comment"] = " | ".join(comments)[:800]
-            extra = nanobot_classify(snap, findings)
+            try:
+                extra = nanobot_classify(snap, findings) or []
+            except Exception:
+                extra = []
             seen_ids = {f["id"] for f in findings}
             for e in extra_rep:
                 if e.get("id") and e["id"] not in seen_ids:
@@ -1744,14 +1747,18 @@ class Flasher(QMainWindow):
                     seen_ids.add(e["id"])
             posts = []
             if findings:
-                owner, repo = origin_repo(ATLASOS)
-                token = github_token()
-                have = existing_fingerprints(owner, repo, token) if owner and token else set()
-                for f in findings:
-                    posts.append("%s -> %s" % (f["id"], post_finding(f, snap, ATLASOS, have)))
-                if nanobot_ready():
-                    for f in findings[:2]:
-                        posts.append("fix %s -> %s" % (f["id"], develop_and_ship(f, snap, ATLASOS)))
+                try:
+                    owner, repo = origin_repo(ATLASOS)
+                    token = github_token()
+                    have = existing_fingerprints(owner, repo, token) if owner and token else set()
+                    for f in findings:
+                        posts.append("%s -> %s" % (f["id"], post_finding(f, snap, ATLASOS, have)))
+                    if nanobot_ready():
+                        for f in findings[:2]:
+                            posts.append("fix %s -> %s" % (f["id"], develop_and_ship(f, snap, ATLASOS)))
+                except Exception as e:
+                    posts.append("post skipped: %s" % e)
+            note = chr(10).join(posts)
             self.bridge.diag.emit(format_diag(snap, findings, note))
         except Exception as e:
             self.bridge.diag.emit("diag failed: %s\n" % e)
@@ -1767,10 +1774,10 @@ class Flasher(QMainWindow):
         if not serial:
             self._diag_serial = ""
             self._diag_ran = False
-            self.rom.setText("USB loader u2014 ROM unread" if loader else "plug Titan USB")
+            self.rom.setText("USB loader - ROM unread" if loader else "plug Titan USB")
             if hasattr(self, "titan_view"):
                 self.titan_view.setPlainText(
-                    "USB loader u2014 wait for adb after boot.\n" if loader
+                    "USB loader - wait for adb after boot.\n" if loader
                     else "Plug Titan over USB. Cube Flasher is USB-only.\n"
                 )
             return

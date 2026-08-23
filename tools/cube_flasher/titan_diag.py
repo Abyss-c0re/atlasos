@@ -1,4 +1,4 @@
-"""USB Titan diagnostics. No user data u2014 props, package paths, crash/system lines only."""
+"""USB Titan diagnostics. No user data - props, package paths, crash/system lines only."""
 from __future__ import annotations
 
 import hashlib
@@ -8,7 +8,7 @@ from typing import Callable
 AdbRun = Callable[[str, str], str]
 
 RE_EMAIL = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
-RE_PHONE = re.compile(r"(?<!\d)(?:\+?\d[\d .()-]{8,}\d)")
+RE_PHONE = re.compile(r"(?<!\d)(?:\+\d{1,3}[\d .()-]{7,}\d|\d{3}[-. ]\d{3}[-. ]\d{4})")
 RE_IMEI = re.compile(r"\b\d{15}\b")
 RE_MAC = re.compile(r"\b[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}\b")
 RE_ANDROID_ID = re.compile(r"\b[0-9a-f]{16}\b")
@@ -59,6 +59,7 @@ echo analog=$(cat /sys/class/typec/port0-partner/accessory_mode 2>/dev/null)
 echo acc_sh=$(test -f /system/bin/titan2-analog-acc.sh && echo 1 || echo 0)
 echo acc_dex=$(test -f /system/etc/titan2_audio/acc.dex && echo 1 || echo 0)
 echo acc_rc=$(test -f /system/etc/init/titan2-analog-acc.rc && echo 1 || echo 0)
+echo acc_mod=$(test -f /data/adb/modules/titan2_analog_acc/service.sh && echo 1 || echo 0)
 echo policy=$(test -f /system/etc/titan2_audio/audio_policy_configuration.xml && echo 1 || echo 0)
 echo fm=$(pm path com.android.fmradio 2>/dev/null | head -1)
 echo controls=$(pm path com.titanus2.controls 2>/dev/null | head -1)
@@ -90,6 +91,7 @@ echo wired=$(cmd audio get-connected-output-devices 2>/dev/null)
         "acc_sh": _one(blob, "acc_sh"),
         "acc_dex": _one(blob, "acc_dex"),
         "acc_rc": _one(blob, "acc_rc"),
+        "acc_mod": _one(blob, "acc_mod"),
         "policy": _one(blob, "policy"),
         "fm": _one(blob, "fm"),
         "controls": _one(blob, "controls"),
@@ -117,6 +119,13 @@ def detect(snap: dict) -> list[dict]:
         )
 
     analog = (snap.get("analog") or "").strip()
+    if snap.get("acc_mod") == "1" and snap.get("acc_sh") != "1":
+        add(
+            "analog-acc-overlay",
+            "analog-acc module present but not bound on /system",
+            "atlasos",
+            "KSU titan2_analog_acc exists; /system/bin/titan2-analog-acc.sh missing",
+        )
     if analog == "analog_audio" and snap.get("acc_sh") != "1":
         add(
             "analog-acc-missing",
@@ -178,8 +187,8 @@ def format_diag(snap: dict, findings: list[dict], extra: str = "") -> str:
         % (snap.get("device_tag"), snap.get("model") or snap.get("device"), snap.get("lineage") or ""),
         "profile=%s  usb_audio=%s  analog=%s  wired=%s"
         % (snap.get("profile"), snap.get("usb_audio"), snap.get("analog"), snap.get("wired")),
-        "acc_sh=%s acc_dex=%s acc_rc=%s policy=%s"
-        % (snap.get("acc_sh"), snap.get("acc_dex"), snap.get("acc_rc"), snap.get("policy")),
+        "acc_sh=%s acc_dex=%s acc_rc=%s acc_mod=%s policy=%s"
+        % (snap.get("acc_sh"), snap.get("acc_dex"), snap.get("acc_rc"), snap.get("acc_mod"), snap.get("policy")),
         "controls=%s  usbhid=%s  fm=%s"
         % (
             "yes" if (snap.get("controls") or "").startswith("package:") else "no",
@@ -193,7 +202,7 @@ def format_diag(snap: dict, findings: list[dict], extra: str = "") -> str:
     else:
         lines.append("Findings (%d)" % len(findings))
         for f in findings:
-            lines.append("  [%s] %s u2014 %s" % (f["id"], f["title"], f["detail"]))
+            lines.append("  [%s] %s - %s" % (f["id"], f["title"], f["detail"]))
     if extra:
         lines.append("")
         lines.append(extra)
