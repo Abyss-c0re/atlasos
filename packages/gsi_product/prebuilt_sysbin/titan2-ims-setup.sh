@@ -277,7 +277,7 @@ ims_pixel_cc_force_slot() {
   cmd phone cc set-value -s "$_s" -p ims.keep_pdn_up_in_no_vops_bool true 2>/dev/null || true
   cmd phone cc set-value -s "$_s" -p carrier_rcs_provisioning_required_bool false 2>/dev/null || true
   cmd phone cc set-value -s "$_s" -p imsvoice.carrier_volte_roaming_available_bool true 2>/dev/null || true
-  cmd phone cc set-value -s "$_s" -p carrier_default_wfc_ims_mode_int 2 2>/dev/null || true
+  cmd phone cc set-value -s "$_s" -p carrier_default_wfc_ims_mode_int 1 2>/dev/null || true
   # TMO AppAuth / QNS WFC activation gate (lab: mAllowIwlanForWfcActivation stuck false)
   cmd phone cc set-value -s "$_s" -p require_entitlement_checks_bool false 2>/dev/null || true
   cmd phone cc set-value -s "$_s" -p imsserviceentitlement.skip_wfc_activation_bool true 2>/dev/null || true
@@ -454,9 +454,9 @@ for SLOT in 0 1; do
   # opens ePDG (lab 2026-08-02: tunnelSetup counts stay empty).
   cmd phone cc set-value -s "$SLOT" -p carrier_rcs_provisioning_required_bool false 2>/dev/null || true
   cmd phone cc set-value -s "$SLOT" -p imsvoice.carrier_volte_roaming_available_bool true 2>/dev/null || true
-  cmd phone cc set-value -s "$SLOT" -p carrier_default_wfc_ims_mode_int 2 2>/dev/null || true
+  cmd phone cc set-value -s "$SLOT" -p carrier_default_wfc_ims_mode_int 1 2>/dev/null || true
 done
-logt "pixel-ims carrier config forced (cc set-value -p); GBA required=false; WFC mode=2"
+logt "pixel-ims carrier config forced (cc set-value -p); GBA required=false; WFC mode=1"
 ims_align_simswitch
 
 # Sub-level WFC/VoLTE including roaming (US SIM abroad)

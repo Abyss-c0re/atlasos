@@ -491,23 +491,17 @@ apply_ims_action() {
       setprop persist.dbg.volte_avail_ovr 1 2>/dev/null || true
       setprop persist.dbg.wfc_avail_ovr 1 2>/dev/null || true
       setprop persist.vendor.mtk.volte.enable 1 2>/dev/null || true
-      # Airplane cycle
-      settings put global airplane_mode_on 1 2>/dev/null || true
-      am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true 2>/dev/null || true
-      sleep 4
-      settings put global airplane_mode_on 0 2>/dev/null || true
-      am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false 2>/dev/null || true
-      sleep 3
+      # No airplane pulse (commander quiet law). Modem search without radio-off.
       cmd phone restart-modem 2>/dev/null || true
       ims_wait_phone 25 || true
       ims_bind_all_slots
       # Re-enable WFC after search starts (Tello needs both)
       settings put global wfc_ims_enabled 1 2>/dev/null || true
       settings put global wfc_ims_roaming_enabled 1 2>/dev/null || true
-      settings put global wfc_ims_mode 2 2>/dev/null || true
+      settings put global wfc_ims_mode 1 2>/dev/null || true
       if [ -n "$_sub" ]; then
         settings put global "wfc_ims_enabled${_sub}" 1 2>/dev/null || true
-        settings put global "wfc_ims_mode${_sub}" 2 2>/dev/null || true
+        settings put global "wfc_ims_mode${_sub}" 1 2>/dev/null || true
       fi
       voice=$(dumpsys telephony.registry 2>/dev/null | grep -o 'mVoiceRegState=[^(]*([^)]*)' | head -1)
       emerg=$(dumpsys telephony.registry 2>/dev/null | grep -o 'mIsEmergencyOnly=[a-z]*' | head -1)
