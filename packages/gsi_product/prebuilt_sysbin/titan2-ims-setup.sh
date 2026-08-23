@@ -199,8 +199,34 @@ ims_slot_for_sub() {
   esac
 }
 
+# ABSENT / empty slot has no ImsPhone. Bind and restart must refuse it.
+ims_slot_absent() {
+  _i=$1
+  case "$_i" in
+    0|1|2|3) ;;
+    *) return 0 ;;
+  esac
+  _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
+  _n=0
+  _oldifs=$IFS
+  IFS=,
+  for _p in $_st; do
+    if [ "$_n" = "$_i" ]; then
+      IFS=$_oldifs
+      case "$_p" in ABSENT|"") return 0 ;; *) return 1 ;; esac
+    fi
+    _n=$((_n + 1))
+  done
+  IFS=$_oldifs
+  return 0
+}
+
 ims_bind_slot() {
   _s=$1
+  if ims_slot_absent "$_s"; then
+    logt "ims bind skip absent slot=$_s"
+    return 0
+  fi
   cmd phone ims set-ims-service -s "$_s" -c com.mediatek.ims 2>/dev/null || true
   cmd phone ims set-ims-service -s "$_s" -d com.mediatek.ims 2>/dev/null || true
   cmd phone ims set-ims-service -s "$_s" -c -f 1 com.mediatek.ims 2>/dev/null || true
@@ -260,6 +286,10 @@ ims_pixel_cc_force_slot() {
 
 ims_restart_registration() {
   _s=$1
+  if ims_slot_absent "$_s"; then
+    logt "ims restart skip absent slot=$_s"
+    return 0
+  fi
   # Pixel IMS: telephony.resetIms(slot). Shell equivalent: disable/enable IMS.
   cmd phone ims disable -s "$_s" 2>/dev/null || true
   sleep 1
@@ -278,8 +308,12 @@ while [ $j -lt 15 ]; do
     2) ims_bind_slot 1 ;;
     *)
       ims_bind_slot "$ASLOT"
-      ims_bind_slot 0
-      ims_bind_slot 1
+      for _bs in 0 1; do
+        case $(getprop gsm.sim.state 2>/dev/null | cut -d, -f$((_bs+1))) in
+          ABSENT|"") continue ;;
+        esac
+        ims_bind_slot "$_bs"
+      done
       ;;
   esac
   _chk=$ASLOT
@@ -502,10 +536,16 @@ if [ ! -S /dev/socket/volte_clientapi ]; then
 fi
 logt "volte stack start requested"
 
-# Pixel IMS restartIMSRegistration equivalent after config apply
-ims_restart_registration "$ASLOT"
-ims_restart_registration 0
-ims_restart_registration 1
+# Pixel IMS restartIMSRegistration after config. Honor bind pin; skip ABSENT.
+case "$BIND_WANT" in
+  1) ims_restart_registration 0 ;;
+  2) ims_restart_registration 1 ;;
+  *)
+    ims_restart_registration "$ASLOT"
+    ims_restart_registration 0
+    ims_restart_registration 1
+    ;;
+esac
 logt "ims re-register after pixel-ims config"
 
 # QNS WFC activation (sets mAllowIwlanForWfcActivation). Without this, IWLAN is
