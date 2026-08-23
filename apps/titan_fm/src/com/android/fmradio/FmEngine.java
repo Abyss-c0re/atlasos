@@ -43,6 +43,10 @@ public final class FmEngine {
     public static final float FREQ_MAX = 108.0f;
     public static final float FREQ_STEP = 0.1f;
 
+    public static final int ROUTE_SPEAKER = 0;
+    public static final int ROUTE_WIRED = 1;
+    public static final int ROUTE_BT = 2;
+
     public interface Listener {
         void onState(String line);
         void onPower(boolean on);
@@ -67,6 +71,7 @@ public final class FmEngine {
     private int mAntenna = 1;
     private boolean mAutoAntenna = true;
     private boolean mSpeaker = true;
+    private int mRoute = ROUTE_SPEAKER;
 
     private AudioRecord mRecord;
     private AudioTrack mTrack;
@@ -225,8 +230,47 @@ public final class FmEngine {
     }
 
     public void setSpeaker(boolean speaker) {
-        mSpeaker = speaker;
+        setRoute(speaker ? ROUTE_SPEAKER : ROUTE_BT);
+    }
+
+    public void setRoute(int route) {
+        if (route < ROUTE_SPEAKER || route > ROUTE_BT) {
+            route = ROUTE_SPEAKER;
+        }
+        mRoute = route;
+        mSpeaker = route == ROUTE_SPEAKER;
         mH.post(this::applyForceUse);
+    }
+
+    public int getRoute() {
+        return mRoute;
+    }
+
+    public void setMediaVolume(int index) {
+        try {
+            int max = mAm.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            if (index < 0) index = 0;
+            if (index > max) index = max;
+            mAm.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0);
+        } catch (Throwable t) {
+            Log.w(TAG, "setMediaVolume", t);
+        }
+    }
+
+    public int getMediaVolume() {
+        try {
+            return mAm.getStreamVolume(AudioManager.STREAM_MUSIC);
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    public int getMediaVolumeMax() {
+        try {
+            return mAm.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        } catch (Throwable t) {
+            return 15;
+        }
     }
 
     public void powerToggle() {
@@ -455,7 +499,7 @@ public final class FmEngine {
 
             notifyPower(true);
             notifyFreq(mFreq);
-            state(String.format("on %.1f Hz  spk=%s", mFreq, mSpeaker));
+            state(String.format("on %.1f Hz  out=%s", mFreq, routeLabel()));
         } catch (UnsatisfiedLinkError e) {
             state("native link: " + e.getMessage()
                     + " (need system priv-app + libaguifmjni)");
@@ -545,7 +589,7 @@ public final class FmEngine {
             mRendering = true;
             mRenderThread = new Thread(this::renderLoop, "TitanFmRender");
             mRenderThread.start();
-            preferSpeakerDevice(mSpeaker);
+            applyForceUse();
             state("render 48k stereo");
             return true;
         } catch (Throwable t) {
@@ -691,16 +735,26 @@ public final class FmEngine {
      * communication route client that can leave earpiece/speaker stuck and
      * silence other media apps after FM stops.
      */
+    private String routeLabel() {
+        if (mRoute == ROUTE_WIRED) return "wired";
+        if (mRoute == ROUTE_BT) return "bt";
+        return "spk";
+    }
+
     private void applyForceUse() {
+        // FOR_MEDIA=1; FORCE_SPEAKER=1 HEADPHONES=2 BT_A2DP=4 WIRED_ACCESSORY=5
+        int force = 1;
+        if (mRoute == ROUTE_WIRED) force = 5;
+        else if (mRoute == ROUTE_BT) force = 4;
         try {
             Class<?> c = Class.forName("android.media.AudioSystem");
-            // FOR_MEDIA = 1, FORCE_SPEAKER = 1, FORCE_NONE = 0
             c.getMethod("setForceUse", int.class, int.class)
-                    .invoke(null, 1, mSpeaker ? 1 : 0);
+                    .invoke(null, 1, force);
         } catch (Throwable t) {
             Log.w(TAG, "setForceUse", t);
         }
-        preferSpeakerDevice(mSpeaker);
+        preferRouteDevice();
+        state("route " + routeLabel() + " vol=" + getMediaVolume() + "/" + getMediaVolumeMax());
     }
 
     /** Clear FOR_MEDIA force so other apps get normal routing after FM. */
@@ -727,21 +781,55 @@ public final class FmEngine {
     }
 
     private void preferSpeakerDevice(boolean speaker) {
+        if (speaker) {
+            mRoute = ROUTE_SPEAKER;
+        }
+        preferRouteDevice();
+    }
+
+    private void preferRouteDevice() {
         try {
             if (mTrack == null) return;
-            if (!speaker) {
-                mTrack.setPreferredDevice(null);
-                return;
-            }
+            AudioDeviceInfo pick = null;
             for (AudioDeviceInfo d : mAm.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-                if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-                    mTrack.setPreferredDevice(d);
-                    return;
+                int ty = d.getType();
+                if (mRoute == ROUTE_SPEAKER && ty == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                    pick = d;
+                    break;
+                }
+                if (mRoute == ROUTE_WIRED && isWiredOut(ty)) {
+                    pick = d;
+                    break;
+                }
+                if (mRoute == ROUTE_BT && isBtOut(ty)) {
+                    pick = d;
+                    break;
                 }
             }
+            mTrack.setPreferredDevice(pick);
+            if (pick == null) {
+                state("route " + routeLabel() + " — device not connected");
+            }
         } catch (Throwable t) {
-            Log.w(TAG, "preferSpeakerDevice", t);
+            Log.w(TAG, "preferRouteDevice", t);
         }
+    }
+
+    private static boolean isWiredOut(int ty) {
+        return ty == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                || ty == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                || ty == AudioDeviceInfo.TYPE_USB_HEADSET
+                || ty == AudioDeviceInfo.TYPE_USB_DEVICE
+                || ty == AudioDeviceInfo.TYPE_USB_ACCESSORY
+                || ty == AudioDeviceInfo.TYPE_LINE_ANALOG
+                || ty == AudioDeviceInfo.TYPE_AUX_LINE;
+    }
+
+    private static boolean isBtOut(int ty) {
+        return ty == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                || ty == AudioDeviceInfo.TYPE_BLE_HEADSET
+                || ty == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                || ty == AudioDeviceInfo.TYPE_HEARING_AID;
     }
 
     private void setAudioParameters(String kv) {

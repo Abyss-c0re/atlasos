@@ -20,13 +20,14 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * Minimal FM UI: frequency, power, seek, speaker, presets.
+ * Minimal FM UI: frequency, power, seek, output route, volume, presets.
  * DeviceDefault / Settings look — no Cube tile chrome.
  */
 public final class MainActivity extends Activity implements FmEngine.Listener {
     private static final String PREFS = "titan_fm";
     private static final String KEY_FREQ = "freq";
     private static final String KEY_SPK = "speaker";
+    private static final String KEY_ROUTE = "route";
     private static final String KEY_ANT = "antenna";
     private static final String KEY_PRESETS = "presets";
     private static final int REQ_RECORD = 100;
@@ -38,7 +39,12 @@ public final class MainActivity extends Activity implements FmEngine.Listener {
     private TextView mStatusView;
     private Button mPowerBtn;
     private SeekBar mSeek;
-    private Switch mSpeakerSw;
+    private Button mBtnSpk;
+    private Button mBtnWired;
+    private Button mBtnBt;
+    private SeekBar mVol;
+    private TextView mVolLbl;
+    private int mRoute;
     private Switch mAntennaSw;
     private LinearLayout mPresetRow;
     /** After permission dialog, finish the user's Power intent. */
@@ -115,11 +121,25 @@ public final class MainActivity extends Activity implements FmEngine.Listener {
         row1.addView(stepUp, weight());
         root.addView(row1);
 
-        mSpeakerSw = new Switch(this);
-        mSpeakerSw.setText("Speaker");
-        mSpeakerSw.setChecked(p.getBoolean(KEY_SPK, true));
-        mSpeakerSw.setPadding(0, dp(12), 0, dp(4));
-        root.addView(mSpeakerSw);
+        TextView outTitle = label("Output", 16, true);
+        outTitle.setPadding(0, dp(12), 0, dp(4));
+        root.addView(outTitle);
+        LinearLayout routeRow = row();
+        mBtnSpk = btn("Speaker");
+        mBtnWired = btn("Wired");
+        mBtnBt = btn("Bluetooth");
+        routeRow.addView(mBtnSpk, weight());
+        routeRow.addView(mBtnWired, weight());
+        routeRow.addView(mBtnBt, weight());
+        root.addView(routeRow);
+        mRoute = p.getInt(KEY_ROUTE, p.getBoolean(KEY_SPK, true) ? FmEngine.ROUTE_SPEAKER : FmEngine.ROUTE_BT);
+
+        mVolLbl = label("Volume", 14, false);
+        mVolLbl.setPadding(0, dp(8), 0, 0);
+        root.addView(mVolLbl);
+        mVol = new SeekBar(this);
+        mVol.setPadding(dp(8), dp(8), dp(8), dp(4));
+        root.addView(mVol);
 
         mAntennaSw = new Switch(this);
         mAntennaSw.setText("Internal antenna");
@@ -148,7 +168,9 @@ public final class MainActivity extends Activity implements FmEngine.Listener {
         // Process-wide engine (held by FmService while playing — survives screen-off).
         mEngine = FmEngine.get(this);
         mEngine.setUiListener(this);
-        mEngine.setSpeaker(mSpeakerSw.isChecked());
+        mEngine.setRoute(mRoute);
+        paintRoute();
+        bindVolume();
         // Prefer auto antenna from devices; switch only overrides when user flips it.
         if (!mAntennaSw.isChecked()) {
             mEngine.setAutoAntenna(true);
@@ -184,9 +206,17 @@ public final class MainActivity extends Activity implements FmEngine.Listener {
         });
         seekDown.setOnClickListener(v -> mEngine.seek(false));
         seekUp.setOnClickListener(v -> mEngine.seek(true));
-        mSpeakerSw.setOnCheckedChangeListener((b, on) -> {
-            mEngine.setSpeaker(on);
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_SPK, on).apply();
+        mBtnSpk.setOnClickListener(v -> setRouteUi(FmEngine.ROUTE_SPEAKER));
+        mBtnWired.setOnClickListener(v -> setRouteUi(FmEngine.ROUTE_WIRED));
+        mBtnBt.setOnClickListener(v -> setRouteUi(FmEngine.ROUTE_BT));
+        mVol.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
+                if (!fromUser || mEngine == null) return;
+                mEngine.setMediaVolume(progress);
+                mVolLbl.setText("Volume  " + progress + " / " + s.getMax());
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) {}
         });
         mAntennaSw.setOnCheckedChangeListener((b, on) -> {
             if (on) {
@@ -333,6 +363,8 @@ public final class MainActivity extends Activity implements FmEngine.Listener {
         onPower(mEngine.isPowered());
         setFreqUi(mEngine.getFrequency());
         refreshMicGate();
+        bindVolume();
+        paintRoute();
     }
 
     @Override
@@ -438,6 +470,39 @@ public final class MainActivity extends Activity implements FmEngine.Listener {
         if (Build.VERSION.SDK_INT < 23) return true;
         return checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
                 == PackageManager.PERMISSION_GRANTED;
+    }
+
+
+    private void setRouteUi(int route) {
+        mRoute = route;
+        if (mEngine != null) mEngine.setRoute(route);
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putInt(KEY_ROUTE, route)
+                .putBoolean(KEY_SPK, route == FmEngine.ROUTE_SPEAKER)
+                .apply();
+        paintRoute();
+    }
+
+    private void paintRoute() {
+        highlight(mBtnSpk, mRoute == FmEngine.ROUTE_SPEAKER);
+        highlight(mBtnWired, mRoute == FmEngine.ROUTE_WIRED);
+        highlight(mBtnBt, mRoute == FmEngine.ROUTE_BT);
+    }
+
+    private void highlight(Button b, boolean on) {
+        if (b == null) return;
+        b.setAlpha(on ? 1f : 0.45f);
+    }
+
+    private void bindVolume() {
+        if (mVol == null || mEngine == null) return;
+        int max = mEngine.getMediaVolumeMax();
+        int cur = mEngine.getMediaVolume();
+        mVol.setMax(max);
+        mVol.setProgress(cur);
+        if (mVolLbl != null) {
+            mVolLbl.setText("Volume  " + cur + " / " + max);
+        }
     }
 
     private LinearLayout row() {
