@@ -239,7 +239,10 @@ ims_bind_slot() {
 # -p = persistent (survives reboot on non-QPR2-broken loaders; we re-apply on boot anyway).
 ims_pixel_cc_force_slot() {
   _s=$1
-  [ -n "$_s" ] || return 0
+  if ims_slot_absent "$_s"; then
+    logt "pixel-cc skip absent slot=$_s"
+    return 0
+  fi
   # Core VoLTE / VoWiFi (Pixel IMS primary toggles)
   cmd phone cc set-value -s "$_s" -p carrier_volte_available_bool true 2>/dev/null || true
   cmd phone cc set-value -s "$_s" -p carrier_wfc_ims_available_bool true 2>/dev/null || true
@@ -449,6 +452,10 @@ esac
 
 # Pixel IMS carrier-config force (both slots + any active)
 for SLOT in 0 1; do
+  if ims_slot_absent "$SLOT"; then
+    logt "pixel-cc skip absent slot=$SLOT"
+    continue
+  fi
   ims_pixel_cc_force_slot "$SLOT"
   # Without these, Google's Iwlan reports "Wfc enabled: false" and never
   # opens ePDG (lab 2026-08-02: tunnelSetup counts stay empty).

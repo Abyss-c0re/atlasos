@@ -315,7 +315,10 @@ ims_align_calls_tray() {
 # Pixel IMS (kyujin-cho/pixel-volte-patch) carrier-config key set via shell override.
 ims_pixel_cc_force_slot() {
   _s=$1
-  [ -n "$_s" ] || return 0
+  if ims_slot_absent "$_s"; then
+    log "pixel-cc skip absent slot=$_s"
+    return 0
+  fi
   cmd phone cc set-value -s "$_s" -p carrier_volte_available_bool true 2>/dev/null || true
   cmd phone cc set-value -s "$_s" -p carrier_wfc_ims_available_bool true 2>/dev/null || true
   cmd phone cc set-value -s "$_s" -p carrier_default_wfc_ims_enabled_bool true 2>/dev/null || true
