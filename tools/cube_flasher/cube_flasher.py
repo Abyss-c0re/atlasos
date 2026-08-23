@@ -42,6 +42,7 @@ from cube_widget import CrimsonCube
 from titan_diag import collect as diag_collect, detect as diag_detect, format_diag
 from titan_issues import nanobot_classify, post_finding, existing_fingerprints, github_token, origin_repo
 from titan_fix import develop_and_ship, nanobot_ready
+from titan_reports import pull_reports, fill_selected_logs, reports_as_findings
 from titan_rom import (
     LEDGER_NAME,
     PROP_KEYS,
@@ -1617,9 +1618,21 @@ class Flasher(QMainWindow):
     def _diag_worker(self, serial: str) -> None:
         try:
             snap = diag_collect(serial, adb_shell)
+            inbox = OUT / "outdev" / "inbox"
+            reports = pull_reports(serial, adb_bin(), tool_env(), inbox)
+            for r in reports:
+                fill_selected_logs(serial, adb_shell, r)
             findings = diag_detect(snap)
+            extra_rep = reports_as_findings(reports)
+            comments = [r.get("comment") or "" for r in reports if r.get("comment")]
+            if comments:
+                snap["user_comment"] = " | ".join(comments)[:800]
             extra = nanobot_classify(snap, findings)
             seen_ids = {f["id"] for f in findings}
+            for e in extra_rep:
+                if e.get("id") and e["id"] not in seen_ids:
+                    findings.append(e)
+                    seen_ids.add(e["id"])
             for e in extra:
                 if e.get("id") and e["id"] not in seen_ids:
                     findings.append(e)

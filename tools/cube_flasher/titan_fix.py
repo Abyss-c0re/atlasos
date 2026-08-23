@@ -198,7 +198,7 @@ def ask_nanobot_diff(finding: dict, snap: dict, context: str) -> str:
                     k: snap.get(k)
                     for k in (
                         "device_tag", "lineage", "profile", "analog",
-                        "acc_sh", "policy", "wired",
+                        "acc_sh", "policy", "wired", "user_comment",
                     )
                 },
             },

@@ -177,6 +177,8 @@ public class MainActivity extends Activity {
             () -> startActivity(new Intent(this, SimActivity.class)));
         UiKit.navRow(root, "Diagnostics", "Calls + nav, no test call",
             () -> startActivity(new Intent(this, DiagnosticsActivity.class)));
+        UiKit.navRow(root, "Report", "Bug or feature u2014 logs + shots",
+            () -> startActivity(new Intent(this, ReportActivity.class)));
         UiKit.navRow(root, "Theme", "Accent · Settings icons · apps",
             () -> startActivity(new Intent(this, ThemeActivity.class)));
         // Developer: always on hub. TCP ADB is human-only (no boot auto-arm).

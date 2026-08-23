@@ -88,6 +88,9 @@ def main() -> int:
     assert not is_abyss_core("someone-else")
     d = extract_diff("note\n```diff\ndiff --git a/patches/x b/patches/x\n+hi\n```\n")
     assert d.startswith("diff --git")
+    from titan_reports import reports_as_findings
+    fs = reports_as_findings([{"id":"T","kind":"bug","title":"USB hiss","comment":"noise on analog"}])
+    assert fs and fs[0]["id"].startswith("report-")
     print("progress parser ok")
     return 0
 
