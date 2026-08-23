@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.63-no-ghost-sim (663) — 2026-08-23T08:17Z
+
+### rebuild 2026-08-23T08:18Z · 16.63-no-ghost-sim (663)
+
+- Never pin IMS bind SIM 1/2 when that tray is ABSENT
+
+
+- Never pin IMS bind SIM 1/2 when that tray is ABSENT
+
+---
+
 ## 16.59-ims-calls (659) — 2026-08-22T17:56Z
 
 ### rebuild 2026-08-22T17:57Z · 16.59-ims-calls (659)
