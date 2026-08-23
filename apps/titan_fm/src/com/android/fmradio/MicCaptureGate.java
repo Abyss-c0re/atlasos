@@ -15,6 +15,8 @@ import android.util.Log;
 public final class MicCaptureGate {
     private static final String TAG = "TitanFm";
 
+    private static volatile boolean sSkipPrivacy;
+
     public enum State {
         OK,
         PERMISSION_DENIED,
@@ -76,7 +78,7 @@ public final class MicCaptureGate {
      * compile against older android.jar and still run on API 31+.
      */
     private static boolean isMicPrivacyOn(Context c) {
-        if (Build.VERSION.SDK_INT < 31) return false;
+        if (sSkipPrivacy || Build.VERSION.SDK_INT < 31) return false;
         try {
             Object spm = c.getSystemService("sensor_privacy");
             if (spm == null) {
@@ -102,7 +104,7 @@ public final class MicCaptureGate {
                         .invoke(spm, /*TOGGLE_SOFTWARE*/ 1, mic);
             }
         } catch (Throwable t) {
-            Log.w(TAG, "isMicPrivacyOn", t);
+            sSkipPrivacy = true;
             return false;
         }
     }

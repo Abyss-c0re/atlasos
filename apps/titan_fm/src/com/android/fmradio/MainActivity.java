@@ -40,8 +40,7 @@ public final class MainActivity extends Activity implements FmEngine.Listener {
     private Button mPowerBtn;
     private SeekBar mSeek;
     private Button mBtnSpk;
-    private Button mBtnWired;
-    private Button mBtnBt;
+    private Button mBtnDefault;
     private SeekBar mVol;
     private TextView mVolLbl;
     private int mRoute;
@@ -56,7 +55,6 @@ public final class MainActivity extends Activity implements FmEngine.Listener {
             if (mEngine != null && mEngine.isPowered()) {
                 mEngine.pollRdsOnce();
             }
-            refreshMicGate();
             mRdsTimer.postDelayed(this, 2000);
         }
     };
@@ -126,13 +124,15 @@ public final class MainActivity extends Activity implements FmEngine.Listener {
         root.addView(outTitle);
         LinearLayout routeRow = row();
         mBtnSpk = btn("Speaker");
-        mBtnWired = btn("Wired");
-        mBtnBt = btn("Bluetooth");
+        mBtnDefault = btn("Default");
         routeRow.addView(mBtnSpk, weight());
-        routeRow.addView(mBtnWired, weight());
-        routeRow.addView(mBtnBt, weight());
+        routeRow.addView(mBtnDefault, weight());
         root.addView(routeRow);
-        mRoute = p.getInt(KEY_ROUTE, p.getBoolean(KEY_SPK, true) ? FmEngine.ROUTE_SPEAKER : FmEngine.ROUTE_BT);
+        mRoute = p.getBoolean(KEY_SPK, true) ? FmEngine.ROUTE_SPEAKER : FmEngine.ROUTE_DEFAULT;
+        if (p.contains(KEY_ROUTE)) {
+            mRoute = p.getInt(KEY_ROUTE, mRoute) == FmEngine.ROUTE_SPEAKER
+                    ? FmEngine.ROUTE_SPEAKER : FmEngine.ROUTE_DEFAULT;
+        }
 
         mVolLbl = label("Volume", 14, false);
         mVolLbl.setPadding(0, dp(8), 0, 0);
@@ -207,8 +207,7 @@ public final class MainActivity extends Activity implements FmEngine.Listener {
         seekDown.setOnClickListener(v -> mEngine.seek(false));
         seekUp.setOnClickListener(v -> mEngine.seek(true));
         mBtnSpk.setOnClickListener(v -> setRouteUi(FmEngine.ROUTE_SPEAKER));
-        mBtnWired.setOnClickListener(v -> setRouteUi(FmEngine.ROUTE_WIRED));
-        mBtnBt.setOnClickListener(v -> setRouteUi(FmEngine.ROUTE_BT));
+        mBtnDefault.setOnClickListener(v -> setRouteUi(FmEngine.ROUTE_DEFAULT));
         mVol.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
                 if (!fromUser || mEngine == null) return;
@@ -485,8 +484,7 @@ public final class MainActivity extends Activity implements FmEngine.Listener {
 
     private void paintRoute() {
         highlight(mBtnSpk, mRoute == FmEngine.ROUTE_SPEAKER);
-        highlight(mBtnWired, mRoute == FmEngine.ROUTE_WIRED);
-        highlight(mBtnBt, mRoute == FmEngine.ROUTE_BT);
+        highlight(mBtnDefault, mRoute != FmEngine.ROUTE_SPEAKER);
     }
 
     private void highlight(Button b, boolean on) {

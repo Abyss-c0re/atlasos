@@ -6,8 +6,8 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.android.fmradio"
-    android:versionCode="110"
-    android:versionName="1.0.10-route">
+    android:versionCode="112"
+    android:versionName="1.0.12-bt">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
 
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>

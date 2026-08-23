@@ -15,17 +15,16 @@ JAR=$(command -v jar)
 [ -n "$JAVAC" ] || { echo "need javac"; exit 1; }
 [ -n "$JAR" ] || { echo "need jar"; exit 1; }
 
-JNI_SRC="$ROOT/jniLibs/arm64-v8a/libaguifmjni.so"
-[ -f "$JNI_SRC" ] || {
-  STOCK="$ROOT/../../packages/titan_stock_fm_ir/prebuilt/fmradio/AguiFMRadio/lib/arm64/libaguifmjni.so"
-  if [ -f "$STOCK" ]; then
-    mkdir -p "$ROOT/jniLibs/arm64-v8a"
-    cp -f "$STOCK" "$JNI_SRC"
-  else
-    echo "missing libaguifmjni.so — stage via packages/titan_stock_fm_ir/stage_from_stock.sh"
-    exit 1
-  fi
-}
+JNI_SRC=""
+for cand in \
+  "$ROOT/jniLibs/arm64-v8a/libaguifmjni.so" \
+  "$ROOT/../../packages/titan_stock_fm_ir/prebuilt/fmradio/AguiFMRadio/lib/arm64/libaguifmjni.so" \
+  "$ROOT/../../../titanus2/packages/titan_stock_fm_ir/prebuilt/fmradio/AguiFMRadio/lib/arm64/libaguifmjni.so" \
+  "$ROOT/../../../titanus2/apps/titan_fm/jniLibs/arm64-v8a/libaguifmjni.so"
+do
+  if [ -f "$cand" ]; then JNI_SRC="$cand"; break; fi
+done
+[ -n "$JNI_SRC" ] || { echo "missing libaguifmjni.so u2014 stage vendor JNI"; exit 1; }
 
 BUILD=$(mktemp -d)
 trap 'rm -rf "$BUILD"' EXIT

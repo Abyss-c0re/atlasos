@@ -125,11 +125,23 @@ Hybrid cook and flash need the optional workshop sibling `titanus2` (stock
 zip, kitchen, flash script). GSI build and Git pull work from this clone.
 Nothing writes a device until you press a flash button.
 
+## Owned apps from source
+
+```bash
+./scripts/build_owned_apps.sh
+```
+
+`scripts/build.sh` runs that unless `SKIP_OWNED_APPS=1`. TitanFm is a
+priv-app (`libaguifmjni` needs `libcutils` u2014 a user update cannot load it).
+Output is **Speaker** or **Default** (A2DP when a headset is connected).
+USB-C analog is the FM antenna, not a PCM sink.
+
 ## Layout
 
 | Path | Role |
 |------|------|
-| `apps/` | Controls, HID, Atlas, Nanobot wrapper, CubeContact |
+| `apps/` | Controls, HID, Atlas, Nanobot, CubeContact, OSS FM |
+| `scripts/build_owned_apps.sh` | Compile owned apps from source on a clone |
 | `patches/gsi_source/` | Lineage SERIES |
 | `patches/bin/` | Shippable scripts (one copy) |
 | `packages/gsi_product/` | `PRODUCT_PACKAGES` + prebuilts |

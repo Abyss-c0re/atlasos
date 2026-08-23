@@ -94,6 +94,11 @@ if [ "$WITH_GAPPS" = "1" ]; then
   fi
 fi
 
+if [ "${SKIP_OWNED_APPS:-0}" != "1" ]; then
+  info "compile owned apps from this clone"
+  "$ROOT/scripts/build_owned_apps.sh"
+fi
+
 info "pull titan2-touchpadd submodule, compile, pack into GSI prebuilt"
 "$ROOT/scripts/build_touchpadd.sh"
 "$ROOT/scripts/check_clean.sh"
@@ -126,7 +131,7 @@ if [ -n "${STOCK_ZIP:-}" ] && [ -f "${STOCK_ZIP}" ]; then
   [ -f "$ROOT/out/misterztr_exported_gsi.path" ] && GSI_PIN="$(cat "$ROOT/out/misterztr_exported_gsi.path")"
   if [ -x "$WORKSHOP/scripts/rom_variant.py" ] && [ -n "$GSI_PIN" ] && [ -f "$GSI_PIN" ]; then
     info "pack $GSI_PIN WITH_TOUCHPADD_INJECT=0"
-    exec env WITH_TOUCHPADD_INJECT=0 \
+    exec env WITH_TOUCHPADD_INJECT=0 WITH_OPENWRT_LP=1 \
       "$WORKSHOP/scripts/rom_variant.py" build --preset lab_rootless --gsi "$GSI_PIN"
   fi
   info "no packer / no exported GSI — GSI file is the standalone product"
