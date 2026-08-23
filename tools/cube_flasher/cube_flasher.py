@@ -41,6 +41,7 @@ from PyQt5.QtWidgets import (
 from cube_widget import CrimsonCube
 from titan_diag import collect as diag_collect, detect as diag_detect, format_diag
 from titan_issues import nanobot_classify, post_finding, existing_fingerprints, github_token, origin_repo
+from titan_fix import develop_and_ship, nanobot_ready
 from titan_rom import (
     LEDGER_NAME,
     PROP_KEYS,
@@ -1629,8 +1630,10 @@ class Flasher(QMainWindow):
                 token = github_token()
                 have = existing_fingerprints(owner, repo, token) if owner and token else set()
                 for f in findings:
-                    posts.append("%s u2192 %s" % (f["id"], post_finding(f, snap, ATLASOS, have)))
-            note = "Issues\n  " + "\n  ".join(posts) if posts else "Host nanobot + local rules. No user data pulled."
+                    posts.append("%s -> %s" % (f["id"], post_finding(f, snap, ATLASOS, have)))
+                if nanobot_ready():
+                    for f in findings[:2]:
+                        posts.append("fix %s -> %s" % (f["id"], develop_and_ship(f, snap, ATLASOS)))
             self.bridge.diag.emit(format_diag(snap, findings, note))
         except Exception as e:
             self.bridge.diag.emit("diag failed: %s\n" % e)

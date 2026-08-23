@@ -71,6 +71,23 @@ def main() -> int:
     assert "analog-acc-missing" in ids
     assert "analog-not-routed" in ids
     assert Path(git_bin()).name == "git"
+    from titan_fix import validate_diff, is_abyss_core, extract_diff
+    bad = validate_diff("diff --git a/etc/passwd b/etc/passwd\n")
+    assert bad
+    ok = validate_diff(
+        "diff --git a/patches/bin/titan2-analog-acc.sh b/patches/bin/titan2-analog-acc.sh\n"
+        "--- a/patches/bin/titan2-analog-acc.sh\n"
+        "+++ b/patches/bin/titan2-analog-acc.sh\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    assert ok == ""
+    assert is_abyss_core("Abyss-c0re")
+    assert is_abyss_core("abyss-core")
+    assert not is_abyss_core("someone-else")
+    d = extract_diff("note\n```diff\ndiff --git a/patches/x b/patches/x\n+hi\n```\n")
+    assert d.startswith("diff --git")
     print("progress parser ok")
     return 0
 

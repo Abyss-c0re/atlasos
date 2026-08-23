@@ -116,7 +116,7 @@ hardcoded serials. The device list is whatever is on the cable right now.
 | **BUILD GSI** | AtlasOS GSI (`vanilla` / `microg` / `gapps`) |
 | **PULL GITHUB** | Fast-forward this repo from `origin` |
 | **TITAN** tab | Live USB ROM + changelog since last flash |
-| USB connect | Host nanobot + local rules diagnose (no user data) and file GitHub issues |
+| USB connect | Host nanobot diagnoses (no user data), files issues, and tries a fix (PR; Abyss-c0re pushes) |
 | Pins / GSI tabs | Sort, multi-select, delete |
 
 ETA is estimated from the selected options and last real cook/flash/GSI
