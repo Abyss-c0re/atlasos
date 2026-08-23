@@ -264,3 +264,10 @@ prebuilt_etc {
     filename: "acc.dex",
     sub_dir: "titan2_audio",
 }
+
+prebuilt_etc {
+    name: "titan2_usb_audio_policy_configuration.xml",
+    src: "titan2_usb_audio_policy_configuration.xml",
+    filename: "usb_audio_policy_configuration.xml",
+    sub_dir: "titan2_audio",
+}

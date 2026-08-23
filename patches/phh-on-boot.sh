@@ -75,6 +75,16 @@ if [ -f "$_ua_src" ] && [ -f "$_ua_dst" ]; then
     mount --bind "$_ua_src" "$_ua_dst" 2>/dev/null || true
   fi
 fi
+# Drop USB_ACCESSORY. OEM Type-C analog is codec wired HP, not USB PCM.
+# Settings "Use audio device" on analog_audio was the accessory-only HAL failing.
+_ua_noacc=/system/etc/titan2_audio/usb_audio_policy_configuration.xml
+[ -f "$_ua_noacc" ] || _ua_noacc=/system/etc/usb_audio_policy_configuration.xml
+for _ua_tgt in /vendor/etc/usb_audio_accessory_only_policy_configuration.xml \
+               /vendor/etc/usb_audio_policy_configuration.xml; do
+  if [ -f "$_ua_noacc" ] && [ -f "$_ua_tgt" ]; then
+    mount --bind "$_ua_noacc" "$_ua_tgt" 2>/dev/null || true
+  fi
+done
 
 # MTK FrameworkResOverlay CamToggle=false (China vendor) — bind Cube replacement
 # over EROFS. Same pattern as USB audio. Also started early via titan2-privacy-overlay.rc.
