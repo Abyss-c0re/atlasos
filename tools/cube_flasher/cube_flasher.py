@@ -96,6 +96,9 @@ PRESET_FALLBACK = [
     "ship_restless",
 ]
 FEATURE_FALLBACK = [
+    ("with_atlas", "Atlas Debian app", True),
+    ("with_atlas_lp", "Debian plane (atlas_linux LP)", True),
+    ("with_openwrt_lp", "OpenWrt plane (atlas_openwrt LP)", True),
     ("with_cube_icons", "Cube square icons", True),
     ("with_input", "Pad / keyboard", True),
     ("with_controls", "Titan Controls", True),
@@ -104,7 +107,8 @@ FEATURE_FALLBACK = [
     ("with_ims_treble", "IMS / VoLTE", True),
     ("with_openeuicc", "OpenEUICC eSIM", True),
     ("with_microg", "microG", True),
-    ("with_stock_fm_ir", "FM + IR", True),
+    ("with_stock_fm_ir", "FM radio (OSS TitanFm)", True),
+    ("with_stock_camera", "Prefer stock camera", True),
     ("with_square_chrome", "Square chrome RROs (lab)", False),
     ("with_nanobot", "Nanobot agent (lab)", False),
 ]
@@ -332,11 +336,26 @@ def estimate_cook(features: dict, root: str, also_gsi: bool = False) -> int:
         sec += 120
     if features.get("with_square_chrome"):
         sec += 60
+    if features.get("with_atlas_lp"):
+        sec += 480
+    if features.get("with_openwrt_lp"):
+        sec += 240
+    if features.get("with_stock_fm_ir"):
+        sec += 90
     if (root or "none") != "none":
         sec += 180
     if also_gsi:
         sec += data["gsi_s"]
     return int(sec)
+
+
+def normalize_planes(feats: dict) -> dict:
+    """Debian LP without OpenWrt is product-lock heresy."""
+    out = dict(feats)
+    if out.get("with_atlas_lp"):
+        out["with_atlas"] = True
+        out["with_openwrt_lp"] = True
+    return out
 
 
 def estimate_flash(path: str = "", keep_data: bool = True) -> int:
@@ -668,6 +687,21 @@ class Worker(threading.Thread):
         self._pct(0.0)
         self._say("Cooking a new pin.")
         env = os.environ.copy()
+        env["ATLAS_LINUX_SIZE_M"] = "1536"
+        env["ATLAS_OPENWRT_SIZE_M"] = "128"
+        feats = normalize_planes(job.get("features") or {})
+        if feats.get("with_stock_fm_ir"):
+            fm = ROOT / "apps" / "titan_fm" / "build.sh"
+            if fm.is_file():
+                self._st("building OSS TitanFm")
+                frc, _blob = self._pipe(
+                    ["bash", str(fm)], env, 0.02, 0.08, cwd=fm.parent
+                )
+                if frc != 0:
+                    self._ph("fail", 0.05)
+                    self._say("TitanFm build failed.")
+                    self.bridge.finished.emit(False, "titanfm rc=%s" % frc)
+                    return None
         cmd = [
             sys.executable,
             "-u",
@@ -682,7 +716,7 @@ class Worker(threading.Thread):
         gsi = job.get("gsi") or ""
         if gsi:
             cmd += ["--gsi", gsi]
-        for k, v in (job.get("features") or {}).items():
+        for k, v in feats.items():
             cmd += ["--option", "%s=%s" % (k, "1" if v else "0")]
         self._st("kitchen cook " + (job.get("preset") or "lab_rootless"))
         rc, blob = self._pipe(cmd, env, 0.02, 0.94)
@@ -878,6 +912,7 @@ class Worker(threading.Thread):
 class Flasher(QMainWindow):
     def __init__(self):
         super().__init__()
+        self._busy = False
         self.setWindowTitle("Cube Flasher")
         self.setObjectName("CubeFlasher")
         self.resize(1220, 800)
@@ -981,7 +1016,7 @@ class Flasher(QMainWindow):
         tabs.addTab(self._gsi_tab(combo_css, list_css), "GSI")
         right.addWidget(tabs, 3)
 
-        right.addWidget(self._lbl("KITCHEN"))
+        right.addWidget(self._lbl("ATLASOS / KITCHEN"))
         cfg = QHBoxLayout()
         self.preset = QComboBox()
         self.preset.setStyleSheet(combo_css)
@@ -1013,15 +1048,20 @@ class Flasher(QMainWindow):
             cb.setChecked(default)
             self.feat[key] = cb
             feat_l.addWidget(cb, i // 2, i % 2)
+        if "with_atlas_lp" in self.feat:
+            self.feat["with_atlas_lp"].toggled.connect(self._plane_lock)
+        if "with_openwrt_lp" in self.feat:
+            self.feat["with_openwrt_lp"].toggled.connect(self._plane_lock)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(feat_box)
-        scroll.setMaximumHeight(150)
+        scroll.setMaximumHeight(200)
         right.addWidget(scroll)
 
         self.keep_data = QCheckBox("Keep userdata")
         self.keep_data.setChecked(True)
         right.addWidget(self.keep_data)
+        self._plane_lock()
 
         brow = QHBoxLayout()
         self.btn_build = self._btn("BUILD")
@@ -1264,8 +1304,29 @@ class Flasher(QMainWindow):
                     break
         self._refresh_eta()
 
+    def _plane_lock(self, *_a) -> None:
+        alp = self.feat.get("with_atlas_lp")
+        ow = self.feat.get("with_openwrt_lp")
+        atl = self.feat.get("with_atlas")
+        if alp and alp.isChecked():
+            if atl and not atl.isChecked():
+                atl.blockSignals(True)
+                atl.setChecked(True)
+                atl.blockSignals(False)
+            if ow and not ow.isChecked():
+                ow.blockSignals(True)
+                ow.setChecked(True)
+                ow.blockSignals(False)
+        elif ow and not ow.isChecked() and alp and alp.isChecked():
+            alp.blockSignals(True)
+            alp.setChecked(False)
+            alp.blockSignals(False)
+        self._refresh_eta()
+
     def _cook_job(self) -> dict:
-        feats = {k: cb.isChecked() for k, cb in self.feat.items()}
+        feats = normalize_planes(
+            {k: cb.isChecked() for k, cb in self.feat.items()}
+        )
         return {
             "preset": self.preset.currentText(),
             "root": self.root_eng.currentText(),
