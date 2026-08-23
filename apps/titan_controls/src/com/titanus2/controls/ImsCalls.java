@@ -72,7 +72,8 @@ public final class ImsCalls {
 
     public static int wantSimswitch(Context ctx) {
         int slot = slotForSub(ctx, settingsCallsSubId(ctx));
-        return slot >= 0 ? slot + 1 : -1;
+        if (slot != 0 && slot != 1) return -1;
+        return slot + 1;
     }
 
     public static boolean planeOn(Context ctx, String key) {
