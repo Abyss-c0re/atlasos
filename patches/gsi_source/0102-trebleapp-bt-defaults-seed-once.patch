@@ -26,7 +26,7 @@ diff --git a/app/src/main/java/me/phh/treble/app/Misc.kt b/app/src/main/java/me/
                  SystemProperties.set("persist.sys.bt.le.disable_apcf_extended_features", if (value) "1" else "0")
              }
              MiscSettings.treatVirtualSensorsAsReal -> {
-@@ -441,10 +441,20 @@
+@@ -441,10 +441,22 @@
          spListener.onSharedPreferenceChanged(sp, MiscSettings.forceCamera2APIHAL3)
          if (! sp.contains(MiscSettings.headsetFix))
              sp.edit().putBoolean(MiscSettings.headsetFix, HuaweiSettings.enabled()).commit()
@@ -40,6 +40,8 @@ diff --git a/app/src/main/java/me/phh/treble/app/Misc.kt b/app/src/main/java/me/
 +            sp.edit().putBoolean(MiscSettings.sysbta, true).apply()
 +        if (!sp.contains(MiscSettings.disableLeApcfExtended))
 +            sp.edit().putBoolean(MiscSettings.disableLeApcfExtended, true).apply()
++        if (!sp.contains(MiscSettings.headsetDevinput))
++            sp.edit().putBoolean(MiscSettings.headsetDevinput, true).apply()
          spListener.onSharedPreferenceChanged(sp, MiscSettings.headsetFix)
          spListener.onSharedPreferenceChanged(sp, MiscSettings.bluetooth)
 +        spListener.onSharedPreferenceChanged(sp, MiscSettings.sysbta)

@@ -1,0 +1,10 @@
+# Map typec analog_audio -> AUDIO_DEVICE_OUT_WIRED_HEADPHONE (codec path).
+service titan2-analog-acc /system/bin/titan2-analog-acc.sh
+    class late_start
+    user root
+    group root audio
+    disabled
+
+on property:sys.boot_completed=1
+    setprop persist.sys.overlay.devinputjack true
+    start titan2-analog-acc

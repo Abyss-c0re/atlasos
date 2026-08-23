@@ -93,6 +93,8 @@ settings put secure long_press_power_assistant 0 2>/dev/null || true
 setprop ctl.start titan2-pad-agent 2>/dev/null || true
 setprop ctl.start titan2-usb-hid 2>/dev/null || true
 setprop ctl.start titan2-display 2>/dev/null || true
+setprop persist.sys.overlay.devinputjack true 2>/dev/null || true
+setprop ctl.start titan2-analog-acc 2>/dev/null || true
 (
   sleep 8
   # If init.svc still stopped, one more ctl.start only (no manual & fork).

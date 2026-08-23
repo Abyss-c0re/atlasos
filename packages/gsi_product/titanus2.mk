@@ -117,7 +117,10 @@ PRODUCT_PACKAGES += \
     titan2-sensor-privacy.rc \
     titan2-bind-mtk-privacy-overlay.sh \
     titan2-privacy-overlay.rc \
-    titan2-privacy-FrameworkResOverlay.apk
+    titan2-privacy-FrameworkResOverlay.apk \
+    titan2-analog-acc.sh \
+    titan2-analog-acc.rc \
+    titan2-analog-acc.dex
 
 # AtlasOS overlays captured from live Titan 2026-08-18
 # (/system/product/overlay/Titan*.apk). Built as runtime_resource_overlay.

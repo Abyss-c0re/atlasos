@@ -246,3 +246,21 @@ prebuilt_etc {
     filename: "FrameworkResOverlay.apk",
     sub_dir: "titan2_privacy",
 }
+sh_binary {
+    name: "titan2-analog-acc.sh",
+    src: "titan2-analog-acc.sh",
+}
+
+prebuilt_etc {
+    name: "titan2-analog-acc.rc",
+    src: "titan2-analog-acc.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}
+
+prebuilt_etc {
+    name: "titan2-analog-acc.dex",
+    src: "titan2-analog-acc.dex",
+    filename: "acc.dex",
+    sub_dir: "titan2_audio",
+}

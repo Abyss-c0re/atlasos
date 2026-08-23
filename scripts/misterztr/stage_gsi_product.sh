@@ -247,6 +247,8 @@ refresh_sot "$ROOT/patches/init/titan2-pad-agent.rc" "$SRC_SYS/titan2-pad-agent.
 refresh_sot "$ROOT/packages/titan_ims/init/titan2-ims.rc" "$SRC_SYS/titan2-ims.rc"
 refresh_sot "$ROOT/patches/init/titan2-sensor-privacy.rc" "$SRC_SYS/titan2-sensor-privacy.rc"
 refresh_sot "$ROOT/patches/init/titan2-privacy-overlay.rc" "$SRC_SYS/titan2-privacy-overlay.rc"
+refresh_sot "$ROOT/patches/init/titan2-analog-acc.rc" "$SRC_SYS/titan2-analog-acc.rc"
+refresh_sot "$ROOT/patches/bin/titan2-analog-acc.sh" "$SRC_SYS/titan2-analog-acc.sh"
 refresh_sot "$ROOT/patches/bin/titan2-bind-mtk-privacy-overlay.sh" "$SRC_SYS/titan2-bind-mtk-privacy-overlay.sh"
 refresh_sot "$ROOT/patches/init/titan2-netfw.rc" "$SRC_SYS/titan2-netfw.rc"
 refresh_sot "$ROOT/packages/titan_openwrt/titan2-openwrt.sh" "$SRC_SYS/titan2-openwrt.sh"
@@ -273,7 +275,8 @@ stage_file "$SRC_SYS/Android.bp" "$DEST_SYS/Android.bp"
 for f in $_SYSBIN_SOT titan2-ims-setup.sh titan2-sensor-privacy.sh \
   titan2-pad-agent.rc titan2-ims.rc titan2-sensor-privacy.rc titan2-netfw.rc \
   titan2-openwrt.sh titan2-openwrt-boot.sh titan2-openwrt.rc openwrt-lpctl \
-  titan2-bind-mtk-privacy-overlay.sh titan2-privacy-overlay.rc FrameworkResOverlay.apk; do
+  titan2-bind-mtk-privacy-overlay.sh titan2-privacy-overlay.rc FrameworkResOverlay.apk \
+  titan2-analog-acc.sh titan2-analog-acc.rc titan2-analog-acc.dex; do
   [ -f "$SRC_SYS/$f" ] || continue
   stage_file "$SRC_SYS/$f" "$DEST_SYS/$f"
 done
