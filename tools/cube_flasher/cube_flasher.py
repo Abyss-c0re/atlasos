@@ -43,6 +43,7 @@ from titan_diag import collect as diag_collect, detect as diag_detect, format_di
 from titan_issues import nanobot_classify, post_finding, existing_fingerprints, github_token, origin_repo
 from titan_fix import develop_and_ship, nanobot_ready
 from titan_reports import pull_reports, fill_selected_logs, reports_as_findings
+from titan_pair import pull_pair, format_pair
 from titan_rom import (
     LEDGER_NAME,
     PROP_KEYS,
@@ -1227,6 +1228,9 @@ class Flasher(QMainWindow):
         self.btn_diag = self._btn("RUN DIAGNOSTICS")
         self.btn_diag.clicked.connect(self._force_diag)
         v.addWidget(self.btn_diag)
+        self.btn_pair = self._btn("NANOBOT AUTH")
+        self.btn_pair.clicked.connect(self._sync_pair)
+        v.addWidget(self.btn_pair)
         return w
 
     def _pins_tab(self, combo_css: str, list_css: str) -> QWidget:
@@ -1602,6 +1606,26 @@ class Flasher(QMainWindow):
             self.line.setText("no usb adb for diag")
             return
         self._maybe_diag(ser)
+
+    def _sync_pair(self) -> None:
+        ser = ""
+        if self.usb.currentText() and self.usb.currentText() in usb_adb():
+            ser = self.usb.currentText()
+        elif usb_adb():
+            ser = usb_adb()[0]
+        if not ser:
+            self.line.setText("no usb adb for nanobot pair")
+            return
+        self.line.setText("nanobot pair USB")
+        threading.Thread(target=self._pair_worker, args=(ser,), daemon=True).start()
+
+    def _pair_worker(self, serial: str) -> None:
+        try:
+            meta = pull_pair(serial, adb_bin(), tool_env())
+            text = format_pair(meta)
+        except Exception as e:
+            text = "nanobot pair failed: %s" % e
+        self.bridge.diag.emit(text)
 
     def _maybe_diag(self, serial: str) -> None:
         if self._busy:

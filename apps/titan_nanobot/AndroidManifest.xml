@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.nanobot"
-    android:versionCode="99"
-    android:versionName="1.8.7-ce-wipe">
+    android:versionCode="100"
+    android:versionName="1.8.8-pair">
 
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
 

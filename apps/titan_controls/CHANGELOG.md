@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.65-nanobot-auth (665) — 2026-08-23T16:55Z
+
+### rebuild 2026-08-23T16:55Z · 16.65-nanobot-auth (665)
+
+- Rebuild (ALLOW_ROOT=0)
+
+
+- Nanobot auth button syncs host-pair via Atlas
+
+---
+
 ## 16.64-report (664) — 2026-08-23T16:24Z
 
 

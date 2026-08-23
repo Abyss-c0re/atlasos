@@ -110,6 +110,8 @@ public final class AtlasAuthPlane {
             case "adb":
             case "remoteadb":
             case "remote_adb":
+            case "nanobot":
+            case "pair":
                 return true;
             default:
                 return false;

@@ -94,4 +94,39 @@ public final class NanobotWire {
             if (c != null) c.disconnect();
         }
     }
+
+    public static org.json.JSONObject pairReceipt() {
+        for (String p : new String[]{
+            "/data/local/tmp/nanobot_home/pair.json",
+            "/data/local/tmp/titan2_nanobot_pair.json",
+            "/data/misc/titan2/titan2_nanobot_pair.json"
+        }) {
+            File f = new File(p);
+            if (!f.isFile()) continue;
+            try (BufferedReader br = new BufferedReader(
+                    new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) sb.append(line);
+                if (sb.length() > 0) return new JSONObject(sb.toString());
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
+    /** Tell on-device Nanobot to finish host-pair after Atlas grant cookie. */
+    public static boolean requestPairSync(android.content.Context ctx) {
+        if (ctx == null) return false;
+        try {
+            android.content.Intent i = new android.content.Intent("com.titanus2.nanobot.OPS");
+            i.setPackage("com.titanus2.nanobot");
+            i.putExtra("op", "pair_sync");
+            ctx.getApplicationContext().sendBroadcast(i);
+            return true;
+        } catch (Exception e) {
+            Log.w(TAG, "requestPairSync", e);
+            return false;
+        }
+    }
+
 }

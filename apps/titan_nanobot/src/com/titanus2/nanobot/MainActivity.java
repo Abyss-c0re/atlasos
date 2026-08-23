@@ -84,6 +84,7 @@ public class MainActivity extends Activity {
     private TextView authBanner;
     private TextView lanUrlView;
     private TextView tokenView;
+    private TextView pairStatus;
     private TextView policySum;
     private Switch swLan;
     private Switch swDevice;
@@ -804,6 +805,11 @@ public class MainActivity extends Activity {
                 PrivacyPrefs.setAtlasAuth(this, v);
                 toast(v ? "Atlas auth ON — capture/mutate asks Atlas" : "Atlas auth off");
             }));
+        Button pairAuth = pill("Nanobot auth · sync pair", true);
+        pairAuth.setOnClickListener(v -> runPairSync());
+        col.addView(pad(pairAuth));
+        pairStatus = mono("pair: tap to sync via Atlas auth");
+        col.addView(pairStatus);
         col.addView(sw("a11y UI control (taps/apps)", PrivacyPrefs.a11yControl(this),
             (b, v) -> {
                 PrivacyPrefs.setA11yControl(this, v);
@@ -1393,6 +1399,28 @@ public class MainActivity extends Activity {
         String be = currentBackend == null ? "?" : currentBackend;
         String m = currentModel == null || currentModel.isEmpty() ? "—" : currentModel;
         return be + " · " + m + " · " + lanIp() + ":" + NanobotRuntime.PORT;
+    }
+
+
+    private void runPairSync() {
+        if (pairStatus != null) pairStatus.setText("Asking Atlas…");
+        toast("Nanobot auth…");
+        io.execute(() -> {
+            final org.json.JSONObject r = PairSync.sync(this, true);
+            h.post(() -> {
+                boolean ok = r.optBoolean("ok", false);
+                String via = r.optString("via", "");
+                String err = r.optString("error", "");
+                String url = r.optString("url", "");
+                if (pairStatus != null) {
+                    pairStatus.setText(ok
+                        ? ("pair ready via=" + via + (url.isEmpty() ? "" : "\n" + url))
+                        : ("pair failed via=" + via + " " + err));
+                }
+                toast(ok ? "Nanobot pair ready" : ("pair failed: " + err));
+                refreshSettings();
+            });
+        });
     }
 
     private void refreshSettings() {

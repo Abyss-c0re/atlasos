@@ -185,7 +185,7 @@ public class MainActivity extends Activity {
         // Wireless ADB = classic :5555 for Tailscale/LTE/Wi‑Fi after opt-in —
         // not stock Settings "Wireless debugging".
         UiKit.navRow(root, "Developer",
-            "Remote ADB · USB ADB · debug",
+            "Remote ADB · nanobot auth · USB ADB",
             () -> startActivity(new Intent(this, DevToolsActivity.class)));
         // LAW: every build stamps CHANGELOG → assets; hub must expose it.
         String verLine = "build";

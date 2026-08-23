@@ -1,4 +1,4 @@
-versionName=16.64-report
-versionCode=664
-built_utc=2026-08-23T16:24Z
+versionName=16.65-nanobot-auth
+versionCode=665
+built_utc=2026-08-23T16:55Z
 allow_root=0

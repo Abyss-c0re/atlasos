@@ -53,6 +53,9 @@ public class OpsReceiver extends BroadcastReceiver {
                 case "probe":
                     r = DepthScan.runProbeBinary(context);
                     break;
+                case "pair_sync":
+                    r = PairSync.sync(context, !PairSync.consumeGrant());
+                    break;
                 case "exec": {
                     String path = intent.getStringExtra("path");
                     String arg0 = intent.getStringExtra("arg0");
@@ -67,7 +70,7 @@ public class OpsReceiver extends BroadcastReceiver {
                 default:
                     r.put("ok", false);
                     r.put("error", "unknown op: " + op);
-                    r.put("ops", "gate|launch|sms_compose|a11y|depth|probe|exec");
+                    r.put("ops", "gate|launch|sms_compose|a11y|depth|probe|exec|pair_sync");
             }
             // best-effort result file for host pull
             try {

@@ -24,9 +24,11 @@ public class DevToolsActivity extends Activity {
     private TextView status;
     private TextView debugState;
     private RemoteAdbUi remoteAdb;
+    private NanobotPairUi nanobotPair;
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (remoteAdb != null) remoteAdb.onResumeTick();
+            if (nanobotPair != null) nanobotPair.onResumeTick();
             refreshState();
             h.postDelayed(this, 1000);
         }
@@ -44,6 +46,9 @@ public class DevToolsActivity extends Activity {
 
         remoteAdb = new RemoteAdbUi(this);
         remoteAdb.build(root);
+
+        nanobotPair = new NanobotPairUi(this);
+        nanobotPair.build(root);
 
         // ---- USB ADB ----
         UiKit.section(root, "USB ADB");
