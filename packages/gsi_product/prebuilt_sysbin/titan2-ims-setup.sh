@@ -203,7 +203,7 @@ ims_slot_for_sub() {
 ims_slot_absent() {
   _i=$1
   case "$_i" in
-    0|1|2|3) ;;
+    0|1) ;;
     *) return 0 ;;
   esac
   _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
