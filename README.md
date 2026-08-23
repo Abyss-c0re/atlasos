@@ -98,6 +98,33 @@ The Android tree is **local** (`.links/lineage`, gitignored). Tens of GB.
 Hybrid super needs **your** region-matching Unihertz zip (`STOCK_ZIP=`).
 That firmware is not in this git. Cross-region vendor is forbidden.
 
+## Cube Flasher (host)
+
+Desktop manager for pins and GSI. Ships its own `adb` / `fastboot`
+(`tools/cube_flasher/platform-tools/`). **USB only** — no tcpip ADB, no
+hardcoded serials. The device list is whatever is on the cable right now.
+
+```bash
+./tools/cube_flasher/cube-flasher
+```
+
+| Control | Job |
+|---------|-----|
+| **BUILD** | Kitchen-cook a hybrid super |
+| **BUILD AND FLASH** | Cook, then write the new pin over USB |
+| **FLASH SELECTED** | Write a listed pin |
+| **BUILD GSI** | AtlasOS GSI (`vanilla` / `microg` / `gapps`) |
+| **PULL GITHUB** | Fast-forward this repo from `origin` |
+| Pins / GSI tabs | Sort, multi-select, delete |
+
+ETA is estimated from the selected options and last real cook/flash/GSI
+times. Progress is live from the child process — leftover `100%` logs are
+ignored.
+
+Hybrid cook and flash need the optional workshop sibling `titanus2` (stock
+zip, kitchen, flash script). GSI build and Git pull work from this clone.
+Nothing writes a device until you press a flash button.
+
 ## Layout
 
 | Path | Role |
@@ -109,6 +136,7 @@ That firmware is not in this git. Cross-region vendor is forbidden.
 | `config/flavors.yaml` | vanilla / microg / gapps |
 | `config/modules.yaml` | Remotes + unpublished in-tree |
 | `scripts/sync-modules.sh` | Pull remotes into `.links/upstream/` |
+| `tools/cube_flasher/` | Host Cube Flasher + bundled USB adb/fastboot |
 
 Apps without a public remote stay here until split (see modules.yaml).
 
