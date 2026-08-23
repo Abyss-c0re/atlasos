@@ -462,10 +462,11 @@ ims_apply_sub_defaults() {
   settings put global preferred_network_mode 9 2>/dev/null || true
   settings put global preferred_network_mode1 9 2>/dev/null || true
   settings put global preferred_network_mode2 9 2>/dev/null || true
-  # Pixel IMS-class carrier config on active + both slots
-  ims_pixel_cc_force_slot "$_slot"
-  ims_pixel_cc_force_slot 0
-  ims_pixel_cc_force_slot 1
+  # Pixel IMS-class carrier config on the bind pin only (1|2|both).
+  # Never poke both trays as a fix. ABSENT skip is inside the primitive.
+  for _s in `ims_wanted_slots`; do
+    ims_pixel_cc_force_slot "$_s"
+  done
 }
 
 # One-shot IMS actions from Titan Controls (never downloads random APKs).
