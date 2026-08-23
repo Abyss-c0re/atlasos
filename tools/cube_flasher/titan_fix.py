@@ -95,15 +95,7 @@ def is_abyss_core(login: str | None = None) -> bool:
         return True
     if explicit:
         return False
-    email = ""
-    try:
-        email = subprocess.check_output(
-            [git_bin(), "config", "user.email"], text=True, timeout=4, env=git_env()
-        ).strip().lower()
-    except Exception:
-        pass
-    if email.endswith("@abyss-core.com") or email.endswith("@abyss-c0re.com"):
-        return True
+    # Runtime gh login only u2014 never match a mailbox string from the tree.
     return False
 
 def _allowed_path(rel: str) -> bool:

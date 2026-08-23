@@ -5,6 +5,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from titan_diag import redact
+
 REMOTE_DIRS = (
     "/data/misc/titan2/reports",
     "/data/local/tmp/titan2_reports",
@@ -72,7 +74,7 @@ def reports_as_findings(reports: list[dict]) -> list[dict]:
         rid = str(r.get("id") or "report").replace(" ", "")[:32]
         kind = r.get("kind") or "bug"
         title = (r.get("title") or rid)[:120]
-        comment = (r.get("comment") or "")[:800]
+        comment = redact((r.get("comment") or "")[:800])
         out.append(
             {
                 "id": "report-%s" % rid.lower(),

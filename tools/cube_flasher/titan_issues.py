@@ -9,6 +9,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from titan_diag import redact
+
 HERE = Path(__file__).resolve().parent
 GITHUB = re.compile(r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/.]+)")
 
@@ -114,7 +116,7 @@ def issue_body(finding: dict, snap: dict) -> str:
             snap.get("device_tag") or "",
             snap.get("model") or snap.get("device") or "",
             snap.get("lineage") or "",
-            finding.get("detail") or "",
+            redact(finding.get("detail") or ""),
         )
     )
 

@@ -5,6 +5,16 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.64-report (664) — 2026-08-23T16:24Z
+
+
+- Report: bug / feature with comment, selected logs, attached shots
+- Hub Calls screen: binder / MTK / VoLTE + Heal
+- Heal writes Settings.Global so pad-agent sees it rootless
+- Settings → Calls stays the only voice pin
+
+---
+
 ## 16.63-no-ghost-sim (663) — 2026-08-23T08:17Z
 
 ### rebuild 2026-08-23T08:18Z · 16.63-no-ghost-sim (663)
