@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Cube Flasher
+GenericName=Titan pin manager
+Comment=Configure, cook, and flash Titan pins from the kitchen
+Exec=/home/voldemar/Dev/device-workshop/products/titanus2/tools/cube_flasher/cube-flasher
+Path=/home/voldemar/Dev/device-workshop/products/titanus2/tools/cube_flasher
+Icon=/home/voldemar/Dev/device-workshop/products/titanus2/tools/cube_flasher/cube-flasher.png
+Terminal=false
+Categories=Development;System;
+Keywords=Titan;Flash;Kitchen;Cube;ROM;
+StartupNotify=true
+StartupWMClass=cube_flasher
