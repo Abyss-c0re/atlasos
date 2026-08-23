@@ -65,7 +65,7 @@ public final class ImsCalls {
     public static int slotForSub(Context ctx, int subId) {
         if (ctx == null || subId <= 0) return -1;
         for (SimCards.Card c : SimCards.list(ctx)) {
-            if (c != null && c.subId == subId && c.slot >= 0) return c.slot;
+            if (c != null && c.subId == subId && (c.slot == 0 || c.slot == 1)) return c.slot;
         }
         return -1;
     }
