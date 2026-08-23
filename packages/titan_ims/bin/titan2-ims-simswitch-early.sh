@@ -29,7 +29,7 @@ calls_want() {
     --where "_id=$_sub" 2>/dev/null \
     | sed -n 's/.*sim_id=\([0-9][0-9]*\).*/\1/p' | head -1`
   case "$_slot" in
-    0|1|2|3) echo $((_slot + 1)) ;;
+    0|1) echo $((_slot + 1)) ;;
     *) echo "" ;;
   esac
 }
@@ -38,14 +38,14 @@ want=
 src=
 _calls=`calls_want`
 case "$_calls" in
-  [1234]) want=$_calls; src=settings_calls ;;
+  [12]) want=$_calls; src=settings_calls ;;
 esac
 
 # Boot-early only: phone/settings may be down at post-fs-data.
 if [ -z "$want" ]; then
   _p=$(getprop persist.radio.titan2_simswitch 2>/dev/null | tr -d '\r\n ')
   case "$_p" in
-    [1234]) want=$_p; src=persist.radio.titan2_simswitch ;;
+    [12]) want=$_p; src=persist.radio.titan2_simswitch ;;
   esac
 fi
 if [ -z "$want" ]; then
@@ -58,7 +58,7 @@ if [ -z "$want" ]; then
   done
 fi
 case "$want" in
-  [1234]) ;;
+  [12]) ;;
   *)
     logt "no Calls tray yet"
     exit 0
