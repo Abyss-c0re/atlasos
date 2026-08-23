@@ -42,7 +42,13 @@ case "$_calls" in
 esac
 
 # Boot-early only: phone/settings may be down at post-fs-data.
+# After boot, persist is cache only. Do not poke a ghost tray if Calls mapping failed.
 if [ -z "$want" ]; then
+  _bc=$(getprop sys.boot_completed 2>/dev/null | tr -d '\r\n ')
+  if [ "$_bc" = "1" ]; then
+    logt "Calls tray gone after boot; not using persist cache"
+    exit 0
+  fi
   _p=$(getprop persist.radio.titan2_simswitch 2>/dev/null | tr -d '\r\n ')
   case "$_p" in
     [12]) want=$_p; src=persist.radio.titan2_simswitch ;;
