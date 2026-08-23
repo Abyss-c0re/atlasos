@@ -336,10 +336,35 @@ ims_pixel_cc_force_slot() {
   cmd phone cc set-value -s "$_s" -p carrier_vt_available_bool false 2>/dev/null || true
 }
 
+# ABSENT / empty slot has no ImsPhone. Heal must not poke it every tick.
+ims_slot_absent() {
+  _i=$1
+  case "$_i" in
+    0|1|2|3) ;;
+    *) return 0 ;;
+  esac
+  _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
+  _n=0
+  _oldifs=$IFS
+  IFS=,
+  for _p in $_st; do
+    if [ "$_n" = "$_i" ]; then
+      IFS=$_oldifs
+      case "$_p" in ABSENT|"") return 0 ;; *) return 1 ;; esac
+    fi
+    _n=$((_n + 1))
+  done
+  IFS=$_oldifs
+  return 0
+}
+
 # Bind + enable MtkIms for one slot (MMTEL feature).
 ims_bind_slot() {
   _s=$1
-  [ -n "$_s" ] || return 0
+  if ims_slot_absent "$_s"; then
+    log "ims bind skip absent slot=$_s"
+    return 0
+  fi
   cmd phone ims set-ims-service -s "$_s" -c com.mediatek.ims 2>/dev/null || true
   cmd phone ims set-ims-service -s "$_s" -d com.mediatek.ims 2>/dev/null || true
   cmd phone ims set-ims-service -s "$_s" -c -f 1 com.mediatek.ims 2>/dev/null || true
