@@ -1217,6 +1217,7 @@ public final class BluetoothHidClient {
             );
             java.util.concurrent.Executor ex = r -> main.post(r);
             boolean ok = hid.registerApp(sdp, qos, qos, ex, hidCallback);
+            Log.i(TAG, "registerApp ok=" + ok + " qos=BEST_EFFORT");
             if (ok) {
                 setStatus("registering as keyboard…");
             } else {
@@ -1301,17 +1302,21 @@ public final class BluetoothHidClient {
     }
 
     private boolean mouseBlockedByTyping() {
+        // Host-mouse freeze while typing (BT exclusive must still honor pause).
         if (readPlaneInt("titan2_pad_cursor_pause", 0) == 1) return true;
         long act = readPlaneLong("titan2_key_activity", 0L);
         if (act <= 0L) return false;
-        if (act > 10000000000L) act = act / 1000L;
-        long age = (System.currentTimeMillis() / 1000L) - act;
-        if (age < 0L || age > 3L) return false;
+        long now = System.currentTimeMillis();
+        long actMs = act;
+        // Plane may store epoch seconds or milliseconds.
+        if (actMs < 10_000_000_000L) actMs *= 1000L;
+        long age = now - actMs;
+        if (age < 0L) return false;
         int cool = readPlaneInt("titan2_pad_cursor_cool_ms", 0);
         if (cool < 100) cool = readPlaneInt("titan2_pad_cursor_pause_ms", 500);
         if (cool < 100) cool = 500;
         if (cool > 5000) cool = 5000;
-        return age * 1000L < (long) cool;
+        return age < (long) cool;
     }
 
     private static int readPlaneInt(String name, int def) {
@@ -1378,24 +1383,25 @@ public final class BluetoothHidClient {
             }
             connectingMac = normMac(d.getAddress());
             if (connectInFlight || hidIsConnecting()) {
-                Log.i(TAG, "hid.connect skipped u2014 already in flight");
+                Log.i(TAG, "hid.connect skipped — already in flight");
                 return false;
             }
             forbidHostAudio(d);
-            setStatus("connecting " + safeName(d) + "u2026");
+            setStatus("connecting " + safeName(d) + "…");
             connectInFlight = true;
             boolean c = hid.connect(d);
             Log.i(TAG, "hid.connect " + safeName(d) + " ok=" + c);
             if (!c) {
                 connectInFlight = false;
                 bumpReconnectBackoff();
-                setStatus("connect failed u2014 is PC Bluetooth on?");
+                setStatus("connect failed — is PC Bluetooth on?");
                 connectingMac = "";
             }
             notifyHosts();
             return c;
         } catch (Exception e) {
             Log.w(TAG, "connectDevice", e);
+            connectInFlight = false;
             setStatus("connect failed");
             connectingMac = "";
             notifyHosts();
@@ -1512,8 +1518,12 @@ public final class BluetoothHidClient {
         if (mouseDropGate.get()) {
             return false;
         }
-        if (mouseBlockedByTyping() && (dx != 0 || dy != 0 || wheel != 0)) {
-            return true;
+        // Freeze host mouse while typing: drop REL/wheel/new clicks.
+        // Pure button-up still flows (stuck-click release). forceMouseButtonUp
+        // uses sendReport directly and bypasses this path.
+        if (mouseBlockedByTyping()) {
+            if (dx != 0 || dy != 0 || wheel != 0) return true;
+            if ((buttons & 0x07) != 0) return true;
         }
         synchronized (mouseLock) {
             pendButtons = buttons & 0x07;
@@ -1661,8 +1671,12 @@ public final class BluetoothHidClient {
         if (mouseDropGate.get()) {
             return false;
         }
-        if (mouseBlockedByTyping() && (dx != 0 || dy != 0 || wheel != 0)) {
-            return true;
+        // Freeze host mouse while typing: drop REL/wheel/new clicks.
+        // Pure button-up still flows (stuck-click release). forceMouseButtonUp
+        // uses sendReport directly and bypasses this path.
+        if (mouseBlockedByTyping()) {
+            if (dx != 0 || dy != 0 || wheel != 0) return true;
+            if ((buttons & 0x07) != 0) return true;
         }
         // Snapshot drop epoch so a release during sendReport cannot be undone
         // by lastSent rewrite or residual reflush (B6 2.01).

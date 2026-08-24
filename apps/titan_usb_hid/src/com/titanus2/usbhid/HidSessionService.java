@@ -392,7 +392,10 @@ public class HidSessionService extends Service {
     public static void start(Context ctx, boolean mouse, boolean grab) {
         SharedPreferences p = ctx.getSharedPreferences("usb_hid", MODE_PRIVATE);
         int t = p.getInt("transport", HidControl.TRANSPORT_USB);
-        boolean so = p.getBoolean("screen_off", false);
+        // BT sessions default screen_off=true so swipe does not kill FGS.
+        // Do not overwrite an explicit user false once persisted.
+        boolean soDefault = (t & HidControl.TRANSPORT_BT) != 0;
+        boolean so = p.contains("screen_off") ? p.getBoolean("screen_off", soDefault) : soDefault;
         start(ctx, mouse, grab, true, t, so);
     }
 
@@ -623,6 +626,12 @@ public class HidSessionService extends Service {
             screenOffOk = prefs.getBoolean("screen_off", true);
         }
         if (transport == 0) transport = HidControl.TRANSPORT_USB;
+        // BT HID hold: first-run / unset screen_off defaults true (keep FGS on swipe).
+        // Never clobber an explicit persisted false.
+        if ((transport & HidControl.TRANSPORT_BT) != 0 && !prefs.contains("screen_off")) {
+            screenOffOk = true;
+            try { prefs.edit().putBoolean("screen_off", true).apply(); } catch (Exception ignored) {}
+        }
 
         // B2: exclusive START must win over sticky Type softCompose. applySession
         // used to demote grab/keys to soft-only when softCompose was left true,
@@ -1077,8 +1086,20 @@ public class HidSessionService extends Service {
     @Override
     public void onTaskRemoved(Intent rootIntent) {
         // Screen-off mode: keep session when user leaves app (swipe).
-        // Only end if they didn't opt into screen-off persistence.
+        // BT transport (prefs or plane) must not endSession on swipe — HID ACL dies.
         boolean bt = (transport & HidControl.TRANSPORT_BT) != 0;
+        if (!bt) {
+            try {
+                java.io.File f = new java.io.File("/data/misc/titan2/titan2_usb_hid_bt");
+                if (f.isFile()) {
+                    byte[] b = new byte[8];
+                    try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+                        int n = in.read(b);
+                        if (n > 0 && "1".equals(new String(b, 0, n).trim())) bt = true;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
         if (!screenOffOk && !bt) {
             endSessionInternal();
         }

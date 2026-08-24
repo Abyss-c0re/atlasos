@@ -63,4 +63,9 @@ if [ ! -f "$KS" ]; then
 fi
 "$BT/apksigner" sign --ks "$KS" --ks-pass pass:android --key-pass pass:android \
   --out "$ROOT/TitanUsbHid.apk" "$BUILD/aligned.apk"
+if [ -n "${CHANGELOG_NOTE:-}" ]; then
+  CL="$ROOT/CHANGELOG.txt"
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${CHANGELOG_NOTE}" >> "$CL"
+  echo "CHANGELOG: $CHANGELOG_NOTE"
+fi
 echo "OK $ROOT/TitanUsbHid.apk ($(stat -c%s "$ROOT/TitanUsbHid.apk") bytes) ALLOW_ROOT=$ALLOW_ROOT"
