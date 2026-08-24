@@ -481,7 +481,20 @@ public class HidSessionService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String act = intent != null ? intent.getAction() : null;
-        if (act == null) act = ACTION_START;
+        if (act == null) {
+            // System restart after START_STICKY / process death. Do not bring
+            // HID back if the user already Stopped (plane session=0).
+            boolean sessOn = false;
+            try {
+                String s = HidControl.readSessionPlane(this);
+                sessOn = "1".equals(s) || "true".equalsIgnoreCase(s);
+            } catch (Exception ignored) {}
+            if (!sessOn) {
+                stopSelf(startId);
+                return START_NOT_STICKY;
+            }
+            act = ACTION_START;
+        }
 
         if (ACTION_STOP.equals(act)) {
             endSessionInternal(true);
@@ -669,7 +682,7 @@ public class HidSessionService extends Service {
         h.postDelayed(notifTick, 2000);
         h.removeCallbacks(localInputTick);
         h.post(localInputTick);
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     /**
@@ -989,6 +1002,10 @@ public class HidSessionService extends Service {
         try { HidControl.setLocalInputPause(this, false); } catch (Exception ignored) {}
         localInputPaused = false;
         try { BluetoothHidClient.get().stop(); } catch (Exception ignored) {}
+        try {
+            getSharedPreferences("usb_hid", MODE_PRIVATE)
+                .edit().putBoolean("pending_start", false).apply();
+        } catch (Exception ignored) {}
         try {
             if (restorePad) HidControl.endSessionAndRestore(this);
             else HidControl.parkSession(this);

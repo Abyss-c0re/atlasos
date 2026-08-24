@@ -221,9 +221,14 @@ public final class BluetoothHidClient {
     private final Runnable reconnectTick = new Runnable() {
         @Override public void run() {
             if (!wantRunning.get()) return;
-            if (registered.get() && !ready.get() && preferredMac != null && !preferredMac.isEmpty())
-                connectPreferred();
-            main.postDelayed(this, 2500);
+            if (registered.get() && !ready.get() && preferredMac != null && !preferredMac.isEmpty()) {
+                if (!hidIsConnecting()) connectPreferred();
+            }
+            if (!wantRunning.get()) return;
+            long delay = reconnectBackoffMs;
+            if (delay < 4000L) delay = 4000L;
+            if (delay > 12000L) delay = 12000L;
+            main.postDelayed(this, delay);
         }
     };
     private final Runnable scanTimeout = () -> stopScan();
@@ -623,8 +628,15 @@ public final class BluetoothHidClient {
 
     public synchronized void stop() {
         wantRunning.set(false);
+        connectInFlight = false;
+        lastConnectAttemptMs = 0L;
         main.removeCallbacks(retryRegister);
         main.removeCallbacks(reconnectTick);
+        try {
+            if (appCtx != null)
+                appCtx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+                    .edit().putBoolean("pending_start", false).apply();
+        } catch (Exception ignored) {}
         stopScan();
         // 1.97 B6: host still needs button-up / empty kbd while proxy is live
         releaseHostInputBeforeDrop();
@@ -1032,12 +1044,8 @@ public final class BluetoothHidClient {
                 }
             } else if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(a)
                     || BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(a)) {
-                if (wantRunning.get() && registered.get() && !ready.get() && !connectInFlight) {
-                    main.postDelayed(() -> {
-                        if (wantRunning.get() && registered.get() && !ready.get() && !connectInFlight && !hidIsConnecting())
-                            connectPreferred();
-                    }, reconnectBackoffMs);
-                }
+                // ACL edges do not hid.connect u2014 reconnectTick is the only retry.
+
             }
         }
     };
@@ -1152,7 +1160,6 @@ public final class BluetoothHidClient {
                     if (wantRunning.get() && registered.get()) {
                         setStatus("disconnected — retrying " + preferredName());
                         connectingMac = preferredMac;
-                        scheduleRetry(800);
                     } else if (registered.get()) {
                         setStatus("ready — scan & pick a PC");
                     }
