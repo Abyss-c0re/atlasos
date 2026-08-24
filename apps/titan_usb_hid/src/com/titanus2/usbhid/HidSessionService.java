@@ -1078,7 +1078,8 @@ public class HidSessionService extends Service {
     public void onTaskRemoved(Intent rootIntent) {
         // Screen-off mode: keep session when user leaves app (swipe).
         // Only end if they didn't opt into screen-off persistence.
-        if (!screenOffOk) {
+        boolean bt = (transport & HidControl.TRANSPORT_BT) != 0;
+        if (!screenOffOk && !bt) {
             endSessionInternal();
         }
         super.onTaskRemoved(rootIntent);

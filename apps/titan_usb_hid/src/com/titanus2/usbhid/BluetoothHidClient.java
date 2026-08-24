@@ -19,6 +19,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
+import java.io.File;
+import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -201,6 +203,8 @@ public final class BluetoothHidClient {
      */
     private static final long MOUSE_CONGEST_NS = 25_000_000L;
     private long lastMouseSendNs;
+    private long reconnectBackoffMs = 2500L;
+    private volatile boolean connectInFlight;
 
     private final Runnable retryRegister = new Runnable() {
         @Override public void run() {
@@ -216,10 +220,13 @@ public final class BluetoothHidClient {
     private final Runnable reconnectTick = new Runnable() {
         @Override public void run() {
             if (!wantRunning.get()) return;
-            if (registered.get() && !ready.get() && preferredMac != null && !preferredMac.isEmpty())
-                connectPreferred();
-            // 2.5s — Link USB↔BT must reattach keyboard faster than 10s.
-            main.postDelayed(this, 2500);
+            if (registered.get() && !ready.get() && preferredMac != null && !preferredMac.isEmpty()) {
+                if (!connectInFlight && !hidIsConnecting()) connectPreferred();
+            }
+            long delay = reconnectBackoffMs;
+            if (delay < 2500L) delay = 2500L;
+            if (delay > 15000L) delay = 15000L;
+            main.postDelayed(this, delay);
         }
     };
     private final Runnable scanTimeout = () -> stopScan();
@@ -1028,11 +1035,11 @@ public final class BluetoothHidClient {
                 }
             } else if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(a)
                     || BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(a)) {
-                if (wantRunning.get() && registered.get() && !ready.get()) {
+                if (wantRunning.get() && registered.get() && !ready.get() && !connectInFlight) {
                     main.postDelayed(() -> {
-                        if (wantRunning.get() && registered.get() && !ready.get())
+                        if (wantRunning.get() && registered.get() && !ready.get() && !connectInFlight && !hidIsConnecting())
                             connectPreferred();
-                    }, 400);
+                    }, reconnectBackoffMs);
                 }
             }
         }
@@ -1123,6 +1130,7 @@ public final class BluetoothHidClient {
                 host = device;
                 ready.set(true);
                 connectingMac = "";
+                resetReconnectBackoff();
                 rememberHost(device);
                 // B6 1.99: Snapdragon may keep prior-link click/mods after re-pair.
                 // Pure all-up while the new ACL is live clears host residual.
@@ -1139,10 +1147,11 @@ public final class BluetoothHidClient {
                     resetMouseButtonBaseline();
                     BtMouseSock.resetSeq();
                     BtMouseSock.zeroAllMirrors();
+                    connectInFlight = false;
+                    bumpReconnectBackoff();
                     if (wantRunning.get() && registered.get()) {
                         setStatus("disconnected — retrying " + preferredName());
                         connectingMac = preferredMac;
-                        scheduleRetry(1200);
                     } else if (registered.get()) {
                         setStatus("ready — scan & pick a PC");
                     }
@@ -1227,6 +1236,111 @@ public final class BluetoothHidClient {
         }
     }
 
+    private boolean hidIsConnecting() {
+        if (hid == null || adapter == null) return connectInFlight;
+        try {
+            String mac = (connectingMac != null && !connectingMac.isEmpty()) ? connectingMac : preferredMac;
+            if (mac == null || mac.isEmpty()) return connectInFlight;
+            BluetoothDevice d = adapter.getRemoteDevice(mac);
+            return hid.getConnectionState(d) == BluetoothProfile.STATE_CONNECTING;
+        } catch (Exception e) {
+            return connectInFlight;
+        }
+    }
+
+    private void bumpReconnectBackoff() {
+        long n = reconnectBackoffMs <= 0L ? 2500L : reconnectBackoffMs * 2L;
+        if (n < 2500L) n = 2500L;
+        if (n > 15000L) n = 15000L;
+        reconnectBackoffMs = n;
+        Log.i(TAG, "reconnect backoff " + reconnectBackoffMs + "ms");
+    }
+
+    private void resetReconnectBackoff() {
+        reconnectBackoffMs = 2500L;
+        connectInFlight = false;
+    }
+
+    private void forbidHostAudio(BluetoothDevice d) {
+        if (d == null || adapter == null) return;
+        try {
+            java.lang.reflect.Method m = BluetoothAdapter.class.getMethod(
+                "setProfileConnectionPolicy", BluetoothDevice.class, int.class, int.class);
+            int off = 0;
+            try { off = BluetoothProfile.class.getField("CONNECTION_POLICY_FORBIDDEN").getInt(null); }
+            catch (Exception ignored) {}
+            Object a2 = m.invoke(adapter, d, BluetoothProfile.A2DP, off);
+            Object hs = m.invoke(adapter, d, BluetoothProfile.HEADSET, off);
+            Log.i(TAG, "audio policy off A2DP=" + a2 + " HEADSET=" + hs + " " + safeName(d));
+            return;
+        } catch (Exception ignored) {}
+        forbidHostAudioViaPriority(d, BluetoothProfile.A2DP);
+        forbidHostAudioViaPriority(d, BluetoothProfile.HEADSET);
+    }
+
+    private void forbidHostAudioViaPriority(BluetoothDevice d, final int profile) {
+        if (adapter == null || appCtx == null || d == null) return;
+        try {
+            adapter.getProfileProxy(appCtx, new BluetoothProfile.ServiceListener() {
+                @Override public void onServiceConnected(int pr, BluetoothProfile proxy) {
+                    try {
+                        java.lang.reflect.Method sp = proxy.getClass().getMethod(
+                            "setPriority", BluetoothDevice.class, int.class);
+                        Object r = sp.invoke(proxy, d, 0);
+                        Log.i(TAG, "setPriority 0 profile=" + pr + " -> " + r);
+                    } catch (Exception e) {
+                        Log.w(TAG, "setPriority profile=" + pr, e);
+                    }
+                    try { adapter.closeProfileProxy(pr, proxy); } catch (Exception ignored) {}
+                }
+                @Override public void onServiceDisconnected(int pr) {}
+            }, profile);
+        } catch (Exception e) {
+            Log.w(TAG, "forbid audio profile=" + profile, e);
+        }
+    }
+
+    private boolean mouseBlockedByTyping() {
+        if (readPlaneInt("titan2_pad_cursor_pause", 0) == 1) return true;
+        long act = readPlaneLong("titan2_key_activity", 0L);
+        if (act <= 0L) return false;
+        if (act > 10000000000L) act = act / 1000L;
+        long age = (System.currentTimeMillis() / 1000L) - act;
+        if (age < 0L || age > 3L) return false;
+        int cool = readPlaneInt("titan2_pad_cursor_cool_ms", 0);
+        if (cool < 100) cool = readPlaneInt("titan2_pad_cursor_pause_ms", 500);
+        if (cool < 100) cool = 500;
+        if (cool > 5000) cool = 5000;
+        return age * 1000L < (long) cool;
+    }
+
+    private static int readPlaneInt(String name, int def) {
+        String s = readPlane(name);
+        if (s == null || s.isEmpty()) return def;
+        try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
+    }
+
+    private static long readPlaneLong(String name, long def) {
+        String s = readPlane(name);
+        if (s == null || s.isEmpty()) return def;
+        try { return Long.parseLong(s.trim()); } catch (Exception e) { return def; }
+    }
+
+    private static String readPlane(String name) {
+        String[] roots = { "/data/misc/titan2/", "/data/local/tmp/" };
+        for (String r : roots) {
+            File f = new File(r + name);
+            if (!f.isFile()) continue;
+            try (FileInputStream in = new FileInputStream(f)) {
+                byte[] b = new byte[32];
+                int n = in.read(b);
+                if (n <= 0) continue;
+                return new String(b, 0, n, java.nio.charset.StandardCharsets.US_ASCII).trim();
+            } catch (Exception ignored) {}
+        }
+        return "";
+    }
+
     /** Connect to the user-selected preferred host only (no silent random pick). */
     private void connectPreferred() {
         if (!registered.get() || hid == null || adapter == null) return;
@@ -1263,11 +1377,19 @@ public final class BluetoothHidClient {
                 return false;
             }
             connectingMac = normMac(d.getAddress());
-            setStatus("connecting " + safeName(d) + "…");
+            if (connectInFlight || hidIsConnecting()) {
+                Log.i(TAG, "hid.connect skipped u2014 already in flight");
+                return false;
+            }
+            forbidHostAudio(d);
+            setStatus("connecting " + safeName(d) + "u2026");
+            connectInFlight = true;
             boolean c = hid.connect(d);
-            Log.i(TAG, "hid.connect " + safeName(d) + " → " + c);
+            Log.i(TAG, "hid.connect " + safeName(d) + " ok=" + c);
             if (!c) {
-                setStatus("connect failed — is PC Bluetooth on?");
+                connectInFlight = false;
+                bumpReconnectBackoff();
+                setStatus("connect failed u2014 is PC Bluetooth on?");
                 connectingMac = "";
             }
             notifyHosts();
@@ -1389,6 +1511,9 @@ public final class BluetoothHidClient {
         // late-settle still owns busy (fold→reflush stuck host button).
         if (mouseDropGate.get()) {
             return false;
+        }
+        if (mouseBlockedByTyping() && (dx != 0 || dy != 0 || wheel != 0)) {
+            return true;
         }
         synchronized (mouseLock) {
             pendButtons = buttons & 0x07;
@@ -1535,6 +1660,9 @@ public final class BluetoothHidClient {
         // (forceMouseButtonUp uses sendReport directly, not this path).
         if (mouseDropGate.get()) {
             return false;
+        }
+        if (mouseBlockedByTyping() && (dx != 0 || dy != 0 || wheel != 0)) {
+            return true;
         }
         // Snapshot drop epoch so a release during sendReport cannot be undone
         // by lastSent rewrite or residual reflush (B6 2.01).
