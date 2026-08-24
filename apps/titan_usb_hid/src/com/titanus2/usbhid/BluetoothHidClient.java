@@ -205,6 +205,7 @@ public final class BluetoothHidClient {
     private long lastMouseSendNs;
     private long reconnectBackoffMs = 2500L;
     private volatile boolean connectInFlight;
+    private long lastConnectAttemptMs;
 
     private final Runnable retryRegister = new Runnable() {
         @Override public void run() {
@@ -220,13 +221,9 @@ public final class BluetoothHidClient {
     private final Runnable reconnectTick = new Runnable() {
         @Override public void run() {
             if (!wantRunning.get()) return;
-            if (registered.get() && !ready.get() && preferredMac != null && !preferredMac.isEmpty()) {
-                if (!connectInFlight && !hidIsConnecting()) connectPreferred();
-            }
-            long delay = reconnectBackoffMs;
-            if (delay < 2500L) delay = 2500L;
-            if (delay > 15000L) delay = 15000L;
-            main.postDelayed(this, delay);
+            if (registered.get() && !ready.get() && preferredMac != null && !preferredMac.isEmpty())
+                connectPreferred();
+            main.postDelayed(this, 2500);
         }
     };
     private final Runnable scanTimeout = () -> stopScan();
@@ -1131,6 +1128,7 @@ public final class BluetoothHidClient {
                 ready.set(true);
                 connectingMac = "";
                 resetReconnectBackoff();
+                forbidHostAudio(device);
                 rememberHost(device);
                 // B6 1.99: Snapdragon may keep prior-link click/mods after re-pair.
                 // Pure all-up while the new ACL is live clears host residual.
@@ -1138,6 +1136,8 @@ public final class BluetoothHidClient {
                 setStatus("connected " + safeName(device));
                 notifyHosts();
             } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
+                connectInFlight = false;
+                lastConnectAttemptMs = 0L;
                 if (host != null && host.equals(device)) {
                     // B6 1.99: release while host ref still valid (stop path only
                     // covered intentional disconnect; remote drop left stuck click).
@@ -1152,6 +1152,7 @@ public final class BluetoothHidClient {
                     if (wantRunning.get() && registered.get()) {
                         setStatus("disconnected — retrying " + preferredName());
                         connectingMac = preferredMac;
+                        scheduleRetry(800);
                     } else if (registered.get()) {
                         setStatus("ready — scan & pick a PC");
                     }
@@ -1382,19 +1383,19 @@ public final class BluetoothHidClient {
                 return false;
             }
             connectingMac = normMac(d.getAddress());
-            if (connectInFlight || hidIsConnecting()) {
-                Log.i(TAG, "hid.connect skipped — already in flight");
+            long now = android.os.SystemClock.uptimeMillis();
+            if (lastConnectAttemptMs > 0L && (now - lastConnectAttemptMs) < 800L) {
+                Log.i(TAG, "hid.connect gap skip");
                 return false;
             }
-            forbidHostAudio(d);
-            setStatus("connecting " + safeName(d) + "…");
+            lastConnectAttemptMs = now;
+            setStatus("connecting " + safeName(d) + "...");
             connectInFlight = true;
             boolean c = hid.connect(d);
             Log.i(TAG, "hid.connect " + safeName(d) + " ok=" + c);
             if (!c) {
                 connectInFlight = false;
-                bumpReconnectBackoff();
-                setStatus("connect failed — is PC Bluetooth on?");
+                setStatus("connect failed - is PC Bluetooth on?");
                 connectingMac = "";
             }
             notifyHosts();
