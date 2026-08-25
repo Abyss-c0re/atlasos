@@ -1816,7 +1816,9 @@ int main(int argc, char **argv) {
         if (rfd >= 0) { i_r = np; pf[np].fd = rfd; pf[np].events = POLLIN; np++; }
         if (sfd >= 0) { i_s = np; pf[np].fd = sfd; pf[np].events = POLLIN; np++; }
         if (sfd_abs >= 0) { i_sa = np; pf[np].fd = sfd_abs; pf[np].events = POLLIN; np++; }
-        int pr = poll(pf, np, 8);
+        int poll_ms = 8;
+        if (!mouse_on && !keys_on) poll_ms = 250;
+        int pr = poll(pf, np, poll_ms);
         if (pr < 0) {
             if (errno == EINTR) continue;
             break;
