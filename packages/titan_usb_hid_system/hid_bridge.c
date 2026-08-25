@@ -1794,6 +1794,20 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "bridge start keys_on=%d local_input=%d\n", keys_on, local_input_pause);
     while (g_run) {
+        if (mouse_on && rfd < 0) {
+            static long long miss_try_ms;
+            static int miss_back_ms = 200;
+            long long n = now_ms();
+            if (n - miss_try_ms >= miss_back_ms) {
+                miss_try_ms = n;
+                rfd = reopen_rel_mouse(-1, 1, relpath, sizeof relpath);
+                if (rfd >= 0) miss_back_ms = 200;
+                else {
+                    miss_back_ms *= 2;
+                    if (miss_back_ms > 2000) miss_back_ms = 2000;
+                }
+            }
+        }
         struct pollfd pf[6];
         int np = 0;
         int i_k = -1, i_p = -1, i_r = -1, i_s = -1, i_sa = -1;
@@ -2045,16 +2059,32 @@ int main(int argc, char **argv) {
 
         /* relative mouse (titan2-touchpadd / titan2-virtual-mouse) */
         if (i_r >= 0 && (pf[i_r].revents & (POLLERR | POLLHUP | POLLNVAL))) {
-            uint8_t prev_btn = buttons;
-            fprintf(stderr, "virt mouse fd error — reopen\n");
-            rfd = reopen_rel_mouse(rfd, 1, relpath, sizeof relpath);
-            i_r = -1; /* poll list rebuilt next loop */
-            /* Preserve latch: re-read BTN state instead of forcing host button-up. */
-            buttons = mouse_buttons_from_fd(rfd);
-            if (buttons != prev_btn && hid_m >= 0)
-                emit_mouse(hid_m, buttons, 0, 0, 0, 0);
-            else if (buttons && hid_m >= 0)
-                emit_mouse(hid_m, buttons, 0, 0, 0, 0); /* reassert hold */
+            /* Dead virt-mouse fd: drop it. Keeping the old fd re-POLLERRs
+             * every 8ms and burns a core (log + reopen) while pad/HID is idle. */
+            static long long last_reopen_ms;
+            static long long last_reopen_log_ms;
+            static int reopen_backoff_ms = 100;
+            long long now = now_ms();
+            if (rfd >= 0) { close(rfd); rfd = -1; }
+            if (now - last_reopen_ms >= reopen_backoff_ms) {
+                last_reopen_ms = now;
+                rfd = reopen_rel_mouse(-1, 1, relpath, sizeof relpath);
+                if (rfd >= 0) {
+                    reopen_backoff_ms = 100;
+                    uint8_t prev_btn = buttons;
+                    buttons = mouse_buttons_from_fd(rfd);
+                    if (buttons != prev_btn && hid_m >= 0 && !mouse_blocked_by_typing())
+                        emit_mouse(hid_m, buttons, 0, 0, 0, 0);
+                } else {
+                    reopen_backoff_ms *= 2;
+                    if (reopen_backoff_ms > 2000) reopen_backoff_ms = 2000;
+                    if (now - last_reopen_log_ms > 5000) {
+                        last_reopen_log_ms = now;
+                        fprintf(stderr, "virt mouse missing - retry %dms\n", reopen_backoff_ms);
+                    }
+                }
+            }
+            i_r = -1;
         } else if (i_r >= 0 && (pf[i_r].revents & POLLIN)) {
             struct input_event ev;
             int dx = 0, dy = 0, wheel = 0, dirty = 0;

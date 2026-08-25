@@ -23,7 +23,7 @@ PIDF=${PIDF:-/data/local/tmp/titan2_sp.pid}
 # INTERVAL 0.05 → dumpsys sensor_privacy ~20/s reheats load≈16 and delayed
 # key UP looks like multi-fire (InputReader KeyRepeatTimeout). 1s steady +
 # wake-file impulse is the single-owner path.
-INTERVAL_S=${INTERVAL_S:-1}
+INTERVAL_S=${INTERVAL_S:-3}
 
 log() {
   echo "$(date +%Y%m%dT%H%M%S) $*" >>"$LOG" 2>/dev/null
@@ -741,6 +741,12 @@ fi
 # v39-yield-live-belt: never kill a live belt mid-aux_pub.
 log "titan2-sensor-privacy ONLINE v39-yield-live-belt (never kill mid-HI847S heal)"
 seed_qs_tiles
+# Reboot drops fabricated chrome. Restore human picks once, no Monet JSON.
+if [ -x /system/bin/titan2-cube-icons.sh ]; then
+  sh /system/bin/titan2-cube-icons.sh chrome-restore \
+    >/data/misc/titan2/titan2_chrome_restore.out 2>&1 || true
+  log "chrome restore (boot)"
+fi
 TICK=0
 [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 200000 ] && : >"$LOG"
 
@@ -768,6 +774,46 @@ while true; do
         fi
         log "settings icons apply (wake)"
         ;;
+      app_icons|icons_preset)
+        if [ -x /system/bin/titan2-cube-icons.sh ]; then
+          sh /system/bin/titan2-cube-icons.sh icons-preset \
+            >/data/misc/titan2/titan2_icon_apply.out 2>&1 || true
+          chmod 666 /data/misc/titan2/titan2_icon_apply.out \
+            /data/misc/titan2/titan2_icon_accent \
+            /data/misc/titan2/titan2_icon_plate \
+            /data/local/tmp/titan2_icon_accent \
+            /data/local/tmp/titan2_icon_plate 2>/dev/null || true
+        fi
+        log "app icons color apply (wake)"
+        ;;
+      os_accent|accent_preset)
+        if [ -x /system/bin/titan2-cube-icons.sh ]; then
+          sh /system/bin/titan2-cube-icons.sh accent-preset \
+            >/data/misc/titan2/titan2_accent_apply.out 2>&1 || true
+          chmod 666 /data/misc/titan2/titan2_os_accent \
+            /data/local/tmp/titan2_os_accent \
+            /data/misc/titan2/titan2_accent_apply.out 2>/dev/null || true
+        fi
+        log "os accent apply (wake)"
+        ;;
+      nav_tint|nav_preset)
+        if [ -x /system/bin/titan2-cube-icons.sh ]; then
+          sh /system/bin/titan2-cube-icons.sh nav-preset \
+            >/data/misc/titan2/titan2_nav_apply.out 2>&1 || true
+          chmod 666 /data/misc/titan2/titan2_nav_tint \
+            /data/local/tmp/titan2_nav_tint 2>/dev/null || true
+        fi
+        log "navbar tint apply (wake)"
+        ;;
+      qs_bg|qs_preset)
+        if [ -x /system/bin/titan2-cube-icons.sh ]; then
+          sh /system/bin/titan2-cube-icons.sh qs-bg \
+            >/data/misc/titan2/titan2_qs_apply.out 2>&1 || true
+          chmod 666 /data/misc/titan2/titan2_qs_bg \
+            /data/local/tmp/titan2_qs_bg 2>/dev/null || true
+        fi
+        log "qs background apply (wake)"
+        ;;
       mic_block) mic_block 2>/dev/null || true; last_mic=1 ;;
       mic_allow) mic_allow 2>/dev/null || true; last_mic=0 ;;
     esac
@@ -786,7 +832,7 @@ while true; do
       touch "${MARKER}.idle" 2>/dev/null
     fi
     torch_bridge_tick
-    sleep 0.2
+    sleep 1
     continue
   fi
   rm -f "${MARKER}.idle" 2>/dev/null
