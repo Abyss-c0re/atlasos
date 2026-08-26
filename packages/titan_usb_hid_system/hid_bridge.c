@@ -1429,16 +1429,40 @@ static int open_rel_mouse_grab(const char *relpath) {
 
 /* Open the preferred mouse node with exclusive grab. On EBUSY of virtual-mouse
  * (orient-rel owns it), wait for titan2-orient-mouse and grab that instead. */
+static int grab_named_rel_mouse(const char *name, char *relpath, size_t relsz) {
+    char path[256];
+    path[0] = '\0';
+    if (find_by_name(name, path, sizeof path) != 0)
+        return -1;
+    int fd = open_rel_mouse_grab(path);
+    if (fd < 0)
+        return -1;
+    if (relpath && relsz) {
+        strncpy(relpath, path, relsz - 1);
+        relpath[relsz - 1] = '\0';
+    }
+    mouse_pre_oriented = (strstr(name, "orient-mouse") != NULL);
+    return fd;
+}
+
 static int open_best_rel_mouse_grab(char *relpath, size_t relsz) {
     load_orient();
     if (!relpath[0]) {
         if (wait_rel_mouse(relpath, relsz) != 0)
-            return -1;
+            relpath[0] = '\0';
     }
-    int fd = open_rel_mouse_grab(relpath);
+    if (relpath[0]) {
+        int fd = open_rel_mouse_grab(relpath);
+        if (fd >= 0)
+            return fd;
+    }
+    /* orient-mouse EBUSY must not starve virt-mouse (LongClick / dbltap-hold). */
+    int fd = grab_named_rel_mouse("titan2-virtual-mouse", relpath, relsz);
     if (fd >= 0)
         return fd;
-    /* Stale path or race: rediscover (prefer orient-mouse when follow on). */
+    fd = grab_named_rel_mouse("titan2-touchpadd", relpath, relsz);
+    if (fd >= 0)
+        return fd;
     relpath[0] = '\0';
     if (wait_rel_mouse(relpath, relsz) != 0)
         return -1;
@@ -1723,7 +1747,7 @@ int main(int argc, char **argv) {
      */
     if (mouse_on) {
         rfd = open_best_rel_mouse_grab(relpath, sizeof relpath);
-        if (rfd < 0 && padpath[0]) {
+        if (rfd < 0 && padpath[0] && find_rel_mouse(relpath, sizeof relpath) != 0) {
             pfd = open(padpath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
             if (pfd >= 0) {
                 int gok = 0;
@@ -1801,7 +1825,7 @@ int main(int argc, char **argv) {
             if (n - miss_try_ms >= miss_back_ms) {
                 miss_try_ms = n;
                 rfd = reopen_rel_mouse(-1, 1, relpath, sizeof relpath);
-                if (rfd >= 0) miss_back_ms = 200;
+                if (rfd >= 0) { miss_back_ms = 200; if (pfd >= 0) close_mouse_fd(&pfd, 1); }
                 else {
                     miss_back_ms *= 2;
                     if (miss_back_ms > 2000) miss_back_ms = 2000;
@@ -2170,11 +2194,19 @@ int main(int argc, char **argv) {
                     if (pfd >= 0 && rfd >= 0)
                         close_mouse_fd(&pfd, 1);
                     if (rfd < 0 && padpath[0] && pfd < 0) {
-                        pfd = open(padpath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-                        if (pfd >= 0) {
-                            if (ioctl(pfd, EVIOCGRAB, 1) != 0) {
-                                close(pfd);
-                                pfd = -1;
+                        char probe[256];
+                        probe[0] = '\0';
+                        if (find_rel_mouse(probe, sizeof probe) == 0) {
+                            fprintf(stderr,
+                                "skip raw pad - virt mouse node %s (gestures)\n",
+                                probe);
+                        } else {
+                            pfd = open(padpath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+                            if (pfd >= 0) {
+                                if (ioctl(pfd, EVIOCGRAB, 1) != 0) {
+                                    close(pfd);
+                                    pfd = -1;
+                                }
                             }
                         }
                     }
@@ -2254,8 +2286,11 @@ int main(int argc, char **argv) {
                 last_slow = n;
                 if (mouse_on && rfd < 0) {
                     rfd = reopen_rel_mouse(-1, 1, relpath, sizeof relpath);
-                    if (rfd >= 0)
+                    if (rfd >= 0) {
+                        if (pfd >= 0)
+                            close_mouse_fd(&pfd, 1);
                         fprintf(stderr, "virt mouse recovered\n");
+                    }
                 }
                 /* hidg may reappear after cable reattach */
                 if (hid_k < 0) hid_k = open_hidg_index(0);
