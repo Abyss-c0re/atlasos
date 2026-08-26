@@ -597,6 +597,10 @@ public final class BluetoothHidClient {
             setStatus("Bluetooth off — tap Enable");
             return;
         }
+        if (preferredMac != null && !preferredMac.isEmpty()) {
+            try { forbidHostAudio(adapter.getRemoteDevice(preferredMac)); }
+            catch (Exception ignored) {}
+        }
         if (registered.get() && hid != null) {
             if (ready.get() && host != null) {
                 setStatus("connected " + safeName(host));
@@ -1246,6 +1250,14 @@ public final class BluetoothHidClient {
     }
 
     private boolean hidIsConnecting() {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (lastConnectAttemptMs > 0L && (now - lastConnectAttemptMs) > 8000L) {
+            if (connectInFlight) {
+                connectInFlight = false;
+                Log.i(TAG, "CONNECTING timed out - allow retry");
+            }
+            return false;
+        }
         if (hid == null || adapter == null) return connectInFlight;
         try {
             String mac = (connectingMac != null && !connectingMac.isEmpty()) ? connectingMac : preferredMac;
@@ -1395,6 +1407,12 @@ public final class BluetoothHidClient {
                 Log.i(TAG, "hid.connect gap skip");
                 return false;
             }
+            if (hidIsConnecting()) {
+                Log.i(TAG, "hid.connect skip - stack CONNECTING");
+                return false;
+            }
+            // A2DP/HFP off before ACL. After CONNECTED is too late.
+            forbidHostAudio(d);
             lastConnectAttemptMs = now;
             setStatus("connecting " + safeName(d) + "...");
             connectInFlight = true;
