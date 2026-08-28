@@ -333,10 +333,11 @@ public class HidSessionService extends Service {
     private void sampleLocalInputOffMain() {
         localPollExec.execute(() -> {
             if (!running || ending || grabMode || HidControl.isSoftCompose()) return;
-            boolean active;
-            try { active = LocalInputGuard.isLocalTextInputActive(HidSessionService.this); }
-            catch (Exception e) { active = false; }
-            h.post(() -> applyLocalInputNow(active));
+            boolean sample;
+            try { sample = LocalInputGuard.isLocalTextInputActive(HidSessionService.this); }
+            catch (Exception e) { sample = false; }
+            final boolean now = sample;
+            h.post(() -> applyLocalInputNow(now));
         });
     }
 
