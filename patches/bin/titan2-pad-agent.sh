@@ -1461,6 +1461,8 @@ _ensure_watch_daemons() {
   _ensure_typing_watch 2>/dev/null || true
   _ensure_side_key 2>/dev/null || true
   _ensure_key_watch 2>/dev/null || true
+  _ensure_peel_daemon titan2-wifi-heal.sh titan2-wifi-heal \
+    titan2_wifi_heal.pid titan2-wifi-heal.log watch 2>/dev/null || true
 }
 
 
