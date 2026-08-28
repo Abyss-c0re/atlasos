@@ -34,7 +34,7 @@ import java.util.List;
  * Multi-session like Termux: + / prev / next / close; Exit leaves the app.
  */
 public class MainActivity extends Activity implements AtlasTermClient.Host {
-    public static final String VERSION = "1.0.40-uid-lock";
+    public static final String VERSION = "1.0.42-hid-focus";
     private static final int MAX_SESSIONS = 8;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -306,8 +306,29 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        AtlasPrefs.publishHidFocus(this, false);
+        // Drop a coalesce that would never run while stopped.
+        if (termView != null) {
+            termView.forceRepaint();
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        AtlasPrefs.publishHidFocus(this, hasFocus);
+        if (hasFocus && termView != null) {
+            termView.forceRepaint();
+            termView.requestFocus();
+        }
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
+        AtlasPrefs.publishHidFocus(this, hasWindowFocus());
         // Re-apply theme (user may have changed Settings)
         TermTheme.applyToView(this, termView, root);
         if (extraKeys != null) extraKeys.applyTermChrome(this);
@@ -347,6 +368,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
             }
             updateStrip(null);
             if (termView != null) {
+                termView.forceRepaint();
                 termView.requestFocus();
                 if (!softImeWanted) {
                     setShowSoftInputOnFocus(termView, false);
@@ -394,6 +416,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
             updateStrip(null);
         } else {
             updateStrip(null);
+            if (termView != null) termView.forceRepaint();
         }
         if (termView != null) {
             termView.requestFocus();
@@ -1269,6 +1292,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
 
     @Override
     protected void onDestroy() {
+        AtlasPrefs.publishHidFocus(this, false);
         // Keep PTYs if keep-alive FGS holds the process (recents swipe).
         // Explicit Exit calls SessionHub.finishAll().
         if (!AtlasPrefs.keepAlive(this) || SessionHub.liveCount() == 0) {

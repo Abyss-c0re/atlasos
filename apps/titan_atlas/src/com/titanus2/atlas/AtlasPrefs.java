@@ -737,6 +737,28 @@ public final class AtlasPrefs {
             "android_access=" + a + "\ndebian_sudo=" + d + "\nandroid_su=" + s + "\n");
     }
 
+    /**
+     * Share-HID yield: 1 while Atlas terminal has window focus.
+     * HID LocalInputGuard treats this as a real local editor.
+     */
+    public static void publishHidFocus(Context c, boolean focused) {
+        String v = focused ? "1" : "0";
+        String[] roots = { "/data/local/tmp", "/data/misc/titan2" };
+        for (String root : roots) {
+            writePlaneLine(new java.io.File(root, "titan2_atlas_focused"), v);
+        }
+        try {
+            android.provider.Settings.Global.putString(
+                c.getContentResolver(), "titan2_atlas_focused", v);
+        } catch (Exception ignored) {}
+        try {
+            android.content.Intent i = new android.content.Intent("com.titanus2.hid.ATLAS_FOCUS");
+            i.setPackage("com.titanus2.usbhid");
+            i.putExtra("focused", focused);
+            c.sendBroadcast(i);
+        } catch (Exception ignored) {}
+    }
+
     private static void writePlaneLine(java.io.File f, String body) {
         try {
             java.io.File parent = f.getParentFile();

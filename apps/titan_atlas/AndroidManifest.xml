@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.atlas"
-    android:versionCode="168"
-    android:versionName="1.0.40-uid-lock">
+    android:versionCode="170"
+    android:versionName="1.0.42-hid-focus">
 
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
 
