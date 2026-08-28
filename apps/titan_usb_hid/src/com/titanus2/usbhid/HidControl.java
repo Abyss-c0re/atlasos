@@ -44,6 +44,8 @@ public final class HidControl {
      * (share only). Pad stays on the HID guest. Typing lock still samples keys.
      */
     public static final String LOCAL_INPUT = "titan2_usb_hid_local_input";
+    /** 1 = Atlas MainActivity has window focus u2014 share mode yields TitanKey. */
+    public static final String ATLAS_FOCUSED = "titan2_atlas_focused";
     /**
      * 1 = type with panel actually off (FGS + PARTIAL wake + service UDC/input).
      * Not a brightness lock. Plane for pad-agent / root service stay-awake.
@@ -256,11 +258,13 @@ public final class HidControl {
             case GRAB:
             case MOUSE:
             case LOCAL_INPUT:
+            case ATLAS_FOCUSED:
             case ON:
                 return true;
             default:
                 return name.startsWith("titan2_usb_hid_")
                     || name.startsWith("titan2_host_")
+                    || name.startsWith("titan2_atlas_")
                     || "titan2_pad_cursor_pause".equals(name)
                     || "titan2_pad_mode".equals(name);
         }

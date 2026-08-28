@@ -1048,8 +1048,15 @@ public final class BluetoothHidClient {
                 }
             } else if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(a)
                     || BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(a)) {
-                // ACL edges do not hid.connect u2014 reconnectTick is the only retry.
-
+                // ACL edges do not hid.connect; reconnectTick is the only retry.
+                if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(a) && d != null) {
+                    try {
+                        String mac = normMac(d.getAddress());
+                        if (preferredMac != null && preferredMac.equalsIgnoreCase(mac)) {
+                            forbidHostAudio(d);
+                        }
+                    } catch (Exception ignored) {}
+                }
             }
         }
     };
@@ -1255,6 +1262,15 @@ public final class BluetoothHidClient {
             if (connectInFlight) {
                 connectInFlight = false;
                 Log.i(TAG, "CONNECTING timed out - allow retry");
+                try {
+                    if (hid != null && adapter != null) {
+                        String mac = (connectingMac != null && !connectingMac.isEmpty())
+                            ? connectingMac : preferredMac;
+                        if (mac != null && !mac.isEmpty()) {
+                            hid.disconnect(adapter.getRemoteDevice(mac));
+                        }
+                    }
+                } catch (Exception ignored) {}
             }
             return false;
         }
@@ -1284,19 +1300,80 @@ public final class BluetoothHidClient {
 
     private void forbidHostAudio(BluetoothDevice d) {
         if (d == null || adapter == null) return;
+        int[] profiles = audioProfilesToForbid();
+        boolean policyOk = false;
         try {
             java.lang.reflect.Method m = BluetoothAdapter.class.getMethod(
                 "setProfileConnectionPolicy", BluetoothDevice.class, int.class, int.class);
             int off = 0;
             try { off = BluetoothProfile.class.getField("CONNECTION_POLICY_FORBIDDEN").getInt(null); }
             catch (Exception ignored) {}
-            Object a2 = m.invoke(adapter, d, BluetoothProfile.A2DP, off);
-            Object hs = m.invoke(adapter, d, BluetoothProfile.HEADSET, off);
-            Log.i(TAG, "audio policy off A2DP=" + a2 + " HEADSET=" + hs + " " + safeName(d));
-            return;
+            for (int pr : profiles) {
+                try {
+                    Object r = m.invoke(adapter, d, pr, off);
+                    Log.i(TAG, "audio policy off profile=" + pr + " -> " + r + " " + safeName(d));
+                    policyOk = true;
+                } catch (Exception e) {
+                    Log.w(TAG, "audio policy profile=" + pr, e);
+                }
+            }
         } catch (Exception ignored) {}
-        forbidHostAudioViaPriority(d, BluetoothProfile.A2DP);
-        forbidHostAudioViaPriority(d, BluetoothProfile.HEADSET);
+        if (!policyOk) {
+            for (int pr : profiles) forbidHostAudioViaPriority(d, pr);
+        }
+        dropHostAudioIfUp(d, profiles);
+    }
+
+    private static int[] audioProfilesToForbid() {
+        java.util.ArrayList<Integer> list = new java.util.ArrayList<>();
+        list.add(BluetoothProfile.A2DP);
+        list.add(BluetoothProfile.HEADSET);
+        try { list.add(BluetoothProfile.class.getField("LE_AUDIO").getInt(null)); }
+        catch (Exception ignored) {}
+        int[] out = new int[list.size()];
+        for (int i = 0; i < list.size(); i++) out[i] = list.get(i);
+        return out;
+    }
+
+    private void dropHostAudioIfUp(final BluetoothDevice d, int[] profiles) {
+        if (adapter == null || appCtx == null || d == null || profiles == null) return;
+        for (final int profile : profiles) {
+            try {
+                adapter.getProfileProxy(appCtx, new BluetoothProfile.ServiceListener() {
+                    @Override public void onServiceConnected(int pr, BluetoothProfile proxy) {
+                        try {
+                            try {
+                                java.lang.reflect.Method sp = proxy.getClass().getMethod(
+                                    "setPriority", BluetoothDevice.class, int.class);
+                                Object r = sp.invoke(proxy, d, 0);
+                                Log.i(TAG, "setPriority 0 profile=" + pr + " -> " + r);
+                            } catch (Exception ignored) {}
+                            try {
+                                java.lang.reflect.Method gp = proxy.getClass().getMethod(
+                                    "getConnectionState", BluetoothDevice.class);
+                                Object st = gp.invoke(proxy, d);
+                                int state = (st instanceof Integer) ? ((Integer) st).intValue() : -1;
+                                if (state == BluetoothProfile.STATE_CONNECTED
+                                        || state == BluetoothProfile.STATE_CONNECTING) {
+                                    java.lang.reflect.Method dc = proxy.getClass().getMethod(
+                                        "disconnect", BluetoothDevice.class);
+                                    Object r = dc.invoke(proxy, d);
+                                    Log.i(TAG, "audio drop profile=" + pr
+                                        + " state=" + state + " -> " + r);
+                                }
+                            } catch (Exception e) {
+                                Log.w(TAG, "audio drop profile=" + pr, e);
+                            }
+                        } finally {
+                            try { adapter.closeProfileProxy(pr, proxy); } catch (Exception ignored) {}
+                        }
+                    }
+                    @Override public void onServiceDisconnected(int pr) {}
+                }, profile);
+            } catch (Exception e) {
+                Log.w(TAG, "forbid audio profile=" + profile, e);
+            }
+        }
     }
 
     private void forbidHostAudioViaPriority(BluetoothDevice d, final int profile) {

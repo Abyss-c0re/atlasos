@@ -26,10 +26,13 @@ public final class LocalInputGuard {
     private LocalInputGuard() {}
 
     public static boolean isLocalTextInputActive(Context ctx) {
-        // ctx reserved for future non-dumpsys probes (Accessibility, etc.)
+        // Atlas terminal is not an IME EditText. Share mode must still yield
+        // TitanKey while Atlas is the focused window, then give HID the keys
+        // back when Atlas loses focus.
+        if (isAtlasFocused(ctx)) return true;
         String dump = dumpsysFocusLines();
-        if (dump == null || dump.isEmpty()) return false;
-        return parseFocusDump(dump);
+        if (dump != null && !dump.isEmpty() && parseFocusDump(dump)) return true;
+        return isAtlasWindowFocused();
     }
 
     /** Package-visible for tests / older callers. */
@@ -110,9 +113,55 @@ public final class LocalInputGuard {
             || low.contains("appcompatedittext")
             || low.contains("textinputedittext")
             || low.contains("textinputlayout")
+            // Atlas / Termux: custom editor, not an Android EditText.
+            || low.contains("terminalview")
+            || low.contains("com.titanus2.atlas")
             // Launcher all-apps search, custom search bars
             || low.contains("search")
             || low.contains("editable");
+    }
+
+    /** Atlas published plane + Settings.Global (instant path). */
+    static boolean isAtlasFocused(Context ctx) {
+        if (readFlag("titan2_atlas_focused")) return true;
+        if (ctx == null) return false;
+        try {
+            String g = android.provider.Settings.Global.getString(
+                ctx.getContentResolver(), "titan2_atlas_focused");
+            if (g != null) {
+                g = g.trim();
+                if ("1".equals(g) || "true".equalsIgnoreCase(g)) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    /** dumpsys window: Atlas MainActivity is the focused window. */
+    static boolean isAtlasWindowFocused() {
+        final String script =
+            "timeout 0.3 dumpsys window 2>/dev/null | "
+            + "grep -E 'mCurrentFocus=|mFocusedApp=' 2>/dev/null | head -n 8";
+        String dump = runCapture(new String[]{"sh", "-c", script}, 400);
+        if (dump == null || dump.isEmpty()) return false;
+        String low = dump.toLowerCase(Locale.US);
+        return low.contains("com.titanus2.atlas")
+            && (low.contains("mainactivity") || low.contains("terminal"));
+    }
+
+    private static boolean readFlag(String name) {
+        String[] roots = { "/data/misc/titan2/", "/data/local/tmp/" };
+        for (String r : roots) {
+            java.io.File f = new java.io.File(r + name);
+            if (!f.isFile()) continue;
+            try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+                byte[] b = new byte[16];
+                int n = in.read(b);
+                if (n <= 0) continue;
+                String s = new String(b, 0, n, StandardCharsets.US_ASCII).trim();
+                if ("1".equals(s) || "true".equalsIgnoreCase(s)) return true;
+            } catch (Exception ignored) {}
+        }
+        return false;
     }
 
     private static String dumpsysFocusLines() {

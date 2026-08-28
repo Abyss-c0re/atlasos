@@ -15,7 +15,9 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
+import android.database.ContentObserver;
 import android.os.PowerManager;
+import android.provider.Settings;
 import android.widget.RemoteViews;
 
 /**
@@ -35,6 +37,8 @@ public class HidSessionService extends Service {
     public static final String ACTION_DRAIN = "com.titanus2.usbhid.DRAIN";
     /** Controls published host_layout — re-seed keys_pause + drain specials. */
     public static final String ACTION_LAYOUT_PLANE = "com.titanus2.controls.action.LAYOUT_PLANE";
+    /** Atlas MainActivity window focus u2014 share mode yields TitanKey immediately. */
+    public static final String ACTION_ATLAS_FOCUS = "com.titanus2.hid.ATLAS_FOCUS";
     public static final String EXTRA_MOUSE = "mouse";
     public static final String EXTRA_GRAB = "grab";
     public static final String EXTRA_KEYS = "keys";
@@ -65,6 +69,8 @@ public class HidSessionService extends Service {
     private boolean screenOffOk = false;
     /** FB-HID-3: reassert session when display turns off / on. */
     private boolean screenReceiverRegistered = false;
+    private ContentObserver atlasFocusObs;
+    private BroadcastReceiver atlasFocusRx;
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             if (intent == null || !running || ending) return;
@@ -322,6 +328,28 @@ public class HidSessionService extends Service {
             localInputMisses = 0;
             try { HidControl.setLocalInputPause(this, false); } catch (Exception ignored) {}
         }
+    }
+
+    private void sampleLocalInputOffMain() {
+        localPollExec.execute(() -> {
+            if (!running || ending || grabMode || HidControl.isSoftCompose()) return;
+            boolean active;
+            try { active = LocalInputGuard.isLocalTextInputActive(HidSessionService.this); }
+            catch (Exception e) { active = false; }
+            h.post(() -> applyLocalInputNow(active));
+        });
+    }
+
+    /** Atlas focus broadcast / Settings observer: no IME debounce. */
+    private void applyLocalInputNow(boolean active) {
+        if (!running || ending || HidControl.isSoftCompose() || grabMode) {
+            if (grabMode) clearLocalInputPauseIfSet();
+            return;
+        }
+        if (!keysMode && !mouseMode) return;
+        localInputHits = active ? 1 : 0;
+        localInputMisses = active ? 0 : 2;
+        applyLocalInputSample(active);
     }
 
     private void applyLocalInputSample(boolean active) {
@@ -766,6 +794,7 @@ public class HidSessionService extends Service {
         } catch (Exception ignored) {
             screenReceiverRegistered = false;
         }
+        watchAtlasFocus();
     }
 
     private void unregisterScreenReceiver() {
@@ -774,6 +803,60 @@ public class HidSessionService extends Service {
             unregisterReceiver(screenReceiver);
         } catch (Exception ignored) {}
         screenReceiverRegistered = false;
+        dropAtlasFocusWatch();
+    }
+
+    private void watchAtlasFocus() {
+        if (atlasFocusObs != null) return;
+        atlasFocusObs = new ContentObserver(h) {
+            @Override public void onChange(boolean selfChange) {
+                if (!running || ending || grabMode) return;
+                if (LocalInputGuard.isAtlasFocused(HidSessionService.this)) {
+                    applyLocalInputNow(true);
+                    return;
+                }
+                sampleLocalInputOffMain();
+            }
+        };
+        try {
+            getContentResolver().registerContentObserver(
+                Settings.Global.getUriFor(HidControl.ATLAS_FOCUSED),
+                false, atlasFocusObs);
+        } catch (Exception e) {
+            atlasFocusObs = null;
+        }
+        if (atlasFocusRx == null) {
+            atlasFocusRx = new BroadcastReceiver() {
+                @Override public void onReceive(Context c, Intent intent) {
+                    if (!running || ending || grabMode) return;
+                    boolean want = intent.getBooleanExtra("focused", false)
+                        || LocalInputGuard.isAtlasFocused(HidSessionService.this);
+                    if (want) applyLocalInputNow(true);
+                    else sampleLocalInputOffMain();
+                }
+            };
+            try {
+                IntentFilter f = new IntentFilter(ACTION_ATLAS_FOCUS);
+                if (Build.VERSION.SDK_INT >= 33) {
+                    registerReceiver(atlasFocusRx, f, Context.RECEIVER_EXPORTED);
+                } else {
+                    registerReceiver(atlasFocusRx, f);
+                }
+            } catch (Exception e) {
+                atlasFocusRx = null;
+            }
+        }
+    }
+
+    private void dropAtlasFocusWatch() {
+        if (atlasFocusObs == null) return;
+        try { getContentResolver().unregisterContentObserver(atlasFocusObs); }
+        catch (Exception ignored) {}
+        atlasFocusObs = null;
+        if (atlasFocusRx != null) {
+            try { unregisterReceiver(atlasFocusRx); } catch (Exception ignored) {}
+            atlasFocusRx = null;
+        }
     }
 
     private void startDrainLoop() {
