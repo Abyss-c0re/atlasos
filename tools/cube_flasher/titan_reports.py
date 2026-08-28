@@ -24,15 +24,19 @@ LOG_CMDS = {
 def pull_reports(serial: str, adb: str, env: dict, dest: Path) -> list[dict]:
     dest.mkdir(parents=True, exist_ok=True)
     got: list[dict] = []
+    before = {str(m) for m in dest.rglob("report.json")}
+    pulled: list[str] = []
     for remote in REMOTE_DIRS:
         try:
-            subprocess.run(
+            r = subprocess.run(
                 [adb, "-s", serial, "pull", remote, str(dest)],
                 timeout=20,
                 env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+            if r.returncode == 0:
+                pulled.append(remote)
         except Exception:
             continue
     for meta in dest.rglob("report.json"):
@@ -44,7 +48,26 @@ def pull_reports(serial: str, adb: str, env: dict, dest: Path) -> list[dict]:
             continue
         obj["_dir"] = str(meta.parent)
         got.append(obj)
+    # PC now owns the copies. Drop them from the phone so Controls
+    # does not keep showing issues the workshop already has.
+    after = {str(m) for m in dest.rglob("report.json")}
+    if pulled and (after - before):
+        clear_phone_reports(serial, adb, env, pulled)
     return got
+
+
+def clear_phone_reports(serial: str, adb: str, env: dict, remotes=None) -> None:
+    for remote in (remotes or REMOTE_DIRS):
+        try:
+            subprocess.run(
+                [adb, "-s", serial, "shell", "rm", "-rf", remote],
+                timeout=15,
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            continue
 
 
 def fill_selected_logs(serial: str, adb_run, report: dict) -> None:
