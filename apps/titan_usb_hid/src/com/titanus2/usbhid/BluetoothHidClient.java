@@ -1049,11 +1049,14 @@ public final class BluetoothHidClient {
             } else if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(a)
                     || BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(a)) {
                 // ACL edges do not hid.connect; reconnectTick is the only retry.
-                if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(a) && d != null) {
+                if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(a)) {
                     try {
-                        String mac = normMac(d.getAddress());
-                        if (preferredMac != null && preferredMac.equalsIgnoreCase(mac)) {
-                            forbidHostAudio(d);
+                        BluetoothDevice dev = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                        if (dev != null) {
+                            String mac = normMac(dev.getAddress());
+                            if (preferredMac != null && preferredMac.equalsIgnoreCase(mac)) {
+                                forbidHostAudio(dev);
+                            }
                         }
                     } catch (Exception ignored) {}
                 }
