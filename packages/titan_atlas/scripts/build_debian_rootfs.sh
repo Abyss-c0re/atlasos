@@ -103,7 +103,7 @@ chmod 1777 "$WORKDIR/tmp" 2>/dev/null || true
 # Marker consumed by atlas-hybrid
 printf 'atlas-hybrid-rootfs %s %s %s\n' "$DISTRO" "$CODENAME" "$ARCH" \
   >"$WORKDIR/.atlas-hybrid-rootfs"
-printf 'peer=armbian-radxa-nio-12l\nbase=debian-%s\nram_peer=16G\nessentials=1\n' "$CODENAME" \
+printf 'peer=armbian-radxa-nio-12l\nbase=debian-%s\nram_peer=16G\nessentials=1\nlinux-first=1\n' "$CODENAME" \
   >"$WORKDIR/etc/atlas-hybrid-peer"
 
 # Essentials seed — network, editor, process tools. Supports user curl|bash installers
@@ -155,7 +155,13 @@ chroot /rootfs apt-get install -y -qq --no-install-recommends \
   sed \
   gawk \
   coreutils \
-  bash-completion
+  bash-completion \
+  man-db \
+  tmux \
+  htop \
+  tree \
+  dbus \
+  lsb-release
 # TLS trust for install scripts that follow redirects
 chroot /rootfs update-ca-certificates 2>/dev/null || true
 # minimal locale so tools stop complaining
@@ -167,7 +173,7 @@ chmod 1777 /rootfs/tmp /rootfs/var/tmp 2>/dev/null || true
 rm -f /rootfs/etc/apt/sources.list.d/debian.sources \
       /rootfs/etc/apt/sources.list.d/*.sources 2>/dev/null || true
 # hybrid marker: real-system seed
-printf 'atlas-essentials=2\n' >> /rootfs/etc/atlas-hybrid-peer
+printf 'atlas-essentials=2\nlinux-first=1\n' >> /rootfs/etc/atlas-hybrid-peer
 chroot /rootfs apt-get clean
 rm -rf /rootfs/var/lib/apt/lists/*
 umount /rootfs/proc /rootfs/sys /rootfs/dev 2>/dev/null || true
@@ -282,7 +288,7 @@ sha256sum "$TAR" | tee "$SHA"
   echo "codename=$CODENAME"
   echo "arch=$ARCH"
   echo "variant=docker-slim+essentials-v2"
-  echo "seed=ca-certificates,curl,wget,openssl,nano,vim-tiny,less,procps,psmisc,iproute2,iputils-ping,net-tools,dnsutils,locales,util-linux,cron,openssh-client,python3-minimal,git,file,sudo,hostname,xz-utils,tar,gzip,bzip2,unzip,findutils,grep,sed,gawk,coreutils,bash-completion"
+  echo "seed=ca-certificates,curl,wget,openssl,nano,vim-tiny,less,procps,psmisc,iproute2,iputils-ping,net-tools,dnsutils,locales,util-linux,cron,openssh-client,python3-minimal,git,file,sudo,hostname,xz-utils,tar,gzip,bzip2,unzip,findutils,grep,sed,gawk,coreutils,bash-completion,man-db,tmux,htop,tree,dbus,lsb-release"
   echo "no_proprietary_cli=1"
   echo "android_bins=via_android_exec_nsenter"
   echo "peer_board=radxa-nio-12l"

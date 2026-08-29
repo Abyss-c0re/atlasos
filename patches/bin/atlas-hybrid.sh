@@ -512,7 +512,8 @@ plane_read() {
 }
 
 plane_defaults() {
-  [ -f "$ST/titan2_atlas_mode" ] || plane_write titan2_atlas_mode android
+  # LINUX_FIRST: Debian is the userspace. Android is opt-in.
+  [ -f "$ST/titan2_atlas_mode" ] || plane_write titan2_atlas_mode debian
   [ -f "$ST/titan2_atlas_storage" ] || plane_write titan2_atlas_storage shared
   [ -f "$ST/titan2_atlas_trust" ] || plane_write titan2_atlas_trust normal
   [ -f "$ST/titan2_atlas_desktop" ] || plane_write titan2_atlas_desktop none
@@ -3163,7 +3164,7 @@ cmd_status() {
   [ -x "$MERGE/bin/bash" ] || [ -x "$MERGE/usr/bin/bash" ] && merge_bash=yes
   echo "merge_bash=$merge_bash"
   echo "uid=$(id -u 2>/dev/null)"
-  echo "mode=$(plane_read titan2_atlas_mode android)"
+  echo "mode=$(plane_read titan2_atlas_mode debian)"
   echo "storage=$(plane_read titan2_atlas_storage shared)"
   echo "trust=$(plane_read titan2_atlas_trust normal)"
   echo "desktop=$(plane_read titan2_atlas_desktop none)"
@@ -3854,7 +3855,7 @@ cmd_mode() {
   plane_defaults
   case "${1:-status}" in
     status|"")
-      echo "mode=$(plane_read titan2_atlas_mode android)"
+      echo "mode=$(plane_read titan2_atlas_mode debian)"
       ;;
     android)
       plane_write titan2_atlas_mode android
