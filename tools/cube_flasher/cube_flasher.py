@@ -1668,6 +1668,8 @@ class Flasher(LabMixin, QMainWindow):
         self.refresh_gsi()
         self._refresh_lab()
         self._refresh_eta()
+        if hasattr(self, "lab_job_done"):
+            self.lab_job_done(ok, msg)
         if not ok:
             self.line.setText(msg)
 
