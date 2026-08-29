@@ -93,7 +93,6 @@ def save(root: Path, exp: dict) -> dict:
     exp.setdefault("notes", "")
     p = _exp_path(root, exp["id"])
     p.write_text(json.dumps(exp, indent=2) + "\n")
-    _reindex(root)
     return exp
 
 
