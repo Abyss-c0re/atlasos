@@ -44,6 +44,8 @@ from titan_issues import nanobot_classify, post_finding, existing_fingerprints, 
 from titan_fix import develop_and_ship, nanobot_ready
 from titan_reports import pull_reports, fill_selected_logs, reports_as_findings
 from titan_pair import pull_pair, format_pair
+from lab_jobs import run_lab
+from lab_panel import LabMixin
 from titan_rom import (
     LEDGER_NAME,
     PROP_KEYS,
@@ -706,6 +708,8 @@ class Worker(threading.Thread):
                     save_eta("gsi_fresh" if job.get("fresh") else "gsi", time.time() - t0)
                 elif kind == "pull":
                     self._pull()
+                elif kind == "lab":
+                    run_lab(self, job)
             except Exception as e:
                 self._ph("fail", 0.05)
                 self._st("error: %s" % e)
@@ -1050,7 +1054,7 @@ class Worker(threading.Thread):
             self.bridge.finished.emit(False, "rc=%s" % rc)
 
 
-class Flasher(QMainWindow):
+class Flasher(LabMixin, QMainWindow):
     def __init__(self):
         super().__init__()
         self._busy = False
@@ -1161,6 +1165,7 @@ class Flasher(QMainWindow):
         tabs.addTab(self._titan_tab(list_css), "TITAN")
         tabs.addTab(self._pins_tab(combo_css, list_css), "PINS")
         tabs.addTab(self._gsi_tab(combo_css, list_css), "GSI")
+        tabs.addTab(self._lab_tab(list_css), "LAB")
         right.addWidget(tabs, 3)
 
         right.addWidget(self._lbl("ATLASOS / KITCHEN"))
@@ -1249,6 +1254,7 @@ class Flasher(QMainWindow):
 
         self.refresh_builds()
         self.refresh_gsi()
+        self._refresh_lab()
         self._refresh_eta()
         self._tick_dev()
 
@@ -1420,6 +1426,11 @@ class Flasher(QMainWindow):
             self.gsi_fresh.setEnabled(not busy)
         if getattr(self, "gsi_flavor", None) is not None:
             self.gsi_flavor.setEnabled(not busy)
+        for b in self._lab_btns():
+            if b is not None:
+                b.setEnabled(not busy)
+        if getattr(self, "lab_word", None) is not None:
+            self.lab_word.setEnabled(not busy)
 
     def _fill_list(self, widget: QListWidget, paths: list[Path], keep: set[str]) -> None:
         widget.clear()
@@ -1655,6 +1666,7 @@ class Flasher(QMainWindow):
         self.bar.setFormat("%p%")
         self.refresh_builds()
         self.refresh_gsi()
+        self._refresh_lab()
         self._refresh_eta()
         if not ok:
             self.line.setText(msg)
@@ -1833,6 +1845,8 @@ class Flasher(QMainWindow):
             else:
                 self.cube.set_phase("idle", 0.2)
         self._refresh_titan(adb[0] if adb else "", bool(fb))
+        if not self._busy:
+            self._refresh_lab()
 
     def closeEvent(self, ev) -> None:
         self.worker.stop()
