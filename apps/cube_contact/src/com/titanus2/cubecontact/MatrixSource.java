@@ -15,6 +15,8 @@ public enum MatrixSource {
     PEER("Peer cube", "Nanobot / braincube energy"),
     /** LAW counters from virtual.tsv (file SoT). */
     FILE_LAW("File LAW", "virtual.tsv scoreboard + seed lattice"),
+    /** Local cells.bin each tick. EEG if the file is fresh, else CPU. No network. */
+    SOT("SoT file", "cells.bin u2014 EEG if live, else CPU. No network"),
     /** Local crimson demo lattice (no peer). */
     DEMO("Demo lattice", "Built-in dense N=16 prophecy"),
     /** User custom seed from app prefs / API payload. */
@@ -36,6 +38,7 @@ public enum MatrixSource {
             String k = key.trim().toLowerCase(java.util.Locale.US);
             if (k.contains("kernel")) return KERNEL;
             if (k.contains("peer") || k.contains("brain") || k.contains("nanobot")) return PEER;
+            if (k.contains("sot") || k.contains("eeg") || k.contains("cpu")) return SOT;
             if (k.contains("file") || k.contains("law") || k.contains("virtual")) return FILE_LAW;
             if (k.contains("demo") || k.contains("seed")) return DEMO;
             if (k.contains("custom")) return CUSTOM;

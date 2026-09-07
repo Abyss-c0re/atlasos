@@ -534,10 +534,20 @@ public final class StateMatrix {
             dataSource = "file_law";
             return haveFrame;
         }
+        if (want == MatrixSource.SOT) {
+            return loadSotFile();
+        }
         if (want == MatrixSource.KERNEL) {
             if (loadKernelLattice()) return true;
             Log.w(TAG, "kernel cells.bin missing — fail closed (no demo)");
             return haveFrame;
+        }
+        // AUTO prefers fresh local SoT (EEG/CPU file) u2014 networkless lattice.
+        if (want == MatrixSource.AUTO) {
+            File sot = new File("/data/local/tmp/cubebrain_viz/cells.bin");
+            if (sot.isFile() && System.currentTimeMillis() - sot.lastModified() < 4000L) {
+                if (loadSotFile()) return true;
+            }
         }
         // PEER or AUTO — NexusCore 512-bit lattice first (Cube SoT).
         // BrainCube export is a dense meta cube; painting it solid is theater.
@@ -623,6 +633,55 @@ public final class StateMatrix {
             Log.w(TAG, "no live lattice — fail closed (no demo theater)");
         }
         return ok;
+    }
+
+    private boolean loadSotFile() {
+        File f = new File("/data/local/tmp/cubebrain_viz/cells.bin");
+        long age = (f.isFile() ? (System.currentTimeMillis() - f.lastModified()) : Long.MAX_VALUE);
+        if (age < 4000L && loadDumpFile(f)) {
+            loadNodeLabels(new File("/data/local/tmp/cubebrain_viz/nodes.tsv"));
+            source = "sot-eeg";
+            dataSource = "eeg";
+            return true;
+        }
+        if (applyCpuLattice()) {
+            source = "sot-cpu";
+            dataSource = "cpu";
+            return true;
+        }
+        if (loadDumpFile(f)) {
+            source = "sot-stale";
+            dataSource = "file";
+            return true;
+        }
+        return haveFrame;
+    }
+
+    private boolean applyCpuLattice() {
+        final int n = 8;
+        int need = n * n * n;
+        byte[] c = new byte[need];
+        int pct = 0;
+        try {
+            java.io.RandomAccessFile raf = new java.io.RandomAccessFile("/proc/stat", "r");
+            String line = raf.readLine();
+            raf.close();
+            if (line != null && line.startsWith("cpu ")) {
+                String[] p = line.trim().split("\s+");
+                if (p.length >= 5) {
+                    long u = Long.parseLong(p[1]);
+                    long n0 = Long.parseLong(p[2]);
+                    long s = Long.parseLong(p[3]);
+                    long id = Long.parseLong(p[4]);
+                    long tot = u + n0 + s + id;
+                    if (tot > 0) pct = (int) ((u + n0 + s) * 100L / tot);
+                }
+            }
+        } catch (Exception ignored) {}
+        for (int i = 0; i < 8; i++) c[i] = (byte) (pct > i * 12 ? 5 : 0);
+        for (int i = 8; i < 16; i++) c[i] = (byte) (pct > (i - 8) * 12 ? 4 : 0);
+        applyCells(n, c, null, false);
+        return true;
     }
 
     private boolean loadKernelLattice() {

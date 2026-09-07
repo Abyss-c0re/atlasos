@@ -1,0 +1,34 @@
+#!/bin/sh
+set -eu
+DIR=${CUBE_SOT_DIR:-}
+if [ -z "$DIR" ]; then
+  if [ -d /data/local/tmp ]; then DIR=/data/local/tmp/cubebrain_viz
+  elif [ -n "${HOME:-}" ]; then DIR=$HOME/.local/share/cubebrain_viz
+  else DIR=/tmp/cubebrain_viz; fi
+fi
+mkdir -p "$DIR"
+OUT=$DIR/cells.bin
+now=$(date +%s)
+if [ -f "$OUT" ]; then
+  mt=$(stat -c %Y "$OUT" 2>/dev/null || stat -f %m "$OUT")
+  age=$((now - mt))
+  [ "$age" -lt 3 ] && exit 0
+fi
+python3 - "$OUT" <<'PY'
+import os, sys
+path=sys.argv[1]; pct=0
+try:
+    line=open("/proc/stat").readline().split()
+    if line and line[0]=="cpu" and len(line)>=5:
+        u,n,s,idle=int(line[1]),int(line[2]),int(line[3]),int(line[4])
+        tot=u+n+s+idle
+        if tot: pct=int((u+n+s)*100/tot)
+except Exception:
+    pass
+cells=bytearray(512)
+for i in range(8):
+    cells[i]=5 if pct>i*12 else 0
+    cells[8+i]=4 if pct>i*12 else 0
+open(path+".tmp","wb").write(bytes([8])+cells)
+os.replace(path+".tmp", path)
+PY

@@ -1,0 +1,7 @@
+[Unit]
+Description=Cube lattice SoT (EEG file or CPU, no network)
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/cube-sot-watch
+[Install]
+WantedBy=multi-user.target
