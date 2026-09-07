@@ -472,7 +472,7 @@ public final class StateMatrix {
             merged = SensorPrefs.loadVirtualEntries(ctx);
         } else {
             File[] files = {
-                new File("/data/local/tmp/cubebrain_viz/virtual.tsv"),
+                CubeVizPath.virtual(),
                 new File("/data/user/0/com.titanus2.cubecontact/files/virtual.tsv"),
                 new File("/data/data/com.titanus2.cubecontact/files/virtual.tsv"),
             };
@@ -544,7 +544,7 @@ public final class StateMatrix {
         }
         // AUTO prefers fresh local SoT (EEG/CPU file) u2014 networkless lattice.
         if (want == MatrixSource.AUTO) {
-            File sot = new File("/data/local/tmp/cubebrain_viz/cells.bin");
+            File sot = CubeVizPath.findCells();
             if (sot.isFile() && System.currentTimeMillis() - sot.lastModified() < 4000L) {
                 if (loadSotFile()) return true;
             }
@@ -620,7 +620,7 @@ public final class StateMatrix {
         if (!ok && loadKernelLattice()) {
             return true;
         }
-        if (!ok && loadDumpFile(new File("/tmp/cubebrain_viz/cells.bin"))) {
+        if (!ok && loadDumpFile(CubeVizPath.findCells())) {
             source = "cells.bin";
             dataSource = "cube_experience_cells";
             ok = true;
@@ -636,10 +636,10 @@ public final class StateMatrix {
     }
 
     private boolean loadSotFile() {
-        File f = new File("/data/local/tmp/cubebrain_viz/cells.bin");
+        File f = CubeVizPath.findCells();
         long age = (f.isFile() ? (System.currentTimeMillis() - f.lastModified()) : Long.MAX_VALUE);
         if (age < 4000L && loadDumpFile(f)) {
-            loadNodeLabels(new File("/data/local/tmp/cubebrain_viz/nodes.tsv"));
+            loadNodeLabels(CubeVizPath.nodes());
             source = "sot-eeg";
             dataSource = "eeg";
             return true;
@@ -685,8 +685,8 @@ public final class StateMatrix {
     }
 
     private boolean loadKernelLattice() {
-        if (!loadDumpFile(new File("/data/local/tmp/cubebrain_viz/cells.bin"))) return false;
-        loadNodeLabels(new File("/data/local/tmp/cubebrain_viz/nodes.tsv"));
+        if (!loadDumpFile(CubeVizPath.findCells())) return false;
+        loadNodeLabels(CubeVizPath.nodes());
         source = "kernel_sensors";
         dataSource = "kernel_sensors";
         // Kernel only: map digits; never densify if already a real cube dump.

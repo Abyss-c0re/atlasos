@@ -25,7 +25,7 @@ import java.util.Set;
  *   /data/local/tmp/cubebrain_viz/catalog.tsv  name\tvalue\tgroup\tenabled
  */
 public final class SensorPrefs {
-    public static final String VIZ_DIR = "/data/local/tmp/cubebrain_viz";
+    public static final String VIZ_DIR = CubeVizPath.ANDROID_DIR;
     public static final String SELECTED = VIZ_DIR + "/selected.txt";
     public static final String VIRTUAL = VIZ_DIR + "/virtual.tsv";
     public static final String CATALOG = VIZ_DIR + "/catalog.tsv";
