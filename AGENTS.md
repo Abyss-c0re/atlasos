@@ -33,6 +33,9 @@ Writes `$HOME/exports/atlas-screenshot.png`. Do not invent `nsenter`, bare `/sys
   the ELF on an AtlasOS-built image. Workshop pin `20260804` still injects.
 - Product Recents / Home = Titan Controls `GLOBAL_ACTION_*`. Never
   `am start RecentsActivity`. Never `keyevent 187` as Recents.
+- Titan 2 USB `0e8d:0000` with `mtp,adb` **is ADB**. Never treat it as
+  dead preloader and never kill `adbd` because of that VID:PID. Preloader
+  is `0e8d:0003` / BROM, not `0000`.
 
 ## Build
 
