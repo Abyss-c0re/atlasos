@@ -197,6 +197,8 @@ public class SettingsActivity extends Activity {
         UiKit.section(root, "Debian image");
         hybridStatus = UiKit.mono(root);
         hybridStatus.setText("…");
+        debianUserStatus = UiKit.mono(root);
+        debianUserStatus.setText("…");
         refreshHybridStatus();
         boolean lp = HybridEnsure.debianLpLive();
         if (lp) {
@@ -226,6 +228,7 @@ public class SettingsActivity extends Activity {
         UiKit.flexButton(diskRow2, "Reinstall", this::confirmRebuild);
         UiKit.flexButton(diskRow2, "Wipe", this::confirmWipe);
         UiKit.button(root, "Fix home ownership", this::healHome);
+        UiKit.button(root, "Fix Debian uid", this::healDebianUid);
 
         UiKit.section(root, "Agent");
         UiKit.toggle(root, "Keep-alive notification", AtlasPrefs.keepAlive(this), on -> {
@@ -450,6 +453,18 @@ public class SettingsActivity extends Activity {
         });
     }
 
+    /** REG-UID: remake seed has no atlas row → ssh "No user exists for uid". */
+    private void healDebianUid() {
+        toast("Debian uid…");
+        runIo(() -> {
+            final String o = HybridEnsure.createLiveUid(SettingsActivity.this);
+            main.post(() -> {
+                toast(o);
+                refreshHybridStatus();
+            });
+        });
+    }
+
     private void runIo(Runnable r) {
         if (io == null || io.isShutdown() || io.isTerminated()) {
             io = Executors.newSingleThreadExecutor();
@@ -481,11 +496,13 @@ public class SettingsActivity extends Activity {
                 + (st != null && !st.trim().isEmpty() ? "\n" + st.trim() : "")
                 + (lp != null && !lp.trim().isEmpty() ? "\n" + lp.trim() : "");
             final String user = HybridEnsure.listDebianUsers();
+            final String uidFact = HybridEnsure.liveUidStatus();
             final String backs = HybridEnsure.backupSummary(SettingsActivity.this);
             final int logN = AtlasAuth.readLogTail(SettingsActivity.this, 500).size();
             final int bins = AtlasPrefs.managedBinCount(SettingsActivity.this);
             main.post(() -> {
                 if (hybridStatus != null) hybridStatus.setText(text);
+                if (debianUserStatus != null) debianUserStatus.setText(uidFact);
                 if (sizeLab != null) sizeLab.setText(sizeTargetLabel());
                 if (usersNav != null) UiKit.setNavSummary(usersNav, user);
                 if (backupsNav != null) UiKit.setNavSummary(backupsNav, backs);

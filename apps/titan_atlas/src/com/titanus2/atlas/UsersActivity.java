@@ -44,6 +44,7 @@ public class UsersActivity extends Activity {
         UiKit.section(root, "Shared identity");
         UiKit.note(root, "Use — this login on Android and Debian");
         summary = UiKit.summary(root);
+        UiKit.button(root, "Heal Debian uid", this::healDebianUid);
         UiKit.button(root, "Add user", this::showAdd);
         UiKit.button(root, "Set Debian root password", this::showRootPass);
         UiKit.section(root, "Users");
@@ -59,6 +60,18 @@ public class UsersActivity extends Activity {
             List<HybridEnsure.DebianUser> users =
                 HybridEnsure.loadDebianUsers(UsersActivity.this);
             main.post(() -> bind(users));
+        });
+    }
+
+    /** REG-UID: write atlas at the live Android app uid. Same as ensure-user. */
+    private void healDebianUid() {
+        toast("Debian uid…");
+        runIo(() -> {
+            final String o = HybridEnsure.createLiveUid(UsersActivity.this);
+            main.post(() -> {
+                toast(o);
+                reload();
+            });
         });
     }
 

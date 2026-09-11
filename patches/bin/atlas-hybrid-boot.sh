@@ -164,6 +164,9 @@ chmod 644 "$LOG" 2>/dev/null || true
       /data/local/atlas-home/atlas 2>/dev/null || true
     if [ -n "$AU" ] && [ "$AU" != "0" ]; then
       chown -R "$AU:$AU" /data/local/atlas-home/atlas 2>/dev/null || true
+      # REG-UID: remake seed has no atlas row. CE-unread ensure skips.
+      # Same command as HybridEnsure / atlas-hybrid.sh ensure-user. Never 10198.
+      ATLAS_DROP_UID="$AU" /system/bin/sh "$SCRIPT" ensure-user >>"$LOG" 2>&1 || true
     fi
     if [ -x /system/bin/atlas-lpctl ]; then
       /system/bin/atlas-lpctl home-ensure 2>&1 || true

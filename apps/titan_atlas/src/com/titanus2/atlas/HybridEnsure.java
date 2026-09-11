@@ -360,7 +360,11 @@ public final class HybridEnsure {
     public static void healthTick(Context c) {
         if (c == null) return;
         if (!AtlasPrefs.privilegedHybrid(c) && !NativeBin.debianRootPresent()) return;
-        if (NativeBin.hybridRootfsReady()) return;
+        if (NativeBin.hybridRootfsReady()) {
+            // Remake seed has no atlas row; hybrid UP is not uid-healed.
+            if (!liveUidPresent()) ensureLiveUidAsync(c);
+            return;
+        }
         // Product: never spam su from FGS when app cannot elevate
         if (!appCanElevate()) return;
         // Avoid hammering while ensure is running
@@ -385,6 +389,7 @@ public final class HybridEnsure {
         final Context app = c.getApplicationContext();
         // Rootless product: if overlay already up, OK; else skip su thrash
         if (NativeBin.hybridRootfsReady()) {
+            ensureLiveUidAsync(app);
             if (listener != null) {
                 mainH.post(() -> listener.onDone(true, 0, "already-ready"));
             }
