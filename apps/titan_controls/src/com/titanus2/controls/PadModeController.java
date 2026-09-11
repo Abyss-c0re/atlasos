@@ -208,7 +208,9 @@ public final class PadModeController {
      */
     public static void stopTouchpaddProcess(Context ctx) {
         try {
-            if (HostLayoutController.isHidExclusiveLiveFast(ctx)) return;
+            // Exclusive HID used to own the daemon even after Off. Honor Off.
+            if (HostLayoutController.isHidExclusiveLiveFast(ctx)
+                    && !OFF.equals(getMode(ctx))) return;
         } catch (Exception ignored) {}
         try {
             // B8 11.92: su only on ALLOW_ROOT lab builds. Release must never

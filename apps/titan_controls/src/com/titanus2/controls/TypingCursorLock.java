@@ -107,7 +107,7 @@ public final class TypingCursorLock {
 
     /**
      * Arm/refresh typing lock for any phone key activity (idle typing <b>and</b>
-     * Sym specials inject). Honors global enable; no-ops when exclusive HID owns mouse.
+     * Sym specials inject). Honors global enable. Also freezes the HID guest cursor.
      */
     public static void pulse(Context ctx) {
         if (ctx == null || !isEnabled(ctx)) return;

@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.68-pad-sot (668) — 2026-09-11T23:49Z
+
+- HID guest follows system pad mode and typing-lock delay
+
+---
+
 ## 16.67-typing-lock (667) — 2026-08-23T22:01Z
 
 - Typing lock holds pause=1 for the whole burst; pad motion does not unlock
