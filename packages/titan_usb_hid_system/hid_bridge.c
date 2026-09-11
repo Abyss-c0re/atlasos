@@ -62,6 +62,10 @@
 #define PAD_PAUSE_MS_PATH2 "/data/local/tmp/titan2_pad_cursor_pause_ms"
 #define PAD_PAUSE_PATH "/data/misc/titan2/titan2_pad_cursor_pause"
 #define PAD_PAUSE_PATH2 "/data/local/tmp/titan2_pad_cursor_pause"
+#define PAD_COOL_MS_PATH "/data/misc/titan2/titan2_pad_cursor_cool_ms"
+#define PAD_COOL_MS_PATH2 "/data/local/tmp/titan2_pad_cursor_cool_ms"
+#define PAD_MODE_PATH "/data/misc/titan2/titan2_pad_mode"
+#define PAD_MODE_PATH2 "/data/local/tmp/titan2_pad_mode"
 
 #define _GNU_SOURCE
 #include <errno.h>
@@ -77,6 +81,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -197,9 +202,33 @@ static int read_int_file(const char *a, const char *b, int def) {
     return v;
 }
 
+static int pad_mode_mouse = 0;
+
+static int read_pad_mode_is_mouse(void) {
+    char buf[32];
+    FILE *f = fopen(PAD_MODE_PATH, "r");
+    if (!f) f = fopen(PAD_MODE_PATH2, "r");
+    if (!f) return 0;
+    if (!fgets(buf, sizeof buf, f)) { fclose(f); return 0; }
+    fclose(f);
+    char *s = buf;
+    while (*s == 32 || *s == 9 || *s == 10 || *s == 13) s++;
+    size_t n = strlen(s);
+    while (n && (s[n-1] == 10 || s[n-1] == 13 || s[n-1] == 32)) s[--n] = 0;
+    if (!strcasecmp(s, "mouse") || !strcmp(s, "1") || !strcasecmp(s, "true") || !strcasecmp(s, "on"))
+        return 1;
+    return 0;
+}
+
+static void load_pad_mode(void) {
+    pad_mode_mouse = read_pad_mode_is_mouse();
+}
+
 static void load_typing_ms(void) {
-    /* Prefer shared Unlock delay (Controls typing lock) when set; else HID plane. */
-    int v = read_int_file(PAD_PAUSE_MS_PATH, PAD_PAUSE_MS_PATH2, 0);
+    /* Controls Unlock delay is SoT. HID titan2_usb_hid_typing_ms is fallback. */
+    int v = read_int_file(PAD_COOL_MS_PATH, PAD_COOL_MS_PATH2, 0);
+    if (v < 50)
+        v = read_int_file(PAD_PAUSE_MS_PATH, PAD_PAUSE_MS_PATH2, 0);
     if (v < 50)
         v = read_int_file(TYPING_MS_PATH, TYPING_MS_PATH2, DEFAULT_TYPING_MS);
     if (v < 0) v = 0;
@@ -478,6 +507,8 @@ static void note_typing(void) {
  * any key is held (hold-Backspace) OR within post-key cooldown (palm settle).
  */
 static int mouse_blocked_by_typing(void) {
+    /* Off/trackpad is system SoT u2014 do not keep a guest cursor alive. */
+    if (!pad_mode_mouse) return 1;
     if (phys_keys_held > 0) return 1;
     if (read_int_file(PAD_PAUSE_PATH, PAD_PAUSE_PATH2, 0) == 1) return 1;
     if (typing_guard_ms <= 0) return 0;
@@ -1668,6 +1699,7 @@ int main(int argc, char **argv) {
     want_hw_out = hw_out;
     if (want_hw_out) open_hw_out();
     load_typing_ms();
+    load_pad_mode();
     load_mouse_feel();
     load_orient();
     if (typing_guard_ms < 0) typing_guard_ms = 0;
@@ -1745,7 +1777,7 @@ int main(int argc, char **argv) {
      * Share yields only TitanKey to Android editors — never the pad.
      * Do NOT grab raw touchPad when virtual mouse exists (starves touchpadd).
      */
-    if (mouse_on) {
+    if (mouse_on && pad_mode_mouse) {
         rfd = open_best_rel_mouse_grab(relpath, sizeof relpath);
         if (rfd < 0 && padpath[0] && find_rel_mouse(relpath, sizeof relpath) != 0) {
             pfd = open(padpath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
@@ -1818,7 +1850,7 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "bridge start keys_on=%d local_input=%d\n", keys_on, local_input_pause);
     while (g_run) {
-        if (mouse_on && rfd < 0) {
+        if (mouse_on && pad_mode_mouse && rfd < 0) {
             static long long miss_try_ms;
             static int miss_back_ms = 200;
             long long n = now_ms();
@@ -2167,7 +2199,7 @@ int main(int argc, char **argv) {
              * touchpadd dead) or our mouse fd is already dead.
              * Epoch-only bumps used to close→ungrab→reopen every few seconds —
              * Android stole the virt mouse mid-session (host "unplug"). */
-            if (mouse_on && n - last_reload > 200) {
+            if (mouse_on && pad_mode_mouse && n - last_reload > 200) {
                 int epoch = read_int_file(PAD_EPOCH_PATH, PAD_EPOCH_PATH2, 0);
                 int regrab = read_int_file(PAD_REGRAB_PATH, PAD_REGRAB_PATH2, 0);
                 int need = 0;
@@ -2278,13 +2310,18 @@ int main(int argc, char **argv) {
             }
             static long long last_slow;
             if (n - last_slow > 1500) {
+                load_pad_mode();
+                if (!pad_mode_mouse) {
+                    if (rfd >= 0) close_mouse_fd(&rfd, 1);
+                    if (pfd >= 0) close_mouse_fd(&pfd, 1);
+                }
                 load_typing_ms();
                 load_mouse_feel();
                 load_orient();
                 load_specials_method(grab);
                 load_char_mod_owner();
                 last_slow = n;
-                if (mouse_on && rfd < 0) {
+                if (mouse_on && pad_mode_mouse && rfd < 0) {
                     rfd = reopen_rel_mouse(-1, 1, relpath, sizeof relpath);
                     if (rfd >= 0) {
                         if (pfd >= 0)

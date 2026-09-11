@@ -446,7 +446,6 @@ public final class HidControl {
                 restoreSoftImeAfterExclusive(ctx);
             }
             write(ctx, LOCAL_INPUT, "0");
-            try { write(ctx, "titan2_pad_cursor_pause", "0"); } catch (Exception ignored) {}
             // FB-IN-1 / 2.13: product default kcm; seed if empty only.
             // Exclusive Start must not force inject (plane is phone-path SoT;
             // exclusive map lives in-bridge when grab — see hid_bridge 0.16.14).
@@ -608,6 +607,7 @@ public final class HidControl {
         if (ms < 0) ms = 0;
         if (ms > 5000) ms = 5000;
         write(ctx, TYPING_MS, String.valueOf(ms));
+        // HID Off (0) follows Controls Unlock delay. Do not write 0 over SoT.
     }
 
     /**
@@ -829,15 +829,17 @@ public final class HidControl {
      * (soft pad does not need touchpadd grab).
      */
     public static void prepareDriverPad(Context ctx) {
-        // Always plane-first set mouse (no PadModeClient.get RPC). Idempotent
-        // setPadMode skips mtime thrash when already mouse (1.83).
+        // System pad mode is SoT. Forcing mouse here made Off/Trackpad
+        // on the phone still drive the HID guest cursor.
+        String mode = PadModeClient.OFF;
         try {
-            PadModeClient.set(ctx, PadModeClient.MOUSE);
+            mode = PadModeClient.normalize(PadModeClient.get(ctx));
         } catch (Exception ignored) {}
+        if (!PadModeClient.MOUSE.equals(mode)) {
+            return;
+        }
         try {
-            write(ctx, "titan2_pad_mode", "mouse");
-            // Keep shared input-surface plane from blocking HW pad during HID.
-            // If rear trackpad was on → both; else hw only.
+            // Already mouse: keep surface/inhibit coherent. Do not restamp mode.
             String surf = readPlaneAny(ctx, "titan2_input_surface");
             if (surf == null) surf = "";
             surf = surf.trim().toLowerCase();
@@ -847,8 +849,6 @@ public final class HidControl {
             write(ctx, "titan2_hw_pad_inhibit", "0");
             if (ctx != null) {
                 android.provider.Settings.Global.putString(
-                    ctx.getContentResolver(), "titan2_pad_mode", "mouse");
-                android.provider.Settings.Global.putString(
                     ctx.getContentResolver(), "titan2_input_surface", next);
                 android.provider.Settings.Global.putString(
                     ctx.getContentResolver(), "titan2_hw_pad_inhibit", "0");
@@ -857,8 +857,6 @@ public final class HidControl {
         if (!Root.available()) return;
         Root.runSu(
             "mkdir -p " + OS_CTRL + " /data/local/tmp; " +
-            "printf mouse > " + OS_CTRL + "/titan2_pad_mode; " +
-            "printf mouse > /data/local/tmp/titan2_pad_mode; " +
             "printf 0 > " + OS_CTRL + "/titan2_hw_pad_inhibit; " +
             "printf 0 > /data/local/tmp/titan2_hw_pad_inhibit; " +
             "cur=$(cat /data/local/tmp/titan2_input_surface 2>/dev/null); " +
@@ -1800,6 +1798,12 @@ public final class HidControl {
      * is available; file/Global fallback for early boot.
      */
     private static boolean isPadCursorPaused() {
+        try {
+            String mode = PadModeClient.normalize(PadModeClient.get(
+                (Context) Class.forName("android.app.ActivityThread")
+                    .getMethod("currentApplication").invoke(null)));
+            if (!PadModeClient.MOUSE.equals(mode)) return true;
+        } catch (Throwable ignored) {}
         try {
             Class<?> at = Class.forName("android.app.ActivityThread");
             Object cur = at.getMethod("currentApplication").invoke(null);

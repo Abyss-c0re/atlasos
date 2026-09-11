@@ -108,7 +108,7 @@ public final class Titan2ApiContract {
     public static final String FILE_PAD_EPOCH = "titan2_pad_epoch";
     /** One-shot: hid_bridge forces mouse rediscover when non-zero. */
     public static final String FILE_PAD_REGRAB = "titan2_pad_regrab";
-    /** 1 = freeze physical pad (typing lock) — never set while exclusive host mouse. */
+    /** 1 = freeze physical pad and HID guest mouse (typing lock / palm settle). */
     public static final String FILE_PAD_CURSOR_PAUSE = "titan2_pad_cursor_pause";
     /**
      * Functional top row (independent of pad body mode): 1 = caret slide + key

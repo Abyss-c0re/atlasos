@@ -207,13 +207,11 @@ public final class InputPlane {
     }
 
     /**
-     * Typing lock must not freeze pad when host owns mouse (HID exclusive /
-     * Moonlight intercepted host mouse disconnect thrash).
+     * Typing lock applies to the local pad and to the HID guest cursor.
+     * Exclusive host-mouse used to skip this and clicks landed while typing.
      */
     public static boolean allowTypingCursorLock(Context ctx) {
-        if (isExclusive(ctx)) return false;
-        if (isHostMouseLive(ctx)) return false;
-        return true;
+        return ctx != null;
     }
 
     /** Arm Sym-inject exclusive keys pause (does not change mouse). */

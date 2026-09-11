@@ -1403,6 +1403,15 @@ public final class BluetoothHidClient {
 
     private boolean mouseBlockedByTyping() {
         // Host-mouse freeze while typing (BT exclusive must still honor pause).
+        String mode = readPlane("titan2_pad_mode");
+        if (mode != null) {
+            mode = mode.trim().toLowerCase();
+            if (!mode.isEmpty() && !"mouse".equals(mode)
+                    && !"1".equals(mode) && !"true".equals(mode)
+                    && !"on".equals(mode)) {
+                return true;
+            }
+        }
         if (readPlaneInt("titan2_pad_cursor_pause", 0) == 1) return true;
         long act = readPlaneLong("titan2_key_activity", 0L);
         if (act <= 0L) return false;
