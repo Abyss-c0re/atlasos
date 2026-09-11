@@ -3,7 +3,7 @@
 # Geometry: square chrome RROs DROPPED 2026-07-21 (FGS pill NPE + mangled Settings).
 # Product: night + spike #FF141A via theme seed — never re-enable Titan*Square*.
 # Cyan #00E5FF was leftover OS seed; CubeAI/CubeUI ticket is mesh/cage/spike/void.
-# Called from titan2-display. Version: 16 (honor user theme/icons/font; no boot restamp)
+# Called from titan2-display. Version: 17 (honor shape/theme/DPI; chrome restore; no boot restamp)
 # Glow/mode from leftover Look (ThemePrefs) when the human picked a non-default:
 #   settings global titan2_ui_accent_argb  (hex without #, e.g. ffff141a or FF141A)
 #   settings global titan2_ui_day_night    day | night | auto
@@ -100,19 +100,10 @@ if [ -n "$_icons" ]; then
       logm "icons honor (no user glyph — not restamped)"
       ;;
   esac
-  _sm=$(settings get global titan2_settings_mono 2>/dev/null | tr -d '\r')
-  case "$_sm" in
-    1|true|on)
-      sh "$_icons" settings-on >/dev/null 2>&1 || true
-      logm "settings-icons restore"
-      ;;
-    0|false|off)
-      logm "settings-icons honor off"
-      ;;
-    *)
-      logm "settings-icons honor unset"
-      ;;
-  esac
+  # Never restamp Settings tiles on boot. KEEP_DATA titan2_settings_mono=1
+  # + remake was flattening every M3 leaf red. Theme Apply is the writer.
+  sh "$_icons" settings-off >/dev/null 2>&1 || true
+  logm "settings-icons off (no boot restamp)"
   _apps=$(settings get global titan2_icon_apps 2>/dev/null | tr -d '\r')
   case "$_apps" in
     1|true|on)
@@ -129,11 +120,23 @@ for _ov in com.titanus2.overlay.iconshape com.titanus2.overlay.settings_square c
     || cmd overlay disable --user 0 "$_ov" >/dev/null 2>&1 \
     || cmd overlay disable "$_ov" >/dev/null 2>&1 || true
 done
-# Safe Cube mask: enable when present (static product APK may already be force-enabled).
-cmd overlay enable --user current com.titanus2.overlay.cubemask >/dev/null 2>&1 \
-  || cmd overlay enable --user 0 com.titanus2.overlay.cubemask >/dev/null 2>&1 \
-  || cmd overlay enable com.titanus2.overlay.cubemask >/dev/null 2>&1 || true
-unset _ov
+# Honor launcher icon shape. Always-on cubemask undid circle/squircle after reboot.
+_shape=$(settings get global titan2_icon_shape 2>/dev/null | tr -d '\r')
+case "$_shape" in
+  circle|squircle|rounded_rect)
+    cmd overlay disable --user current com.titanus2.overlay.cubemask >/dev/null 2>&1 \
+      || cmd overlay disable --user 0 com.titanus2.overlay.cubemask >/dev/null 2>&1 \
+      || cmd overlay disable com.titanus2.overlay.cubemask >/dev/null 2>&1 || true
+    logm "cubemask honor off shape=$_shape"
+    ;;
+  *)
+    cmd overlay enable --user current com.titanus2.overlay.cubemask >/dev/null 2>&1 \
+      || cmd overlay enable --user 0 com.titanus2.overlay.cubemask >/dev/null 2>&1 \
+      || cmd overlay enable com.titanus2.overlay.cubemask >/dev/null 2>&1 || true
+    logm "cubemask honor on shape=${_shape:-pure_square}"
+    ;;
+esac
+unset _ov _shape
 
 # --- Keyboard-first IME pin: AOSP LatinIME only ---
 # FB-HID-2: exclusive grab owns temp soft-IME allow (HID 2.14 + pad-agent 2.59+).

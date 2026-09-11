@@ -57,6 +57,15 @@ _ui_wm() {
 }
 
 apply_ui_plane() {
+  # Off = leave wm density alone (Tweaks / display_density_forced is SoT).
+  _sw=`settings get secure titan2_ui_plane_switch 2>/dev/null | tr -d '\r'`
+  case "$_sw" in
+    1|true|TRUE) ;;
+    *)
+      log "ui_plane switch=$_sw — density untouched"
+      return 0
+      ;;
+  esac
   want=`read_first titan2_ui_plane`
   case "$want" in
     phone_launcher|phone|launcher) want=phone_launcher ;;

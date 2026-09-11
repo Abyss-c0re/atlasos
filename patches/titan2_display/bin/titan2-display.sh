@@ -60,20 +60,49 @@ case "$(getprop sys.usb.config)" in
     ;;
 esac
 
-# --- Product tablet dens (bundled) ---
-cube_dens=$(getprop persist.titanus2.cube_density 2>/dev/null | tr -d '\r')
-case "$cube_dens" in
-  ''|*[!0-9]*) cube_dens=$CUBE_DENS_DEFAULT ;;
-esac
-[ "$cube_dens" -ge 200 ] 2>/dev/null || cube_dens=$CUBE_DENS_DEFAULT
-[ "$cube_dens" -le 480 ] 2>/dev/null || cube_dens=$CUBE_DENS_DEFAULT
-# Persist product default so reboots stay consistent without host scripts
+# --- Density: user SoT. Never delete display_density_forced. Never force 300
+# over a human pick. 300 is first-boot / wipe only (nothing set).
+_dens_num() {
+  case "$1" in
+    ''|null|NULL|*[!0-9]*) return 1 ;;
+  esac
+  [ "$1" -gt 0 ] 2>/dev/null
+}
+user_forced=$(settings get secure display_density_forced 2>/dev/null | tr -d '\r')
+[ -z "$user_forced" ] || [ "$user_forced" = "null" ] && \
+  user_forced=$(settings get system display_density_forced 2>/dev/null | tr -d '\r')
+cur_ov=$(wm density 2>/dev/null | awk '/Override/{print $3; exit}')
+[ "$cur_ov" = "0" ] && cur_ov=
+cur_phys=$(wm density 2>/dev/null | awk '/Physical/{print $3; exit}')
+persist_d=$(getprop persist.titanus2.cube_density 2>/dev/null | tr -d '\r')
+cube_dens=
+if _dens_num "$user_forced"; then
+  cube_dens=$user_forced
+  logm "dens honor Settings forced=$user_forced"
+elif _dens_num "$cur_ov"; then
+  cube_dens=$cur_ov
+  logm "dens honor wm override=$cur_ov"
+elif _dens_num "$persist_d"; then
+  cube_dens=$persist_d
+  logm "dens honor persist=$persist_d"
+else
+  cube_dens=$CUBE_DENS_DEFAULT
+  logm "dens first-boot default=$cube_dens"
+fi
+_dens_num "$cube_dens" || cube_dens=$CUBE_DENS_DEFAULT
 setprop persist.titanus2.cube_density "$cube_dens" 2>/dev/null || true
-
-settings delete secure display_density_forced 2>/dev/null || true
-settings delete system display_density_forced 2>/dev/null || true
-cmd window density "$cube_dens" 2>/dev/null || wm density "$cube_dens" 2>/dev/null || true
-logm "cube density=$cube_dens (tablet SW≈$((1440 * 160 / cube_dens)))"
+cur_now=$cur_ov
+[ -n "$cur_now" ] || cur_now=$cur_phys
+if [ "$cur_now" != "$cube_dens" ]; then
+  service call window 12 i32 0 i32 "$cube_dens" i32 0 >/dev/null 2>&1 \
+    || cmd window density "$cube_dens" 2>/dev/null \
+    || wm density "$cube_dens" 2>/dev/null || true
+  logm "wm density $cur_now -> $cube_dens"
+  dens_changed=1
+else
+  logm "wm density already $cube_dens — not rewritten"
+  dens_changed=0
+fi
 
 # --- Physical size (Settings two-pane) ---
 launcher_phone=$(getprop persist.titanus2.launcher_phone 2>/dev/null | tr -d '\r')

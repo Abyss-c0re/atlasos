@@ -22,10 +22,14 @@ public final class ThemePrefs {
     public static final String KEY_MODE = "day_night";
     public static final String KEY_ICON_PLATE = "icon_plate_argb";
     public static final String KEY_ICON_GLYPH = "icon_glyph_argb";
+    public static final String KEY_ICON_SHAPE = "icon_shape";
     public static final String KEY_APP_ICONS = "app_icons_cube";
     public static final String KEY_SETTINGS_MONO = "settings_mono";
     public static final String KEY_SETTINGS_PLATE = "settings_plate_argb";
     public static final String KEY_SETTINGS_GLYPH = "settings_glyph_argb";
+    public static final String KEY_NAV_TINT = "nav_tint_argb";
+    public static final String KEY_QS_BG = "qs_bg_argb";
+    public static final String KEY_GLASS = "ui_glass";
     public static final int ICON_PLATE_VOID = 0xFF000000;
     public static final int ICON_PLATE_MESH = 0xFF140308;
     public static final int ICON_PLATE_CAGE = 0xFF8C050D;
@@ -65,25 +69,95 @@ public final class ThemePrefs {
     }
 
     /**
-     * One seed for OS accent and themed app-icon color. Wallpaper image untouched.
-     * @return short fact from icons-preset, or fail
+     * OS accent only. Does not rewrite icon plate/glyph and does not touch
+     * Monet JSON (a new timestamp tears SystemUI down).
      */
     public static String setColorSeed(Context c, int argb) {
+        return setAccentOverride(c, argb);
+    }
+
+    public static String persistAccent(Context c, int argb) {
         if (c == null) return "fail";
         Context app = c.getApplicationContext();
         int packed = argb | 0xFF000000;
         String hex = String.format("%06x", 0xFFFFFF & packed);
-        p(app).edit()
-            .putInt(KEY_ACCENT, packed)
-            .putInt(KEY_ICON_GLYPH, packed)
-            .apply();
+        p(app).edit().putInt(KEY_ACCENT, packed).apply();
         mirrorGlobal(app, "titan2_ui_accent_argb", hex);
-        mirrorGlobal(app, "titan2_icon_glyph_argb", hex);
-        persistIconOverlay(app, iconPlateHex(app), hex);
-        writeThemePreset(app, hex);
-        // Settings homepage is its own plane (mono + plate + glyph). Do not
-        // stomp it when the human only picks OS accent.
-        return "accent";
+        return hex;
+    }
+
+    public static String setAccentOverride(Context c, int argb) {
+        String hex = persistAccent(c, argb);
+        if ("fail".equals(hex)) return hex;
+        stampWake("os_accent");
+        return "queued";
+    }
+
+    public static int navTint(Context c) {
+        return p(c).getInt(KEY_NAV_TINT, 0xFFFFFFFF);
+    }
+
+    public static String navTintHex(Context c) {
+        return String.format("%06x", 0xFFFFFF & navTint(c));
+    }
+
+    public static String persistNavTint(Context c, int argb) {
+        if (c == null) return "fail";
+        int packed = argb | 0xFF000000;
+        String hex = String.format("%06x", 0xFFFFFF & packed);
+        p(c.getApplicationContext()).edit().putInt(KEY_NAV_TINT, packed).apply();
+        mirrorGlobal(c.getApplicationContext(), "titan2_nav_tint_argb", hex);
+        return hex;
+    }
+
+    public static String setNavTint(Context c, int argb) {
+        String hex = persistNavTint(c, argb);
+        if ("fail".equals(hex)) return hex;
+        stampWake("nav_tint");
+        return "queued";
+    }
+
+    public static int qsBg(Context c) {
+        return p(c).getInt(KEY_QS_BG, ICON_PLATE_VOID);
+    }
+
+    public static String qsBgHex(Context c) {
+        return String.format("%06x", 0xFFFFFF & qsBg(c));
+    }
+
+    public static String persistQsBg(Context c, int argb) {
+        if (c == null) return "fail";
+        int packed = argb | 0xFF000000;
+        String hex = String.format("%06x", 0xFFFFFF & packed);
+        p(c.getApplicationContext()).edit().putInt(KEY_QS_BG, packed).apply();
+        mirrorGlobal(c.getApplicationContext(), "titan2_qs_bg_argb", hex);
+        return hex;
+    }
+
+    public static String setQsBg(Context c, int argb) {
+        String hex = persistQsBg(c, argb);
+        if ("fail".equals(hex)) return hex;
+        stampWake(isGlass(c) ? "glass" : "qs_bg");
+        return "queued";
+    }
+
+    public static boolean isGlass(Context c) {
+        if (c == null) return false;
+        if (p(c).getBoolean(KEY_GLASS, false)) return true;
+        try {
+            String g = Settings.Global.getString(c.getContentResolver(), "titan2_ui_glass");
+            return "1".equals(g) || "true".equalsIgnoreCase(g) || "glass".equalsIgnoreCase(g);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    public static String setGlass(Context c, boolean on) {
+        if (c == null) return "fail";
+        p(c.getApplicationContext()).edit().putBoolean(KEY_GLASS, on).apply();
+        mirrorGlobal(c.getApplicationContext(), "titan2_ui_glass", on ? "1" : "0");
+        stampWake(on ? "glass" : "solid");
+        return "queued";
     }
 
     public static String dayNight(Context c) {
@@ -171,13 +245,13 @@ public final class ThemePrefs {
             }
         } catch (Exception ignored) {}
 
-        // Wallpaper *image* is human SoT. Color plane JSON only here.
-        // Never stamp titan2_icon_apply / never run icons-preset from plane —
-        // that Magisk/pad-agent loop froze SystemUI (force-stop + 65 overlays).
-        applied = "honor";
-        if (force) {
-            applied = writeThemePreset(app, hex);
+        // Wallpaper image + theme JSON are human SoT. Night mode is
+        // UiModeManager only. Never rewrite Monet JSON from a Mode tap.
+        // Re-assert OS accent so Mode does not let systemui:accent go grey.
+        if (hex != null && hex.length() == 6) {
+            stampWake("os_accent");
         }
+        applied = "honor";
 
         // PRODUCT_UX drop: disable Titan*Square* leftovers (never enable — FGS residual).
         if (now - lastOverlayDisableElapsed > 600_000L) {
@@ -299,9 +373,101 @@ public final class ThemePrefs {
     }
 
     public static String setIconOverlay(Context c, String plateHex, String glyphHex) {
+        return setIconOverlay(c, plateHex, glyphHex, iconShape(c));
+    }
+
+    public static String setIconOverlay(Context c, String plateHex, String glyphHex,
+            String shape) {
         String persisted = persistIconOverlay(c, plateHex, glyphHex);
         if (persisted.startsWith("fail")) return persisted;
-        return runIconOverlayApply();
+        persistIconShape(c, shape);
+        stampWake("app_icons");
+        return "queued";
+    }
+
+    public static String iconShape(Context c) {
+        String s = p(c).getString(KEY_ICON_SHAPE, "pure_square");
+        return normalizeShape(s);
+    }
+
+    public static String persistIconShape(Context c, String shape) {
+        if (c == null) return "fail";
+        String id = normalizeShape(shape);
+        p(c.getApplicationContext()).edit().putString(KEY_ICON_SHAPE, id).apply();
+        mirrorGlobal(c.getApplicationContext(), "titan2_icon_shape", id);
+        return id;
+    }
+
+    public static String normalizeShape(String shape) {
+        if (shape == null) return "pure_square";
+        switch (shape) {
+            case "circle":
+            case "squircle":
+            case "rounded_rect":
+            case "square":
+            case "pure_square":
+                return shape;
+            case "rounded":
+                return "rounded_rect";
+            default:
+                return "pure_square";
+        }
+    }
+
+    public static int iconShapeIndex(Context c) {
+        String id = iconShape(c);
+        for (int i = 0; i < ICON_SHAPE_IDS.length; i++) {
+            if (ICON_SHAPE_IDS[i].equals(id)) return i;
+        }
+        return 0;
+    }
+
+    private static String normHex6(String hex, String fallback) {
+        if (hex == null) return fallback;
+        String s = hex.replace("#", "").replace("0x", "").toLowerCase();
+        if (s.length() == 8) s = s.substring(2);
+        return s.length() == 6 ? s : fallback;
+    }
+
+    private static void stampIconWake() {
+        stampWake("app_icons");
+    }
+
+    private static void stampWake(String kind) {
+        if (kind == null || kind.isEmpty()) kind = "app_icons";
+        java.io.File[] wakes = {
+            new java.io.File("/data/misc/titan2/titan2_theme_wake"),
+            new java.io.File("/data/local/tmp/titan2_sp_wake"),
+            new java.io.File("/data/misc/titan2/titan2_sp_wake")
+        };
+        for (java.io.File w : wakes) {
+            try {
+                java.io.FileWriter fw = new java.io.FileWriter(w, false);
+                fw.write(kind);
+                fw.close();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private static boolean accentIs(String glyphHex) {
+        return colorFileIs("titan2_icon_accent", glyphHex);
+    }
+
+    private static boolean colorFileIs(String name, String hex6) {
+        if (hex6 == null || hex6.length() < 6) return false;
+        java.io.File f = new java.io.File("/data/misc/titan2/" + name);
+        if (!f.isFile()) f = new java.io.File("/data/local/tmp/" + name);
+        if (!f.isFile()) return false;
+        try {
+            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f));
+            String line = r.readLine();
+            r.close();
+            if (line == null) return false;
+            String hex = line.replace("#", "").replace("0x", "").trim().toLowerCase();
+            return hex.endsWith(hex6.toLowerCase());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public static String runIconOverlayApply() {
@@ -319,7 +485,7 @@ public final class ThemePrefs {
     }
 
     public static boolean settingsMonoOn(Context c) {
-        return p(c).getBoolean(KEY_SETTINGS_MONO, true);
+        return p(c).getBoolean(KEY_SETTINGS_MONO, false);
     }
 
     public static int settingsPlate(Context c) {
@@ -371,7 +537,8 @@ public final class ThemePrefs {
         p(app).edit().putBoolean(KEY_SETTINGS_MONO, on).apply();
         mirrorGlobal(app, "titan2_settings_mono", on ? "1" : "0");
         if (!on) {
-            return disableSettingsMono();
+            stampWake("settings_off");
+            return "queued";
         }
         persistSettingsOverlay(app, settingsPlateHex(app), settingsGlyphHex(app));
         return applySettingsIcons(app);
@@ -397,31 +564,9 @@ public final class ThemePrefs {
     public static String applySettingsIcons(Context c) {
         if (c == null) return "fail";
         Context app = c.getApplicationContext();
-        String plate = settingsPlateHex(app);
-        String glyph = settingsGlyphHex(app);
-        persistSettingsOverlay(app, plate, glyph);
-        // Root belt (titan2-sensor-privacy) runs cube-icons settings-on.
-        // Controls is not on the KSU allowlist — su from this uid fails.
-        stampSettingsWake();
-        String sh = runIconScript("settings-on", "settings");
-        if (sh != null && sh.startsWith("settings")) {
-            return sh;
-        }
-        String fab = fabricateSettingsMono(glyph, plate);
-        if (fab != null && fab.startsWith("settings") && !fab.startsWith("settings 0")) {
-            return fab;
-        }
-        for (int i = 0; i < 24; i++) {
-            if (leafIsPlate(plate)) {
-                return "settings";
-            }
-            try {
-                Thread.sleep(250);
-            } catch (InterruptedException ignored) {
-                break;
-            }
-        }
-        return "fail settings";
+        persistSettingsOverlay(app, settingsPlateHex(app), settingsGlyphHex(app));
+        stampWake("settings_icons");
+        return "queued";
     }
 
     private static boolean leafIsPlate(String plateHex) {
@@ -464,6 +609,7 @@ public final class ThemePrefs {
 
     private static void stampSettingsWake() {
         java.io.File[] wakes = {
+            new java.io.File("/data/misc/titan2/titan2_theme_wake"),
             new java.io.File("/data/local/tmp/titan2_sp_wake"),
             new java.io.File("/data/misc/titan2/titan2_sp_wake")
         };
@@ -534,17 +680,25 @@ public final class ThemePrefs {
         return "term " + icons + " · " + apps;
     }
 
-    /** Monet on this GSI ignores JSON unless we also fabricate; JSON is still required. */
+    /**
+     * Honor live theme JSON. A new _applied_timestamp starts Monet teardown
+     * (SystemUI crash). First-empty seed only — cube-ux also seeds on boot.
+     */
     private static String writeThemePreset(Context app, String hex) {
         if (hex == null || hex.length() != 6) hex = "ff141a";
         hex = hex.toUpperCase();
-        long ts = System.currentTimeMillis();
-        String json = "{\"_applied_timestamp\":" + ts
-            + ",\"android.theme.customization.theme_style\":\"MONOCHROMATIC\""
-            + ",\"android.theme.customization.color_source\":\"preset\""
-            + ",\"android.theme.customization.system_palette\":\"" + hex + "\""
-            + ",\"android.theme.customization.accent_color\":\"" + hex + "\"}";
         try {
+            String cur = Settings.Secure.getString(app.getContentResolver(),
+                "theme_customization_overlay_packages");
+            if (cur != null && cur.contains("theme_style")) {
+                return "honor";
+            }
+            long ts = System.currentTimeMillis();
+            String json = "{\"_applied_timestamp\":" + ts
+                + ",\"android.theme.customization.theme_style\":\"MONOCHROMATIC\""
+                + ",\"android.theme.customization.color_source\":\"preset\""
+                + ",\"android.theme.customization.system_palette\":\"" + hex + "\""
+                + ",\"android.theme.customization.accent_color\":\"" + hex + "\"}";
             Settings.Secure.putString(app.getContentResolver(),
                 "theme_customization_overlay_packages", json);
             Settings.Secure.putInt(app.getContentResolver(),
@@ -796,6 +950,12 @@ public final class ThemePrefs {
     };
     public static final int[] ICON_GLYPH_COLORS = {
         ACCENT_SPIKE, ACCENT_AMBER, ACCENT_WHITE, ACCENT_CYAN, ACCENT_GREEN
+    };
+    public static final String[] ICON_SHAPE_LABELS = {
+        "Square", "Rounded", "Circle", "Squircle"
+    };
+    public static final String[] ICON_SHAPE_IDS = {
+        "pure_square", "rounded_rect", "circle", "squircle"
     };
 
     /** Settings homepage looks: plate+glyph pairs. Crimson = black + spike. */
