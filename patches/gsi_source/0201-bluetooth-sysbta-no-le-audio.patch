@@ -1,0 +1,20 @@
+diff --git a/android/app/src/com/android/bluetooth/btservice/Config.java b/android/app/src/com/android/bluetooth/btservice/Config.java
+index 7688fda32c..fc0412e257 100644
+--- a/android/app/src/com/android/bluetooth/btservice/Config.java
++++ b/android/app/src/com/android/bluetooth/btservice/Config.java
+@@ -212,6 +212,15 @@ public class Config {
+             setProfileEnabled(BluetoothProfile.HEARING_AID, false);
+         }
+ 
++        // Titan 2: sysbta cannot hold LE Audio; vendor BAP props stay true and
++        // the stack then drops A2DP (sink unavailable). Force LE Audio off.
++        if (SystemProperties.getBoolean(
++                "persist.bluetooth.system_audio_hal.enabled", false)) {
++            setLeAudioProfileStatus(false);
++            setLeAudioBroadcastProfileStatus(false);
++            Log.i(TAG, "init: sysbta — LE Audio profiles disabled");
++        }
++
+         for (ProfileConfig config : PROFILE_SERVICES_AND_FLAGS) {
+             Log.i(
+                     TAG,
