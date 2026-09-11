@@ -43,7 +43,7 @@ android_app_import {
     name: "TitanLuci",
     apk: "TitanLuci.apk",
     certificate: "platform",
-    privileged: true,
+    privileged: false,
     dex_preopt: {
         enabled: false,
     },

@@ -78,14 +78,11 @@ public final class RouterActivity extends Activity {
         new Thread(() -> {
             OpenWrt.run("start");
             h.post(() -> {
-                try {
-                    Intent i = new Intent("com.titanus2.luci.OPEN");
-                    i.setClassName("com.titanus2.luci", "com.titanus2.luci.LuciActivity");
-                    i.putExtra("url", url);
-                    startActivity(i);
-                } catch (Exception e) {
-                    facts.setText(OpenWrt.bar() + "\n" + e.getMessage());
-                }
+                // WebView is banned in uid 1000. TitanLuci is its own appId.
+                Intent i = new Intent("com.titanus2.luci.OPEN");
+                i.setClassName("com.titanus2.luci", "com.titanus2.luci.LuciActivity");
+                i.putExtra("url", url);
+                startActivity(i);
             });
         }, "ow-luci").start();
     }

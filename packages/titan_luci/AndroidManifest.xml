@@ -1,13 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.luci"
-    android:versionCode="6"
-    android:versionName="1.2-luci-label">
+    android:versionCode="10"
+    android:versionName="1.6-directboot">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="35"/>
     <uses-permission android:name="android.permission.INTERNET"/>
+    <queries>
+        <package android:name="com.android.webview"/>
+        <package android:name="com.google.android.webview"/>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
+        </intent>
+    </queries>
     <application
         android:label="LuCI"
         android:allowBackup="false"
+        android:forceQueryable="true"
+        android:directBootAware="true"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.DeviceDefault">
         <activity
@@ -17,6 +27,10 @@
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|density">
             <intent-filter>
                 <action android:name="com.titanus2.luci.OPEN"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </activity>

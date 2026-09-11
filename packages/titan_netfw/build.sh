@@ -28,15 +28,29 @@ javac --release 17 -cp "$PLATFORM/android.jar" -d "$CLS" "${JAVAS[@]}"
 "$BT/d8" --min-api 34 --output "$OUT" "$OUT/classes.jar"
 cp -f "$OUT/res.apk" "$OUT/unsigned.apk"
 (cd "$OUT" && zip -qj unsigned.apk classes.dex)
-cp -f "$OUT/unsigned.apk" "$ROOT/TitanNetFw.apk"
-PK8="${PLATFORM_PK8:-$HOME/Dev/device-workshop/products/titanus2/out/setupwizard_extract/keys/platform.pk8}"
-CERT="${PLATFORM_CERT:-$HOME/Dev/device-workshop/products/titanus2/out/setupwizard_extract/keys/platform.x509.pem}"
-if [ -f "$PK8" ] && [ -f "$CERT" ] && [ -x "$BT/apksigner" ]; then
-  "$BT/apksigner" sign --key "$PK8" --cert "$CERT" --out "$OUT/TitanNetFw-platform.apk" "$ROOT/TitanNetFw.apk"
-  cp -f "$OUT/TitanNetFw-platform.apk" "$ROOT/TitanNetFw.apk"
+"$BT/zipalign" -f -p 4 "$OUT/unsigned.apk" "$OUT/aligned.apk"
+PK8="${PLATFORM_PK8:-}"
+CERT="${PLATFORM_CERT:-}"
+if [ -z "$PK8" ] || [ ! -f "$PK8" ]; then
+  for d in \
+    "$HOME/Dev/titanus2-artifacts/misterztr_lineage/build/make/target/product/security" \
+    "$HOME/Dev/device-workshop/products/twrp-titan2/build/make/target/product/security" \
+    "$HOME/Dev/device-workshop/products/titanus2/out/setupwizard_extract/keys"
+  do
+    if [ -f "$d/platform.pk8" ] && [ -f "$d/platform.x509.pem" ]; then
+      PK8="$d/platform.pk8"
+      CERT="$d/platform.x509.pem"
+      break
+    fi
+  done
 fi
+[ -f "${PK8:-}" ] && [ -f "${CERT:-}" ] || { echo "platform keys missing — refuse unsigned TitanNetFw" >&2; exit 1; }
+"$BT/apksigner" sign --key "$PK8" --cert "$CERT" \
+  --v1-signing-enabled true --v2-signing-enabled true \
+  --out "$ROOT/TitanNetFw.apk" "$OUT/aligned.apk"
 sz=$(stat -c%s "$ROOT/TitanNetFw.apk")
 [ "$sz" -ge 10000 ] || { echo "hollow APK $sz" >&2; exit 1; }
 unzip -Z1 "$ROOT/TitanNetFw.apk" >"$OUT/apk.list"
 grep -qx classes.dex "$OUT/apk.list" || { echo "no classes.dex" >&2; exit 1; }
+grep -q 'META-INF/.*SF' "$OUT/apk.list" || { echo "unsigned APK" >&2; exit 1; }
 echo "OK $ROOT/TitanNetFw.apk ($sz bytes)"

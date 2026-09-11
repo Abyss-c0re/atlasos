@@ -118,9 +118,12 @@ do_mount() {
     mkdir -p "$MNT/$d"
     grep -q " $MNT/$d " /proc/mounts || mount --bind "/$d" "$MNT/$d" 2>/dev/null || true
   done
-  mkdir -p "$MNT/tmp" "$MNT/var/run/ubus" "$MNT/var/log" "$MNT/var/lock"
+  mkdir -p "$MNT/tmp"
   mount -t tmpfs -o size=32M tmpfs "$MNT/tmp" 2>/dev/null || true
-  mkdir -p "$MNT/tmp/run" "$MNT/tmp/lock"
+  # /var -> tmp. Create ubus dir AFTER tmpfs or the socket is hidden
+  # and LuCI 500s (left-hand side is null / no session).
+  mkdir -p "$MNT/tmp/run/ubus" "$MNT/tmp/lock" "$MNT/tmp/log" "$MNT/tmp/luci-sessions"
+  chmod 755 "$MNT/tmp" "$MNT/tmp/run" "$MNT/tmp/run/ubus" "$MNT/tmp/lock" "$MNT/tmp/log"
   [ -d "$MNT/bin" ] || { log "empty root $MNT"; return 3; }
   log "mounted $MNT"
   return 0
@@ -195,7 +198,13 @@ EOF
   fi
   if [ -f "$FILES/usr/libexec/rpcd/system" ]; then
     cp "$FILES/usr/libexec/rpcd/system" "$MNT/usr/libexec/rpcd/system"
+  fi
+  # Official + overlay copies land 0644. rpcd will not load them — LuCI 500.
+  if [ -f "$MNT/usr/libexec/rpcd/system" ]; then
     chmod 755 "$MNT/usr/libexec/rpcd/system"
+  fi
+  if [ -f "$FILES/etc/config/luci" ]; then
+    cp "$FILES/etc/config/luci" "$MNT/etc/config/luci"
   fi
   # Replace procd-backed init with a hook LuCI Save & Apply can run in-chroot.
   for s in network firewall dnsmasq; do
@@ -224,6 +233,22 @@ EOF
   echo BlackCube >"$MNT/etc/hostname"
   # OpenWrt chroot name only. Never sethostname() / never write host UTS.
   # This Android/Debian box is Titan2.
+  # Official rootfs ships luci.themes empty until uci-defaults run.
+  # Unapplied defaults → LuCI login template 500 (left-hand side is null).
+  if [ ! -f "$MNT/etc/atlas-openwrt-uci-defaults" ]; then
+    for f in "$MNT"/etc/uci-defaults/*; do
+      [ -f "$f" ] || continue
+      base=$(basename "$f")
+      chroot "$MNT" /bin/sh "/etc/uci-defaults/$base" >/dev/null 2>&1 && rm -f "$f"
+    done
+    touch "$MNT/etc/atlas-openwrt-uci-defaults"
+  fi
+  # Fail-closed: Bootstrap must be registered even if uci-defaults failed.
+  if ! chroot "$MNT" /sbin/uci -q get luci.themes.Bootstrap >/dev/null 2>&1; then
+    chroot "$MNT" /sbin/uci -q set luci.themes.Bootstrap=/luci-static/bootstrap 2>/dev/null || true
+    chroot "$MNT" /sbin/uci -q set luci.main.mediaurlbase=/luci-static/bootstrap 2>/dev/null || true
+    chroot "$MNT" /sbin/uci -q commit luci 2>/dev/null || true
+  fi
   # Empty root only when the LP has never been inited and root is locked.
   # A real password on the LP must survive wipe and reboot.
   if [ ! -f "$MNT/etc/atlas-openwrt-inited" ]; then
@@ -318,10 +343,14 @@ start_applyd() {
 start_daemons() {
   [ -x "$MNT/sbin/ubusd" ] || { log "no ubusd"; return 1; }
   # /var -> /tmp. Unix socket must live on that tmpfs, not the ext4 LP.
-  mkdir -p "$MNT/tmp/run/ubus" "$MNT/tmp/lock" "$MNT/tmp/log"
+  mkdir -p "$MNT/tmp/run/ubus" "$MNT/tmp/lock" "$MNT/tmp/log" "$MNT/tmp/luci-sessions"
+  chmod 755 "$MNT/tmp/run/ubus"
   SOCK="$MNT/var/run/ubus/ubus.sock"
-  if [ ! -S "$SOCK" ]; then
+  # pgrep is not enough: a dead/crashed ubusd (TitanLuci priv_app exec)
+  # still matches and we skip bind → LuCI 500, no sock.
+  if [ ! -S "$SOCK" ] || ! pgrep -x ubusd >/dev/null 2>&1; then
     killall ubusd 2>/dev/null || true
+    rm -f "$SOCK"
     chroot "$MNT" /sbin/ubusd -s /var/run/ubus/ubus.sock \
       >$LOGDIR/titan2-openwrt-ubusd.log 2>&1 &
     echo $! >"$UB_PID"

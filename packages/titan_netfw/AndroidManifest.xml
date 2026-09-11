@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.netfw"
-    android:versionCode="10"
-    android:versionName="1.9-system-bin"
+    android:versionCode="12"
+    android:versionName="1.11-luci-app"
     android:sharedUserId="android.uid.system">
     <uses-sdk android:minSdkVersion="34" android:targetSdkVersion="35"/>
     <uses-permission android:name="android.permission.INTERNET"/>
+    <queries>
+        <package android:name="com.titanus2.luci"/>
+        <intent>
+            <action android:name="com.titanus2.luci.OPEN"/>
+        </intent>
+    </queries>
     <application
         android:label="Router"
         android:icon="@drawable/ic_settings_router"
@@ -46,6 +52,6 @@
                 android:value="true"/>
             <meta-data android:name="com.android.settings.order" android:value="15"/>
         </activity>
-        <!-- Zone tables live in LuCI. No second Settings tile. -->
+        <!-- Zone tables live in LuCI. WebView cannot run in this uid-1000 process. -->
     </application>
 </manifest>

@@ -48,17 +48,22 @@ public final class LuciActivity extends Activity {
         wait.setPadding(24, 24, 24, 24);
         root.addView(wait);
 
-        web = new WebView(this);
-        web.setVisibility(android.view.View.GONE);
-        WebSettings s = web.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        s.setCacheMode(WebSettings.LOAD_NO_CACHE);
-        web.setWebViewClient(new WebViewClient());
-        LinearLayout.LayoutParams webLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-        root.addView(web, webLp);
+        try {
+            web = new WebView(this);
+            web.setVisibility(android.view.View.GONE);
+            WebSettings s = web.getSettings();
+            s.setJavaScriptEnabled(true);
+            s.setDomStorageEnabled(true);
+            s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+            s.setCacheMode(WebSettings.LOAD_NO_CACHE);
+            web.setWebViewClient(new WebViewClient());
+            LinearLayout.LayoutParams webLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+            root.addView(web, webLp);
+        } catch (Exception e) {
+            wait.setText("LuCI: " + e.getMessage());
+            web = null;
+        }
 
         botGap = new View(this);
         root.addView(botGap, new LinearLayout.LayoutParams(
@@ -108,7 +113,15 @@ public final class LuciActivity extends Activity {
                 try { Thread.sleep(400); } catch (InterruptedException ignored) {}
             }
             h.post(() -> {
-                if (isFinishing() || web == null) return;
+                if (isFinishing()) return;
+                if (web == null) {
+                    try {
+                        Intent v = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
+                        v.addCategory(Intent.CATEGORY_BROWSABLE);
+                        startActivity(v);
+                    } catch (Exception ignored) {}
+                    return;
+                }
                 if (wait != null) wait.setVisibility(android.view.View.GONE);
                 web.setVisibility(android.view.View.VISIBLE);
                 web.loadUrl(url);
@@ -117,11 +130,18 @@ public final class LuciActivity extends Activity {
     }
 
     private static void startPlane() {
-        try {
-            Runtime.getRuntime().exec(new String[] {
-                "su", "-c", "sh /system/bin/titan2-openwrt.sh start"
-            });
-        } catch (Exception ignored) {}
+        // Rootless first. su is leftover from Magisk lab — fails on product.
+        String[][] cmds = {
+            { "/system/bin/setprop", "sys.atlas.openwrt", "1" },
+            { "/system/bin/sh", "/system/bin/titan2-openwrt.sh", "start" },
+            { "su", "-c", "sh /system/bin/titan2-openwrt.sh start" },
+        };
+        for (String[] cmd : cmds) {
+            try {
+                Process p = Runtime.getRuntime().exec(cmd);
+                if (p.waitFor() == 0) return;
+            } catch (Exception ignored) {}
+        }
     }
 
     private static boolean luciUp() {
