@@ -314,8 +314,14 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
     @Override
     public void onTextChanged(TerminalSession changedSession) {
         TerminalView v = host.terminalView();
-        if (v != null) v.onScreenUpdated();
-        // Terminal text is the login UI — no host scrape / device-code bar.
+        if (v == null) return;
+        // Hidden SSH/TUI still appends on its handler. Painting the visible
+        // view for the other session was the minimize stall: 48% jank,
+        // Slow UI thread, keys land in the PTY, screen stays frozen until DEL.
+        if (changedSession != null && changedSession != v.getCurrentSession()) {
+            return;
+        }
+        v.onScreenUpdated();
     }
 
     public void resetAuthScrape() {
@@ -359,7 +365,9 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
     @Override public void onBell(TerminalSession session) {}
     @Override public void onColorsChanged(TerminalSession session) {
         TerminalView v = host.terminalView();
-        if (v != null) v.onScreenUpdated();
+        if (v == null) return;
+        if (session != null && session != v.getCurrentSession()) return;
+        v.onScreenUpdated();
     }
     @Override public void onTerminalCursorStateChange(boolean state) {}
     @Override public void setTerminalShellPid(TerminalSession session, int pid) {}

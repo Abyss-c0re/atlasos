@@ -88,9 +88,12 @@ public final class TerminalView extends View {
 
     /** Titan: cap paints at ~60 Hz. Grok TUI / SSH firehose used to invalidate per PTY chunk. */
     private boolean mPaintPosted;
+    private boolean mPaintDirty;
+    private long mPaintPostedAt;
     private long mLastPtyPaintAt;
     private final Runnable mCoalescedPaint = () -> {
         mPaintPosted = false;
+        mPaintDirty = false;
         invalidate();
     };
 
@@ -143,7 +146,9 @@ public final class TerminalView extends View {
 
     public TerminalView(Context context, AttributeSet attributes) { // NO_UCD (unused code)
         super(context, attributes);
-        setLayerType(LAYER_TYPE_HARDWARE, null);
+        // HARDWARE layer froze after minimize: PTY/echo current, pixels stale
+        // until a key (DEL) called invalidate() on a different path.
+        setLayerType(LAYER_TYPE_NONE, null);
         mGestureRecognizer = new GestureAndScaleRecognizer(context, new GestureAndScaleRecognizer.Listener() {
 
             boolean scrolledWithFinger;
@@ -303,6 +308,7 @@ public final class TerminalView extends View {
 
         // Wait with enabling the scrollbar until we have a terminal to get scroll position from.
         setVerticalScrollBarEnabled(true);
+        forceRepaint();
 
         return true;
     }
@@ -368,6 +374,7 @@ public final class TerminalView extends View {
                 }
                 sendTextToTerminal(content);
                 content.clear();
+                wakePaintFromInput();
                 return true;
             }
 
@@ -524,17 +531,57 @@ public final class TerminalView extends View {
 
         mEmulator.clearScrollCounter();
 
-        mLastPtyPaintAt = SystemClock.uptimeMillis();
-        if (!mPaintPosted) {
-            mPaintPosted = true;
-            postDelayed(mCoalescedPaint, 16);
-        }
+        schedulePtyPaint();
         if (mAccessibilityEnabled) setContentDescription(getText());
     }
 
-    /** This must be called by the hosting activity in {@link Activity#onContextMenuClosed(Menu)}
-     * when context menu for the {@link TerminalView} is started by
-     * {@link TextSelectionCursorController#ACTION_MORE} is closed. */
+    /**
+     * Coalesce PTY paints to the next frame. A stuck mPaintPosted after idle
+     * is the type-and-nothing-draws-until-DEL-or-scroll stall: DEL invalidate()s
+     * because AtlasTermClient consumes it; letters only come back through this path.
+     */
+    private void schedulePtyPaint() {
+        mPaintDirty = true;
+        if (!isAttachedToWindow()) {
+            mPaintPosted = false;
+            removeCallbacks(mCoalescedPaint);
+            return;
+        }
+        long now = SystemClock.uptimeMillis();
+        // Treat a posted callback older than two frames as dropped.
+        if (mPaintPosted && (now - mPaintPostedAt) < 32) {
+            return;
+        }
+        mPaintPosted = true;
+        mPaintPostedAt = now;
+        // postOnAnimation is void (API 16+). post() boolean is the detach check.
+        if (!post(mCoalescedPaint)) {
+            mPaintPosted = false;
+            invalidate();
+            postInvalidateOnAnimation();
+        }
+    }
+
+    /** First key after idle must dirty the window the way DEL already does. */
+    private void wakePaintFromInput() {
+        mPaintPosted = false;
+        removeCallbacks(mCoalescedPaint);
+        invalidate();
+        postInvalidateOnAnimation();
+    }
+
+    /** Resume / session attach / focus: drop a stuck coalesce and draw now. */
+    public void forceRepaint() {
+        mPaintPosted = false;
+        mPaintDirty = false;
+        removeCallbacks(mCoalescedPaint);
+        invalidate();
+        postInvalidateOnAnimation();
+        if (mEmulator != null) {
+            onScreenUpdated(true);
+        }
+    }
+
     public void onContextMenuClosed(Menu menu) {
         // Unset the stored text since it shouldn't be used anymore and should be cleared from memory
         unsetStoredSelectedText();
@@ -842,6 +889,7 @@ public final class TerminalView extends View {
         if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
             mClient.logInfo(LOG_TAG, "onKeyDown(keyCode=" + keyCode + ", isSystem()=" + event.isSystem() + ", event=" + event + ")");
         if (mEmulator == null) return true;
+        wakePaintFromInput();
         if (isSelectingText()) {
             stopTextSelectionMode();
         }
@@ -1086,6 +1134,8 @@ public final class TerminalView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        mLastPtyPaintAt = SystemClock.uptimeMillis();
+        mPaintDirty = false;
         if (mEmulator == null) {
             canvas.drawColor(0XFF000000);
         } else {
@@ -1514,6 +1564,9 @@ public final class TerminalView extends View {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        if (mPaintDirty) {
+            forceRepaint();
+        }
 
         if (mTextSelectionCursorController != null) {
             getViewTreeObserver().addOnTouchModeChangeListener(mTextSelectionCursorController);
@@ -1521,8 +1574,29 @@ public final class TerminalView extends View {
     }
 
     @Override
+    protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        if (visibility == VISIBLE) {
+            forceRepaint();
+        } else {
+            mPaintPosted = false;
+            removeCallbacks(mCoalescedPaint);
+        }
+    }
+
+    @Override
+    public void onVisibilityAggregated(boolean isVisible) {
+        super.onVisibilityAggregated(isVisible);
+        if (isVisible && mPaintDirty) {
+            forceRepaint();
+        }
+    }
+
+    @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
+        mPaintPosted = false;
+        removeCallbacks(mCoalescedPaint);
 
         if (mTextSelectionCursorController != null) {
             // Might solve the following exception
