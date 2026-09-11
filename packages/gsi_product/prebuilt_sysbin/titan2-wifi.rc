@@ -1,0 +1,14 @@
+# Titan 2 STA Wi-Fi — SAE-upgrade off + watch across toggle/reboot.
+# docs/project/HERESY_2026-08-27_WIFI_SAE_UPGRADE.md
+
+service titan2-wifi-heal /system/bin/sh /system/bin/titan2-wifi-heal.sh watch
+    class late_start
+    user root
+    group root system wifi
+    disabled
+
+on property:sys.boot_completed=1
+    start titan2-wifi-heal
+
+on property:wlan.driver.status=ok
+    exec_background - root root -- /system/bin/sh /system/bin/titan2-wifi-heal.sh apply

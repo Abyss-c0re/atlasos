@@ -105,6 +105,8 @@ PRODUCT_PACKAGES += \
     titan2-fw-observe \
     titan2-remote-adb.sh \
     titan2-vpn-hotspot.sh \
+    titan2-wifi-heal.sh \
+    titan2-wifi.rc \
     titan2-netfw.rc \
     TitanNetFw \
     TitanLuci \

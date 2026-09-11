@@ -160,6 +160,18 @@ sh_binary {
 }
 
 sh_binary {
+    name: "titan2-wifi-heal.sh",
+    src: "titan2-wifi-heal.sh",
+}
+
+prebuilt_etc {
+    name: "titan2-wifi.rc",
+    src: "titan2-wifi.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}
+
+sh_binary {
     name: "titan2-tether.sh",
     src: "titan2-tether.sh",
 }
