@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.69-side-keys (669) — 2026-09-12T00:01Z
+
+- Restore side-key inject; pad-off no longer blocks HID shortcuts or BT keys
+
+---
+
 ## 16.68-pad-sot (668) — 2026-09-11T23:49Z
 
 - HID guest follows system pad mode and typing-lock delay

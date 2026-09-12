@@ -207,11 +207,14 @@ public final class InputPlane {
     }
 
     /**
-     * Typing lock applies to the local pad and to the HID guest cursor.
-     * Exclusive host-mouse used to skip this and clicks landed while typing.
+     * Local pad typing lock. HID exclusive uses hid_bridge last_key_ms +
+     * Controls cool_ms so Specials / side-key inject stay live.
      */
     public static boolean allowTypingCursorLock(Context ctx) {
-        return ctx != null;
+        if (ctx == null) return false;
+        if (isExclusive(ctx)) return false;
+        if (isHostMouseLive(ctx)) return false;
+        return true;
     }
 
     /** Arm Sym-inject exclusive keys pause (does not change mouse). */

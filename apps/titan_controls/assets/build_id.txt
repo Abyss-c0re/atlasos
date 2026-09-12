@@ -1,4 +1,4 @@
-versionName=16.68-pad-sot
-versionCode=668
-built_utc=2026-09-11T23:49Z
+versionName=16.69-side-keys
+versionCode=669
+built_utc=2026-09-12T00:01Z
 allow_root=0

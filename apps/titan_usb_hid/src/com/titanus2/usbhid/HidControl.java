@@ -446,6 +446,8 @@ public final class HidControl {
                 restoreSoftImeAfterExclusive(ctx);
             }
             write(ctx, LOCAL_INPUT, "0");
+            // Drop a leftover local typing freeze so reconnect is not parked.
+            try { write(ctx, "titan2_pad_cursor_pause", "0"); } catch (Exception ignored) {}
             // FB-IN-1 / 2.13: product default kcm; seed if empty only.
             // Exclusive Start must not force inject (plane is phone-path SoT;
             // exclusive map lives in-bridge when grab — see hid_bridge 0.16.14).
@@ -831,12 +833,15 @@ public final class HidControl {
     public static void prepareDriverPad(Context ctx) {
         // System pad mode is SoT. Forcing mouse here made Off/Trackpad
         // on the phone still drive the HID guest cursor.
-        String mode = PadModeClient.OFF;
-        try {
-            mode = PadModeClient.normalize(PadModeClient.get(ctx));
-        } catch (Exception ignored) {}
-        if (!PadModeClient.MOUSE.equals(mode)) {
-            return;
+        // File plane only u2014 PadModeClient.get() is a binder hop and delayed
+        // HID start + side-key layer. Missing/unreadable = keep preparing.
+        String raw = null;
+        try { raw = readPlaneAny(ctx, "titan2_pad_mode"); } catch (Exception ignored) {}
+        if (raw != null && !raw.trim().isEmpty()) {
+            String mode = PadModeClient.normalize(raw);
+            if (PadModeClient.OFF.equals(mode) || PadModeClient.TRACKPAD.equals(mode)) {
+                return;
+            }
         }
         try {
             // Already mouse: keep surface/inhibit coherent. Do not restamp mode.
@@ -1798,12 +1803,6 @@ public final class HidControl {
      * is available; file/Global fallback for early boot.
      */
     private static boolean isPadCursorPaused() {
-        try {
-            String mode = PadModeClient.normalize(PadModeClient.get(
-                (Context) Class.forName("android.app.ActivityThread")
-                    .getMethod("currentApplication").invoke(null)));
-            if (!PadModeClient.MOUSE.equals(mode)) return true;
-        } catch (Throwable ignored) {}
         try {
             Class<?> at = Class.forName("android.app.ActivityThread");
             Object cur = at.getMethod("currentApplication").invoke(null);

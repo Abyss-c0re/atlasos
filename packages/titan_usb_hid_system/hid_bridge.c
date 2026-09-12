@@ -208,16 +208,18 @@ static int read_pad_mode_is_mouse(void) {
     char buf[32];
     FILE *f = fopen(PAD_MODE_PATH, "r");
     if (!f) f = fopen(PAD_MODE_PATH2, "r");
-    if (!f) return 0;
-    if (!fgets(buf, sizeof buf, f)) { fclose(f); return 0; }
+    if (!f) return 1; /* missing plane: do not invent Off (reconnect stall) */
+    if (!fgets(buf, sizeof buf, f)) { fclose(f); return 1; }
     fclose(f);
     char *s = buf;
     while (*s == 32 || *s == 9 || *s == 10 || *s == 13) s++;
     size_t n = strlen(s);
     while (n && (s[n-1] == 10 || s[n-1] == 13 || s[n-1] == 32)) s[--n] = 0;
-    if (!strcasecmp(s, "mouse") || !strcmp(s, "1") || !strcasecmp(s, "true") || !strcasecmp(s, "on"))
-        return 1;
-    return 0;
+    if (!s[0]) return 1;
+    if (!strcasecmp(s, "off") || !strcmp(s, "0") || !strcasecmp(s, "false")
+            || !strcasecmp(s, "trackpad") || !strcasecmp(s, "none"))
+        return 0;
+    return 1;
 }
 
 static void load_pad_mode(void) {
@@ -507,8 +509,8 @@ static void note_typing(void) {
  * any key is held (hold-Backspace) OR within post-key cooldown (palm settle).
  */
 static int mouse_blocked_by_typing(void) {
-    /* Off/trackpad is system SoT u2014 do not keep a guest cursor alive. */
-    if (!pad_mode_mouse) return 1;
+    /* Physical pad is gated by pad_mode_mouse at the evdev fds.
+     * Do NOT fold pad-off into this u2014 socket inject is side keys / soft pad. */
     if (phys_keys_held > 0) return 1;
     if (read_int_file(PAD_PAUSE_PATH, PAD_PAUSE_PATH2, 0) == 1) return 1;
     if (typing_guard_ms <= 0) return 0;

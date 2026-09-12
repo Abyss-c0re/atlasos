@@ -586,9 +586,13 @@ public class HidSessionService extends Service {
                     HidControl.setSoftCompose(false);
                 }
                 // B2 1.25: typing-cursor freeze must not block exclusive Specials
-                // host pad/mouse while remote_q is draining.
-                // Honor system typing lock on the HID guest. Exclusive used
-                // to clear titan2_pad_cursor_pause so clicks landed mid-word.
+                // / side-key inject while remote_q is draining. Physical pad
+                // still parks via hid_bridge last_key_ms + cool_ms.
+                if (exclPlane || pendingSpecials) {
+                    try {
+                        HidControl.write(this, "titan2_pad_cursor_pause", "0");
+                    } catch (Exception ignored) {}
+                }
                 // Always drain remote_q (Specials); hw.out when not soft Type
                 // 2.00: exclusive/pending specials force softCompose off already above
                 // so both drains always run for host Sym inject.
