@@ -31,7 +31,7 @@ import com.termux.view.TerminalViewClient;
  */
 public final class AtlasTermClient implements TerminalViewClient, TerminalSessionClient {
     private static final String TAG = "AtlasTerm";
-    public static final String INPUT_REV = "0.9.75-shift-momentary";
+    public static final String INPUT_REV = "0.9.76-shift-caps";
 
     public interface Host {
         void onSessionFinished(int code);
@@ -56,6 +56,9 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
      * Kept so clear paths still wipe residual from older sessions.
      */
     private boolean oneShotShift;
+    private boolean capsLatched;
+    private long lastBareShiftUpAt;
+    private static final long DOUBLE_SHIFT_CAPS_MS = 420L;
     private TerminalSession boundSession;
 
     public AtlasTermClient(Host host) {
@@ -210,11 +213,10 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
                 physShiftDown = true;
                 physShiftDownAt = SystemClock.uptimeMillis();
                 physShiftSawLetter = false;
-                // New press cancels prior one-shot residue.
                 oneShotShift = false;
                 stickyShift = false;
+                syncCapsFromPlane();
             }
-            // Consume: TerminalView must not treat Shift as a printable / stick meta.
             return true;
         }
         if (physShiftDown && isTypingLetterKey(keyCode)) {
@@ -227,10 +229,22 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent e) {
         if (isShiftKey(keyCode)) {
-            // Momentary only: bare tap must not arm capital mode (user: Shift≠Caps).
+            long now = SystemClock.uptimeMillis();
+            long held = now - physShiftDownAt;
+            boolean bareTap = physShiftDown && !physShiftSawLetter && held < 450L;
             physShiftDown = false;
             stickyShift = false;
             oneShotShift = false;
+            if (bareTap) {
+                if (lastBareShiftUpAt > 0L && (now - lastBareShiftUpAt) <= DOUBLE_SHIFT_CAPS_MS) {
+                    lastBareShiftUpAt = 0L;
+                    toggleCaps();
+                } else {
+                    lastBareShiftUpAt = now;
+                }
+            } else {
+                lastBareShiftUpAt = 0L;
+            }
             return true;
         }
         if (!isModifierKey(keyCode)) {
@@ -280,6 +294,70 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
      */
     @Override public boolean readShiftKey() {
         return physShiftDown;
+    }
+
+    @Override public boolean readCapsLock() {
+        syncCapsFromPlane();
+        return capsLatched;
+    }
+
+    private static final String CAPS_PLANE = "titan2_caps_lock";
+
+    private void syncCapsFromPlane() {
+        Context c = host != null ? host.context() : null;
+        if (c == null) return;
+        capsLatched = readCapsPlane(c);
+    }
+
+    private void toggleCaps() {
+        boolean before = capsLatched;
+        syncCapsFromPlane();
+        if (capsLatched != before) return;
+        capsLatched = !capsLatched;
+        Context c = host != null ? host.context() : null;
+        if (c == null) return;
+        writeCapsPlane(c, capsLatched);
+    }
+
+    private static boolean readCapsPlane(Context c) {
+        try {
+            String g = android.provider.Settings.Global.getString(
+                c.getContentResolver(), CAPS_PLANE);
+            if (g != null) {
+                g = g.trim();
+                if ("1".equals(g) || "true".equalsIgnoreCase(g)) return true;
+                if ("0".equals(g) || "false".equalsIgnoreCase(g)) return false;
+            }
+        } catch (Exception ignored) {}
+        for (String root : new String[] { "/data/local/tmp/", "/data/misc/titan2/" }) {
+            java.io.File f = new java.io.File(root + CAPS_PLANE);
+            if (!f.isFile()) continue;
+            try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+                byte[] b = new byte[8];
+                int n = in.read(b);
+                if (n <= 0) continue;
+                String s = new String(b, 0, n, java.nio.charset.StandardCharsets.US_ASCII).trim();
+                if ("1".equals(s) || "true".equalsIgnoreCase(s)) return true;
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
+
+    private static void writeCapsPlane(Context c, boolean on) {
+        String v = on ? "1" : "0";
+        try {
+            android.provider.Settings.Global.putString(c.getContentResolver(), CAPS_PLANE, v);
+        } catch (Exception ignored) {}
+        for (String root : new String[] { "/data/local/tmp/", "/data/misc/titan2/" }) {
+            try {
+                java.io.File dir = new java.io.File(root);
+                if (!dir.isDirectory()) continue;
+                java.io.File f = new java.io.File(dir, CAPS_PLANE);
+                try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
+                    out.write(v.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                }
+            } catch (Exception ignored) {}
+        }
     }
 
     @Override public boolean readFnKey() { return stickyFn; }

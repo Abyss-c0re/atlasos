@@ -56,6 +56,8 @@ public interface TerminalViewClient {
 
     boolean readShiftKey();
 
+    default boolean readCapsLock() { return false; }
+
     boolean readFnKey();
 
 

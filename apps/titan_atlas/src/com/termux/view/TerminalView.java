@@ -431,8 +431,10 @@ public final class TerminalView extends View {
                     }
 
                     // Check onKeyDown() for details.
-                    if (mClient.readShiftKey())
+                    if (mClient.readShiftKey() ^ mClient.readCapsLock())
                         codePoint = Character.toUpperCase(codePoint);
+                    else if (Character.isLetter(codePoint))
+                        codePoint = Character.toLowerCase(codePoint);
 
                     boolean ctrlHeld = false;
                     if (codePoint <= 31 && codePoint != 27) {
@@ -779,7 +781,7 @@ public final class TerminalView extends View {
                     if (event.getAction() == KeyEvent.ACTION_UP) return onKeyUp(keyCode, event);
                 }
                 // Shift held / one-shot letter: pre-IME so getUnicodeChar uses client shift
-                if (mClient.readShiftKey() && keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z) {
+                if ((mClient.readShiftKey() || mClient.readCapsLock()) && keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z) {
                     if (event.getAction() == KeyEvent.ACTION_DOWN) return onKeyDown(keyCode, event);
                     if (event.getAction() == KeyEvent.ACTION_UP) return onKeyUp(keyCode, event);
                 }
@@ -913,6 +915,7 @@ public final class TerminalView extends View {
         // stuck after bare Shift tap or lost UP. AtlasTermClient owns momentary + one-shot
         // via readShiftKey(). Do NOT OR event.isShiftPressed() alone — that is the sticky bug.
         final boolean shiftDown = mClient.readShiftKey();
+        final boolean capsOn = mClient.readCapsLock();
         final boolean rightAltDownFromEvent = (metaState & KeyEvent.META_ALT_RIGHT_ON) != 0;
 
         int keyMod = 0;
@@ -941,6 +944,7 @@ public final class TerminalView extends View {
         int effectiveMetaState = event.getMetaState() & ~bitsToClear;
 
         if (shiftDown) effectiveMetaState |= KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON;
+        if (capsOn) effectiveMetaState |= KeyEvent.META_CAPS_LOCK_ON;
         if (mClient.readFnKey()) effectiveMetaState |= KeyEvent.META_FUNCTION_ON;
 
         int result = event.getUnicodeChar(effectiveMetaState);
