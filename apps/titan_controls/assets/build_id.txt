@@ -1,4 +1,4 @@
-versionName=16.69-side-keys
-versionCode=669
-built_utc=2026-09-12T00:01Z
+versionName=16.70-shift-caps
+versionCode=670
+built_utc=2026-09-12T12:29Z
 allow_root=0

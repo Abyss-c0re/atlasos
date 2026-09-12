@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.70-shift-caps (670) — 2026-09-12T12:29Z
+
+- Double Shift toggles Caps; Shift while Caps types lowercase
+
+---
+
 ## 16.69-side-keys (669) — 2026-09-12T00:01Z
 
 - Restore side-key inject; pad-off no longer blocks HID shortcuts or BT keys

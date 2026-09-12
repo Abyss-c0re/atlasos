@@ -125,6 +125,8 @@ public final class Titan2ApiContract {
     public static final String FILE_PAD_CURSOR_PAUSE_MS = "titan2_pad_cursor_pause_ms";
     /** Unix epoch seconds when typing lock should auto-clear (pad-agent TTL). */
     public static final String FILE_PAD_CURSOR_PAUSE_UNTIL = "titan2_pad_cursor_pause_until";
+    /** 1 = product Caps Lock from double bare Shift (Controls + Atlas). */
+    public static final String FILE_CAPS_LOCK = "titan2_caps_lock";
 
     // HID session plane (owner: USB HID FGS while live; idle seed: Controls)
     public static final String FILE_HID_SESSION = "titan2_usb_hid_session";

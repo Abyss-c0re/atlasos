@@ -72,6 +72,7 @@ public final class InputPlane {
             case Titan2ApiContract.FILE_PAD_CURSOR_PAUSE:
             case Titan2ApiContract.FILE_PAD_CURSOR_PAUSE_MS:
             case Titan2ApiContract.FILE_PAD_CURSOR_PAUSE_UNTIL:
+            case Titan2ApiContract.FILE_CAPS_LOCK:
             case Titan2ApiContract.FILE_INJECT_PAUSE:
             case Titan2ApiContract.FILE_SPECIALS_METHOD:
             case Titan2ApiContract.FILE_KEYS_PAUSE:
@@ -103,6 +104,15 @@ public final class InputPlane {
 
     public static void setCursorPaused(Context ctx, boolean on) {
         put(ctx, Titan2ApiContract.FILE_PAD_CURSOR_PAUSE, on ? "1" : "0");
+    }
+
+    /** Product Caps Lock (double bare Shift). Shared by Controls and Atlas. */
+    public static boolean isCapsLock(Context ctx) {
+        return isOn(get(ctx, Titan2ApiContract.FILE_CAPS_LOCK, "0"));
+    }
+
+    public static void setCapsLock(Context ctx, boolean on) {
+        put(ctx, Titan2ApiContract.FILE_CAPS_LOCK, on ? "1" : "0");
     }
 
     /**

@@ -2042,10 +2042,7 @@ public class TrackpadAccessService extends AccessibilityService {
     private void trackTerminalShift(KeyEvent event, int keyCode, int action) {
         if (event != null) {
             lastKnownCapsOn = (event.getMetaState() & KeyEvent.META_CAPS_LOCK_ON) != 0;
-            // Sync product latch if user/OS cleared CAPS externally.
-            if (!lastKnownCapsOn) {
-                productCapsLatched = false;
-            }
+            // Do not drop productCapsLatched when inject has not landed yet.
         }
         boolean isShift = keyCode == KeyEvent.KEYCODE_SHIFT_LEFT
                 || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT;
@@ -2054,6 +2051,8 @@ public class TrackpadAccessService extends AccessibilityService {
             lastKnownCapsOn = (event.getMetaState() & KeyEvent.META_CAPS_LOCK_ON) != 0;
             // Hardware CAPS key (rare on TitanKey): treat as product toggle edge.
             productCapsLatched = lastKnownCapsOn;
+            try { com.titanus2.api.InputPlane.setCapsLock(this, productCapsLatched); }
+            catch (Exception ignored) {}
             return;
         }
         if (isShift) {
@@ -2118,9 +2117,12 @@ public class TrackpadAccessService extends AccessibilityService {
     /** Atlas T-013: double bare Shift arms/disarms Caps deliberately. */
     private void toggleProductCaps() {
         try {
-            KeyActions.injectKeyCode(this, KeyEvent.KEYCODE_CAPS_LOCK);
             productCapsLatched = !productCapsLatched;
             lastKnownCapsOn = productCapsLatched;
+            try {
+                com.titanus2.api.InputPlane.setCapsLock(this, productCapsLatched);
+            } catch (Exception ignored) {}
+            KeyActions.injectKeyCode(this, KeyEvent.KEYCODE_CAPS_LOCK);
         } catch (Exception ignored) {}
     }
 
