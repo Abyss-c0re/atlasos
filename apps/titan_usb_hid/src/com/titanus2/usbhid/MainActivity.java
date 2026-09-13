@@ -2029,12 +2029,7 @@ public class MainActivity extends Activity {
         applyKeepScreenFlag();
         prefs.edit().putBoolean("pending_start", false).apply();
         if (!HidControl.hasPadRestore(this)) {
-            String before = PadModeClient.get(this);
-            if (PadModeClient.MOUSE.equals(before)) {
-                HidControl.savePadRestore(this, PadModeClient.OFF);
-            } else {
-                HidControl.savePadRestore(this, before);
-            }
+            HidControl.savePadRestore(this, PadModeClient.get(this));
         }
         KeyLedClient.ensureDefaults(this);
         KeyLedClient.bumpActivity();

@@ -44,7 +44,7 @@ public final class HidControl {
      * (share only). Pad stays on the HID guest. Typing lock still samples keys.
      */
     public static final String LOCAL_INPUT = "titan2_usb_hid_local_input";
-    /** 1 = Atlas MainActivity has window focus u2014 share mode yields TitanKey. */
+    /** 1 = Atlas MainActivity has window focus — share mode yields TitanKey. */
     public static final String ATLAS_FOCUSED = "titan2_atlas_focused";
     /**
      * 1 = type with panel actually off (FGS + PARTIAL wake + service UDC/input).
@@ -752,21 +752,10 @@ public final class HidControl {
                 try { ensureTouchpaddAlive(); } catch (Exception ignored) {}
             }
             // off: leave daemon up; it parks. Kill is heresy (ABS residual + delay).
-        } else {
-            // B8 1.51: exclusive START via FGS-only / missing restore left
-            // pad_mode=mouse + titan2-touchpadd running with session=0 (bench
-            // heat residual, pad steals TitanKey, Specials dual-type risk).
-            // Always dual-write off (tmp + Global) — lab saw tmp=mouse Global=off.
-            try { PadModeClient.set(ctx, PadModeClient.OFF); } catch (Exception ignored) {}
-            try { write(ctx, "titan2_pad_mode", "off"); } catch (Exception ignored) {}
-            try {
-                if (ctx != null) {
-                    android.provider.Settings.Global.putString(
-                        ctx.getContentResolver(), "titan2_pad_mode", "off");
-                }
-            } catch (Exception ignored) {}
-            // off restore: do not kill touchpadd (INPROC_PARK).
         }
+        // Missing restore: leave system pad mode alone. Forcing off here
+        // painted QS Off while INPROC_PARK touchpadd was still mouse.
+        try { PadModeClient.requestQsRefresh(ctx); } catch (Exception ignored) {}
     }
 
     /** No-op. Killing the pad daemon is the slow HID→phone switch. */
@@ -833,7 +822,7 @@ public final class HidControl {
     public static void prepareDriverPad(Context ctx) {
         // System pad mode is SoT. Forcing mouse here made Off/Trackpad
         // on the phone still drive the HID guest cursor.
-        // File plane only u2014 PadModeClient.get() is a binder hop and delayed
+        // File plane only — PadModeClient.get() is a binder hop and delayed
         // HID start + side-key layer. Missing/unreadable = keep preparing.
         String raw = null;
         try { raw = readPlaneAny(ctx, "titan2_pad_mode"); } catch (Exception ignored) {}

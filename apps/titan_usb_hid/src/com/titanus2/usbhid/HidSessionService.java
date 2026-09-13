@@ -37,7 +37,7 @@ public class HidSessionService extends Service {
     public static final String ACTION_DRAIN = "com.titanus2.usbhid.DRAIN";
     /** Controls published host_layout — re-seed keys_pause + drain specials. */
     public static final String ACTION_LAYOUT_PLANE = "com.titanus2.controls.action.LAYOUT_PLANE";
-    /** Atlas MainActivity window focus u2014 share mode yields TitanKey immediately. */
+    /** Atlas MainActivity window focus — share mode yields TitanKey immediately. */
     public static final String ACTION_ATLAS_FOCUS = "com.titanus2.hid.ATLAS_FOCUS";
     public static final String EXTRA_MOUSE = "mouse";
     public static final String EXTRA_GRAB = "grab";
@@ -922,12 +922,10 @@ public class HidSessionService extends Service {
                 }
                 if (doGrabRestore) {
                     try {
-                        String before = PadModeClient.get(app);
-                        if (PadModeClient.MOUSE.equals(before)) {
-                            HidControl.savePadRestore(app, PadModeClient.OFF);
-                        } else {
-                            HidControl.savePadRestore(app, before);
-                        }
+                        // Snapshot the real mode (including mouse). Mapping
+                        // mouse→off made Stop paint QS Off while touchpadd
+                        // stayed in mouse (INPROC_PARK).
+                        HidControl.savePadRestore(app, PadModeClient.get(app));
                     } catch (Exception ignored) {}
                 }
                 if (doStartKm) {
@@ -955,6 +953,7 @@ public class HidSessionService extends Service {
         }
         // Single plane write — contract for hid_bridge
         HidControl.setSession(this, true, mouseMode, grabMode, keysMode, usb, bt);
+        try { PadModeClient.requestQsRefresh(this); } catch (Exception ignored) {}
         if (grabMode && phys && HidControl.isHostLayoutKeysPaused(this)) {
             try { HidKeyMapSession.republishHostLayout(this); } catch (Exception ignored) {}
         }

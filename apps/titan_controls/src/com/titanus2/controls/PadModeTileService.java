@@ -4,15 +4,21 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.database.ContentObserver;
 import android.graphics.drawable.Icon;
+import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
 import android.service.quicksettings.Tile;
 import android.service.quicksettings.TileService;
 
 /**
  * Quick Settings tile: cycles pad mode Off → Trackpad → Mouse → Off.
- * Refreshes on listen, click, and {@link PadModeController#ACTION_MODE}
- * (HID / Controls SET paths).
+ * Refreshes on listen, click, {@link PadModeController#ACTION_MODE}
+ * (HID / Controls SET paths), and Settings.Global {@code titan2_pad_mode}
+ * so HID plane writes cannot leave the tile painted Off while mouse is on.
  * <p>
  * Long-press opens Titan Controls Trackpad section via
  * {@link TileService#ACTION_QS_TILE_PREFERENCES} on {@link MainActivity}
@@ -27,6 +33,7 @@ public class PadModeTileService extends TileService {
         }
     };
     private boolean rxRegistered;
+    private ContentObserver planeObs;
 
     @Override public void onStartListening() {
         super.onStartListening();
@@ -39,6 +46,16 @@ public class PadModeTileService extends TileService {
                     registerReceiver(modeRx, f);
                 }
                 rxRegistered = true;
+            } catch (Exception ignored) {}
+        }
+        if (planeObs == null) {
+            planeObs = new ContentObserver(new Handler(Looper.getMainLooper())) {
+                @Override public void onChange(boolean selfChange) { refresh(); }
+                @Override public void onChange(boolean selfChange, Uri uri) { refresh(); }
+            };
+            try {
+                getContentResolver().registerContentObserver(
+                    Settings.Global.getUriFor(AgentBridge.PAD_MODE), false, planeObs);
             } catch (Exception ignored) {}
         }
         refresh();
@@ -56,6 +73,10 @@ public class PadModeTileService extends TileService {
         if (rxRegistered) {
             try { unregisterReceiver(modeRx); } catch (Exception ignored) {}
             rxRegistered = false;
+        }
+        if (planeObs != null) {
+            try { getContentResolver().unregisterContentObserver(planeObs); } catch (Exception ignored) {}
+            planeObs = null;
         }
         super.onStopListening();
     }

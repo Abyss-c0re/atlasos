@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.71-pad-qs (671) — 2026-09-13T12:00Z
+
+### rebuild 2026-09-13T19:25Z · 16.71-pad-qs (671)
+
+- Rebuild (ALLOW_ROOT=0)
+
+
+- QS pad tile follows HID: notify even when plane already matches; do not leave Off painted over mouse
+
+---
+
 ## 16.70-shift-caps (670) — 2026-09-12T12:29Z
 
 - Double Shift toggles Caps; Shift while Caps types lowercase

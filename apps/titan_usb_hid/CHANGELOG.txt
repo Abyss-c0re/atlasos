@@ -1,3 +1,4 @@
+2026-09-13T12:00Z fix(hid): keep pad QS in sync; do not restore mouse as Off (2.33)
 2026-08-29T02:20:00Z BT HID: disconnect host A2DP/HFP before connect; Atlas focus yields shared keys
 2026-08-24T19:51:46Z fix(hid): stop A2DP race and freeze host mouse while typing
 2026-08-24T20:46:13Z BT HID: Stop stays stopped; one reconnect tick; no ACL/800ms spam

@@ -104,6 +104,9 @@ public final class PadModeController {
             } else {
                 stopTouchpaddProcess(ctx);
             }
+            // HID writes the plane first, then SET. Without this, QS stays
+            // at the last painted state (Off) while mouse is already on.
+            notifyModeChanged(ctx, mode);
             return true;
         }
         boolean ok = AgentBridge.put(ctx, AgentBridge.PAD_MODE, mode);

@@ -1,4 +1,4 @@
-versionName=16.70-shift-caps
-versionCode=670
-built_utc=2026-09-12T12:29Z
+versionName=16.71-pad-qs
+versionCode=671
+built_utc=2026-09-13T19:25Z
 allow_root=0

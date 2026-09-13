@@ -79,4 +79,17 @@ public final class PadModeClient {
     public static void requestRegrab(Context ctx) {
         api(ctx).requestPadRegrab();
     }
+
+    /**
+     * Ask Controls to repaint the pad QS tile from the shared plane.
+     * HID cannot call TileService.requestListeningState on another package.
+     */
+    public static void requestQsRefresh(Context ctx) {
+        if (ctx == null) return;
+        try {
+            android.content.Intent i = new android.content.Intent(ACTION_GET);
+            i.setPackage(CONTROLS_PKG);
+            ctx.sendBroadcast(i);
+        } catch (Exception ignored) {}
+    }
 }
