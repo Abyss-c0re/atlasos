@@ -7,10 +7,10 @@ import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 
 /**
- * Settings → SIMs → Calls is the only voice pin.
- * Detect broken IMS. Request heal. Never overwrite a human Calls pin.
- * After wipe, {@link #seedVoiceIfUnset} fills defaultVoice when it is -1.
- * {@code both} means enable every present tray. Never {@code ims disable}.
+ * Settings → SIMs → Calls is the only voice pin. Never write it.
+ * Force carrier_volte_available so ImsManager will REGISTER on the IMS PDN
+ * (P-CSCF is already up; AOSP default for unknown MCC is volte=false).
+ * Never {@code ims disable}.
  */
 public final class ImsCalls {
     private ImsCalls() {}
@@ -58,44 +58,39 @@ public final class ImsCalls {
      * After wipe, Android leaves defaultVoiceSubId=-1 so incoming never RINGING.
      * Seed first UICC sub if unset. Never overwrite a human Settings Calls pin.
      */
-    public static void seedVoiceIfUnset(Context ctx) {
+    public static void forceVolteCarrierConfig(Context ctx) {
         if (ctx == null) return;
-        int settings = settingsCallsSubId(ctx);
-        int def = -1;
-        try {
-            def = SubscriptionManager.getDefaultVoiceSubscriptionId();
-        } catch (Exception ignored) {}
-        if (settings > 0 && def > 0) return;
-        int want = settings > 0 ? settings : firstUiccSub(ctx);
-        if (want <= 0) return;
-        SubscriptionManager sm = ctx.getSystemService(SubscriptionManager.class);
-        if (sm != null) {
-            try {
-                sm.getClass().getMethod("setDefaultVoiceSubscriptionId", int.class)
-                    .invoke(sm, Integer.valueOf(want));
-            } catch (Throwable ignored) {}
-            try {
-                sm.getClass().getMethod("setDefaultDataSubId", int.class)
-                    .invoke(sm, Integer.valueOf(want));
-            } catch (Throwable ignored) {}
-            try {
-                SubscriptionManager.class.getMethod("setDefaultDataSubId", int.class)
-                    .invoke(null, Integer.valueOf(want));
-            } catch (Throwable ignored) {}
-        }
-        try {
-            Settings.Global.putString(ctx.getContentResolver(),
-                "multi_sim_voice_call", String.valueOf(want));
-            Settings.Global.putString(ctx.getContentResolver(),
-                "multi_sim_data_call", String.valueOf(want));
-        } catch (Exception ignored) {}
-    }
-
-    static int firstUiccSub(Context ctx) {
+        android.telephony.CarrierConfigManager ccm =
+            ctx.getSystemService(android.telephony.CarrierConfigManager.class);
+        if (ccm == null) return;
+        android.os.PersistableBundle b = new android.os.PersistableBundle();
+        b.putBoolean(android.telephony.CarrierConfigManager.KEY_CARRIER_VOLTE_AVAILABLE_BOOL, true);
+        b.putBoolean(android.telephony.CarrierConfigManager.KEY_CARRIER_VOLTE_PROVISIONED_BOOL, true);
+        b.putBoolean(android.telephony.CarrierConfigManager.KEY_CARRIER_WFC_IMS_AVAILABLE_BOOL, true);
+        b.putBoolean(android.telephony.CarrierConfigManager.KEY_EDITABLE_ENHANCED_4G_LTE_BOOL, true);
+        b.putBoolean("enhanced_4g_lte_on_by_default_bool", true);
+        b.putBoolean("carrier_ims_gba_required_bool", false);
+        b.putBoolean("carrier_rcs_provisioning_required_bool", false);
+        b.putInt("carrier_default_wfc_ims_mode_int", 1);
         for (SimCards.Card c : SimCards.list(ctx)) {
-            if (c != null && c.uicc && c.subId > 0) return c.subId;
+            if (c == null || !c.uicc || c.subId <= 0) continue;
+            boolean ok = false;
+            try {
+                ccm.getClass()
+                    .getMethod("overrideConfig", int.class,
+                        android.os.PersistableBundle.class, boolean.class)
+                    .invoke(ccm, Integer.valueOf(c.subId), b, Boolean.TRUE);
+                ok = true;
+            } catch (Throwable ignored) {}
+            if (!ok) {
+                try {
+                    ccm.getClass()
+                        .getMethod("overrideConfig", int.class,
+                            android.os.PersistableBundle.class)
+                        .invoke(ccm, Integer.valueOf(c.subId), b);
+                } catch (Throwable ignored) {}
+            }
         }
-        return -1;
     }
 
     public static int settingsCallsSubId(Context ctx) {

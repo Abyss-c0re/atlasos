@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.77-volte-cc (677) — 2026-09-16T17:32Z
+
+### rebuild 2026-09-16T17:32Z · 16.77-volte-cc (677)
+
+- Rebuild (ALLOW_ROOT=1)
+
+
+- override carrier_volte_available so ImsManager REGISTERs (do not write Calls)
+
+---
+
 ## 16.76-voice-seed (676) — 2026-09-16T17:16Z
 
 ### rebuild 2026-09-16T17:17Z · 16.76-voice-seed (676)
