@@ -1,4 +1,4 @@
-versionName=16.71-pad-qs
-versionCode=671
-built_utc=2026-09-13T19:25Z
+versionName=16.72-login-gate
+versionCode=672
+built_utc=2026-09-16T12:47Z
 allow_root=0

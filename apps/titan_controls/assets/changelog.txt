@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.72-login-gate (672) — 2026-09-16T12:47Z
+
+- login-gate: pad off until USER_PRESENT (titan2_pad_gate)
+
+---
+
 ## 16.71-pad-qs (671) — 2026-09-13T12:00Z
 
 ### rebuild 2026-09-13T19:25Z · 16.71-pad-qs (671)

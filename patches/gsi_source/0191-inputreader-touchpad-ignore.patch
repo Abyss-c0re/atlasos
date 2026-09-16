@@ -1,0 +1,33 @@
+diff --git a/services/inputflinger/reader/mapper/TouchInputMapper.cpp b/services/inputflinger/reader/mapper/TouchInputMapper.cpp
+index a6dea4efc7..feddf4a60f 100644
+--- a/services/inputflinger/reader/mapper/TouchInputMapper.cpp
++++ b/services/inputflinger/reader/mapper/TouchInputMapper.cpp
+@@ -431,6 +431,9 @@ TouchInputMapper::Parameters::DeviceType TouchInputMapper::computeDeviceType(
+         deviceType = Parameters::DeviceType::TOUCH_NAVIGATION;
+     } else if (deviceTypeString == "pointer") {
+         deviceType = Parameters::DeviceType::POINTER;
++    } else if (deviceTypeString == "ignore") {
++        // pad-agent mouse IDC. configureInputDevice disables the mapper.
++        // Do not POINTER (zombie cursor) and do not leave DIRECT (2nd screen).
+     } else if (deviceTypeString != "default" && deviceTypeString != "") {
+         ALOGW("Invalid value for touch.deviceType: '%s'", deviceTypeString.c_str());
+     }
+@@ -866,8 +869,17 @@ void TouchInputMapper::configureInputDevice(nsecs_t when, bool* outResetNeeded)
+ 
+     resolveExternalStylusPresence();
+ 
++    const std::string deviceTypeString =
++            getDeviceContext().getConfiguration().getString("touch.deviceType").value_or("");
++
+     // Determine device mode.
+-    if (mParameters.deviceType == Parameters::DeviceType::POINTER &&
++    if (deviceTypeString == "ignore") {
++        // Titan mouse: pad-agent binds ignore; titan2-touchpadd owns the node.
++        // Keep EventHub TOUCH so the device is not dropped (empty classes
++        // return early and never reopen). Mapper silent — no cursor.
++        mSource = 0;
++        mDeviceMode = DeviceMode::DISABLED;
++    } else if (mParameters.deviceType == Parameters::DeviceType::POINTER &&
+         mConfig.pointerGesturesEnabled && !mConfig.pointerCaptureRequest.isEnable()) {
+         mSource = AINPUT_SOURCE_MOUSE;
+         mDeviceMode = DeviceMode::POINTER;

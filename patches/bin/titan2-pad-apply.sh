@@ -18,7 +18,7 @@ PAD_STATUS=$ST/titan2_pad_status
 TP_LOG=$ST/titan2_touchpadd.log
 CARET_STATUS=$ST/titan2_caret_status
 APPLY_LAST=$ST/titan2_pad_apply_last
-PAD_APPLY_VER=2.219-rom-lock
+PAD_APPLY_VER=2.234-login-gate
 
 # Prefer GSI/system binary (Phase 1.5 SoT); tip only for lab iteration.
 TOUCHPADD=/system/bin/titan2-touchpadd
@@ -180,13 +180,29 @@ virt_source_mouse_up() {
 # until later. Stale 1 parks mouse and trackpad for every user. Forget on boot;
 # Key a11y restamps live keyguard when it actually connects.
 _forget_persisted_input_lock() {
-  settings put global titan2_input_lock 0 2>/dev/null || true
+  settings put global titan2_input_lock 1 2>/dev/null || true
   settings put global titan2_a11y_live 0 2>/dev/null || true
+  _stamp_pad_gate lock
   for _d in "$T2" "$ST"; do
-    printf '0\n' >"$_d/titan2_input_lock" 2>/dev/null || true
+    printf '1\n' >"$_d/titan2_input_lock" 2>/dev/null || true
     printf '0\n' >"$_d/titan2_a11y_live" 2>/dev/null || true
     chmod 666 "$_d/titan2_input_lock" "$_d/titan2_a11y_live" 2>/dev/null || true
   done
+}
+
+_stamp_pad_gate() {
+  want="${1:-lock}"
+  case "$want" in open|OPEN|1) want=open ;; *) want=lock ;; esac
+  for _d in "$T2" "$ST"; do
+    printf "%s\n" "$want" >"$_d/titan2_pad_gate" 2>/dev/null || true
+    chmod 666 "$_d/titan2_pad_gate" 2>/dev/null || true
+  done
+  settings put global titan2_pad_gate "$want" 2>/dev/null || true
+}
+_read_pad_gate() {
+  v=`read_first titan2_pad_gate 2>/dev/null` || v=""
+  case "$v" in open|OPEN|1) echo open; return ;; esac
+  echo lock
 }
 
 _a11y_live_ok() {
@@ -195,20 +211,26 @@ _a11y_live_ok() {
 }
 
 _input_unlocked_ok() {
+  # Default deny. boot_completed is not login. CE is not login on this GSI.
   case "`getprop sys.boot_completed 2>/dev/null | tr -d '\r'`" in 1) ;; *) return 1 ;; esac
-  # No PIN/pattern: leftover lock=1 after KEEP_DATA is not a credential park.
-  # Same as the live heal — apply must run without a settings put.
   case "`settings get secure lockscreen.disabled 2>/dev/null | tr -d '\r'`" in
-    1|true|TRUE) return 0 ;;
+    1|true|TRUE)
+      _stamp_pad_gate open
+      return 0
+      ;;
   esac
-  if _a11y_live_ok; then
-    case "`read_first titan2_input_lock 2>/dev/null`" in 1|true|on|yes) return 1 ;; esac
-    case "`settings get global titan2_input_lock 2>/dev/null | tr -d '\r'`" in 1|true|on|yes) return 1 ;; esac
-  fi
-  ce=`getprop sys.user.0.ce_available 2>/dev/null | tr -d '\r' | tr 'A-Z' 'a-z'`
-  case "$ce" in 0|false) return 1 ;; esac
-  return 0
+  case "`_read_pad_gate`" in
+    open)
+      if _a11y_live_ok; then
+        case "`read_first titan2_input_lock 2>/dev/null`" in 1|true|on|yes) return 1 ;; esac
+        case "`settings get global titan2_input_lock 2>/dev/null | tr -d '\r'`" in 1|true|on|yes) return 1 ;; esac
+      fi
+      return 0
+      ;;
+  esac
+  return 1
 }
+
 _lockscreen_park_input() {
   kill_touchpadd 2>/dev/null || true
   kill_orient_rel 2>/dev/null || true

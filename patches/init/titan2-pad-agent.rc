@@ -10,6 +10,16 @@ service titan2-pad-agent /system/bin/titan2-pad-agent.sh
     group root system
     disabled
 
+service titan2-pad-park /system/bin/titan2-pad-apply.sh boot_safe
+    class core
+    user root
+    group root system
+    oneshot
+    disabled
+
+on boot
+    start titan2-pad-park
+
 # Single start only. Dual boot_completed + dev.bootcomplete raced and left
 # 2–3 pad-agents thrashing InputReader (load~20, HID dead, reboot→preloader).
 # Missed start recovers via phh-on-boot ctl.start (no second property trigger).

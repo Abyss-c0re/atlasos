@@ -117,6 +117,7 @@ public final class AgentBridge {
      * first unlock so lockscreen is not “CE down”.
      */
     public static final String INPUT_LOCK = "titan2_input_lock";
+    public static final String PAD_GATE = "titan2_pad_gate";
     /**
      * Display plane for Cube dual-DPI:
      * {@code tablet} = physical size + cube dens (Settings two-pane SW≥600);
@@ -462,6 +463,8 @@ public final class AgentBridge {
             case PAD_MODE:
             case PAD_CURSOR_PAUSE:
             case A11Y_LIVE:
+            case INPUT_LOCK:
+            case PAD_GATE:
             case UI_PLANE:
             case DEV_ACTION:
             case IMS_ACTION:

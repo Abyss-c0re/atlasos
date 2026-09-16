@@ -26,7 +26,8 @@ public class BootRestoreReceiver extends BroadcastReceiver {
         String action = intent.getAction();
         boolean unlocked = Intent.ACTION_USER_UNLOCKED.equals(action);
         boolean lockedBoot = Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action);
-        boolean boot = Intent.ACTION_BOOT_COMPLETED.equals(action) || unlocked;
+        boolean present = Intent.ACTION_USER_PRESENT.equals(action);
+        boolean boot = Intent.ACTION_BOOT_COMPLETED.equals(action) || unlocked || present;
         boolean replaced = Intent.ACTION_MY_PACKAGE_REPLACED.equals(action);
         // LOCKED_BOOT_COMPLETED is DE-only. CE SharedPreferences throw and AMS
         // marks TrackpadAccessService "malfunctioning" (Crashed services).
@@ -35,6 +36,8 @@ public class BootRestoreReceiver extends BroadcastReceiver {
 
         final Context app = context.getApplicationContext();
         if (!AccessServiceHelper.userUnlocked(app)) return;
+        if (credentialLockShowing(app)) stampPadGate(app, false);
+        else stampPadGate(app, true);
         pinAndHeal(app);
         // KEEP_DATA already-CE boot never sends USER_UNLOCKED again.
         // Listed-but-unbound a11y leaves titan2_input_lock stuck → pad park.
@@ -63,8 +66,10 @@ public class BootRestoreReceiver extends BroadcastReceiver {
             KeyboardLed.restoreToControls(context);
         } catch (Exception ignored) {}
         try {
-            String m = AgentBridge.get(context, AgentBridge.PAD_MODE, "off");
-            AgentBridge.put(context, AgentBridge.PAD_MODE, m);
+            if (!credentialLockShowing(context)) {
+                String m = AgentBridge.get(context, AgentBridge.PAD_MODE, "off");
+                AgentBridge.put(context, AgentBridge.PAD_MODE, m);
+            }
             String c = AgentBridge.get(context, AgentBridge.PAD_CLICK, "1");
             AgentBridge.put(context, AgentBridge.PAD_CLICK, c);
             String trc = AgentBridge.get(context, AgentBridge.PAD_TOP_ROW_CURSOR, "1");
@@ -229,7 +234,9 @@ public class BootRestoreReceiver extends BroadcastReceiver {
         // B8 11.93: pad mode gate at boot — start only when wanted, else stop orphan
         try {
             String pm = PadModeController.getMode(app);
-            if (PadModeController.MOUSE.equals(pm) || PadModeController.TRACKPAD.equals(pm)) {
+            if (credentialLockShowing(app)) {
+                PadModeController.stopTouchpaddProcess();
+            } else if (PadModeController.MOUSE.equals(pm) || PadModeController.TRACKPAD.equals(pm)) {
                 PadModeController.ensureTouchpaddProcess();
             } else {
                 PadModeController.stopTouchpaddProcess();
@@ -276,7 +283,9 @@ public class BootRestoreReceiver extends BroadcastReceiver {
                         try { HostLayoutController.publish(app); } catch (Exception ignored) {}
                         try {
                             String pm = PadModeController.getMode(app);
-                            if (PadModeController.MOUSE.equals(pm)
+                            if (credentialLockShowing(app)) {
+                                PadModeController.stopTouchpaddProcess();
+                            } else if (PadModeController.MOUSE.equals(pm)
                                     || PadModeController.TRACKPAD.equals(pm)) {
                                 PadModeController.ensureTouchpaddProcess();
                             } else {
@@ -289,5 +298,28 @@ public class BootRestoreReceiver extends BroadcastReceiver {
                 } catch (Exception ignored) {}
             }, delay);
         }
+    }
+
+    static boolean credentialLockShowing(Context ctx) {
+        if (ctx == null) return false;
+        try {
+            String dis = Settings.Secure.getString(ctx.getContentResolver(), "lockscreen.disabled");
+            if ("1".equals(dis) || "true".equalsIgnoreCase(dis)) return false;
+        } catch (Exception ignored) {}
+        try {
+            android.app.KeyguardManager km = ctx.getSystemService(android.app.KeyguardManager.class);
+            if (km == null || !km.isDeviceSecure()) return false;
+            return km.isKeyguardLocked() || km.isDeviceLocked();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static void stampPadGate(Context ctx, boolean open) {
+        String v = open ? "open" : "lock";
+        try { AgentBridge.put(ctx, AgentBridge.PAD_GATE, v); } catch (Exception ignored) {}
+        try {
+            Settings.Global.putString(ctx.getContentResolver(), AgentBridge.PAD_GATE, v);
+        } catch (Exception ignored) {}
     }
 }

@@ -113,14 +113,14 @@ fi
 LAST_BRIGHT=""; LAST_TO=""; LAST_SCREEN=1; LAST_PAD=""
 LAST_FN=""; LAST_CHAR_MOD=""; LAST_CHAR_SCAN=""; LAST_HOST_LAYOUT=""
 LAST_CM_MT=""; LAST_SC_MT=""; LAST_FN_MT=""; LAST_HL_MT=""; LAST_SM_MT=""
-LAST_IDC_KIND=""; LAST_PAD_MT=0; LAST_CLICK_MT=0; LAST_FOLLOW_MT=0; LAST_LOCK_MT=0; LAST_CE=""
+LAST_IDC_KIND=""; LAST_PAD_MT=0; LAST_CLICK_MT=0; LAST_FOLLOW_MT=0; LAST_LOCK_MT=0; LAST_GATE_MT=0; LAST_CE=""
 # peels 2.160–2.212: see OPTIMIZE_SOURCE_PRODUCT.md
-AGENT_VER="${AGENT_VER:-2.233-rom-lock}"
+AGENT_VER="${AGENT_VER:-2.234-login-gate}"
 # Force pin: refuse non-2.x garbage + force upgrade sticky env older than 2.160
 # (lab residual: sticky 2.6x/2.12x never picked tip peels). hot_reload still 2.NN*.
 case "$AGENT_VER" in
   2.20[0-9]*|2.21[0-9]*|2.22[0-9]*|2.23[0-9]*|2.19[0-9]*|2.18[0-9]*|2.17[0-9]*|2.16[0-9]*) ;;
-  *) AGENT_VER="2.233-rom-lock" ;;
+  *) AGENT_VER="2.234-login-gate" ;;
 esac
 log() { echo "pad-agent $AGENT_VER live $1" > "$AGENT_STATUS" 2>/dev/null; chmod 666 "$AGENT_STATUS" 2>/dev/null; }
 # Lightweight status stamp (no chmod every tick — 2.34+ heartbeat path).
@@ -1287,8 +1287,12 @@ _agent_boot_full() {
   _heal_ghost_host_layout_phone
   _boot_pad_safe
   log "boot_pad_modes_only"
-  apply_pad
-  log "boot_pad_applied mode=`read_pad_mode`"
+  _g=`cat "$ST/titan2_pad_gate" 2>/dev/null | tr -d '\r\n '`
+  [ -n "$_g" ] || _g=`cat "$T2/titan2_pad_gate" 2>/dev/null | tr -d '\r\n '`
+  case "$_g" in
+    open|OPEN|1) apply_pad; log "boot_pad_applied mode=`read_pad_mode`" ;;
+    *) log "boot_pad_parked_until_login" ;;
+  esac
   LAST_SUBDISP=""
   SUBDISP_REASSERT_FAILS=0
   (
@@ -1850,18 +1854,17 @@ while true; do
   _icon_apply_tick
 
   _pad_edge_sample
-  _ce_now=`getprop sys.user.0.ce_available 2>/dev/null | tr -d '\r'`
-  if [ -n "$_ce_now" ] && [ "$_ce_now" != "$LAST_CE" ]; then
-    LAST_CE=$_ce_now
+  gate_mt=`mtime_max titan2_pad_gate`
+  if [ "$gate_mt" != "${LAST_GATE_MT:-0}" ]; then
+    LAST_GATE_MT=$gate_mt
     pad_dirty=1
   fi
-  # Early boot apply writes lockpark; no plane mtime after that. Retry
-  # once the system is up so the ROM path matches a post-boot apply.
+  # Parked until login. Only apply persisted mode after Controls opens the gate.
   if [ "$pad_dirty" != "1" ] && [ -f "$PAD_STATUS" ] \
-      && grep -q 'applied=lockpark' "$PAD_STATUS" 2>/dev/null; then
-    case "`getprop sys.boot_completed 2>/dev/null | tr -d '\r'`" in
-      1) [ $((loop_n % 5)) -eq 1 ] && pad_dirty=1 ;;
-    esac
+      && grep -qE 'applied=(lockpark|boot_safe)' "$PAD_STATUS" 2>/dev/null; then
+    _g=`cat "$ST/titan2_pad_gate" 2>/dev/null | tr -d '\r\n '`
+    [ -n "$_g" ] || _g=`cat "$T2/titan2_pad_gate" 2>/dev/null | tr -d '\r\n '`
+    case "$_g" in open|OPEN|1) pad_dirty=1 ;; esac
   fi
   if [ "$pad_dirty" = "1" ]; then
     _schedule_apply_pad

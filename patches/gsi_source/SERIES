@@ -24,7 +24,7 @@
 # PRODUCT_PACKAGES: titan2-touchpadd ELF + disabled init (pad-agent starts mouse).
 # ELF/APKs staged by scripts/misterztr/stage_gsi_product.sh (not in this patch).
 # Owner: pad-agent starts/stops touchpadd in mouse; trackpad is native IDC.
-# Default touchPad.idc = ignore. Never EventHub-exclude (0191 killed both modes).
+# Default touchPad.idc = ignore. 0191 disables the mapper (not EventHub-exclude).
 # Flip WITH_TOUCHPADD_INJECT off only after a pin boot-proves ELF + pad-agent.
 # Apps SoT: apps/titan_controls|titan_usb_hid|cube_contact
 # 0040 mk matches packages/gsi_product/titanus2.mk at capture; stage always
@@ -130,6 +130,11 @@
 # Titan printed keyboard: HW Enter must submit the password. IME-on-bouncer
 # turned Enter into cancel (event != null, not IME_ACTION_DONE).
 0111-keyguard-hw-enter-submits-password.patch
+
+# project:frameworks/native
+# ignore IDC: disable mapper, keep EventHub TOUCH so mouse can own the node.
+# Old EventHub-exclude 0191 killed both modes. This one does not.
+0191-inputreader-touchpad-ignore.patch
 
 # project:frameworks/av
 # MTK getCameraIdList hides HI847S (2) + SAT (3). Probe them when

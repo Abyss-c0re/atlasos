@@ -466,6 +466,7 @@ public class TrackpadAccessService extends AccessibilityService {
 
         // 12.60 B1: pad-agent screen-on side fallback uses this plane
         try { AgentBridge.put(this, AgentBridge.A11Y_LIVE, "1"); } catch (Exception ignored) {}
+        try { stampInputLock(isCredentialSurface()); } catch (Exception ignored) {}
         lastA11yLiveStamp = android.os.SystemClock.elapsedRealtime();
         // 12.70/13.37: run heartbeat immediately (was 8s delayed → a11y_live=0
         // window after rebind; pad-agent treated Key a11y as dead → dual sides).
