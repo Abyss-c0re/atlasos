@@ -12,12 +12,13 @@ HOLD FLASH. Next GSI pin only. Never resume 019ff9d1 to fix live.
 | A3 persist is cache | titan2_simswitch boot-early only; hold re-reads Settings | a389b9e |
 | A4 never xsim | PhoneCalls always setCrossSimCallingEnabled false | 79c1e5f |
 | A5 pulled card is gone | slot less than 0 / INVALID / ABSENT not listed; 0092a | 951bf31 |
-| A6 bind 1 or 2 or both | both = skip ABSENT; two LOADED = Calls tray only (MTK one IMS cap) | ImsCalls + setup |
+| A6 bind 1 or 2 or both | both = enable every present tray; never ims disable | ImsCalls + setup |
 | A7 pad ROM outranks KEEP_DATA tip | system bin apply not data local tmp leftover | d1d32b7 |
 | A8 no ImsService inject | DANGEROUS_IMS_INJECT bootloop | banned |
 | A9 Treble BT seed-once | heal does not restamp BT persist | heal law |
 | A10 WFC cellular-preferred | WIFI_PREFERRED starved LTE | setup wfc mode 1 |
-| A11 any SIM either tray | no MCC/pack/preferapn pin; bind unset = skip ABSENT; two LOADED follow Settings Calls; never ims disable the Calls tray to poke the other | setup.sh |
+| A11 any SIM either tray | no MCC/pack/preferapn pin; bind unset = skip ABSENT; never write Calls; never ims disable | setup.sh |
+| A13 VoLTE available | unknown MCC defaults volte=false; Controls overrideConfig carrier_volte_available | 16.77 |
 | A12 no system-uid kitchen APK | TitanNetFw own UID; signed-GSI + android.uid.system = PMS bootloop | netfw 1.12 |
 
 ## Heresy (do not recycle)
@@ -39,6 +40,7 @@ Vendor simswitch is 1-indexed tray. Settings Calls is subscription id.
 calls_want maps subId to slot+1. Do not use raw subId 3 as tray 3.
 Default bind-both must not poke an ABSENT ImsPhone.
 Physical swap: rematch Calls subId → new slot; drop memory for a tray that now has another live sub.
-Disable phone calls Off→On: re-arm Calls tray only.
-Settings UICC-off hides the row; Controls memory restores it. Any UICC change rearms Calls (enable+bind, never ims disable).
-Two LOADED: persist.vendor.mtk.volte.enable=3 or incoming never RINGING. Never force 1.
+Disable phone calls Off→On: re-arm present trays (enable only).
+Settings UICC-off hides the row; Controls memory restores it. UICC change rearms (enable+bind, never ims disable).
+Two LOADED: persist.vendor.mtk.volte.enable=3. Never force 1.
+Overwrite multi_sim_voice_call is still heresy. Seed-Calls-after-wipe is heresy.
