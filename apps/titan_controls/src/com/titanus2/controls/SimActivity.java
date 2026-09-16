@@ -76,7 +76,7 @@ public class SimActivity extends Activity {
         if (isFinishing() || root == null) return;
         root.removeAllViews();
         UiKit.title(root, "SIMs");
-        UiKit.note(root, "Settings hide turns the row Off here. Controls turns it back on. Disable stays Off. Row is not deleted.");
+        UiKit.note(root, "Off is radio power (OEM). Settings UICC-off is undone so the SIM stays listed.");
         ImsCalls.Detect ims = ImsCalls.detect(this);
         TextView callsFact = UiKit.mono(root);
         callsFact.setText(ims.line());
@@ -86,6 +86,7 @@ public class SimActivity extends Activity {
             h.post(this::render);
         });
 
+        SimCards.undeleteUicc(this);
         SimCards.pinTrayNames(this);
         List<SimCards.Card> cards = SimCards.list(this);
         if (cards.isEmpty()) {
@@ -109,7 +110,7 @@ public class SimActivity extends Activity {
     private void setCard(SimCards.Card c, boolean on) {
         if (c == null || busy) return;
         busy = true;
-        boolean ok = SimCards.setUicc(this, c.subId, on);
+        boolean ok = SimCards.setRadio(this, c, on);
         if (!ok) {
             busy = false;
             UiKit.toast(this, "Could not set " + c.name);

@@ -193,8 +193,11 @@ seed_agent_extras() {
     chmod 666 "$T2/titan2_char_mod" 2>/dev/null || true
   fi
 
+  echo both > "$T2/titan2_ims_bind_slots" 2>/dev/null || true
+  chmod 666 "$T2/titan2_ims_bind_slots" 2>/dev/null || true
+  settings put global titan2_ims_bind_slots both 2>/dev/null || true
   for pair in "titan2_ims_mtk:1" "titan2_ims_force_volte:1" "titan2_ims_binder:1" \
-    "titan2_tel_patch_smsc:1" "titan2_tel_disable_vci:0" "titan2_ims_bind_slots:both" \
+    "titan2_tel_patch_smsc:1" "titan2_tel_disable_vci:0" \
     "titan2_phone_calls:1"; do
     nm=${pair%%:*}; val=${pair##*:}
     if [ ! -s "$T2/$nm" ]; then

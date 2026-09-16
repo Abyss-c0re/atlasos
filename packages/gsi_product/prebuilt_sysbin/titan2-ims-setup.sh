@@ -320,13 +320,10 @@ ims_restart_registration() {
 
 # Bind MMTEL on the trays Controls asked for (1 | 2 | both).
 ASLOT=$(ims_active_slot)
-BIND_WANT=$(cat /data/misc/titan2/titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n ')
-[ -n "$BIND_WANT" ] || BIND_WANT=$(settings get global titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n ')
-# Physical swap leaves bind=1|2 pointing at the empty tray.
-case "$BIND_WANT" in
-  1) ims_slot_absent 0 && BIND_WANT=both ;;
-  2) ims_slot_absent 1 && BIND_WANT=both ;;
-esac
+# Never persist tray numbers. Bind every present SIM in every slot.
+BIND_WANT=both
+echo both > /data/misc/titan2/titan2_ims_bind_slots 2>/dev/null || true
+settings put global titan2_ims_bind_slots both 2>/dev/null || true
 j=0
 BIND_SLOTS=`ims_bind_target_slots "$BIND_WANT"`
 while [ $j -lt 15 ]; do

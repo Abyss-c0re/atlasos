@@ -3,6 +3,7 @@ package com.titanus2.controls;
 import android.content.Context;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyManager;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -182,21 +183,73 @@ public final class SimCards {
         return sb.toString();
     }
 
-    public static boolean setUicc(Context ctx, int subId, boolean on) {
-        if (ctx == null || subId <= 0) return false;
-        SubscriptionManager sm = ctx.getSystemService(SubscriptionManager.class);
-        if (sm == null) return false;
-        try {
-            sm.getClass()
-                .getMethod("setUiccApplicationsEnabled", int.class, boolean.class)
-                .invoke(sm, Integer.valueOf(subId), Boolean.valueOf(on));
-        } catch (Throwable t) {
-            return false;
+    /**
+     * AOSP {@code setUiccApplicationsEnabled(false)} deletes the sub from
+     * Settings. OEM uses SIM power ({@code setSimPowerStateForSlot} /
+     * {@code setSimOnOff}). Never UICC-off.
+     */
+    public static boolean setRadio(Context ctx, Card c, boolean on) {
+        if (ctx == null || c == null) return false;
+        undeleteUicc(ctx);
+        int slot = c.slot;
+        if (slot != 0 && slot != 1) {
+            for (Card x : list(ctx)) {
+                if (x != null && x.subId == c.subId && (x.slot == 0 || x.slot == 1)) {
+                    slot = x.slot;
+                    break;
+                }
+            }
         }
-        // UICC change tears down both ImsPhones. Wait for radio, then
-        // rearm Settings Calls only. Immediate rearm + bind=both stole IMS.
+        if (slot != 0 && slot != 1) return false;
+        boolean ok = setSimPower(ctx, slot, on);
         ImsCalls.scheduleCallsRearm(ctx);
-        return true;
+        return ok;
+    }
+
+    /** Undo Settings UICC-off so the SIM stays listed. */
+    public static int undeleteUicc(Context ctx) {
+        if (ctx == null) return 0;
+        SubscriptionManager sm = ctx.getSystemService(SubscriptionManager.class);
+        if (sm == null) return 0;
+        int n = 0;
+        for (SubscriptionInfo s : allInfos(sm)) {
+            if (s == null || s.getSubscriptionId() <= 0) continue;
+            boolean uicc = true;
+            try {
+                Object v = s.getClass().getMethod("areUiccApplicationsEnabled").invoke(s);
+                if (v instanceof Boolean) uicc = ((Boolean) v).booleanValue();
+            } catch (Throwable ignored) {}
+            if (uicc) continue;
+            try {
+                sm.getClass()
+                    .getMethod("setUiccApplicationsEnabled", int.class, boolean.class)
+                    .invoke(sm, Integer.valueOf(s.getSubscriptionId()), Boolean.TRUE);
+                n++;
+            } catch (Throwable ignored) {}
+        }
+        return n;
+    }
+
+    private static boolean setSimPower(Context ctx, int slot, boolean on) {
+        TelephonyManager tm = ctx.getSystemService(TelephonyManager.class);
+        if (tm != null) {
+            try {
+                tm.getClass()
+                    .getMethod("setSimPowerStateForSlot", int.class, int.class)
+                    .invoke(tm, Integer.valueOf(slot), Integer.valueOf(on ? 1 : 0));
+                return true;
+            } catch (Throwable ignored) {}
+        }
+        try {
+            Class<?> ex = Class.forName("com.mediatek.telephony.MtkTelephonyManagerEx");
+            Object inst = ex.getMethod("getDefault").invoke(null);
+            if (inst != null) {
+                ex.getMethod("setSimOnOff", int.class, int.class)
+                    .invoke(inst, Integer.valueOf(slot), Integer.valueOf(on ? 1 : 0));
+                return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
     }
 
     private static Card fromInfo(SubscriptionInfo s, Set<Integer> available,

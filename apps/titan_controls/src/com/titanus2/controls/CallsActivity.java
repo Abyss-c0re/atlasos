@@ -63,10 +63,7 @@ public class CallsActivity extends Activity {
             });
 
         UiKit.section(root, "Bind IMS");
-        LinearLayout bindRow = UiKit.row(root);
-        UiKit.flexButton(bindRow, "SIM 1", () -> pickBind(ImsCalls.BIND_1));
-        UiKit.flexButton(bindRow, "SIM 2", () -> pickBind(ImsCalls.BIND_2));
-        UiKit.flexButton(bindRow, "Both", () -> pickBind(ImsCalls.BIND_BOTH));
+        UiKit.button(root, "Bind present SIMs", () -> pickBind(ImsCalls.BIND_BOTH));
 
         LinearLayout btns = UiKit.row(root);
         UiKit.flexButton(btns, "Rearm", this::rearm);

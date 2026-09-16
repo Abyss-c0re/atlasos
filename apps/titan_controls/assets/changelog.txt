@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.81-any-sim (681) — 2026-09-16T20:09Z
+
+### rebuild 2026-09-16T20:09Z · 16.81-any-sim (681)
+
+- Rebuild (ALLOW_ROOT=1)
+
+
+- bind any present SIM; never UICC-off; undelete Settings delete
+
+---
+
 ## 16.80-oem-mims (680) — 2026-09-16T19:36Z
 
 - OEM dual IMS: UICC no longer set-ims-service
