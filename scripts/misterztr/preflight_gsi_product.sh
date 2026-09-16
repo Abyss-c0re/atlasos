@@ -130,6 +130,11 @@ if [ -f "$IMS" ]; then
   else
     ok "ims-setup does not force location_mode"
   fi
+  if grep -qE 'mcc_string=310|epdg.epc.mnc260' "$IMS" 2>/dev/null; then
+    bad "ims-setup pins a carrier ePDG or MCC row"
+  else
+    ok "ims-setup has no carrier ePDG/MCC pin"
+  fi
 else
   bad "missing ims-setup"
 fi

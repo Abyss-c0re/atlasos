@@ -152,6 +152,16 @@ apply_ims_props() {
     ;;
   esac
 
+  _pc=`read_first titan2_phone_calls`
+  [ -n "$_pc" ] || _pc=`settings get global titan2_phone_calls 2>/dev/null | tr -d "
+ "`
+  case "$_pc" in
+    0)
+      log "phone_calls=0 skip voice arm"
+      return 0
+      ;;
+  esac
+
   vci=`read_first titan2_tel_disable_vci`; [ -n "$vci" ] || vci=0
   case "$vci" in 1|true|on|ON)
     [ "$LAST_TEL_VCI" = "1" ] || { setprop persist.sys.phh.disable_voice_call_in true 2>/dev/null || true; LAST_TEL_VCI=1; }

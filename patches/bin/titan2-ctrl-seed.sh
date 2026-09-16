@@ -194,7 +194,7 @@ seed_agent_extras() {
   fi
 
   for pair in "titan2_ims_mtk:1" "titan2_ims_force_volte:1" "titan2_ims_binder:1" \
-    "titan2_tel_patch_smsc:1"; do
+    "titan2_tel_patch_smsc:1" "titan2_tel_disable_vci:0" "titan2_ims_bind_slots:both"; do
     nm=${pair%%:*}; val=${pair##*:}
     if [ ! -s "$T2/$nm" ]; then
       echo "$val" > "$T2/$nm" 2>/dev/null || true

@@ -3,7 +3,7 @@
 # Safe: setprop + bind override + APN. No stock ImsService. No userdata format.
 # Guard with stamp so we don't hammer telephony every SIM prop flicker.
 #
-# 2026-08-01: multi-SIM slot-aware bind + MCC first-3 / MNC rest (US 310240).
+# 2026-08-01: multi-SIM slot-aware bind.
 # 2026-08-01b: Pixel IMS (kyujin-cho/pixel-volte-patch / dev.bluehouse.enablevolte)
 #   carrier-config parity via `cmd phone cc set-value -p` (same overrideConfig path;
 #   we run as system/root — no Shizuku). Plus multi_sim heal from siminfo when
@@ -123,10 +123,10 @@ ims_sim_numeric() {
     done
     IFS=$_oldifs
   fi
-  # siminfo fallback (SIM prop empty mid-bind)
+  # siminfo fallback (SIM prop empty mid-bind). Any loaded row, no MCC pin.
   if [ -z "$_out" ]; then
     _row=`content query --uri content://telephony/siminfo 2>/dev/null \
-      | grep 'mcc_string=310' | tail -1`
+      | grep 'mcc_string=' | grep -v 'mcc_string=null' | tail -1`
     if [ -n "$_row" ]; then
       _mcc=`echo "$_row" | sed -n 's/.*mcc_string=\([0-9]*\).*/\1/p'`
       _mnc=`echo "$_row" | sed -n 's/.*mnc_string=\([0-9]*\).*/\1/p'`
@@ -270,9 +270,6 @@ ims_pixel_cc_force_slot() {
   cmd phone cc set-value -s "$_s" -p allow_adding_apns_bool true 2>/dev/null || true
   # VT off by default (save power; enable via Controls if needed)
   cmd phone cc set-value -s "$_s" -p carrier_vt_available_bool false 2>/dev/null || true
-  # T-Mobile ePDG FQDN (VoWiFi when LTE reject / IWLAN data only)
-  cmd phone cc set-value -s "$_s" -p iwlan.epdg_static_address_string "epdg.epc.mnc260.mcc310.pub.3gppnetwork.org" 2>/dev/null || true
-  cmd phone cc set-value -s "$_s" -p iwlan.epdg_static_address_roaming_string "epdg.epc.mnc260.mcc310.pub.3gppnetwork.org" 2>/dev/null || true
   # Without these, DNC blocks IMS PDN on emergency-only / no-VoPS camp (Tello abroad:
   # WWAN DENIED/EMERGENCY + IWLAN HOME but ePDG tunnelSetup counts stay empty).
   # AccessNetworkType: GERAN=1 UTRAN=2 EUTRAN=3 IWLAN=5 NGRAN=6
@@ -361,8 +358,7 @@ if [ -n "$SUB" ]; then
   cmd phone set-allowed-network-types-for-users "$SUB" nr,lte,wcdma,gsm 2>/dev/null \
     || cmd phone set-allowed-network-types-for-users 1 nr,lte,wcdma,gsm 2>/dev/null || true
   # Subscription-level wifi calling mode if API exists
-  cmd phone ims set-wfc-mode "$SUB" cellular-preferred 2>/dev/null \
-    || cmd phone ims set-wfc-mode 1 cellular-preferred 2>/dev/null || true
+  cmd phone ims set-wfc-mode "$SUB" cellular-preferred 2>/dev/null || true
   logt "sub defaults sub=$SUB slot=$ASLOT multi_sim+data_roaming+cellular_pref healed"
 else
   logt "sub defaults: no subId yet (slot=$ASLOT multi_sim may stay -1)"
@@ -388,26 +384,6 @@ if [ -n "$NUM" ] && [ ${#NUM} -ge 5 ]; then
   else
     logt "IMS APN already present for $NUM"
   fi
-  # Tello (carrier_id 2578) uses apn=tello, not wholesale — wrong preferapn = no default PDN.
-  case "$NUM" in
-    310240|310260)
-      tid=$(content query --uri content://telephony/carriers --projection _id \
-        --where "apn='tello' AND numeric='$NUM'" 2>/dev/null \
-        | sed -n "s/.*_id=\([0-9][0-9]*\).*/\1/p" | head -1)
-      if [ -z "$tid" ]; then
-        tid=$(content query --uri content://telephony/carriers --projection _id \
-          --where "apn='wholesale' AND numeric='$NUM'" 2>/dev/null \
-          | sed -n "s/.*_id=\([0-9][0-9]*\).*/\1/p" | head -1)
-      fi
-      if [ -n "$tid" ]; then
-        content insert --uri content://telephony/carriers/preferapn \
-          --bind apn_id:i:"$tid" 2>/dev/null || true
-        logt "preferapn numeric=$NUM id=$tid"
-      else
-        logt "WARN: no tello/wholesale APN for $NUM"
-      fi
-      ;;
-  esac
 else
   logt "no SIM numeric yet (slot=$ASLOT)"
 fi
@@ -435,21 +411,6 @@ setprop persist.vendor.radio.wfc_state 3 2>/dev/null || true
 setprop persist.vendor.radio.volte_state 3 2>/dev/null || true
 setprop persist.vendor.radio.wfc_enable 1 2>/dev/null || true
 setprop persist.vendor.clientapi_support 1 2>/dev/null || true
-# MTK DSBP: load OP08 (T-Mobile US) modem profile when US SIM present
-NUM_ALL=$(getprop gsm.sim.operator.numeric 2>/dev/null | tr -d '\r')
-[ -n "$NUM_ALL" ] || NUM_ALL=$NUM
-case "$NUM_ALL" in
-  *310240*|*310260*)
-    setprop persist.vendor.operator.optr OP08 2>/dev/null || true
-    setprop persist.vendor.operator.spec SPEC0200 2>/dev/null || true
-    setprop persist.vendor.operator.seg SEGDEFAULT 2>/dev/null || true
-    setprop persist.vendor.mtk_usp_operator OP08 2>/dev/null || true
-    setprop persist.vendor.radio.mtk_dsbp_id 8 2>/dev/null || true
-    setprop vendor.mtk.md.sbp 8 2>/dev/null || true
-    logt "US TMO SIM → OP08/SBP8 forced"
-    ;;
-esac
-
 # Pixel IMS carrier-config force on the bind pin only (1|2|both).
 # Never poke both trays as a fix. ABSENT skip is inside the primitive.
 case "$BIND_WANT" in
@@ -481,17 +442,6 @@ if [ -n "$SUB" ]; then
     --bind wfc_ims_roaming_enabled:i:1 \
     --bind wfc_ims_roaming_mode:i:1 \
     --where "_id=$SUB" 2>/dev/null || true
-  # Also patch any other 310 rows (stale multi-insert SIMs)
-  for _sid in $(content query --uri content://telephony/siminfo 2>/dev/null \
-      | grep 'mcc_string=310' | sed -n 's/.*_id=\([0-9][0-9]*\).*/\1/p'); do
-    content update --uri content://telephony/siminfo \
-      --bind volte_vt_enabled:i:1 \
-      --bind wfc_ims_enabled:i:1 \
-      --bind wfc_ims_mode:i:1 \
-      --bind wfc_ims_roaming_enabled:i:1 \
-      --bind wfc_ims_roaming_mode:i:1 \
-      --where "_id=$_sid" 2>/dev/null || true
-  done
 fi
 settings put global wfc_ims_roaming_enabled 1 2>/dev/null || true
 settings put global wfc_ims_roaming_mode 1 2>/dev/null || true
@@ -508,30 +458,6 @@ settings put global restricted_networking_mode 0 2>/dev/null || true
 setprop persist.vendor.radio.sim.mode 3 2>/dev/null || true
 svc data enable 2>/dev/null || true
 cmd phone data enable 2>/dev/null || true
-# US SIM abroad: keep cellular-preferred. WIFI_PREFERRED starved LTE (A10).
-_nitz=$(getprop persist.vendor.radio.nitz_oper_code_0 2>/dev/null | tr -d '\r')
-_simn=$(getprop gsm.sim.operator.numeric 2>/dev/null | cut -d, -f1 | tr -d '\r')
-case "$_simn" in
-  310240|310260)
-    case "$_nitz" in
-      310*|311*|312*|313*|316*)
-        logt "US SIM home MCC — keep cellular-preferred WFC"
-        settings put global wfc_ims_mode 1 2>/dev/null || true
-        ;;
-      *)
-        logt "US SIM abroad nitz=$_nitz - keep cellular-preferred WFC"
-        settings put global wfc_ims_enabled 1 2>/dev/null || true
-        settings put global wfc_ims_mode 1 2>/dev/null || true
-        settings put global wfc_ims_roaming_enabled 1 2>/dev/null || true
-        setprop persist.vendor.mtk.wfc.enable 1 2>/dev/null || true
-        content update --uri content://telephony/siminfo \
-          --bind wfc_ims_enabled:i:1 --bind wfc_ims_mode:i:1 \
-          --bind wfc_ims_roaming_enabled:i:1 --where "mcc_string=310" 2>/dev/null || true
-        ;;
-    esac
-    ;;
-esac
-
 # Start vendor VoLTE UA stack (Unihertz vendor lacks init.volte.rc; system rc defines titan2_* services).
 # Prefer a SINGLE clientapi UA — vendor + titan2 dual-start races the same socket name.
 setprop ctl.stop volte_clientapi_ua 2>/dev/null || true
@@ -563,10 +489,14 @@ logt "ims re-register after pixel-ims config"
 # QNS WFC activation (sets mAllowIwlanForWfcActivation). Without this, IWLAN is
 # qualified but transport stays INVALID and ePDG never opens (Tello abroad lab).
 # QNS gate: extras must be SUB_ID + TRY_STATUS=1 (not subId). No WfcActivationActivity UI.
-am broadcast -a com.android.qns.wfcactivation.TRY_WFC_CONNECTION --ei SUB_ID 1 --ei TRY_STATUS 1 2>/dev/null || true
-am broadcast -a com.android.qns.wfcactivation.TRY_WFC_CONNECTION \
-  --ei android.telephony.extra.SUBSCRIPTION_INDEX "${SUB:-1}" 2>/dev/null || true
-logt "qns wfc activation kicked sub=${SUB:-1}"
+if [ -n "$SUB" ]; then
+  am broadcast -a com.android.qns.wfcactivation.TRY_WFC_CONNECTION --ei SUB_ID "$SUB" --ei TRY_STATUS 1 2>/dev/null || true
+  am broadcast -a com.android.qns.wfcactivation.TRY_WFC_CONNECTION \
+    --ei android.telephony.extra.SUBSCRIPTION_INDEX "$SUB" 2>/dev/null || true
+  logt "qns wfc activation kicked sub=$SUB"
+else
+  logt "qns wfc skip u2014 no Settings Calls sub"
+fi
 
 # If no SIM yet, clear stamp so pad-agent heal / next trigger can re-run fully
 if [ -z "$NUM" ]; then

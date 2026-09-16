@@ -17,6 +17,7 @@ HOLD FLASH. Next GSI pin only. Never resume 019ff9d1 to fix live.
 | A8 no ImsService inject | DANGEROUS_IMS_INJECT bootloop | banned |
 | A9 Treble BT seed-once | heal does not restamp BT persist | heal law |
 | A10 WFC cellular-preferred | WIFI_PREFERRED starved LTE | setup wfc mode 1 |
+| A11 any SIM either tray | no MCC/pack/preferapn pin; bind unset = both trays skip ABSENT; Settings Calls/SMS only | setup.sh |
 
 ## Heresy (do not recycle)
 
