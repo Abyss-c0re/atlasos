@@ -217,7 +217,11 @@ public final class SimCards {
         SubscriptionManager sm = app.getSystemService(SubscriptionManager.class);
         if (sm == null) return;
         watch = new SubscriptionManager.OnSubscriptionsChangedListener() {
+            private long last;
             @Override public void onSubscriptionsChanged() {
+                long now = android.os.SystemClock.uptimeMillis();
+                if (now - last < 8000L) return;
+                last = now;
                 try { undeleteUicc(app); } catch (Exception ignored) {}
             }
         };
