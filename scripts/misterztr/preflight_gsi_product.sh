@@ -104,6 +104,26 @@ else
   bad "missing $TP"
 fi
 
+A11Y="${ROOT}/apps/titan_controls/src/com/titanus2/controls/TrackpadAccessService.java"
+if grep -q 'PWM TitanNavKeyRule owns factory' "$A11Y" 2>/dev/null \
+    && grep -q 'return false;' "$A11Y" 2>/dev/null; then
+  # only fail if the yield-to-PWM block is still next to that comment
+  if grep -A6 'PWM TitanNavKeyRule owns factory' "$A11Y" | grep -q 'return false'; then
+    bad "a11y yields Home/Recents to missing PWM rule (dead nav on kitchen GSI)"
+  else
+    ok "a11y does not yield Home/Recents to PWM"
+  fi
+else
+  ok "a11y owns Home/Recents (no PWM yield)"
+fi
+KL="${ROOT}/patches/keylayout/TitanKey.kl"
+if grep -qE '^key 580[[:space:]]+F24' "$KL" 2>/dev/null \
+    && grep -qE '^key 158[[:space:]]+BACK' "$KL" 2>/dev/null; then
+  ok "TitanKey.kl 580=F24 158=BACK"
+else
+  bad "TitanKey.kl missing essential 580 F24 / 158 BACK"
+fi
+
 # --- pad-apply / peels ---
 PA="${ROOT}/patches/bin/titan2-pad-apply.sh"
 # 2.215-rot-0-3 landed; tip is 2.234-login-gate (pad off until login).
@@ -135,8 +155,29 @@ if [ -f "$IMS" ]; then
   else
     ok "ims-setup has no carrier ePDG/MCC pin"
   fi
+  if grep -qF 'cmd phone ims disable' "$IMS" 2>/dev/null; then
+    bad "ims-setup still runs ims disable (kills incoming on this SoC)"
+  else
+    ok "ims-setup does not ims disable"
+  fi
+  if grep -q 'ims_bind_target_slots' "$IMS" 2>/dev/null; then
+    ok "ims-setup binds Calls tray when two SIMs loaded"
+  else
+    bad "ims-setup missing ims_bind_target_slots"
+  fi
 else
   bad "missing ims-setup"
+fi
+
+NETFW_MAN="${ROOT}/packages/titan_netfw/AndroidManifest.xml"
+if [ -f "$NETFW_MAN" ]; then
+  if grep -qE 'android:sharedUserId=' "$NETFW_MAN" 2>/dev/null; then
+    bad "TitanNetFw claims sharedUserId — kitchen inject bootloops on signed GSI"
+  else
+    ok "TitanNetFw has no sharedUserId"
+  fi
+else
+  bad "missing TitanNetFw manifest"
 fi
 
 # --- Controls source features for API remap ---

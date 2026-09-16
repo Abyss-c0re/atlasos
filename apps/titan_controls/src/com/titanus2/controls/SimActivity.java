@@ -76,7 +76,7 @@ public class SimActivity extends Activity {
         if (isFinishing() || root == null) return;
         root.removeAllViews();
         UiKit.title(root, "SIMs");
-        UiKit.note(root, "Disable stays Off. Row is not deleted.");
+        UiKit.note(root, "Settings hide turns the row Off here. Controls turns it back on. Disable stays Off. Row is not deleted.");
         ImsCalls.Detect ims = ImsCalls.detect(this);
         TextView callsFact = UiKit.mono(root);
         callsFact.setText(ims.line());

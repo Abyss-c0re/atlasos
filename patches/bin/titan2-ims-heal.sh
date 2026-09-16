@@ -322,6 +322,22 @@ ims_align_calls_tray() {
   return 0
 }
 
+# 1=SIM1 2=SIM2 3=both. Two LOADED: vendor incoming needs 3.
+ims_set_volte_enable() {
+  _ve=1
+  _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
+  _n=0
+  _oldifs=$IFS
+  IFS=,
+  for _p in $_st; do
+    case "$_p" in ABSENT|"") ;; *) _n=$((_n + 1)) ;; esac
+  done
+  IFS=$_oldifs
+  [ "$_n" -ge 2 ] && _ve=3
+  ims_set_vendor_prop persist.vendor.mtk.volte.enable "$_ve"
+  setprop persist.vendor.mtk.volte.enable "$_ve" 2>/dev/null || true
+}
+
 # Pixel IMS (kyujin-cho/pixel-volte-patch) carrier-config key set via shell override.
 ims_pixel_cc_force_slot() {
   _s=$1
@@ -386,14 +402,32 @@ ims_bind_slot() {
 }
 
 # Controls plane: 1 | 2 | both (default both). 1=slot0, 2=slot1.
+# both + two LOADED = Settings Calls tray only. MTK has one IMS cap;
+# bind/disable on the other ImsPhone drops the working Calls SIM.
 ims_wanted_slots() {
   _w=`read_first titan2_ims_bind_slots`
   [ -n "$_w" ] || _w=`settings get global titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n '`
   case "$_w" in
-    1) echo 0 ;;
-    2) echo 1 ;;
-    *) echo "0 1" ;;
+    1) echo 0; return 0 ;;
+    2) echo 1; return 0 ;;
   esac
+  _as=`ims_active_slot`
+  _n=0
+  _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
+  _oldifs=$IFS
+  IFS=,
+  for _p in $_st; do
+    case "$_p" in ABSENT|"") ;; *) _n=$((_n + 1)) ;; esac
+  done
+  IFS=$_oldifs
+  if [ "$_n" -ge 2 ]; then
+    case "$_as" in
+      0|1) echo "$_as"; return 0 ;;
+    esac
+  fi
+  for _s in 0 1; do
+    ims_slot_absent "$_s" || echo "$_s"
+  done
 }
 
 ims_bind_all_slots() {
@@ -504,7 +538,7 @@ apply_ims_action() {
       ims_apply_sub_defaults
       setprop persist.dbg.volte_avail_ovr 1 2>/dev/null || true
       setprop persist.dbg.wfc_avail_ovr 1 2>/dev/null || true
-      setprop persist.vendor.mtk.volte.enable 1 2>/dev/null || true
+      ims_set_volte_enable
       # No airplane pulse (commander quiet law). Modem search without radio-off.
       cmd phone restart-modem 2>/dev/null || true
       ims_wait_phone 25 || true
@@ -524,13 +558,21 @@ apply_ims_action() {
       ims_write_status "force_lte slot=$_slot sub=$_sub $voice $emerg op=$op d=$dsvc $(date +%s)"
       log "force_lte done slot=$_slot sub=$_sub $voice $emerg op=$op"
       ;;
-    rebind)
+    rebind|rearm)
+      # UICC on the other tray makes Android ImsResolver drop BOTH ImsPhones.
+      # Enable+bind Calls only. Never disable.
+      ims_set_volte_enable
+      ims_align_calls_tray || true
       _slot=`ims_active_slot`
       ims_bind_all_slots
+      if [ -n "$_slot" ]; then
+        cmd phone ims enable -s "$_slot" 2>/dev/null || true
+        ims_bind_slot "$_slot"
+      fi
       d0=$(cmd phone ims get-ims-service -s 0 -d 2>/dev/null | tr '\n' ' ')
       d1=$(cmd phone ims get-ims-service -s 1 -d 2>/dev/null | tr '\n' ' ')
-      ims_write_status "rebind slot=$_slot d0=$d0 d1=$d1 $(date +%s)"
-      log "ims rebind slot=$_slot d0=$d0 d1=$d1"
+      ims_write_status "rearm slot=$_slot d0=$d0 d1=$d1 $(date +%s)"
+      log "ims $act slot=$_slot d0=$d0 d1=$d1"
       ;;
     create_apn)
       if ims_insert_ims_apn; then
@@ -563,7 +605,7 @@ apply_ims_action() {
       setprop persist.dbg.ims_volte_enable 1 2>/dev/null || true
       setprop persist.radio.calls.on.ims 1 2>/dev/null || true
       setprop persist.sys.phh.allow_binder_thread_on_incoming_calls 1 2>/dev/null || true
-      setprop persist.vendor.mtk.volte.enable 1 2>/dev/null || true
+      ims_set_volte_enable
       persist_ctrl titan2_ims_mtk 1
       persist_ctrl titan2_ims_force_volte 1
       persist_ctrl titan2_ims_binder 1

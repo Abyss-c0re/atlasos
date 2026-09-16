@@ -5,6 +5,34 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.75-nav-keys (675) — 2026-09-16T15:57Z
+
+- a11y owns Home/Back/Recents GLOBAL_ACTION; do not yield to missing PWM
+
+---
+
+## 16.74-ims-rearm (674) — 2026-09-16T15:53Z
+
+### rebuild 2026-09-16T15:54Z · 16.74-ims-rearm (674)
+
+- Rebuild (ALLOW_ROOT=1)
+
+
+- UICC on other tray rearms Calls IMS (enable+bind, never disable)
+
+---
+
+## 16.73-calls-edges (673) — 2026-09-16T15:39Z
+
+### rebuild 2026-09-16T15:44Z · 16.73-calls-edges (673)
+
+- do not disable IMS voice when Settings Calls is unread
+
+
+- UICC/Settings hide restore; phone-calls toggle and SIM swap re-arm Calls tray only
+
+---
+
 ## 16.72-login-gate (672) — 2026-09-16T12:47Z
 
 - login-gate: pad off until USER_PRESENT (titan2_pad_gate)

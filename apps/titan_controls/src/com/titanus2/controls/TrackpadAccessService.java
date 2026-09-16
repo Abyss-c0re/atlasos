@@ -1183,23 +1183,23 @@ public class TrackpadAccessService extends AccessibilityService {
             + " rep=" + event.getRepeatCount();
 
         // KL maps Titan Home/Recents (scan 580) to F24 so PWM never sees
-        // APP_SWITCH hold-preview. F24 exists only for that remap — fold it
-        // (or leftover APP_SWITCH) onto scan 580 even when InputDevice is
-        // null. Requiring TitanKey name dropped Home after KEEP_DATA flashes.
+        // APP_SWITCH hold-preview. Kitchen MisterZtr GSI has no PWM
+        // TitanNavKeyRule — yielding here made Home/Recents a no-op. Fold
+        // onto scan 580 and let remaps fire GLOBAL_ACTION_* (PRODUCT_LOCK).
         if (!isSideInputDevice(event)
                 && (keyCode == KeyEvent.KEYCODE_F24
                     || keyCode == KeyEvent.KEYCODE_APP_SWITCH
                     || KeyMapPrefs.isRecentsScan(scan)
                     || KeyMapPrefs.isRecentsScan(rawScan))) {
-            // PWM TitanNavKeyRule owns factory 580/F24 (short Home, long Recents).
-            // Do not steal. Remaps stay on other managed scans.
-            return false;
+            scan = KeyMapPrefs.SCAN_APP_SWITCH;
+            rawScan = KeyMapPrefs.SCAN_APP_SWITCH;
         }
         if (!isSideInputDevice(event)
                 && (keyCode == KeyEvent.KEYCODE_BACK
                     || scan == KeyMapPrefs.SCAN_BACK
                     || rawScan == KeyMapPrefs.SCAN_BACK)) {
-            return false;
+            scan = KeyMapPrefs.SCAN_BACK;
+            rawScan = KeyMapPrefs.SCAN_BACK;
         }
 
         // Same side-rail identity remaps already use (gpio 250 / ff_key 249).

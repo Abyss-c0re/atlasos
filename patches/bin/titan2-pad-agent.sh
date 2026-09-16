@@ -1310,8 +1310,46 @@ _agent_boot_full() {
 _ims_oneshot_tick() {
   _ia=`read_first titan2_ims_action 2>/dev/null`
   case "$_ia" in
-    heal|rebind|create_apn|install|force_lte) apply_ims_action ;;
+    heal|rebind|rearm|create_apn|install|force_lte) apply_ims_action ;;
   esac
+  return 0
+}
+
+# Physical swap or Settings Calls change: subId stays, slot moves.
+# Rebind the new Calls tray only (heal bind_all is Calls-only when two LOADED).
+LAST_IMS_SIM_STATE=""
+_ims_sim_state_tick() {
+  _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
+  if [ -z "$LAST_IMS_SIM_STATE" ]; then
+    LAST_IMS_SIM_STATE=$_st
+    return 0
+  fi
+  [ "$_st" = "$LAST_IMS_SIM_STATE" ] && return 0
+  log "ims sim.state $LAST_IMS_SIM_STATE -> $_st; rearm Calls (no disable)"
+  LAST_IMS_SIM_STATE=$_st
+  persist_ctrl titan2_ims_action rearm
+  apply_ims_action
+  return 0
+}
+
+LAST_IMS_CALLS_SLOT=""
+_ims_calls_tray_tick() {
+  _pc=`settings get global titan2_phone_calls 2>/dev/null | tr -d '\r\n '`
+  case "$_pc" in 0) return 0 ;; esac
+  _sub=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
+  case "$_sub" in
+    [1-9]|[1-9][0-9]|[1-9][0-9][0-9]|[1-9][0-9][0-9][0-9]) ;;
+    *) return 0 ;;
+  esac
+  _slot=`content query --uri content://telephony/siminfo --projection sim_id \
+    --where "_id=$_sub" 2>/dev/null \
+    | sed -n 's/.*sim_id=\([0-9][0-9]*\).*/\1/p' | head -1`
+  case "$_slot" in 0|1) ;; *) return 0 ;; esac
+  if [ -n "$LAST_IMS_CALLS_SLOT" ] && [ "$LAST_IMS_CALLS_SLOT" != "$_slot" ]; then
+    log "ims Calls tray $LAST_IMS_CALLS_SLOT -> $_slot (swap or Settings Calls)"
+    ims_bind_all_slots
+  fi
+  LAST_IMS_CALLS_SLOT=$_slot
   return 0
 }
 
@@ -1947,6 +1985,8 @@ while true; do
   fi
   [ $((loop_n % 5)) -eq 0 ] && _maybe_hot_reload_staged_agent
   _ims_oneshot_tick
+  [ $((loop_n % 10)) -eq 0 ] && _ims_sim_state_tick
+  [ $((loop_n % 20)) -eq 0 ] && _ims_calls_tray_tick
   [ $((loop_n % 40)) -eq 0 ] && _ims_multi_sim_tick
   [ $((loop_n % 50)) -eq 0 ] && _props_belt_tick
 

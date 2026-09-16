@@ -51,11 +51,21 @@ public final class PhoneCalls {
     public static void apply(Context ctx) {
         if (ctx == null) return;
         boolean off = isDisabled(ctx);
+        int calls = ImsCalls.settingsCallsSubId(ctx);
         List<SimCards.Card> cards = SimCards.list(ctx);
         for (SimCards.Card c : cards) {
             if (c == null || !c.uicc) continue;
             setUsage(ctx, c.subId, off ? USAGE_DATA_CENTRIC : USAGE_DEFAULT);
-            setImsVoice(c.subId, !off);
+            // IMS enable/disable only on Settings Calls. Turning voice back
+            // on must not set-ims-service the other tray (breaks Calls).
+            if (calls > 0 && c.subId == calls) {
+                setImsVoice(c.subId, !off);
+            } else if (off && c.uicc) {
+                setImsVoice(c.subId, false);
+            }
+        }
+        if (!off && calls > 0) {
+            ImsCalls.requestRearm(ctx);
         }
     }
 
@@ -128,10 +138,6 @@ public final class PhoneCalls {
                 if (id > 0) return id;
             }
         } catch (Exception ignored) {}
-        List<SimCards.Card> cards = SimCards.list(ctx);
-        for (SimCards.Card c : cards) {
-            if (c != null && c.uicc) return c.subId;
-        }
         return SubscriptionManager.INVALID_SUBSCRIPTION_ID;
     }
 
@@ -143,6 +149,7 @@ public final class PhoneCalls {
         try {
             Settings.Global.putString(ctx.getContentResolver(), GLOBAL, disabled ? "0" : "1");
         } catch (Exception ignored) {}
+        AgentBridge.put(ctx, GLOBAL, disabled ? "0" : "1");
     }
 
     private static void setUsage(Context ctx, int subId, int usage) {

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Sanity: live parser never treats leftover 100% as complete."""
+from pathlib import Path
+
 from cube_flasher import live_unit, marker_unit
 
 
@@ -46,12 +48,12 @@ def main() -> int:
         "ro.lineage.display.version": "23-20260823-VANILLA-EXT4-GSI",
     }
     assert "Titan_2" in format_rom_summary(props, rec)
-    report = format_rom_report(props, rec, ["c2b1617 analog acc"], [])
+    report = format_rom_report(props, rec, ["c2b1617 analog acc"], [], ["M apps/x"])
     assert "Updates since last flash (1)" in report
     assert "c2b1617 analog acc" in report
+    assert "Uncommitted on disk (1)" in report
     from titan_diag import redact, detect, serial_tag
     from titan_issues import origin_repo, git_bin
-    from pathlib import Path
 
     assert "<email>" in redact("mail me@x.com please")
     assert "ABC123" not in redact("serial ABC123 here", "ABC123")
@@ -91,9 +93,37 @@ def main() -> int:
     from titan_reports import reports_as_findings
     fs = reports_as_findings([{"id":"T","kind":"bug","title":"USB hiss","comment":"noise on analog"}])
     assert fs and fs[0]["id"].startswith("report-")
-    from cube_flasher import GSI_LATEST, resolve_gsi, _eta_learned, estimate_cook
+    from cube_flasher import (
+        GSI_LATEST,
+        resolve_gsi,
+        pick_cook_gsi,
+        cook_preflight,
+        apk_has_shared_user,
+        sync_cook_inputs,
+        _eta_learned,
+        estimate_cook,
+        ATLASOS,
+    )
     assert resolve_gsi("") == ""
     assert resolve_gsi("/tmp/x.img") == "/tmp/x.img"
+    # Combo sentinel is not a filesystem path — cook must resolve it.
+    latest = resolve_gsi(GSI_LATEST)
+    picked = pick_cook_gsi(GSI_LATEST)
+    assert latest == "" or Path(latest).is_file()
+    assert picked == "" or Path(picked).is_file()
+    assert pick_cook_gsi(GSI_LATEST) != GSI_LATEST
+    netfw = ATLASOS / "packages" / "titan_netfw" / "TitanNetFw.apk"
+    if netfw.is_file():
+        assert not apk_has_shared_user(netfw), "cook APK still has sharedUserId"
+    man = ATLASOS / "packages" / "titan_netfw" / "AndroidManifest.xml"
+    if man.is_file():
+        assert "android:sharedUserId=" not in man.read_text()
+    gate = cook_preflight(GSI_LATEST)
+    if picked:
+        assert gate == "", gate
+    else:
+        assert "no gsi" in gate
+    sync_cook_inputs()
     assert _eta_learned({"cook_s": 511}, "cook_s")
     assert not _eta_learned({"cook_s": 720}, "cook_s")
     feats = {

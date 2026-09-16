@@ -234,6 +234,34 @@ ims_bind_slot() {
   cmd phone ims enable -s "$_s" 2>/dev/null || true
 }
 
+# Slots we may disable/rebind. "both" is skip-ABSENT, not poke-every-ImsPhone.
+# Two LOADED trays: MTK has one IMS cap (simswitch). Restarting the other
+# tray's ImsPhone drops Calls (SIM 2 UICC toggle broke SIM 1).
+ims_bind_target_slots() {
+  _w=$1
+  case "$_w" in
+    1) echo 0; return 0 ;;
+    2) echo 1; return 0 ;;
+  esac
+  _as=`ims_active_slot`
+  _n=0
+  _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
+  _oldifs=$IFS
+  IFS=,
+  for _p in $_st; do
+    case "$_p" in ABSENT|"") ;; *) _n=$((_n + 1)) ;; esac
+  done
+  IFS=$_oldifs
+  if [ "$_n" -ge 2 ]; then
+    case "$_as" in
+      0|1) echo "$_as"; return 0 ;;
+    esac
+  fi
+  for _s in 0 1; do
+    ims_slot_absent "$_s" || echo "$_s"
+  done
+}
+
 # Pixel IMS parity: ICarrierConfigLoader.overrideConfig via shell.
 # Keys match kyujin-cho/pixel-volte-patch Config.kt / Moder.kt defaults for VoLTE+WFC.
 # -p = persistent (survives reboot on non-QPR2-broken loaders; we re-apply on boot anyway).
@@ -290,9 +318,8 @@ ims_restart_registration() {
     logt "ims restart skip absent slot=$_s"
     return 0
   fi
-  # Pixel IMS: telephony.resetIms(slot). Shell equivalent: disable/enable IMS.
-  cmd phone ims disable -s "$_s" 2>/dev/null || true
-  sleep 1
+  # Never `ims disable`. That tears down MT registration on this SoC
+  # (UICC toggle on the other tray + disable on Calls = incoming never RINGING).
   cmd phone ims enable -s "$_s" 2>/dev/null || true
   ims_bind_slot "$_s"
 }
@@ -302,28 +329,20 @@ ASLOT=$(ims_active_slot)
 BIND_WANT=$(cat /data/misc/titan2/titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n ')
 [ -n "$BIND_WANT" ] || BIND_WANT=$(settings get global titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n ')
 j=0
+BIND_SLOTS=`ims_bind_target_slots "$BIND_WANT"`
 while [ $j -lt 15 ]; do
-  case "$BIND_WANT" in
-    1) ims_bind_slot 0 ;;
-    2) ims_bind_slot 1 ;;
-    *)
-      ims_bind_slot "$ASLOT"
-      for _bs in 0 1; do
-        case $(getprop gsm.sim.state 2>/dev/null | cut -d, -f$((_bs+1))) in
-          ABSENT|"") continue ;;
-        esac
-        ims_bind_slot "$_bs"
-      done
-      ;;
-  esac
+  for _bs in $BIND_SLOTS; do
+    ims_bind_slot "$_bs"
+  done
   _chk=$ASLOT
   case "$BIND_WANT" in 1) _chk=0 ;; 2) _chk=1 ;; esac
+  [ -n "$_chk" ] || _chk=`echo $BIND_SLOTS | awk '{print $1}'`
   got=$(cmd phone ims get-ims-service -s "$_chk" -d 2>/dev/null)
   if echo "$got" | grep -q mediatek; then
-    logt "ims bind OK want=$BIND_WANT slot=$_chk d=$got"
+    logt "ims bind OK want=$BIND_WANT slots=$BIND_SLOTS d=$got"
     break
   fi
-  logt "ims bind retry $j want=$BIND_WANT"
+  logt "ims bind retry $j want=$BIND_WANT slots=$BIND_SLOTS"
   sleep 2
   j=$((j+1))
 done
@@ -400,7 +419,20 @@ setprop persist.dbg.allow_ims_off 1 2>/dev/null || true
 setprop persist.dbg.ims_volte_enable 1 2>/dev/null || true
 setprop persist.radio.calls.on.ims 1 2>/dev/null || true
 setprop persist.data.iwlan.enable true 2>/dev/null || true
-setprop persist.vendor.mtk.volte.enable 1 2>/dev/null || true
+# 1=SIM1 2=SIM2 3=both. Two LOADED cards: vendor MT needs 3. Forcing 1
+# after SIM 2 was present dropped incoming (Telecom never saw RINGING).
+_volte=1
+_st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
+_n=0
+_oldifs=$IFS
+IFS=,
+for _p in $_st; do
+  case "$_p" in ABSENT|"") ;; *) _n=$((_n + 1)) ;; esac
+done
+IFS=$_oldifs
+[ "$_n" -ge 2 ] && _volte=3
+ims_set_vendor_prop persist.vendor.mtk.volte.enable "$_volte"
+setprop persist.vendor.mtk.volte.enable "$_volte" 2>/dev/null || true
 # WFC on for US MVNO abroad (VoWiFi when WWAN only emergency-camps)
 setprop persist.vendor.mtk.wfc.enable 1 2>/dev/null || true
 setprop persist.vendor.mtk_wfc_support 1 2>/dev/null || true
@@ -474,17 +506,12 @@ if [ ! -S /dev/socket/volte_clientapi ]; then
 fi
 logt "volte stack start requested"
 
-# Pixel IMS restartIMSRegistration after config. Honor bind pin; skip ABSENT.
-case "$BIND_WANT" in
-  1) ims_restart_registration 0 ;;
-  2) ims_restart_registration 1 ;;
-  *)
-    ims_restart_registration "$ASLOT"
-    ims_restart_registration 0
-    ims_restart_registration 1
-    ;;
-esac
-logt "ims re-register after pixel-ims config"
+# Pixel IMS restartIMSRegistration after config. Never disable the Calls ImsPhone
+# to "heal" the other tray (UICC toggle on SIM 2 used to drop SIM 1).
+for _rs in `ims_bind_target_slots "$BIND_WANT"`; do
+  ims_restart_registration "$_rs"
+done
+logt "ims re-register after pixel-ims config slots=$(ims_bind_target_slots "$BIND_WANT")"
 
 # QNS WFC activation (sets mAllowIwlanForWfcActivation). Without this, IWLAN is
 # qualified but transport stays INVALID and ePDG never opens (Tello abroad lab).

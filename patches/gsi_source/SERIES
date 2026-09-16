@@ -145,7 +145,8 @@
 # 3-button is SystemUI NavigationBar, not large-screen Taskbar.
 # Taskbar stash on keyguard deleted Back/Home/Recents.
 0131-systemui-threebutton-use-navbar-not-taskbar.patch
-# TitanKey 580 is F24. PWM short=Home, long=showRecentApps. Not a11y.
+# TitanKey 580 is F24. PWM fallback only if Controls a11y is not listed.
+# Kitchen MisterZtr GSI has no PWM rule — a11y GLOBAL_ACTION is SoT.
 0181-pwm-titan-f24-home-recents.patch
 
 # project:packages/apps/Launcher3

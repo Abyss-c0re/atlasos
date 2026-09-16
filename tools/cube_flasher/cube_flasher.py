@@ -52,6 +52,7 @@ from titan_rom import (
     STAMP_DEV,
     format_rom_report,
     format_rom_summary,
+    git_dirty_summary,
     git_head,
     git_log_range,
     last_flash_for,
@@ -205,7 +206,10 @@ def list_gsi(how: str = "date ↓") -> list[Path]:
     by_ino: dict[int, Path] = {}
     for d in dirs:
         for p in d.glob("*.img"):
-            if not p.is_file() or p.is_symlink():
+            try:
+                if p.is_symlink() or not p.is_file() or not p.resolve().is_file():
+                    continue
+            except OSError:
                 continue
             if "misterztr-src" in p.name:
                 continue
@@ -230,6 +234,122 @@ def resolve_gsi(sel: str) -> str:
         p = latest_gsi()
         return str(p) if p else ""
     return sel or ""
+
+
+def _aapt() -> str:
+    sdk = Path(os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT") or Path.home() / "Android" / "Sdk")
+    hits = sorted((sdk / "build-tools").glob("*/aapt"))
+    return str(hits[-1]) if hits else ""
+
+
+def apk_has_shared_user(apk: Path) -> bool:
+    """True if APK still claims a sharedUserId (A12 PMS bootloop)."""
+    if not apk.is_file():
+        return False
+    aapt = _aapt()
+    if aapt:
+        try:
+            out = subprocess.check_output(
+                [aapt, "dump", "xmltree", str(apk), "AndroidManifest.xml"],
+                text=True,
+                timeout=20,
+                stderr=subprocess.DEVNULL,
+            )
+            return "sharedUserId" in out
+        except Exception:
+            pass
+    try:
+        import zipfile
+
+        with zipfile.ZipFile(apk) as z:
+            raw = z.read("AndroidManifest.xml")
+        return b"sharedUserId" in raw
+    except Exception:
+        return False
+
+
+def pick_cook_gsi(sel: str = "") -> str:
+    """Resolve combo/sentinel/empty to a real GSI file. Never treat __latest__ as a path."""
+    gsi = resolve_gsi(sel)
+    if gsi:
+        p = Path(gsi)
+        try:
+            if p.is_file() and p.resolve().is_file():
+                return str(p.resolve())
+        except OSError:
+            pass
+    try:
+        scripts = str(ROOT / "scripts")
+        if scripts not in sys.path:
+            sys.path.insert(0, scripts)
+        from rom_variant.build import prefer_gsi
+
+        hit = prefer_gsi(ROOT)
+        if hit and Path(hit).is_file() and Path(hit).resolve().is_file():
+            return str(Path(hit).resolve())
+    except Exception:
+        pass
+    p = latest_gsi()
+    if p is None:
+        return ""
+    try:
+        return str(p.resolve()) if p.is_file() else ""
+    except OSError:
+        return ""
+
+
+def sync_cook_inputs() -> list[str]:
+    """Refresh kitchen copies from AtlasOS SoT so cook cannot ship a stale NetFw."""
+    notes: list[str] = []
+    src = ATLASOS / "packages" / "titan_netfw" / "TitanNetFw.apk"
+    dst = ROOT / "packages" / "titan_netfw" / "TitanNetFw.apk"
+    if not src.is_file():
+        return notes
+    import shutil
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    need = True
+    if dst.is_file() and not dst.is_symlink():
+        need = src.stat().st_size != dst.stat().st_size or src.stat().st_mtime > dst.stat().st_mtime
+    if need:
+        if dst.is_symlink() or dst.is_file():
+            dst.unlink()
+        shutil.copy2(src, dst)
+        notes.append("synced TitanNetFw.apk")
+    xml_src = ATLASOS / "packages" / "titan_netfw" / "permissions" / "privapp-permissions-com.titanus2.netfw.xml"
+    xml_dst = ROOT / "packages" / "titan_netfw" / "permissions" / "privapp-permissions-com.titanus2.netfw.xml"
+    if xml_src.is_file() and not xml_dst.is_symlink():
+        xml_dst.parent.mkdir(parents=True, exist_ok=True)
+        if (not xml_dst.is_file()) or xml_src.stat().st_mtime > xml_dst.stat().st_mtime:
+            shutil.copy2(xml_src, xml_dst)
+            notes.append("synced netfw privapp xml")
+    return notes
+
+
+def cook_preflight(gsi_sel: str = "") -> str:
+    """Empty = cook may proceed. Otherwise a fail reason (no kitchen start)."""
+    gsi = pick_cook_gsi(gsi_sel)
+    if not gsi:
+        return "no gsi — extract gsi/*.img or BUILD GSI first"
+    man = ATLASOS / "packages" / "titan_netfw" / "AndroidManifest.xml"
+    if man.is_file() and "android:sharedUserId=" in man.read_text(errors="replace"):
+        return "TitanNetFw manifest has sharedUserId (A12 bootloop)"
+    apk = ATLASOS / "packages" / "titan_netfw" / "TitanNetFw.apk"
+    if not apk.is_file():
+        return "missing AtlasOS TitanNetFw.apk"
+    if apk_has_shared_user(apk):
+        return "TitanNetFw.apk has sharedUserId (A12 bootloop)"
+    ims = ATLASOS / "packages" / "titan_ims" / "bin" / "titan2-ims-setup.sh"
+    if not ims.is_file():
+        return "missing titan2-ims-setup.sh"
+    ims_txt = ims.read_text(errors="replace")
+    if "mcc_string=310" in ims_txt or "epdg.epc.mnc260" in ims_txt:
+        return "ims-setup pins carrier ePDG/MCC"
+    if "cmd phone ims disable" in ims_txt:
+        return "ims-setup still runs ims disable (kills incoming)"
+    if "ims_bind_target_slots" not in ims_txt:
+        return "ims-setup missing Calls-tray bind helper"
+    return ""
 
 
 def adb_bin() -> str:
@@ -814,6 +934,18 @@ class Worker(threading.Thread):
         env["ATLAS_LINUX_SIZE_M"] = "1536"
         env["ATLAS_OPENWRT_SIZE_M"] = "128"
         feats = normalize_planes(job.get("features") or {})
+        reason = cook_preflight(job.get("gsi") or "")
+        if reason:
+            self._ph("fail", 0.05)
+            self._st(reason)
+            self._say("Cook blocked.")
+            self.bridge.finished.emit(False, reason)
+            return None
+        gsi = pick_cook_gsi(job.get("gsi") or "")
+        job["gsi"] = gsi
+        for note in sync_cook_inputs():
+            self._st(note)
+
         if feats.get("with_stock_fm_ir"):
             fm = ROOT / "apps" / "titan_fm" / "build.sh"
             if fm.is_file():
@@ -837,7 +969,6 @@ class Worker(threading.Thread):
             job.get("root") or "none",
             "--skip-git-gate",
         ]
-        gsi = resolve_gsi(job.get("gsi") or "")
         if gsi:
             cmd += ["--gsi", gsi]
             self._st("gsi " + Path(gsi).name)
@@ -1808,9 +1939,10 @@ class Flasher(LabMixin, QMainWindow):
         flash = last_flash_for(serial, ledger_path(), receipt_dir())
         commits = rom_changelog(flash)
         pins = newer_pins(OUT, (flash or {}).get("ts") or "")
+        dirty = git_dirty_summary(ATLASOS)
         self.rom.setText(format_rom_summary(props, flash) if props else serial)
         if hasattr(self, "titan_view") and not getattr(self, "_diag_ran", False):
-            self.titan_view.setPlainText(format_rom_report(props, flash, commits, pins))
+            self.titan_view.setPlainText(format_rom_report(props, flash, commits, pins, dirty))
         self._maybe_diag(serial)
 
     def _tick_dev(self) -> None:

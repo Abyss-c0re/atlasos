@@ -121,6 +121,12 @@ grep -q 'titan2_force_location_for_wfc' "$DEST_SYS/titan2-ims-setup.sh" 2>/dev/n
   && grep -q 'settings delete global titan2_force_location_for_wfc' "$DEST_SYS/titan2-ims-setup.sh" 2>/dev/null \
   && ok "ims-setup clears sticky force_location flag" \
   || bad "ims-setup should delete titan2_force_location_for_wfc"
+NETFW_SRC="$ROOT/packages/titan_netfw/AndroidManifest.xml"
+if grep -qE 'android:sharedUserId=' "$NETFW_SRC" 2>/dev/null; then
+  bad "TitanNetFw still claims sharedUserId (A12 PMS bootloop)"
+else
+  ok "TitanNetFw has no sharedUserId"
+fi
 if [ -x "$SRC_BIN" ] && [ -x "$DEST_PRE/titan2-touchpadd" ]; then
   if grep -aF 'INPROC_PARK' "$DEST_PRE/titan2-touchpadd" >/dev/null 2>&1; then
     ok "staged binary has INPROC_PARK"

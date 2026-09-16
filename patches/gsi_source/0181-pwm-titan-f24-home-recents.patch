@@ -31,6 +31,15 @@ index 69fefe33bfa9..78e86f3d0b7b 100644
 +            if (event.getAction() != ACTION_COMPLETE) {
 +                return;
 +            }
++            // PRODUCT_LOCK: Controls a11y owns screen-on nav. Do not dual-fire.
++            try {
++                String svc = android.provider.Settings.Secure.getString(
++                    mContext.getContentResolver(),
++                    android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
++                if (svc != null && svc.contains("TrackpadAccessService")) {
++                    return;
++                }
++            } catch (Exception ignored) {}
 +            switch (event.getType()) {
 +                case SINGLE_KEY_GESTURE_TYPE_PRESS:
 +                    launchHomeFromHotKey(DEFAULT_DISPLAY);

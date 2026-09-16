@@ -178,7 +178,33 @@ def format_rom_summary(props: dict, flash: dict | None = None) -> str:
     return " u00b7 ".join(bits)
 
 
-def format_rom_report(props: dict, flash: dict, commits: list[str], pins: list[str]) -> str:
+def git_dirty_summary(repo: Path, limit: int = 16) -> list[str]:
+    """Working-tree paths Cube cannot see in last-flash..HEAD."""
+    if not repo.is_dir():
+        return []
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(repo), "status", "--porcelain", "-u"],
+            text=True,
+            timeout=8,
+        )
+    except Exception:
+        return []
+    skip = ("state/", "third_party/")
+    lines = []
+    for ln in out.splitlines():
+        path = ln[3:].strip() if len(ln) > 3 else ""
+        if not path or path.startswith(skip):
+            continue
+        lines.append(ln.strip())
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def format_rom_report(
+    props: dict, flash: dict, commits: list[str], pins: list[str], dirty: list[str] | None = None
+) -> str:
     lines = []
     if not props:
         lines.append("No USB adb u2014 plug Titan to read the ROM.")
@@ -221,6 +247,10 @@ def format_rom_report(props: dict, flash: dict, commits: list[str], pins: list[s
             lines.append("No AtlasOS commits since last flash.")
         else:
             lines.append("No baseline u2014 flash once so updates can be compared.")
+    if dirty:
+        lines.append("")
+        lines.append("Uncommitted on disk (%d) — cook uses these; pin stays until commit" % len(dirty))
+        lines.extend("  " + d for d in dirty)
     if pins:
         lines.append("")
         lines.append("Newer pins on disk")

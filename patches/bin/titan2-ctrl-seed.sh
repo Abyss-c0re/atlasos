@@ -194,7 +194,8 @@ seed_agent_extras() {
   fi
 
   for pair in "titan2_ims_mtk:1" "titan2_ims_force_volte:1" "titan2_ims_binder:1" \
-    "titan2_tel_patch_smsc:1" "titan2_tel_disable_vci:0" "titan2_ims_bind_slots:both"; do
+    "titan2_tel_patch_smsc:1" "titan2_tel_disable_vci:0" "titan2_ims_bind_slots:both" \
+    "titan2_phone_calls:1"; do
     nm=${pair%%:*}; val=${pair##*:}
     if [ ! -s "$T2/$nm" ]; then
       echo "$val" > "$T2/$nm" 2>/dev/null || true
@@ -364,6 +365,14 @@ seed_agent_claim() {
     chmod 666 "$_d/titan2_specials_inject_pause" 2>/dev/null || true
   done
   settings put global titan2_specials_method kcm 2>/dev/null || true
+  # Controls is the only voice off switch. Unset must mean On (1), not heal-skip.
+  [ -s "$T2/titan2_phone_calls" ] || echo 1 > "$T2/titan2_phone_calls" 2>/dev/null || true
+  chmod 666 "$T2/titan2_phone_calls" 2>/dev/null || true
+  case "`cat "$T2/titan2_phone_calls" 2>/dev/null | tr -d '\r\n '`" in
+    0) settings put global titan2_phone_calls 0 2>/dev/null || true ;;
+    *) settings put global titan2_phone_calls 1 2>/dev/null || true ;;
+  esac
+  settings put global titan2_ims_bind_slots both 2>/dev/null || true
   settings put secure long_press_timeout 400 2>/dev/null || true
   heal_power_menu
   # Key activity world-writable (root agent + a11y app).

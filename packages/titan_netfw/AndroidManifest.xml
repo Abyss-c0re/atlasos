@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.netfw"
-    android:versionCode="12"
-    android:versionName="1.11-luci-app"
-    android:sharedUserId="android.uid.system">
+    android:versionCode="13"
+    android:versionName="1.12-own-uid">
     <uses-sdk android:minSdkVersion="34" android:targetSdkVersion="35"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <queries>

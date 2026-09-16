@@ -112,19 +112,23 @@ public final class SimCards {
         Set<Integer> available = sm != null ? availableIds(sm) : new HashSet<Integer>();
         Map<Integer, Card> byId = new HashMap<Integer, Card>();
 
+        Set<Integer> liveSlots = new HashSet<Integer>();
         if (sm != null) {
             for (SubscriptionInfo s : allInfos(sm)) {
                 Card c = fromInfo(s, available, false);
                 if (c == null || c.slot < 0) continue;
                 byId.put(c.subId, c);
+                liveSlots.add(c.slot);
             }
         }
 
-        // Memory only keeps SIMs still in a tray. Pulled cards (slot -1 / ABSENT)
-        // are not "disabled" — they are gone.
+        // Settings hides UICC-off. Memory keeps the row so Controls can turn
+        // it back on. After a physical swap, drop memory whose tray is live
+        // under another subId (stale ghost).
         for (Card mem : loadMemory(ctx)) {
             if (mem.slot < 0 || byId.containsKey(mem.subId)) continue;
             if (slotAbsent(mem.slot)) continue;
+            if (liveSlots.contains(mem.slot)) continue;
             byId.put(mem.subId, mem);
         }
 
@@ -186,10 +190,13 @@ public final class SimCards {
             sm.getClass()
                 .getMethod("setUiccApplicationsEnabled", int.class, boolean.class)
                 .invoke(sm, Integer.valueOf(subId), Boolean.valueOf(on));
-            return true;
         } catch (Throwable t) {
             return false;
         }
+        // Any UICC change makes MTK ImsResolver drop BOTH ImsPhones.
+        // Rearm Calls (enable+bind only). Never ims disable.
+        ImsCalls.requestRearm(ctx);
+        return true;
     }
 
     private static Card fromInfo(SubscriptionInfo s, Set<Integer> available,
@@ -256,7 +263,15 @@ public final class SimCards {
         try {
             raw = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString(KEY, "");
         } catch (Exception e) {
-            return out;
+            raw = "";
+        }
+        if (raw == null || raw.isEmpty()) {
+            try {
+                raw = android.provider.Settings.Global.getString(
+                    ctx.getContentResolver(), "titan2_sim_memory");
+            } catch (Exception ignored) {
+                raw = "";
+            }
         }
         if (raw == null || raw.isEmpty()) return out;
         for (String line : raw.split("\n")) {

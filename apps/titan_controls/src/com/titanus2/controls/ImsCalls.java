@@ -8,6 +8,7 @@ import android.telephony.TelephonyManager;
 /**
  * Settings → SIMs → Calls is the only voice pin.
  * Detect broken IMS. Request heal. Never write {@code multi_sim_voice_call}.
+ * {@code both} means skip ABSENT. Two LOADED trays: bind the Calls tray only.
  */
 public final class ImsCalls {
     private ImsCalls() {}
@@ -115,6 +116,11 @@ public final class ImsCalls {
 
     public static void requestHeal(Context ctx) {
         AgentBridge.put(ctx, AgentBridge.IMS_ACTION, "heal");
+    }
+
+    /** Enable+bind Settings Calls only. Never {@code ims disable}. */
+    public static void requestRearm(Context ctx) {
+        AgentBridge.put(ctx, AgentBridge.IMS_ACTION, "rearm");
     }
 
     public static Detect detect(Context ctx) {

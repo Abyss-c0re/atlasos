@@ -660,6 +660,7 @@ public final class KeyMapPrefs {
      * poison) to factory defaults. Called from a11y ensure belt / wipe heal.
      */
     public void healSideChromeToFactory() {
+        healNavKeysToFactory();
         SharedPreferences.Editor ed = p.edit();
         boolean dirty = false;
         for (Slot s : SLOTS) {
@@ -818,6 +819,31 @@ public final class KeyMapPrefs {
      * One-shot: upgrade unset or still-default to {@link #ACT_BACK}; leave
      * user custom actions alone.
      */
+    /**
+     * Essential Titan nav: Back short, Recents-key short=Home, long=Recents.
+     * Restore if empty / default / none. User custom actions stay.
+     */
+    public void healNavKeysToFactory() {
+        SharedPreferences.Editor ed = p.edit();
+        boolean dirty = false;
+        String[][] pins = {
+            { "back_short", ACT_BACK },
+            { "recents_short", ACT_HOME },
+            { "recents_long", ACT_RECENTS },
+        };
+        for (String[] pin : pins) {
+            String cur = p.getString("slot_" + pin[0], null);
+            if (cur == null || cur.isEmpty()
+                    || ACT_DEFAULT.equals(cur) || ACT_NONE.equals(cur)) {
+                ed.putString("slot_" + pin[0], pin[1]);
+                dirty = true;
+            }
+        }
+        if (dirty) {
+            try { ed.apply(); } catch (Exception ignored) {}
+        }
+    }
+
     public void migrateBackShortNavDefault() {
         if (p.getBoolean("back_short_nav_v1", false)) return;
         SharedPreferences.Editor ed = p.edit();
