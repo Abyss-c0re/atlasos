@@ -32,9 +32,13 @@ public class BootRestoreReceiver extends BroadcastReceiver {
         // LOCKED_BOOT_COMPLETED is DE-only. CE SharedPreferences throw and AMS
         // marks TrackpadAccessService "malfunctioning" (Crashed services).
         if (lockedBoot) return;
-        if (!boot && !replaced) return;
-
         final Context app = context.getApplicationContext();
+        if ("android.intent.action.SIM_STATE_CHANGED".equals(action)
+                || "com.titanus2.controls.UNDELETE_UICC".equals(action)) {
+            try { SimCards.undeleteUicc(app); } catch (Exception ignored) {}
+            return;
+        }
+        if (!boot && !replaced) return;
         if (!AccessServiceHelper.userUnlocked(app)) return;
         if (credentialLockShowing(app)) stampPadGate(app, false);
         else stampPadGate(app, true);
@@ -297,6 +301,7 @@ public class BootRestoreReceiver extends BroadcastReceiver {
                         return;
                     }
                     pinAndHeal(app);
+                    try { SimCards.undeleteUicc(app); } catch (Exception ignored) {}
                 } catch (Exception ignored) {}
             }, delay);
         }

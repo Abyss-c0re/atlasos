@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.82-undelete (682) — 2026-09-16T20:53Z
+
+### rebuild 2026-09-16T20:53Z · 16.82-undelete (682)
+
+- Rebuild (ALLOW_ROOT=1)
+
+
+- undelete UICC on SIM_STATE_CHANGED and boot retries
+
+---
+
 ## 16.81-any-sim (681) — 2026-09-16T20:09Z
 
 ### rebuild 2026-09-16T20:09Z · 16.81-any-sim (681)
