@@ -206,6 +206,28 @@ public final class SimCards {
         return ok;
     }
 
+    private static android.telephony.SubscriptionManager.OnSubscriptionsChangedListener watch;
+
+    /** Keep undelete running while Controls a11y is bound. */
+    public static void watch(Context ctx) {
+        if (ctx == null) return;
+        final Context app = ctx.getApplicationContext();
+        undeleteUicc(app);
+        if (watch != null) return;
+        SubscriptionManager sm = app.getSystemService(SubscriptionManager.class);
+        if (sm == null) return;
+        watch = new SubscriptionManager.OnSubscriptionsChangedListener() {
+            @Override public void onSubscriptionsChanged() {
+                try { undeleteUicc(app); } catch (Exception ignored) {}
+            }
+        };
+        try {
+            sm.addOnSubscriptionsChangedListener(watch);
+        } catch (Throwable t) {
+            watch = null;
+        }
+    }
+
     /** Undo Settings UICC-off so the SIM stays listed. */
     public static int undeleteUicc(Context ctx) {
         if (ctx == null) return 0;

@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.83-sim-watch (683) — 2026-09-16T20:56Z
+
+- subscription watcher undeletes UICC for the life of a11y
+
+---
+
 ## 16.82-undelete (682) — 2026-09-16T20:53Z
 
 ### rebuild 2026-09-16T20:53Z · 16.82-undelete (682)
