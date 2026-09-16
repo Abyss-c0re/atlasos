@@ -401,9 +401,8 @@ ims_bind_slot() {
   cmd phone ims enable -s "$_s" 2>/dev/null || true
 }
 
-# Controls plane: 1 | 2 | both (default both). 1=slot0, 2=slot1.
-# both + two LOADED = Settings Calls tray only. MTK has one IMS cap;
-# bind/disable on the other ImsPhone drops the working Calls SIM.
+# Controls plane: 1 | 2 | both (default both). Enable every present tray.
+# Never ims disable. Wipe with Calls unset still binds both LOADED SIMs.
 ims_wanted_slots() {
   _w=`read_first titan2_ims_bind_slots`
   [ -n "$_w" ] || _w=`settings get global titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n '`
@@ -411,20 +410,6 @@ ims_wanted_slots() {
     1) echo 0; return 0 ;;
     2) echo 1; return 0 ;;
   esac
-  _as=`ims_active_slot`
-  _n=0
-  _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
-  _oldifs=$IFS
-  IFS=,
-  for _p in $_st; do
-    case "$_p" in ABSENT|"") ;; *) _n=$((_n + 1)) ;; esac
-  done
-  IFS=$_oldifs
-  if [ "$_n" -ge 2 ]; then
-    case "$_as" in
-      0|1) echo "$_as"; return 0 ;;
-    esac
-  fi
   for _s in 0 1; do
     ims_slot_absent "$_s" || echo "$_s"
   done

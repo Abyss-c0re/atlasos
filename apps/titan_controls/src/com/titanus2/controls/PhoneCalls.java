@@ -50,6 +50,7 @@ public final class PhoneCalls {
 
     public static void apply(Context ctx) {
         if (ctx == null) return;
+        ImsCalls.seedVoiceIfUnset(ctx);
         boolean off = isDisabled(ctx);
         int calls = ImsCalls.settingsCallsSubId(ctx);
         List<SimCards.Card> cards = SimCards.list(ctx);

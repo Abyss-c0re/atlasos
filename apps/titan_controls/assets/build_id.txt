@@ -1,4 +1,4 @@
-versionName=16.75-nav-keys
-versionCode=675
-built_utc=2026-09-16T15:57Z
+versionName=16.76-voice-seed
+versionCode=676
+built_utc=2026-09-16T17:17Z
 allow_root=1

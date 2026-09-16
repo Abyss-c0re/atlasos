@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.76-voice-seed (676) — 2026-09-16T17:16Z
+
+### rebuild 2026-09-16T17:17Z · 16.76-voice-seed (676)
+
+- Rebuild (ALLOW_ROOT=1)
+
+
+- after wipe seed Settings Calls so incoming can RINGING
+
+---
+
 ## 16.75-nav-keys (675) — 2026-09-16T15:57Z
 
 - a11y owns Home/Back/Recents GLOBAL_ACTION; do not yield to missing PWM

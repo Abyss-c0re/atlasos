@@ -1141,6 +1141,13 @@ class Worker(threading.Thread):
             return
         env["SERIAL"] = serial
         env["ANDROID_SERIAL"] = serial
+        ksu_img = OUT / "flash_helpers" / "kitchen_patched_init_boot.img"
+        ksu_meta = OUT / "flash_helpers" / "kitchen_root_meta.txt"
+        if ksu_img.is_file() and ksu_meta.is_file():
+            meta = ksu_meta.read_text(errors="replace")
+            if "kernelsu_source" in meta or "magisk_release" in meta or "magisk_source" in meta:
+                env["INIT_BOOT_IMG"] = str(ksu_img)
+                self._st("init_boot " + ksu_img.name)
         if serial in adb and serial not in fb:
             self._st("usb reboot " + serial)
             r = subprocess.run(

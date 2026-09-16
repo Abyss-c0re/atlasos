@@ -234,29 +234,15 @@ ims_bind_slot() {
   cmd phone ims enable -s "$_s" 2>/dev/null || true
 }
 
-# Slots we may disable/rebind. "both" is skip-ABSENT, not poke-every-ImsPhone.
-# Two LOADED trays: MTK has one IMS cap (simswitch). Restarting the other
-# tray's ImsPhone drops Calls (SIM 2 UICC toggle broke SIM 1).
+# Enable+bind every present tray. Never disable. UICC on the other tray
+# must not skip the Calls ImsPhone, and wipe with Calls unset must not
+# bind only slot 0 (incoming never RINGING).
 ims_bind_target_slots() {
   _w=$1
   case "$_w" in
     1) echo 0; return 0 ;;
     2) echo 1; return 0 ;;
   esac
-  _as=`ims_active_slot`
-  _n=0
-  _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
-  _oldifs=$IFS
-  IFS=,
-  for _p in $_st; do
-    case "$_p" in ABSENT|"") ;; *) _n=$((_n + 1)) ;; esac
-  done
-  IFS=$_oldifs
-  if [ "$_n" -ge 2 ]; then
-    case "$_as" in
-      0|1) echo "$_as"; return 0 ;;
-    esac
-  fi
   for _s in 0 1; do
     ims_slot_absent "$_s" || echo "$_s"
   done

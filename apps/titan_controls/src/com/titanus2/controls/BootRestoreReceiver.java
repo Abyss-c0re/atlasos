@@ -39,6 +39,7 @@ public class BootRestoreReceiver extends BroadcastReceiver {
         if (credentialLockShowing(app)) stampPadGate(app, false);
         else stampPadGate(app, true);
         pinAndHeal(app);
+        try { ImsCalls.seedVoiceIfUnset(app); } catch (Exception ignored) {}
         // KEEP_DATA already-CE boot never sends USER_UNLOCKED again.
         // Listed-but-unbound a11y leaves titan2_input_lock stuck → pad park.
         if (boot || replaced) {
