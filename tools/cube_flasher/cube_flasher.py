@@ -945,6 +945,16 @@ class Worker(threading.Thread):
         job["gsi"] = gsi
         for note in sync_cook_inputs():
             self._st(note)
+        if (job.get("root") or "") == "kernelsu_source":
+            sync = ROOT / "scripts" / "kitchen" / "sync_kernelsu.sh"
+            if sync.is_file():
+                self._st("sync KernelSU v3.3.0 (android14-6.1 LKM)")
+                krc, _kblob = self._pipe(["bash", str(sync)], env, 0.08, 0.12)
+                if krc != 0:
+                    self._ph("fail", 0.05)
+                    self._say("KernelSU sync failed.")
+                    self.bridge.finished.emit(False, "kernelsu sync rc=%s" % krc)
+                    return None
 
         if feats.get("with_stock_fm_ir"):
             fm = ROOT / "apps" / "titan_fm" / "build.sh"
