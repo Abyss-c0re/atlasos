@@ -20,6 +20,7 @@ HOLD FLASH. Next GSI pin only. Never resume 019ff9d1 to fix live.
 | A11 any SIM either tray | no MCC/pack/preferapn pin; bind unset = skip ABSENT; never write Calls; never ims disable | setup.sh |
 | A13 VoLTE available | unknown MCC defaults volte=false; Controls overrideConfig carrier_volte_available | 16.77 |
 | A14 one IMS SoT | Controls Calls screen owns bind/rearm/cc. TrebleApp hidden; never IMS. Settings Calls is voice pin | 16.78 |
+| A15 incoming SelfActivator | ImsSelfActivatorImpl IllegalAccessError on MT; getImsExtSelfActivator returns null | ims-mtk-u-resigned |
 | A12 no system-uid kitchen APK | TitanNetFw own UID; signed-GSI + android.uid.system = PMS bootloop | netfw 1.12 |
 
 ## Heresy (do not recycle)
