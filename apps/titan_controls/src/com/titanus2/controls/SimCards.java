@@ -193,9 +193,9 @@ public final class SimCards {
         } catch (Throwable t) {
             return false;
         }
-        // Any UICC change makes MTK ImsResolver drop BOTH ImsPhones.
-        // Rearm Calls (enable+bind only). Never ims disable.
-        ImsCalls.requestRearm(ctx);
+        // UICC change tears down both ImsPhones. Wait for radio, then
+        // rearm Settings Calls only. Immediate rearm + bind=both stole IMS.
+        ImsCalls.scheduleCallsRearm(ctx);
         return true;
     }
 

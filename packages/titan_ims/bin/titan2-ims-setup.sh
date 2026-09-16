@@ -234,14 +234,18 @@ ims_bind_slot() {
   cmd phone ims enable -s "$_s" 2>/dev/null || true
 }
 
-# Enable+bind every present tray. Never disable. UICC on the other tray
-# must not skip the Calls ImsPhone, and wipe with Calls unset must not
-# bind only slot 0 (incoming never RINGING).
+# Never ims disable. MTK has one IMS cap: arming the non-Calls ImsPhone
+# steals voice from Settings Calls (enable T-Mobile killed PILDYK).
+# both / unset pin = Calls tray if known, else every present tray.
 ims_bind_target_slots() {
   _w=$1
   case "$_w" in
     1) echo 0; return 0 ;;
     2) echo 1; return 0 ;;
+  esac
+  _as=`ims_active_slot`
+  case "$_as" in
+    0|1) echo "$_as"; return 0 ;;
   esac
   for _s in 0 1; do
     ims_slot_absent "$_s" || echo "$_s"

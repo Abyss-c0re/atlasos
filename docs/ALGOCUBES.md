@@ -12,7 +12,7 @@ HOLD FLASH. Next GSI pin only. Never resume 019ff9d1 to fix live.
 | A3 persist is cache | titan2_simswitch boot-early only; hold re-reads Settings | a389b9e |
 | A4 never xsim | PhoneCalls always setCrossSimCallingEnabled false | 79c1e5f |
 | A5 pulled card is gone | slot less than 0 / INVALID / ABSENT not listed; 0092a | 951bf31 |
-| A6 bind 1 or 2 or both | both = enable every present tray; never ims disable | ImsCalls + setup |
+| A6 bind 1 or 2 or both | both = Settings Calls tray when known; never arm the other ImsPhone; never ims disable | ImsCalls + setup |
 | A7 pad ROM outranks KEEP_DATA tip | system bin apply not data local tmp leftover | d1d32b7 |
 | A8 no ImsService inject | DANGEROUS_IMS_INJECT bootloop | banned |
 | A9 Treble BT seed-once | heal does not restamp BT persist | heal law |

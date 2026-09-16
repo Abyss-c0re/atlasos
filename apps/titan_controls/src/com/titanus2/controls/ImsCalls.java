@@ -199,6 +199,25 @@ public final class ImsCalls {
         AgentBridge.put(ctx, AgentBridge.IMS_ACTION, "rearm");
     }
 
+    private static final android.os.Handler REARM_H =
+        new android.os.Handler(android.os.Looper.getMainLooper());
+    private static Runnable pendingRearm;
+
+    /** After UICC flicker: 4s then rearm Calls tray only. */
+    public static void scheduleCallsRearm(Context ctx) {
+        if (ctx == null) return;
+        final Context app = ctx.getApplicationContext();
+        if (pendingRearm != null) REARM_H.removeCallbacks(pendingRearm);
+        pendingRearm = new Runnable() {
+            @Override public void run() {
+                pendingRearm = null;
+                requestRearm(app);
+                forceVolteCarrierConfig(app);
+            }
+        };
+        REARM_H.postDelayed(pendingRearm, 4000);
+    }
+
     public static Detect detect(Context ctx) {
         Detect d = new Detect();
         if (ctx == null) {

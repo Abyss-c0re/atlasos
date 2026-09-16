@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.79-uicc-rearm (679) — 2026-09-16T19:27Z
+
+- UICC: delay 4s then rearm Settings Calls tray only
+
+---
+
 ## 16.78-ims-lab (678) — 2026-09-16T17:46Z
 
 ### rebuild 2026-09-16T17:47Z · 16.78-ims-lab (678)
