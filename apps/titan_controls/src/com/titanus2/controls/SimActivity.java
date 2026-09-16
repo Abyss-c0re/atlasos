@@ -76,7 +76,12 @@ public class SimActivity extends Activity {
         if (isFinishing() || root == null) return;
         root.removeAllViews();
         UiKit.title(root, "SIMs");
-        UiKit.note(root, "Off is radio power (OEM). Settings UICC-off is undone so the SIM stays listed.");
+        UiKit.note(root, "Off is radio power. Settings disable stays. Restore hidden SIMs is manual.");
+        UiKit.button(root, "Restore hidden SIMs", () -> {
+            int n = SimCards.undeleteUicc(this);
+            UiKit.toast(this, n > 0 ? ("Restored " + n) : "None hidden");
+            h.post(this::render);
+        });
         ImsCalls.Detect ims = ImsCalls.detect(this);
         TextView callsFact = UiKit.mono(root);
         callsFact.setText(ims.line());
@@ -86,7 +91,6 @@ public class SimActivity extends Activity {
             h.post(this::render);
         });
 
-        SimCards.undeleteUicc(this);
         SimCards.pinTrayNames(this);
         List<SimCards.Card> cards = SimCards.list(this);
         if (cards.isEmpty()) {

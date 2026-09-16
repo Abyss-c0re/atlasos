@@ -1325,10 +1325,8 @@ _ims_sim_state_tick() {
     return 0
   fi
   [ "$_st" = "$LAST_IMS_SIM_STATE" ] && return 0
-  log "ims sim.state $LAST_IMS_SIM_STATE -> $_st; undelete UICC + enable IMS"
+  log "ims sim.state $LAST_IMS_SIM_STATE -> $_st"
   LAST_IMS_SIM_STATE=$_st
-  am broadcast -a com.titanus2.controls.UNDELETE_UICC \
-    -n com.titanus2.controls/.BootRestoreReceiver >/dev/null 2>&1 || true
   persist_ctrl titan2_ims_action rearm
   apply_ims_action
   return 0

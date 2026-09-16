@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.85-no-undelete (685) — 2026-09-16T22:55Z
+
+- stop auto-undelete; Settings disable stays; mouse idc before uninhibit
+
+---
+
 ## 16.84-voice-default (684) — 2026-09-16T21:34Z
 
 - after wipe set default voice if unset; Telecom needs an account

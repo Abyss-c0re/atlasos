@@ -33,8 +33,7 @@ public class BootRestoreReceiver extends BroadcastReceiver {
         // marks TrackpadAccessService "malfunctioning" (Crashed services).
         if (lockedBoot) return;
         final Context app = context.getApplicationContext();
-        if ("android.intent.action.SIM_STATE_CHANGED".equals(action)
-                || "com.titanus2.controls.UNDELETE_UICC".equals(action)) {
+        if ("com.titanus2.controls.UNDELETE_UICC".equals(action)) {
             try { SimCards.undeleteUicc(app); } catch (Exception ignored) {}
             return;
         }
@@ -43,7 +42,6 @@ public class BootRestoreReceiver extends BroadcastReceiver {
         if (credentialLockShowing(app)) stampPadGate(app, false);
         else stampPadGate(app, true);
         pinAndHeal(app);
-        try { SimCards.undeleteUicc(app); } catch (Exception ignored) {}
         try { ImsCalls.ensureDefaultVoiceIfUnset(app); } catch (Exception ignored) {}
         try { ImsCalls.forceVolteCarrierConfig(app); } catch (Exception ignored) {}
         // KEEP_DATA already-CE boot never sends USER_UNLOCKED again.
@@ -302,7 +300,6 @@ public class BootRestoreReceiver extends BroadcastReceiver {
                         return;
                     }
                     pinAndHeal(app);
-                    try { SimCards.undeleteUicc(app); } catch (Exception ignored) {}
                 } catch (Exception ignored) {}
             }, delay);
         }

@@ -18,7 +18,7 @@ PAD_STATUS=$ST/titan2_pad_status
 TP_LOG=$ST/titan2_touchpadd.log
 CARET_STATUS=$ST/titan2_caret_status
 APPLY_LAST=$ST/titan2_pad_apply_last
-PAD_APPLY_VER=2.234-login-gate
+PAD_APPLY_VER=2.235-no-warp
 
 # Prefer GSI/system binary (Phase 1.5 SoT); tip only for lab iteration.
 TOUCHPADD=/system/bin/titan2-touchpadd
@@ -515,6 +515,11 @@ start_mouse() {
     chmod 666 "$PAD_STATUS" 2>/dev/null
     return 1
   fi
+  # IDC ignore BEFORE uninhibit. Native ABS + uinput REL warps the
+  # pointer to pad-mapped screen center. Never remount if already ignore.
+  if [ "$LAST_IDC_KIND" != "ignore" ]; then
+    set_touchpad_idc ignore
+  fi
   set_pad_inhibited 0
   LAST_PAD_SURFACE=$surface
   LAST_SUB_FLIP=$flipx
@@ -522,10 +527,6 @@ start_mouse() {
   LAST_TOP_ROW_CURSOR=$trc
   LAST_TOP_ROW_ONLY=0
   TP_TITANKEY_RESTARTS=0
-  # IDC bind after trackpad can take seconds — never block mode edge.
-  if [ "$LAST_IDC_KIND" != "ignore" ]; then
-    ( set_touchpad_idc ignore ) &
-  fi
   if [ "$follow" = "1" ]; then
     ( ensure_orient_rel ) &
   else

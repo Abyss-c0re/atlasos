@@ -128,12 +128,25 @@ public final class ImsCalls {
     }
 
     static int firstPresentSub(Context ctx) {
+        int fallback = -1;
+        TelephonyManager tm0 = ctx.getSystemService(TelephonyManager.class);
         for (SimCards.Card c : SimCards.list(ctx)) {
-            if (c != null && c.uicc && c.subId > 0 && (c.slot == 0 || c.slot == 1)) {
-                return c.subId;
-            }
+            if (c == null || !c.uicc || c.subId <= 0) continue;
+            if (c.slot != 0 && c.slot != 1) continue;
+            if (fallback <= 0) fallback = c.subId;
+            if (tm0 == null) continue;
+            try {
+                TelephonyManager tm = (TelephonyManager) tm0.getClass()
+                    .getMethod("createForSubscriptionId", int.class)
+                    .invoke(tm0, Integer.valueOf(c.subId));
+                if (tm == null) continue;
+                Object ss = tm.getClass().getMethod("getServiceState").invoke(tm);
+                if (ss == null) continue;
+                int st = ((Integer) ss.getClass().getMethod("getState").invoke(ss)).intValue();
+                if (st == 0) return c.subId;
+            } catch (Throwable ignored) {}
         }
-        return -1;
+        return fallback;
     }
 
     public static void forceVolteCarrierConfig(Context ctx) {
