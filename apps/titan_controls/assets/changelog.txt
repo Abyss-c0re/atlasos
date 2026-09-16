@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.80-oem-mims (680) — 2026-09-16T19:36Z
+
+- OEM dual IMS: UICC no longer set-ims-service
+
+---
+
 ## 16.79-uicc-rearm (679) — 2026-09-16T19:27Z
 
 - UICC: delay 4s then rearm Settings Calls tray only

@@ -234,18 +234,13 @@ ims_bind_slot() {
   cmd phone ims enable -s "$_s" 2>/dev/null || true
 }
 
-# Never ims disable. MTK has one IMS cap: arming the non-Calls ImsPhone
-# steals voice from Settings Calls (enable T-Mobile killed PILDYK).
-# both / unset pin = Calls tray if known, else every present tray.
+# OEM mims_support=2: two IMS registrations. Bind every present tray at boot.
+# Never ims disable. UICC must not re-run set-ims-service (that steals IMS).
 ims_bind_target_slots() {
   _w=$1
   case "$_w" in
     1) echo 0; return 0 ;;
     2) echo 1; return 0 ;;
-  esac
-  _as=`ims_active_slot`
-  case "$_as" in
-    0|1) echo "$_as"; return 0 ;;
   esac
   for _s in 0 1; do
     ims_slot_absent "$_s" || echo "$_s"
@@ -409,20 +404,8 @@ setprop persist.dbg.allow_ims_off 1 2>/dev/null || true
 setprop persist.dbg.ims_volte_enable 1 2>/dev/null || true
 setprop persist.radio.calls.on.ims 1 2>/dev/null || true
 setprop persist.data.iwlan.enable true 2>/dev/null || true
-# 1=SIM1 2=SIM2 3=both. Two LOADED cards: vendor MT needs 3. Forcing 1
-# after SIM 2 was present dropped incoming (Telecom never saw RINGING).
-_volte=1
-_st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
-_n=0
-_oldifs=$IFS
-IFS=,
-for _p in $_st; do
-  case "$_p" in ABSENT|"") ;; *) _n=$((_n + 1)) ;; esac
-done
-IFS=$_oldifs
-[ "$_n" -ge 2 ] && _volte=3
-ims_set_vendor_prop persist.vendor.mtk.volte.enable "$_volte"
-setprop persist.vendor.mtk.volte.enable "$_volte" 2>/dev/null || true
+# OEM: persist.vendor.mtk.volte.enable=1 + mims_support=2 + dynamic_ims_switch.
+# Do not force 3. RIL owns dual IMS. We only bind ImsService once at boot.
 # WFC on for US MVNO abroad (VoWiFi when WWAN only emergency-camps)
 setprop persist.vendor.mtk.wfc.enable 1 2>/dev/null || true
 setprop persist.vendor.mtk_wfc_support 1 2>/dev/null || true

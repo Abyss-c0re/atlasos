@@ -323,19 +323,9 @@ ims_align_calls_tray() {
 }
 
 # 1=SIM1 2=SIM2 3=both. Two LOADED: vendor incoming needs 3.
+# OEM default volte.enable=1. Dual IMS is mims_support=2. Do not force 3.
 ims_set_volte_enable() {
-  _ve=1
-  _st=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
-  _n=0
-  _oldifs=$IFS
-  IFS=,
-  for _p in $_st; do
-    case "$_p" in ABSENT|"") ;; *) _n=$((_n + 1)) ;; esac
-  done
-  IFS=$_oldifs
-  [ "$_n" -ge 2 ] && _ve=3
-  ims_set_vendor_prop persist.vendor.mtk.volte.enable "$_ve"
-  setprop persist.vendor.mtk.volte.enable "$_ve" 2>/dev/null || true
+  return 0
 }
 
 # Pixel IMS (kyujin-cho/pixel-volte-patch) carrier-config key set via shell override.
@@ -401,18 +391,14 @@ ims_bind_slot() {
   cmd phone ims enable -s "$_s" 2>/dev/null || true
 }
 
-# 1|2|both. both = Settings Calls tray when known. Never arm the other
-# ImsPhone (UICC enable on tray 0 stole IMS from PILDYK on tray 1).
+# OEM mims_support=2. Bind present trays. Do not re-bind on UICC (heal
+# rearm is enable-only; set-ims-service is boot/setup only).
 ims_wanted_slots() {
   _w=`read_first titan2_ims_bind_slots`
   [ -n "$_w" ] || _w=`settings get global titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n '`
   case "$_w" in
     1) echo 0; return 0 ;;
     2) echo 1; return 0 ;;
-  esac
-  _as=`ims_active_slot`
-  case "$_as" in
-    0|1) echo "$_as"; return 0 ;;
   esac
   for _s in 0 1; do
     ims_slot_absent "$_s" || echo "$_s"
@@ -548,20 +534,16 @@ apply_ims_action() {
       log "force_lte done slot=$_slot sub=$_sub $voice $emerg op=$op"
       ;;
     rebind|rearm)
-      # UICC on the other tray makes Android ImsResolver drop BOTH ImsPhones.
-      # Enable+bind Calls only. Never disable.
-      ims_set_volte_enable
+      # UICC must not re-run set-ims-service (OEM mims=2; rebind steals IMS).
+      # Enable only. Bind is boot/setup once.
       ims_align_calls_tray || true
-      _slot=`ims_active_slot`
-      ims_bind_all_slots
-      if [ -n "$_slot" ]; then
-        cmd phone ims enable -s "$_slot" 2>/dev/null || true
-        ims_bind_slot "$_slot"
-      fi
+      for _s in `ims_wanted_slots`; do
+        cmd phone ims enable -s "$_s" 2>/dev/null || true
+      done
       d0=$(cmd phone ims get-ims-service -s 0 -d 2>/dev/null | tr '\n' ' ')
       d1=$(cmd phone ims get-ims-service -s 1 -d 2>/dev/null | tr '\n' ' ')
-      ims_write_status "rearm slot=$_slot d0=$d0 d1=$d1 $(date +%s)"
-      log "ims $act slot=$_slot d0=$d0 d1=$d1"
+      ims_write_status "rearm enable-only d0=$d0 d1=$d1 $(date +%s)"
+      log "ims $act enable-only d0=$d0 d1=$d1"
       ;;
     create_apn)
       if ims_insert_ims_apn; then

@@ -211,7 +211,7 @@ public final class ImsCalls {
         pendingRearm = new Runnable() {
             @Override public void run() {
                 pendingRearm = null;
-                requestRearm(app);
+                // VoLTE cc only. Do not set-ims-service (OEM dual IMS).
                 forceVolteCarrierConfig(app);
             }
         };
