@@ -65,10 +65,10 @@ fi
 if [ -f "$USB" ]; then
   v=$(apk_ver "$USB" || true)
   code=${v%% *}; name=${v#* }
-  if [ -n "$code" ] && [ "$code" -ge 218 ] 2>/dev/null && [[ "$name" == 2.1[7-9]* || "$name" == 2.2* ]]; then
+  if [ -n "$code" ] && [ "$code" -ge 218 ] 2>/dev/null && [[ "$name" == 2.* ]]; then
     ok "TitanUsbHid tip $v"
   else
-    bad "TitanUsbHid tip want ≥218/2.17+ got '$v' ($USB)"
+    bad "TitanUsbHid tip want ≥218/2.* got '$v' ($USB)"
   fi
 else
   bad "missing TitanUsbHid.apk"
@@ -106,9 +106,14 @@ fi
 
 # --- pad-apply / peels ---
 PA="${ROOT}/patches/bin/titan2-pad-apply.sh"
-grep -q '2.215-rot-0-3' "$PA" 2>/dev/null \
-  && ok "pad-apply 2.215-rot-0-3" \
-  || bad "pad-apply not 2.215-rot-0-3 (Surface 0..3 follow-orient)"
+# 2.215-rot-0-3 landed; tip is 2.234-login-gate (pad off until login).
+if grep -qE 'PAD_APPLY_VER=2\.(21[5-9]|22[0-9]|23[0-9])' "$PA" 2>/dev/null \
+    || grep -q '2.215-rot-0-3' "$PA" 2>/dev/null \
+    || grep -q '2.234-login-gate' "$PA" 2>/dev/null; then
+  ok "pad-apply tip $(grep -m1 '^PAD_APPLY_VER=' "$PA" | cut -d= -f2-)"
+else
+  bad "pad-apply missing 2.215+ / 2.234-login-gate marker"
+fi
 [ -f "${ROOT}/packages/gsi_product/prebuilt_touchpadd/titan2-virtual-mouse.idc" ] \
   && ok "titan2-virtual-mouse.idc present" \
   || bad "missing titan2-virtual-mouse.idc"

@@ -95,8 +95,16 @@ fi
 if [ -n "$CUBE_APK" ]; then
   grep -q 'cube-gl-mono' "$ROOT/apps/cube_contact/AndroidManifest.xml" 2>/dev/null \
     || die "CubeContact source missing cube-gl-mono (Cube Experience)"
-  strings "$CUBE_APK" 2>/dev/null | grep -q 'cube-gl-mono' \
-    || die "CubeContact.apk is not cube-gl-mono ($CUBE_APK)"
+  # APK manifest is binary — strings often misses versionName; prefer aapt.
+  _cube_ok=0
+  if command -v aapt >/dev/null 2>&1 || [ -n "${AAPT_BIN:-}" ]; then
+    _aapt="${AAPT_BIN:-$(command -v aapt)}"
+    "$_aapt" dump badging "$CUBE_APK" 2>/dev/null | grep -q 'cube-gl-mono' && _cube_ok=1
+  fi
+  if [ "$_cube_ok" != 1 ]; then
+    strings "$CUBE_APK" 2>/dev/null | grep -q 'cube-gl-mono' && _cube_ok=1
+  fi
+  [ "$_cube_ok" = 1 ] || die "CubeContact.apk is not cube-gl-mono ($CUBE_APK)"
 fi
 # HwKeyboardLayouts optional but recommended for RU system layout picker
 if [ -z "$HWKB_APK" ]; then
@@ -276,7 +284,8 @@ for f in $_SYSBIN_SOT titan2-ims-setup.sh titan2-sensor-privacy.sh \
   titan2-pad-agent.rc titan2-ims.rc titan2-sensor-privacy.rc titan2-netfw.rc \
   titan2-openwrt.sh titan2-openwrt-boot.sh titan2-openwrt.rc openwrt-lpctl \
   titan2-bind-mtk-privacy-overlay.sh titan2-privacy-overlay.rc FrameworkResOverlay.apk \
-  titan2-analog-acc.sh titan2-analog-acc.rc titan2-analog-acc.dex; do
+  titan2-analog-acc.sh titan2-analog-acc.rc titan2-analog-acc.dex \
+  titan2-wifi-heal.sh titan2-wifi.rc titan2_usb_audio_policy_configuration.xml; do
   [ -f "$SRC_SYS/$f" ] || continue
   stage_file "$SRC_SYS/$f" "$DEST_SYS/$f"
 done
