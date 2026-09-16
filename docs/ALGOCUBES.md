@@ -41,7 +41,7 @@ HOLD FLASH. Next GSI pin only. Never resume 019ff9d1 to fix live.
 Vendor simswitch is 1-indexed tray. Settings Calls is subscription id.
 calls_want maps subId to slot+1. Do not use raw subId 3 as tray 3.
 Default bind-both must not poke an ABSENT ImsPhone.
-Physical swap: rematch Calls subId → new slot; drop memory for a tray that now has another live sub.
+Physical swap: rematch Calls subId → new slot. Stale bind=1|2 on an ABSENT tray falls back to Calls/present.
 Disable phone calls Off→On: re-arm present trays (enable only).
 Settings UICC-off hides the row; Controls memory restores it. UICC change rearms (enable+bind, never ims disable).
 Two LOADED: persist.vendor.mtk.volte.enable=3. Never force 1.

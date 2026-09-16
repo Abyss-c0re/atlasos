@@ -239,8 +239,17 @@ ims_bind_slot() {
 ims_bind_target_slots() {
   _w=$1
   case "$_w" in
-    1) echo 0; return 0 ;;
-    2) echo 1; return 0 ;;
+    1)
+      if ! ims_slot_absent 0; then echo 0; return 0; fi
+      ;;
+    2)
+      if ! ims_slot_absent 1; then echo 1; return 0; fi
+      ;;
+  esac
+  # Stale 1/2 after a physical swap: follow Settings Calls, else every present tray.
+  _as=`ims_active_slot`
+  case "$_as" in
+    0|1) echo "$_as"; return 0 ;;
   esac
   for _s in 0 1; do
     ims_slot_absent "$_s" || echo "$_s"
@@ -313,6 +322,11 @@ ims_restart_registration() {
 ASLOT=$(ims_active_slot)
 BIND_WANT=$(cat /data/misc/titan2/titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n ')
 [ -n "$BIND_WANT" ] || BIND_WANT=$(settings get global titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n ')
+# Physical swap leaves bind=1|2 pointing at the empty tray.
+case "$BIND_WANT" in
+  1) ims_slot_absent 0 && BIND_WANT=both ;;
+  2) ims_slot_absent 1 && BIND_WANT=both ;;
+esac
 j=0
 BIND_SLOTS=`ims_bind_target_slots "$BIND_WANT"`
 while [ $j -lt 15 ]; do

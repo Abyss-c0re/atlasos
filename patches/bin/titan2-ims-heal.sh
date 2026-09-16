@@ -397,8 +397,16 @@ ims_wanted_slots() {
   _w=`read_first titan2_ims_bind_slots`
   [ -n "$_w" ] || _w=`settings get global titan2_ims_bind_slots 2>/dev/null | tr -d '\r\n '`
   case "$_w" in
-    1) echo 0; return 0 ;;
-    2) echo 1; return 0 ;;
+    1)
+      if ! ims_slot_absent 0; then echo 0; return 0; fi
+      ;;
+    2)
+      if ! ims_slot_absent 1; then echo 1; return 0; fi
+      ;;
+  esac
+  _as=`ims_active_slot`
+  case "$_as" in
+    0|1) echo "$_as"; return 0 ;;
   esac
   for _s in 0 1; do
     ims_slot_absent "$_s" || echo "$_s"
