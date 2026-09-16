@@ -533,6 +533,9 @@ if [ "$want_hybrid" = "1" ]; then
         ;;
     esac
     export ATLAS_LINUX_HOME="${ATLAS_LINUX_HOME:-/data/local/atlas-home/atlas}"
+    # MT6878: 1.0.30 TUI SIGILL — never auto-update past 1.0.25
+    export GROK_DISABLE_AUTOUPDATER=1
+    export GROK_MAXIMUM_VERSION=1.0.25
     # Overlay up is not Deb enter — atlas-enterd must listen first.
     enterd_up() {
       [ -S /dev/socket/atlasenter ] \
@@ -597,6 +600,7 @@ if [ "$want_hybrid" = "1" ]; then
     export PATH='$ATLAS_USER_BIN:/usr/local/bin:/usr/bin:/bin:/system/bin:/system_ext/bin:/product/bin:/system/xbin:/vendor/bin'
     export USER="${ATLAS_LOGIN:-atlas}" LOGNAME="${ATLAS_LOGIN:-atlas}" ATLAS_ROLE="${ATLAS_LOGIN:-atlas}"
     export ATLAS_SESSION=hybrid ATLAS_PRIV=1 ATLAS_PLANE=hybrid ATLAS_MODE=debian ATLAS_HYBRID=1
+    export GROK_DISABLE_AUTOUPDATER=1 GROK_MAXIMUM_VERSION=1.0.25
     HYB='$HYB'
     export ATLAS_INTERNAL_SU=1
     if grep -q ' /data/local/atlas-hybrid/merge ' /proc/mounts 2>/dev/null \

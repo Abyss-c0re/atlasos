@@ -434,6 +434,10 @@ public final class NativeBin {
         } catch (Throwable ignored) {
         }
         try {
+            pinGrokIsa(c);
+        } catch (Throwable ignored) {
+        }
+        try {
             stageCaBundle(c);
         } catch (Exception ignored) {
         }
@@ -1047,7 +1051,8 @@ public final class NativeBin {
         /* User grok ELF is tens/hundreds of MB — never read as text. */
         if (gate.isFile() && gate.length() <= 64 * 1024L) {
             String body = readText(gate);
-            if (body != null && body.contains("Atlas grok gate")) {
+            if (body != null && body.contains("Atlas grok gate")
+                    && !body.contains("Titan MT6878 grok pin")) {
                 //noinspection ResultOfMethodCallIgnored
                 gate.delete();
             }
@@ -1057,6 +1062,16 @@ public final class NativeBin {
             //noinspection ResultOfMethodCallIgnored
             wrap.delete();
         }
+    }
+
+    /**
+     * Re-pin user grok to 1.0.25. 1.0.30 TUI SIGILL on MT6878.
+     * Script lives in assets/bin; no-op if the pin ELF is gone.
+     */
+    public static void pinGrokIsa(Context c) {
+        File sh = new File(binDir(c), "atlas-pin-grok");
+        if (!sh.isFile()) return;
+        runTimed(new String[] { "/system/bin/sh", sh.getAbsolutePath() }, 8);
     }
 
     /**
@@ -1116,6 +1131,8 @@ public final class NativeBin {
                 + "export ATLAS_AUTH_DIR=/var/lib/atlas-auth\n"
                 + "export ATLAS_AUTH_ON_LP=" + AUTH_ON_LP + "\n"
                 + "export NANOBOT_HOME=\"" + NANOBOT_HOME + "\"\n"
+                + "export GROK_DISABLE_AUTOUPDATER=1\n"
+                + "export GROK_MAXIMUM_VERSION=1.0.25\n"
                 + "export TERM=\"${TERM:-xterm-256color}\"\n"
                 + "export LANG=\"${LANG:-C.UTF-8}\"\n"
                 + "export COLORTERM=\"${COLORTERM:-truecolor}\"\n"
@@ -1135,6 +1152,8 @@ public final class NativeBin {
                 + "export ATLAS_AUTH_DIR=/var/lib/atlas-auth\n"
                 + "export ATLAS_AUTH_ON_LP=" + AUTH_ON_LP + "\n"
                 + "export NANOBOT_HOME=\"" + NANOBOT_HOME + "\"\n"
+                + "export GROK_DISABLE_AUTOUPDATER=1\n"
+                + "export GROK_MAXIMUM_VERSION=1.0.25\n"
                 + pathDebian
                 + "mkdir -p \"$HOME/bin\" \"$HOME/.local/bin\" 2>/dev/null || true\n"
                 + "cd \"$HOME\" 2>/dev/null || true\n";

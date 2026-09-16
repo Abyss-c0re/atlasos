@@ -216,6 +216,15 @@ chmod 644 "$LOG" 2>/dev/null || true
       done
     fi
     echo "wipe-first-boot perm plane done au=${AU:-none}"
+    # MT6878: re-pin grok 1.0.25 (1.0.30 TUI SIGILL). App files first, then CE.
+    for p in /data/data/com.titanus2.atlas/files/bin/atlas-pin-grok \
+             /data/user/0/com.titanus2.atlas/files/bin/atlas-pin-grok \
+             /system/bin/atlas-pin-grok; do
+      [ -f "$p" ] || continue
+      echo "atlas-pin-grok: $p"
+      ATLAS_DROP_UID="${AU:-}" /system/bin/sh "$p" 2>&1 || true
+      break
+    done
     ls -la /data/local/atlas-linux/etc/sudoers /data/local/atlas-linux/etc/sudo.conf 2>&1 | head -5 || true
     ls -laZd /data/local/atlas-home /data/local/atlas-home/atlas \
       /data/local/atlas-hybrid 2>&1 | head -10 || true
