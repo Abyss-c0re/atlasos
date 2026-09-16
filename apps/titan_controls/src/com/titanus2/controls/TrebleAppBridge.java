@@ -7,11 +7,9 @@ import android.content.pm.PackageManager;
 import android.util.Log;
 
 /**
- * TrebleApp ({@code me.phh.treble.app}) owns GSI IMS/misc/vendor quirk call paths.
- * Titan Controls wraps entry only — do not reimplement those panels here.
- * <p>
- * Cube product: Treble stays on system (priv-app) but is hidden from Settings IA;
- * open {@link #openSettings} from Tweaks.
+ * TrebleApp ({@code me.phh.treble.app}) is vendor/GSI quirks only (BT Misc).
+ * IMS bind / VoLTE / incoming binder is Titan Controls {@link ImsCalls}.
+ * Hidden from Settings. Do not open it from the Calls screen.
  */
 public final class TrebleAppBridge {
     private static final String TAG = "TitanControls";

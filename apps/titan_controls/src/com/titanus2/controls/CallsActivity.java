@@ -40,7 +40,7 @@ public class CallsActivity extends Activity {
         setContentView(scroll);
 
         UiKit.title(root, "Calls");
-        UiKit.note(root, "Settings → SIMs → Calls is the pin.");
+        UiKit.note(root, "Settings → SIMs → Calls is the voice pin. Controls owns IMS bind. TrebleApp is not IMS.");
         status = UiKit.mono(root);
 
         tBinder = UiKit.toggle(root, "Binder thread on incoming",
@@ -69,16 +69,16 @@ public class CallsActivity extends Activity {
         UiKit.flexButton(bindRow, "Both", () -> pickBind(ImsCalls.BIND_BOTH));
 
         LinearLayout btns = UiKit.row(root);
+        UiKit.flexButton(btns, "Rearm", this::rearm);
         UiKit.flexButton(btns, "Heal", this::heal);
         UiKit.flexButton(btns, "Refresh", this::refresh);
-        UiKit.button(root, "Open Treble settings", () -> {
-            if (!TrebleAppBridge.openSettings(this)) {
-                UiKit.toast(this, "TrebleApp missing");
-            }
-        });
+        LinearLayout more = UiKit.row(root);
+        UiKit.flexButton(more, "VoLTE config", this::applyVolteCc);
+        UiKit.flexButton(more, "Settings SIMs", this::openSimSettings);
+        UiKit.flexButton(more, "Copy dump", this::copyDump);
 
         TextView hint = UiKit.mono(root);
-        hint.setText("H heal · R refresh · T Treble · Esc");
+        hint.setText("A rearm · H heal · R refresh · V VoLTE · S SIMs · C copy · Esc");
         refresh();
     }
 
@@ -112,10 +112,20 @@ public class CallsActivity extends Activity {
                 heal();
                 return true;
             }
-            if (kc == KeyEvent.KEYCODE_T) {
-                if (!TrebleAppBridge.openSettings(this)) {
-                    UiKit.toast(this, "TrebleApp missing");
-                }
+            if (kc == KeyEvent.KEYCODE_A) {
+                rearm();
+                return true;
+            }
+            if (kc == KeyEvent.KEYCODE_V) {
+                applyVolteCc();
+                return true;
+            }
+            if (kc == KeyEvent.KEYCODE_S) {
+                openSimSettings();
+                return true;
+            }
+            if (kc == KeyEvent.KEYCODE_C) {
+                copyDump();
                 return true;
             }
         }
@@ -126,7 +136,7 @@ public class CallsActivity extends Activity {
         if (isFinishing() || status == null) return;
         try {
             ImsCalls.Detect d = ImsCalls.detect(this);
-            status.setText(d.line());
+            status.setText(d.dump());
             sync(tBinder, ImsCalls.planeOn(this, AgentBridge.IMS_BINDER));
             sync(tMtk, ImsCalls.planeOn(this, AgentBridge.IMS_MTK));
             sync(tForce, ImsCalls.planeOn(this, AgentBridge.IMS_FORCE_VOLTE));
@@ -155,5 +165,44 @@ public class CallsActivity extends Activity {
         h.postDelayed(this::refresh, 800);
         h.postDelayed(this::refresh, 2500);
         h.postDelayed(this::refresh, 6000);
+    }
+
+    private void rearm() {
+        ImsCalls.requestRearm(this);
+        UiKit.toast(this, "Rearm queued (enable only)");
+        h.postDelayed(this::refresh, 800);
+        h.postDelayed(this::refresh, 2500);
+    }
+
+    private void applyVolteCc() {
+        ImsCalls.forceVolteCarrierConfig(this);
+        ImsCalls.requestRearm(this);
+        UiKit.toast(this, "VoLTE carrier override + rearm");
+        h.postDelayed(this::refresh, 800);
+        h.postDelayed(this::refresh, 2500);
+    }
+
+    private void openSimSettings() {
+        try {
+            android.content.Intent i = new android.content.Intent(
+                android.provider.Settings.ACTION_NETWORK_OPERATOR_SETTINGS);
+            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Exception e) {
+            UiKit.toast(this, "Open Settings → SIMs → Calls");
+        }
+    }
+
+    private void copyDump() {
+        try {
+            String dump = ImsCalls.detect(this).dump();
+            android.content.ClipboardManager cm =
+                (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (cm == null) return;
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("ims", dump));
+            UiKit.toast(this, "Dump copied");
+        } catch (Exception e) {
+            UiKit.toast(this, "Copy failed");
+        }
     }
 }

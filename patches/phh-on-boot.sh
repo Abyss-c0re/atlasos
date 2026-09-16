@@ -127,7 +127,8 @@ settings put secure usb_audio_automatic_routing_disabled 1 2>/dev/null || true
   #    when desktop mode is unsupported (Desktop.kt) — disable the activity.
   # 2) Starter/QtiAudio probes Qualcomm IQcRilAudio — missing on MTK → crash;
   #    jar is injected but startup is still fragile; disable Starter.
-  # Controls wraps SettingsActivity for IMS/misc; product does not need Desktop/Starter.
+  # Controls owns IMS. Treble SettingsActivity is vendor quirks only.
+  # Product does not need Desktop/Starter.
   pm disable me.phh.treble.app/.DesktopInput >/dev/null 2>&1 || true
   pm disable me.phh.treble.app/.Starter >/dev/null 2>&1 || true
   pm disable-user --user 0 me.phh.treble.app/.DesktopInput >/dev/null 2>&1 || true

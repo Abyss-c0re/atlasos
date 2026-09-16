@@ -39,25 +39,60 @@ public final class ImsCalls {
         public String bindSlots = BIND_BOTH;
         public boolean ok;
         public String verdict = "";
+        public String simState = "";
+        public String numeric = "";
+        public String pkg0 = "";
+        public String pkg1 = "";
+        public String volteEn = "";
+        public String wfcEn = "";
+        public boolean volteCc;
+        public String phoneCalls = "";
 
         public String line() {
             String tray = callsSlot >= 0 ? ("SIM " + (callsSlot + 1)) : "none";
             return "Calls=" + tray
-                + " bind=" + bindLabel(bindSlots)
+                + " bind=" + ImsCalls.bindLabel(bindSlots)
                 + " sub=" + (callsSub > 0 ? callsSub : "—")
                 + " sw=" + vendorSw
                 + (split ? " SPLIT" : "")
                 + " ims=" + (callsOnIms ? "1" : "0")
                 + " binder=" + (binder ? "1" : "0")
                 + " mmtel=" + (mmtelVoice ? "voice" : "no")
+                + " cc=" + (volteCc ? "volte" : "no")
                 + " " + verdict;
+        }
+
+        public String dump() {
+            StringBuilder sb = new StringBuilder();
+            sb.append(verdict).append('\n');
+            sb.append("Settings Calls sub=").append(callsSub > 0 ? callsSub : "UNSET")
+                .append(" slot=").append(callsSlot >= 0 ? callsSlot : "—").append('\n');
+            sb.append("bind=").append(bindSlots)
+                .append(" simswitch vendor=").append(vendorSw)
+                .append(" titan2=").append(titan2Sw)
+                .append(" cap=").append(capSw).append('\n');
+            sb.append("ImsService 0=").append(empty(pkg0))
+                .append(" 1=").append(empty(pkg1)).append('\n');
+            sb.append("imsReg=").append(imsReg ? "1" : "0")
+                .append(" mmtel=").append(mmtelVoice ? "1" : "0")
+                .append(" calls.on.ims=").append(callsOnIms ? "1" : "0")
+                .append(" phh.ims.mtk=").append(mtk ? "1" : "0")
+                .append(" binder=").append(binder ? "1" : "0").append('\n');
+            sb.append("mtk.volte=").append(empty(volteEn))
+                .append(" mtk.wfc=").append(empty(wfcEn))
+                .append(" cc_volte=").append(volteCc ? "true" : "false").append('\n');
+            sb.append("sim.state=").append(empty(simState))
+                .append(" numeric=").append(empty(numeric)).append('\n');
+            sb.append("titan2_phone_calls=").append(empty(phoneCalls)).append('\n');
+            sb.append("SoT: Settings Calls + Controls bind. TrebleApp is not IMS.\n");
+            return sb.toString();
+        }
+
+        private static String empty(String s) {
+            return s == null || s.isEmpty() ? "—" : s;
         }
     }
 
-    /**
-     * After wipe, Android leaves defaultVoiceSubId=-1 so incoming never RINGING.
-     * Seed first UICC sub if unset. Never overwrite a human Settings Calls pin.
-     */
     public static void forceVolteCarrierConfig(Context ctx) {
         if (ctx == null) return;
         android.telephony.CarrierConfigManager ccm =
@@ -184,6 +219,14 @@ public final class ImsCalls {
         d.planeMtk = planeOn(ctx, AgentBridge.IMS_MTK);
         d.planeForce = planeOn(ctx, AgentBridge.IMS_FORCE_VOLTE);
         d.bindSlots = bindSlots(ctx);
+        d.simState = prop("gsm.sim.state", "");
+        d.numeric = prop("gsm.sim.operator.numeric", "");
+        d.volteEn = prop("persist.vendor.mtk.volte.enable", "");
+        d.wfcEn = prop("persist.vendor.mtk.wfc.enable", "");
+        d.pkg0 = imsServicePkg(0);
+        d.pkg1 = imsServicePkg(1);
+        d.volteCc = carrierVolteAvailable(ctx, d.callsSub);
+        d.phoneCalls = AgentBridge.get(ctx, PhoneCalls.GLOBAL, "");
 
         if (d.wantSw > 0) {
             String want = String.valueOf(d.wantSw);
@@ -257,6 +300,46 @@ public final class ImsCalls {
     private static boolean isTrue(String v) {
         if (v == null) return false;
         return "1".equals(v) || "true".equalsIgnoreCase(v) || "on".equalsIgnoreCase(v);
+    }
+
+    private static String imsServicePkg(int slot) {
+        String out = exec("cmd", "phone", "ims", "get-ims-service", "-s",
+            String.valueOf(slot), "-d");
+        if (out == null) return "";
+        out = out.replace('\n', ' ').trim();
+        return out.length() > 80 ? out.substring(0, 80) : out;
+    }
+
+    private static boolean carrierVolteAvailable(Context ctx, int subId) {
+        if (ctx == null || subId <= 0) return false;
+        try {
+            android.telephony.CarrierConfigManager ccm =
+                ctx.getSystemService(android.telephony.CarrierConfigManager.class);
+            if (ccm == null) return false;
+            android.os.PersistableBundle b = ccm.getConfigForSubId(subId);
+            if (b == null) return false;
+            return b.getBoolean(
+                android.telephony.CarrierConfigManager.KEY_CARRIER_VOLTE_AVAILABLE_BOOL, false);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static String exec(String... cmd) {
+        java.io.InputStream in = null;
+        try {
+            Process p = Runtime.getRuntime().exec(cmd);
+            in = p.getInputStream();
+            byte[] buf = new byte[512];
+            int n = in.read(buf);
+            p.destroy();
+            if (n <= 0) return "";
+            return new String(buf, 0, n, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return "";
+        } finally {
+            if (in != null) try { in.close(); } catch (Exception ignored) {}
+        }
     }
 
     private static String prop(String k, String def) {

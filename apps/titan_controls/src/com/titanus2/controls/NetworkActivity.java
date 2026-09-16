@@ -102,7 +102,7 @@ public class NetworkActivity extends Activity {
         imsStatus = UiKit.mono(root);
         UiKit.button(root, "Open Calls", () ->
             startActivity(new android.content.Intent(this, CallsActivity.class)));
-        UiKit.section(root, "Treble");
+        UiKit.section(root, "Treble (vendor quirks, not IMS)");
         trebleStatus = UiKit.mono(root);
         UiKit.button(root, "Open Treble settings", this::openTrebleSettings);
 

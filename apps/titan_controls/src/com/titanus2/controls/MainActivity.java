@@ -168,7 +168,7 @@ public class MainActivity extends Activity {
                     startActivity(new Intent(this, NetworkActivity.class));
                 }
             });
-        // HW stays here. TrebleApp (hidden) owns GSI IMS/misc call paths; Tweaks wraps it.
+        // HW stays here. IMS is CallsActivity. TrebleApp is hidden vendor quirks only.
         navTweaks = UiKit.navRow(root, "Tweaks", "Display size · keyboard",
             () -> startActivity(new Intent(this, NetworkActivity.class)));
         navCalls = UiKit.navRow(root, "Calls", "IMS · binder · heal",

@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.78-ims-lab (678) — 2026-09-16T17:46Z
+
+### rebuild 2026-09-16T17:47Z · 16.78-ims-lab (678)
+
+- Rebuild (ALLOW_ROOT=1)
+
+
+- Calls lab: dump/bind/rearm/VoLTE cc; TrebleApp not IMS SoT
+
+---
+
 ## 16.77-volte-cc (677) — 2026-09-16T17:32Z
 
 ### rebuild 2026-09-16T17:32Z · 16.77-volte-cc (677)
