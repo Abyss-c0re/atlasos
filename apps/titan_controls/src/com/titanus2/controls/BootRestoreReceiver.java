@@ -44,6 +44,7 @@ public class BootRestoreReceiver extends BroadcastReceiver {
         else stampPadGate(app, true);
         pinAndHeal(app);
         try { SimCards.undeleteUicc(app); } catch (Exception ignored) {}
+        try { ImsCalls.ensureDefaultVoiceIfUnset(app); } catch (Exception ignored) {}
         try { ImsCalls.forceVolteCarrierConfig(app); } catch (Exception ignored) {}
         // KEEP_DATA already-CE boot never sends USER_UNLOCKED again.
         // Listed-but-unbound a11y leaves titan2_input_lock stuck → pad park.

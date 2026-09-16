@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.84-voice-default (684) — 2026-09-16T21:34Z
+
+- after wipe set default voice if unset; Telecom needs an account
+
+---
+
 ## 16.83-sim-watch (683) — 2026-09-16T20:56Z
 
 - subscription watcher undeletes UICC for the life of a11y

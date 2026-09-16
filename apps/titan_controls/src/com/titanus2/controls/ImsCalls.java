@@ -93,6 +93,49 @@ public final class ImsCalls {
         }
     }
 
+    /**
+     * After wipe GSI leaves defaultVoiceSubId=-1. Telecom has no account.
+     * Incoming never RINGING. Set Android's default to the first UICC sub
+     * only when unset. Never overwrite a human Settings Calls pin.
+     */
+    public static void ensureDefaultVoiceIfUnset(Context ctx) {
+        if (ctx == null) return;
+        int def = -1;
+        try {
+            def = SubscriptionManager.getDefaultVoiceSubscriptionId();
+        } catch (Exception ignored) {}
+        if (def > 0) return;
+        int want = firstPresentSub(ctx);
+        if (want <= 0) return;
+        SubscriptionManager sm = ctx.getSystemService(SubscriptionManager.class);
+        if (sm == null) return;
+        try {
+            sm.getClass().getMethod("setDefaultVoiceSubscriptionId", int.class)
+                .invoke(sm, Integer.valueOf(want));
+        } catch (Throwable ignored) {}
+        try {
+            sm.getClass().getMethod("setDefaultSmsSubId", int.class)
+                .invoke(sm, Integer.valueOf(want));
+        } catch (Throwable ignored) {}
+        try {
+            sm.getClass().getMethod("setDefaultDataSubId", int.class)
+                .invoke(sm, Integer.valueOf(want));
+        } catch (Throwable ignored) {}
+        try {
+            SubscriptionManager.class.getMethod("setDefaultDataSubId", int.class)
+                .invoke(null, Integer.valueOf(want));
+        } catch (Throwable ignored) {}
+    }
+
+    static int firstPresentSub(Context ctx) {
+        for (SimCards.Card c : SimCards.list(ctx)) {
+            if (c != null && c.uicc && c.subId > 0 && (c.slot == 0 || c.slot == 1)) {
+                return c.subId;
+            }
+        }
+        return -1;
+    }
+
     public static void forceVolteCarrierConfig(Context ctx) {
         if (ctx == null) return;
         android.telephony.CarrierConfigManager ccm =

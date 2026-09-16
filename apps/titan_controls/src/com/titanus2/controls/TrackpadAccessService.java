@@ -450,6 +450,7 @@ public class TrackpadAccessService extends AccessibilityService {
     @Override public void onServiceConnected() {
         instance = this;
         try { SimCards.watch(this); } catch (Exception ignored) {}
+        try { ImsCalls.ensureDefaultVoiceIfUnset(this); } catch (Exception ignored) {}
         try { ImsCalls.forceVolteCarrierConfig(this); } catch (Exception ignored) {}
         AccessibilityServiceInfo info = getServiceInfo();
         if (info == null) info = new AccessibilityServiceInfo();
