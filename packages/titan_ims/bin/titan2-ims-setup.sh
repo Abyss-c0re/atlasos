@@ -90,6 +90,8 @@ pm uninstall dev.bluehouse.enablevolte 2>/dev/null || true
 
 settings put global enhanced_4g_mode_enabled 1 2>/dev/null || true
 settings put global volte_vt_enabled 1 2>/dev/null || true
+settings put global volte_subscription0 1 2>/dev/null || true
+settings put global volte_subscription1 1 2>/dev/null || true
 settings put global mobile_data 1 2>/dev/null || true
 # LTE/NR hybrid (11) — not "GSM only"; 9=LTE/GSM/WCDMA also ok
 settings put global preferred_network_mode 11 2>/dev/null || true

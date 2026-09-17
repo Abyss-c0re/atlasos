@@ -30,6 +30,8 @@ ims_slot_loaded() {
 }
 
 ims_dual_present() {
+  settings put global volte_subscription0 1 2>/dev/null || true
+  settings put global volte_subscription1 1 2>/dev/null || true
   for _s in 0 1; do
     ims_slot_loaded "$_s" || continue
     cmd phone cc set-value -s "$_s" -p carrier_volte_available_bool true 2>/dev/null || true
