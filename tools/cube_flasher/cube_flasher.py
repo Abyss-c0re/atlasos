@@ -2017,7 +2017,138 @@ def ensure_adb() -> None:
         pass
 
 
+def cli_audit(serial: str = "") -> int:
+    """Print ImsService / voice / RINGING bits. 0 = ready for a call."""
+    ensure_adb()
+    ser = serial
+    if not ser:
+        out = subprocess.check_output([adb_bin(), "devices"], text=True, timeout=8)
+        for ln in out.splitlines()[1:]:
+            p = ln.split()
+            if len(p) >= 2 and p[1] == "device":
+                ser = p[0]
+                break
+    if not ser:
+        print("FAIL: no adb device")
+        return 2
+
+    def sh(*args: str) -> str:
+        try:
+            return subprocess.check_output(
+                [adb_bin(), "-s", ser, "shell", *args], text=True, timeout=20, stderr=subprocess.DEVNULL
+            ).replace("\r", "").strip()
+        except Exception:
+            return ""
+
+    boot = sh("getprop", "sys.boot_completed")
+    zyg = sh("getprop", "init.svc.zygote")
+    path = sh("pm", "path", "com.mediatek.ims")
+    pid = sh("pidof", "com.mediatek.ims")
+    voice = sh("settings", "get", "global", "multi_sim_voice_call")
+    sim = sh("getprop", "gsm.sim.state")
+    ops = sh("getprop", "gsm.sim.operator.alpha")
+    crash = ""
+    try:
+        blob = subprocess.check_output(
+            [adb_bin(), "-s", ser, "logcat", "-d", "-b", "crash", "-t", "40"],
+            text=True, timeout=20, stderr=subprocess.DEVNULL,
+        )
+        if "MtkSuppServExt" in blob or "WRITE_SECURE_SETTINGS" in blob or "NoSuchMethodError" in blob:
+            crash = "IMS_CRASH"
+    except Exception:
+        pass
+    print("serial", ser)
+    print("boot", boot, "zygote", zyg)
+    print("ims_path", path or "MISSING")
+    print("ims_pid", pid or "DEAD")
+    print("voice", voice, "sim", sim, "ops", ops)
+    print("crash", crash or "none")
+    ok = boot == "1" and zyg == "running" and path.startswith("package:") and bool(pid) and not crash
+    print("AUDIT", "PASS" if ok else "FAIL")
+    return 0 if ok else 1
+
+
+def cli_cook(preset: str, root: str, flash: bool, wipe: bool) -> int:
+    ensure_adb()
+    reason = cook_preflight(GSI_LATEST)
+    if reason:
+        print("FAIL cook_preflight:", reason)
+        return 2
+    gsi = pick_cook_gsi(GSI_LATEST)
+    for note in sync_cook_inputs():
+        print(note)
+    if root == "kernelsu_source":
+        sync = ROOT / "scripts" / "kitchen" / "sync_kernelsu.sh"
+        if sync.is_file():
+            print("sync KernelSU")
+            rc = subprocess.call(["bash", str(sync)])
+            if rc != 0:
+                print("FAIL kernelsu sync", rc)
+                return rc
+    feats = normalize_planes({})
+    cmd = [
+        sys.executable, "-u", str(KITCHEN), "cook",
+        "--preset", preset, "--root-engine", root, "--skip-git-gate",
+    ]
+    if gsi:
+        cmd += ["--gsi", gsi]
+        print("gsi", Path(gsi).name)
+    for k, v in feats.items():
+        cmd += ["--option", "%s=%s" % (k, "1" if v else "0")]
+    print("kitchen", " ".join(cmd[-8:]))
+    rc = subprocess.call(cmd, cwd=str(ROOT))
+    if rc != 0:
+        print("FAIL cook", rc)
+        return rc
+    last = ROOT / "out" / "LAST_BUILD.txt"
+    img = last.read_text().strip() if last.is_file() else ""
+    print("cooked", img)
+    if flash:
+        return cli_flash(img, wipe)
+    return 0
+
+
+def cli_flash(super_img: str, wipe: bool) -> int:
+    ensure_adb()
+    wr = ROOT / "scripts" / "flash_titan2_eea.sh"
+    if not wr.is_file():
+        print("FAIL no flash_titan2_eea.sh")
+        return 2
+    env = os.environ.copy()
+    env["WIPE_DATA"] = "1" if wipe else "0"
+    if super_img:
+        env["SUPER_IMG"] = super_img
+    print("flash wipe=%s super=%s" % (env["WIPE_DATA"], super_img or "(latest)"))
+    return subprocess.call(["bash", str(wr)], env=env, cwd=str(ROOT))
+
+
+def cli_main(argv: list[str]) -> int:
+    import argparse
+    p = argparse.ArgumentParser(prog="cube-flasher")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    c = sub.add_parser("cook", help="kitchen cook (no GUI)")
+    c.add_argument("--preset", default="lab_rootless")
+    c.add_argument("--root", default="none")
+    c.add_argument("--flash", action="store_true")
+    c.add_argument("--wipe", action="store_true")
+    f = sub.add_parser("flash", help="write latest or given super")
+    f.add_argument("--super", default="")
+    f.add_argument("--wipe", action="store_true")
+    a = sub.add_parser("audit", help="ImsService / voice / crash on device")
+    a.add_argument("--serial", default="")
+    ns = p.parse_args(argv)
+    if ns.cmd == "audit":
+        return cli_audit(ns.serial)
+    if ns.cmd == "cook":
+        return cli_cook(ns.preset, ns.root, ns.flash, ns.wipe)
+    if ns.cmd == "flash":
+        return cli_flash(ns.super, ns.wipe)
+    return 2
+
+
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] in ("cook", "flash", "audit", "-h", "--help"):
+        raise SystemExit(cli_main(sys.argv[1:]))
     ensure_adb()
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("Fusion"))
