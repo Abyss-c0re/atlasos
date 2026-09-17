@@ -238,8 +238,9 @@ ims_bind_slot() {
   cmd phone ims enable -s "$_s" 2>/dev/null || true
 }
 
-# OEM mims_support=2: two IMS registrations. Bind every present tray at boot.
-# Never ims disable. UICC must not re-run set-ims-service (that steals IMS).
+# OEM mims_support=2: two IMS registrations. Bind every present tray.
+# Never ims disable. Never collapse to Settings Calls — incoming must
+# land on both SIMs after a physical swap without a human.
 ims_bind_target_slots() {
   _w=$1
   case "$_w" in
@@ -249,11 +250,6 @@ ims_bind_target_slots() {
     2)
       if ! ims_slot_absent 1; then echo 1; return 0; fi
       ;;
-  esac
-  # Stale 1/2 after a physical swap: follow Settings Calls, else every present tray.
-  _as=`ims_active_slot`
-  case "$_as" in
-    0|1) echo "$_as"; return 0 ;;
   esac
   for _s in 0 1; do
     ims_slot_absent "$_s" || echo "$_s"
