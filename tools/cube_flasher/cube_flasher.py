@@ -348,7 +348,11 @@ def cook_preflight(gsi_sel: str = "") -> str:
     if "cmd phone ims disable" in ims_txt:
         return "ims-setup still runs ims disable (kills incoming)"
     if "ims_bind_target_slots" not in ims_txt:
-        return "ims-setup missing Calls-tray bind helper"
+        return "ims-setup missing bind helper"
+    if "Never collapse to Settings Calls" not in ims_txt:
+        return "ims-setup still binds Calls tray only (incoming dies on swap)"
+    if "volte_subscription0" not in ims_txt:
+        return "ims-setup missing volte_subscription for both trays"
     return ""
 
 
