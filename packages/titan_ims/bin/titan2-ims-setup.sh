@@ -12,24 +12,18 @@ export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 
 logt() { log -t titan2-ims "$1" 2>/dev/null || echo "titan2-ims: $1"; }
 
-STAMP=/data/local/tmp/titan2_ims_setup.stamp
-# Re-run at most every 120s if invoked multiple times (init races)
-if [ -f "$STAMP" ]; then
-  now=$(date +%s 2>/dev/null || echo 0)
-  prev=$(cat "$STAMP" 2>/dev/null || echo 0)
-  case "$now" in ''|*[!0-9]*) now=0;; esac
-  case "$prev" in ''|*[!0-9]*) prev=0;; esac
-  if [ "$now" -gt 0 ] && [ "$prev" -gt 0 ]; then
-    delta=$((now - prev))
-    if [ "$delta" -ge 0 ] && [ "$delta" -lt 120 ]; then
-      logt "skip (ran ${delta}s ago)"
-      exit 0
-    fi
-  fi
+# Once per boot after a SIM is present. Concurrent init starts share one lock.
+BOOTSTAMP=/dev/titan2_ims_setup.done
+if [ -f "$BOOTSTAMP" ]; then
+  logt "skip (already ran this boot)"
+  exit 0
 fi
-# Stamp deferred until end when SIM known; early stamp still set so concurrent
-# starts coalesce, but cleared if no SIM so a later pad-agent/heal re-run works.
-echo "${now:-0}" > "$STAMP" 2>/dev/null || true
+if ! mkdir /dev/titan2_ims_setup.lock 2>/dev/null; then
+  logt "skip (another setup running)"
+  exit 0
+fi
+STAMP=/data/local/tmp/titan2_ims_setup.stamp
+echo "$(date +%s 2>/dev/null || echo 1)" >"$STAMP" 2>/dev/null || true
 chmod 666 "$STAMP" 2>/dev/null || true
 
 # Wait for phone service (bounded)
@@ -518,7 +512,10 @@ fi
 # If no SIM yet, clear stamp so pad-agent heal / next trigger can re-run fully
 if [ -z "$NUM" ]; then
   rm -f "$STAMP" 2>/dev/null || true
-  logt "no SIM — stamp cleared for later re-run"
+  rmdir /dev/titan2_ims_setup.lock 2>/dev/null || true
+  logt "no SIM — will run again when a tray is present"
+else
+  echo 1 >"$BOOTSTAMP" 2>/dev/null || true
 fi
 
 # Do not kill ImsService here. setup + rearm both used to SIGKILL it
