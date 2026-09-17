@@ -521,24 +521,9 @@ if [ -z "$NUM" ]; then
   logt "no SIM — stamp cleared for later re-run"
 fi
 
-# ImsService often binds MmTel before volte UA exists → Voice never
-# advertised. After UA socket + a loaded tray, restart ImsService once.
-i=0
-while [ $i -lt 20 ]; do
-  [ -S /dev/socket/volte_clientapi ] && break
-  sleep 1
-  i=$((i + 1))
-done
-_st=$(getprop gsm.sim.state 2>/dev/null | tr -d '\r\n ')
-case "$_st" in
-  *LOADED*|*READY*)
-    logt "restart ImsService after UA socket (sim=$_st)"
-    killall -9 com.mediatek.ims 2>/dev/null || true
-    sleep 2
-    for _rs in `ims_bind_target_slots "$BIND_WANT"`; do
-      ims_bind_slot "$_rs"
-    done
-    ;;
-esac
+# Do not kill ImsService here. setup + rearm both used to SIGKILL it
+# (twice at 16:17) and the next incoming after the first ring died.
+# titan2-ims-rearm.sh kills at most once, and only if ImsService
+# started before the volte UA socket.
 
 logt "done slot=$ASLOT sub=$SUB num=$NUM mtk=$(getprop persist.sys.phh.ims.mtk) multi=$(settings get global multi_sim_voice_call) d=$(cmd phone ims get-ims-service -s $ASLOT -d 2>/dev/null)"

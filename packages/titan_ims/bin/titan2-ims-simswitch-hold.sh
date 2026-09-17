@@ -9,6 +9,8 @@ EARLY=/system/bin/titan2-ims-simswitch-early.sh
 [ -x "$EARLY" ] || EARLY=/data/local/tmp/titan2-ims-simswitch-early.sh
 PIDF=/data/local/tmp/titan2_ims_simswitch_hold.pid
 LAST_SIM=
+LAST_PID=
+TICK=0
 echo $$ >"$PIDF" 2>/dev/null || true
 chmod 644 "$PIDF" 2>/dev/null || true
 
@@ -45,8 +47,19 @@ ims_dual_present() {
 while true; do
   [ -x "$EARLY" ] && "$EARLY"
   _now=`getprop gsm.sim.state 2>/dev/null | tr -d '\r\n '`
+  _pid=`pidof com.mediatek.ims 2>/dev/null | awk '{print $1}'`
   if [ "$_now" != "$LAST_SIM" ]; then
     LAST_SIM=$_now
+    ims_dual_present
+  fi
+  # ImsService died (or was reborn): re-bind. Do not SIGKILL it here.
+  if [ -n "$_pid" ] && [ "$_pid" != "$LAST_PID" ]; then
+    LAST_PID=$_pid
+    ims_dual_present
+  fi
+  TICK=$((TICK + 1))
+  # Every ~30s keep IMS enabled on present trays so the second call still lands.
+  if [ $((TICK % 6)) -eq 0 ]; then
     ims_dual_present
   fi
   sleep "$INTERVAL_S"
