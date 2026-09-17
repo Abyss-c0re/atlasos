@@ -98,38 +98,11 @@ tone_one() {
 }
 
 cmd_settings() {
-  # Hardcoded crimson RRO must not win over the human pick.
-  # Homepage tiles alias M3 leaves — fab the leaves only (was 97 overlays).
-  cmd overlay disable --user current com.titanus2.overlay.cubeicon.settings >/dev/null 2>&1 \
-    || cmd overlay disable --user 0 com.titanus2.overlay.cubeicon.settings >/dev/null 2>&1 || true
-  ok=0
-  fail=0
-  for n in \
-    m3_ref_palette_yellow80 m3_ref_palette_yellow90 \
-    m3_ref_palette_green80 m3_ref_palette_green90 \
-    m3_ref_palette_grey80 m3_ref_palette_grey90 \
-    m3_ref_palette_orange80 m3_ref_palette_orange90 \
-    m3_ref_palette_blue80 m3_ref_palette_blue90 \
-    m3_ref_palette_blue_variant80 m3_ref_palette_blue_variant90 \
-    m3_ref_palette_cyan80 m3_ref_palette_cyan90 \
-    m3_ref_palette_pink80 m3_ref_palette_pink90 \
-    m3_ref_palette_purple80 m3_ref_palette_purple90 \
-    m3_ref_palette_red80 m3_ref_palette_red90 \
-    homepage_generic_icon_background
-  do
-    if apply_one "$n" "$SPHEX"; then ok=$((ok + 1)); else fail=$((fail + 1)); fi
-  done
-  for n in \
-    m3_ref_palette_yellow30 m3_ref_palette_green30 m3_ref_palette_grey30 \
-    m3_ref_palette_orange30 m3_ref_palette_blue30 m3_ref_palette_blue_variant30 \
-    m3_ref_palette_cyan30 m3_ref_palette_pink30 m3_ref_palette_purple30 \
-    m3_ref_palette_red30 icon_accent advanced_icon_color message_icon_color \
-    settingslib_colorAccentPrimary
-  do
-    if apply_one "$n" "$SGHEX"; then ok=$((ok + 1)); else fail=$((fail + 1)); fi
-  done
+  # One static Settings RRO. Do not fabricate a shell overlay per color.
+  cmd overlay enable --user current com.titanus2.overlay.cubeicon.settings >/dev/null 2>&1 \
+    || cmd overlay enable --user 0 com.titanus2.overlay.cubeicon.settings >/dev/null 2>&1 || true
   am force-stop com.android.settings >/dev/null 2>&1 || true
-  echo "settings plate=$SPLATE glyph=$SGLYPH ok=$ok fail=$fail"
+  echo "settings one-rro plate=$SPLATE glyph=$SGLYPH"
 }
 
 cmd_settings_off() {
@@ -146,27 +119,13 @@ cmd_settings_off() {
 cmd_apps_on() {
   cmd overlay enable --user current com.titanus2.overlay.cubemask >/dev/null 2>&1 \
     || cmd overlay enable --user 0 com.titanus2.overlay.cubemask >/dev/null 2>&1 || true
-  n=0
-  for ov in $(cmd overlay list --user current 2>/dev/null | awk '/cubeicon/{print $NF}'); do
-    cmd overlay enable --user current "$ov" >/dev/null 2>&1 \
-      || cmd overlay enable --user 0 "$ov" >/dev/null 2>&1 || true
-    tone_one "$ov"
-    n=$((n + 1))
-  done
-  echo "apps-on n=$n"
+  echo "apps-on cubemask"
 }
 
 cmd_apps_off() {
-  n=0
-  for ov in $(cmd overlay list --user current 2>/dev/null | awk '/cubeicon/{print $NF}'); do
-    case "$ov" in
-      *cubeicon.settings) continue ;;
-    esac
-    cmd overlay disable --user current "$ov" >/dev/null 2>&1 \
-      || cmd overlay disable --user 0 "$ov" >/dev/null 2>&1 || true
-    n=$((n + 1))
-  done
-  echo "apps-off n=$n"
+  cmd overlay disable --user current com.titanus2.overlay.cubemask >/dev/null 2>&1 \
+    || cmd overlay disable --user 0 com.titanus2.overlay.cubemask >/dev/null 2>&1 || true
+  echo "apps-off cubemask"
 }
 
 cmd_launcher_cube() {
@@ -304,8 +263,6 @@ cmd_chrome_restore() {
     ??????) cmd_icons_preset ;;
     *) echo "chrome-restore icons skip" ;;
   esac
-  # Settings homepage tiles: OverlayManager also drops csimp_* across reboot.
-  # cubeicon.settings RRO then sits on with no fabricate → blank Settings icons.
   _sm=$(settings get global titan2_settings_mono 2>/dev/null | tr -d '\r')
   case "$_sm" in
     1|true|on) cmd_settings ;;
