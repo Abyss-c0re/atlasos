@@ -308,10 +308,9 @@ ims_restart_registration() {
     logt "ims restart skip absent slot=$_s"
     return 0
   fi
-  # Never `ims disable`. That tears down MT registration on this SoC
-  # (UICC toggle on the other tray + disable on Calls = incoming never RINGING).
+  # enable only. set-ims-service here unbinds a live MmTel (first incoming
+  # after boot missed; second worked).
   cmd phone ims enable -s "$_s" 2>/dev/null || true
-  ims_bind_slot "$_s"
 }
 
 # Bind MMTEL on the trays Controls asked for (1 | 2 | both).

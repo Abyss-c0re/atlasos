@@ -1895,7 +1895,11 @@ while true; do
   gate_mt=`mtime_max titan2_pad_gate`
   if [ "$gate_mt" != "${LAST_GATE_MT:-0}" ]; then
     LAST_GATE_MT=$gate_mt
-    pad_dirty=1
+    _gv=`cat "$ST/titan2_pad_gate" 2>/dev/null | tr -d '\r\n '`
+    if [ "$_gv" != "${LAST_GATE_VAL:-}" ]; then
+      LAST_GATE_VAL=$_gv
+      pad_dirty=1
+    fi
   fi
   # Parked until login. Only apply persisted mode after Controls opens the gate.
   if [ "$pad_dirty" != "1" ] && [ -f "$PAD_STATUS" ] \

@@ -18,7 +18,7 @@ PAD_STATUS=$ST/titan2_pad_status
 TP_LOG=$ST/titan2_touchpadd.log
 CARET_STATUS=$ST/titan2_caret_status
 APPLY_LAST=$ST/titan2_pad_apply_last
-PAD_APPLY_VER=2.235-no-warp
+PAD_APPLY_VER=2.236-no-recenter
 
 # Prefer GSI/system binary (Phase 1.5 SoT); tip only for lab iteration.
 TOUCHPADD=/system/bin/titan2-touchpadd
@@ -194,10 +194,10 @@ _stamp_pad_gate() {
   want="${1:-lock}"
   case "$want" in open|OPEN|1) want=open ;; *) want=lock ;; esac
   for _d in "$T2" "$ST"; do
-    printf "%s\n" "$want" >"$_d/titan2_pad_gate" 2>/dev/null || true
-    chmod 666 "$_d/titan2_pad_gate" 2>/dev/null || true
+    write_if_changed "$_d/titan2_pad_gate" "$want"
   done
-  settings put global titan2_pad_gate "$want" 2>/dev/null || true
+  curg=`settings get global titan2_pad_gate 2>/dev/null | tr -d '\r'`
+  [ "$curg" = "$want" ] || settings put global titan2_pad_gate "$want" 2>/dev/null || true
 }
 _read_pad_gate() {
   v=`read_first titan2_pad_gate 2>/dev/null` || v=""
@@ -797,8 +797,21 @@ apply_pad() {
       [ "${LAST_TOP_ROW_CURSOR:-}" != "$trc" ] && trc_changed=1
       dead=0
       tp_up || dead=1
-      # 2.80/2.137: restart on mode/dead/click/surface/trc — Creators energy edge
-      if [ "$mode_changed" = "1" ] || [ "$click_changed" = "1" ] || [ "$surface_changed" = "1" ] \
+      # Live mouse + still mouse: never kill. pad_gate/mtime/apply storms
+      # used to SIGKILL+uinput every ~3s and warp the pointer to center.
+      if [ "$LAST_PAD" = "mouse" ] && [ "$dead" != "1" ]; then
+        :
+        set_pad_inhibited 0
+        if [ "$follow" = "1" ]; then
+          orient_rel_up || ( ensure_orient_rel ) &
+        else
+          orient_rel_up && kill_orient_rel
+        fi
+        or_st=off
+        orient_rel_up && or_st=on
+        echo "mode=mouse applied=running pid=`tp_pid` click=$click trc=$trc follow=$follow surface=$surface flipx=$flipx orient_rel=$or_st rot=`read_pad_rotation`" > "$PAD_STATUS"
+        chmod 666 "$PAD_STATUS" 2>/dev/null
+      elif [ "$mode_changed" = "1" ] || [ "$click_changed" = "1" ] || [ "$surface_changed" = "1" ] \
           || [ "$trc_changed" = "1" ] || [ "$dead" = "1" ]; then
         if [ "$mode_changed" = "1" ]; then
           TP_TITANKEY_RESTARTS=0
