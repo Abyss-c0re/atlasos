@@ -92,6 +92,10 @@ COOK_MARKERS = (
     (re.compile(r"lpunpack", re.I), 0.18),
     (re.compile(r"Preparing GSI", re.I), 0.26),
     (re.compile(r"Patching system", re.I), 0.34),
+    (re.compile(r"Injecting Cube icon", re.I), 0.38),
+    (re.compile(r"ImsService inject", re.I), 0.48),
+    (re.compile(r"IMS stack", re.I), 0.52),
+    (re.compile(r"identity props", re.I), 0.56),
     (re.compile(r"Injecting", re.I), 0.44),
     (re.compile(r"lpmake|Packing super|img2simg|Building super", re.I), 0.58),
     (re.compile(r"=== built ", re.I), 0.90),
@@ -990,6 +994,15 @@ class Worker(threading.Thread):
             cmd += ["--option", "%s=%s" % (k, "1" if v else "0")]
         self._st("kitchen cook " + (job.get("preset") or "lab_rootless"))
         rc, blob = self._pipe(cmd, env, 0.02, 0.94)
+        logp = OUT / "kitchen" / (
+            "cook_%s.log" % time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        )
+        try:
+            logp.parent.mkdir(parents=True, exist_ok=True)
+            logp.write_text(blob or "", errors="replace")
+            self._st("cook log " + str(logp))
+        except OSError:
+            pass
         if rc != 0:
             self._ph("fail", 0.05)
             self._say("Cook failed.")
