@@ -11,18 +11,8 @@ service titan2_ims_setup /system/bin/titan2-ims-setup.sh
 # nvram Ready, so MMTEL is not created against the empty tray.
 # persist.radio.titan2_simswitch is a boot-early cache of Settings → Calls.
 # Early/hold re-read Settings once phone is up so a stale cache cannot win.
-on post-fs-data
-    exec -- /system/bin/titan2-ims-simswitch-early.sh
-
+# NEVER post-fs-data. mkdir /data/unencrypted during FBE mint → next boot recovery.
 on property:vendor.service.nvram_init=Ready
-    exec -- /system/bin/titan2-ims-simswitch-early.sh
-
-on property:persist.radio.titan2_simswitch=*
-    exec -- /system/bin/titan2-ims-simswitch-early.sh
-
-# Vendor NVRAM overwrite is silent unless we watch the vendor key too.
-# Early script is idempotent: same value → no setprop (no loop).
-on property:persist.vendor.radio.simswitch=*
     exec -- /system/bin/titan2-ims-simswitch-early.sh
 
 service titan2_ims_simswitch_early /system/bin/titan2-ims-simswitch-early.sh

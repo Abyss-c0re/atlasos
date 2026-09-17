@@ -67,7 +67,7 @@ if [ -z "$want" ]; then
   esac
 fi
 if [ -z "$want" ]; then
-  for f in /data/unencrypted/titan2_tel_simswitch /data/misc/titan2/titan2_tel_simswitch; do
+  for f in /data/misc/titan2/titan2_tel_simswitch; do
     if [ -s "$f" ]; then
       want=$(tr -d '\r\n ' <"$f")
       src=$f
@@ -91,10 +91,8 @@ t2=$(getprop persist.radio.titan2_simswitch 2>/dev/null | tr -d '\r\n ')
 # Cache Settings onto the persist the next post-fs can read.
 if [ "$src" = "settings_calls" ] && [ "$t2" != "$want" ]; then
   setprop persist.radio.titan2_simswitch "$want" 2>/dev/null || true
-  mkdir -p /data/unencrypted /data/misc/titan2 2>/dev/null || true
-  echo "$want" > /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
+  mkdir -p /data/misc/titan2 2>/dev/null || true
   echo "$want" > /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
-  chmod 644 /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
   chmod 666 /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
 fi
 
@@ -106,10 +104,8 @@ set_v persist.vendor.radio.simswitch "$want"
 set_v persist.vendor.radio.c_capability_slot "$want"
 setprop persist.radio.simswitch "$want" 2>/dev/null || true
 setprop persist.radio.titan2_simswitch "$want" 2>/dev/null || true
-mkdir -p /data/unencrypted /data/misc/titan2 2>/dev/null || true
-echo "$want" > /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
+mkdir -p /data/misc/titan2 2>/dev/null || true
 echo "$want" > /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
-chmod 644 /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
 chmod 666 /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
 logt "simswitch=$want (from $src; was vendor=$have cap=$cap radio=$radio)"
 exit 0

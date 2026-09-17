@@ -173,9 +173,9 @@ ims_align_simswitch() {
   mkdir -p /data/misc/titan2 2>/dev/null || true
   echo "$_want" > /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
   chmod 666 /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
-  mkdir -p /data/unencrypted 2>/dev/null || true
-  echo "$_want" > /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
-  chmod 644 /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
+  mkdir -p /data/misc/titan2 2>/dev/null || true
+  echo "$_want" > /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
+  chmod 666 /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
 }
 
 # Settings → SIMs → Calls is the only voice pin. Never invent a subId.
