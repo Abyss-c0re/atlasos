@@ -1499,10 +1499,21 @@ _ensure_key_watch() {
   fi
   _ensure_peel_daemon titan2-key-watch.sh titan2-key-watch titan2_key_watch.pid titan2_key_watch.log run
 }
+# Listed-but-crashed TrackpadAccessService makes PWM swallow F24 Home.
+# Bounce the service so it can bind; key-watch owns Home until a11y_live=1.
+_heal_a11y_bind() {
+  live=`cat "$ST/titan2_a11y_live" 2>/dev/null | tr -d '\r\n '`
+  case "$live" in 1|true|on) return 0 ;; esac
+  svc=com.titanus2.controls/com.titanus2.controls.TrackpadAccessService
+  settings put secure enabled_accessibility_services "$svc" 2>/dev/null || true
+  settings put secure accessibility_enabled 1 2>/dev/null || true
+}
+
 _ensure_watch_daemons() {
   _ensure_typing_watch 2>/dev/null || true
   _ensure_side_key 2>/dev/null || true
   _ensure_key_watch 2>/dev/null || true
+  _heal_a11y_bind 2>/dev/null || true
   _ensure_peel_daemon titan2-wifi-heal.sh titan2-wifi-heal \
     titan2_wifi_heal.pid titan2-wifi-heal.log watch 2>/dev/null || true
 }

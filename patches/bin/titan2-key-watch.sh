@@ -5,7 +5,7 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-KW_VER=2.197-screen-on-never-getevent
+KW_VER=2.236-home-if-a11y-dead
 KW_STATUS=$ST/titan2_key_watch_status
 KW_PID=$ST/titan2_key_watch.pid
 KW_LOCK=$ST/titan2_key_watch.lock
@@ -172,18 +172,10 @@ _fire_nav() {
   rmdir "$NAV_FIRE_LOCKD" 2>/dev/null || rm -rf "$NAV_FIRE_LOCKD" 2>/dev/null || true
 }
 
-# Listed Controls a11y = live. File goes 0 on install onDestroy;
-# getevent on TitanKey then starves InputReader (dead Back/Recents).
-# TITAN_RECENTS_LAW: never getevent TitanKey while Key a11y is listed.
+# Listed is not live. After wipe TrackpadAccessService stays in
+# enabled_accessibility_services while crashed — PWM and this script both
+# yielded and Home was dead. Only the heartbeat file means connected.
 _a11y_live_fresh() {
-  en=`settings get secure accessibility_enabled 2>/dev/null | tr -d '\r'`
-  svc=`settings get secure enabled_accessibility_services 2>/dev/null | tr -d '\r'`
-  case "$en" in 1|true|on)
-    case "$svc" in
-      *TrackpadAccessService*) return 0 ;;
-    esac
-    ;;
-  esac
   v=`read_km titan2_a11y_live`
   case "$v" in 1|true|on) ;; *) return 1 ;; esac
   mt=0
@@ -207,7 +199,10 @@ _recents_handle() {
     return 0
   fi
   km_en=`read_km titan2_km_enabled`
-  case "$km_en" in 0|false|off) return 0 ;; esac
+  case "$km_en" in 0|false|off)
+    # After wipe prefs are empty, not off. Empty must still fire Home.
+    ;;
+  esac
   now_ms=`_now_ms`
   dfile=$ST/titan2_recents_down
   if [ "$val" = "1" ] || [ "$val" = "00000001" ]; then
@@ -236,7 +231,12 @@ _recents_handle() {
       act=`read_km titan2_km_recents_short`
     fi
     act=`echo "$act" | awk '{print $1}' | tr -d '\r\n'`
-    # Empty/default = Controls did not publish; do not invent home/recents.
+    # Wipe: a11y never published prefs. Product default is short=Home long=Recents.
+    case "$act" in
+      ''|null|none)
+        if [ "$held" -ge "$LONG_MS" ] 2>/dev/null; then act=recents; else act=home; fi
+        ;;
+    esac
     log "held=${held}ms → $act"
     _fire_nav "$act"
   fi
@@ -325,13 +325,8 @@ run_key_watch() {
   DEV=`discover_titankey`
   log "start ver=$KW_VER dev=$DEV LONG_MS=$LONG_MS"
   while true; do
-    # ROM: screen-on TitanKey is Controls a11y only. getevent starves
-    # InputReader (dead Back/Recents). adb install must not change that.
-    if _screen_on; then
-      log "screen on — yield TitanKey (no getevent)"
-      sleep 2
-      continue
-    fi
+    # Yield TitanKey only when Controls a11y is actually bound.
+    # Screen-on + crashed a11y used to yield forever → dead Home.
     if _a11y_live_fresh; then
       log "a11y live — yield TitanKey (no getevent)"
       sleep 2
