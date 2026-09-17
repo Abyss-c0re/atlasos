@@ -1,6 +1,6 @@
 # AtlasOS overlays — from live Titan (2026-08-18)
 
-Captured from `TITAN20000021925` `/system/product/overlay/Titan*.apk`.
+Captured from a live Titan 2 `/system/product/overlay/Titan*.apk`.
 Built into MisterZtr GSI as `runtime_resource_overlay` + `PRODUCT_PACKAGES`.
 
 | Module | Live package | Live state |

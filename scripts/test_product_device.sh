@@ -2,7 +2,7 @@
 # AtlasOS product device gates. Fail closed. No invented PASS.
 # Run on a booted Titan after hybrid remake. Does not flash.
 #
-#   SERIAL=TITAN20000021925 ./scripts/test_product_device.sh
+#   SERIAL=<adb-serial> ./scripts/test_product_device.sh
 #
 # Covers: HV/nav, touchpadd, camera/privacy, OpenWrt/LuCI, Atlas REG-UID.
 set -euo pipefail
