@@ -2053,7 +2053,17 @@ def cli_audit(serial: str = "") -> int:
             [adb_bin(), "-s", ser, "logcat", "-d", "-b", "crash", "-t", "40"],
             text=True, timeout=20, stderr=subprocess.DEVNULL,
         )
-        if "MtkSuppServExt" in blob or "WRITE_SECURE_SETTINGS" in blob or "NoSuchMethodError" in blob:
+        if any(
+            s in blob
+            for s in (
+                "MtkSuppServExt",
+                "WRITE_SECURE_SETTINGS",
+                "NoSuchMethodError",
+                "OpImsServiceCustomizationUtils",
+                "App UIDs cannot add services",
+                "Unable to create application com.mediatek.ims",
+            )
+        ):
             crash = "IMS_CRASH"
     except Exception:
         pass
