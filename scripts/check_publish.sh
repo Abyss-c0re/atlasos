@@ -11,7 +11,13 @@ bad() { echo "BAD $*"; ec=1; }
 
 tracked=$(git ls-files)
 
-echo "$tracked" | grep -qiE '\.apk$' && bad "APK tracked" || ok "no APKs"
+# Product RROs (Titan overlays, FrameworkResOverlay) are staged for GSI cook.
+# Block app/Play/IMS APKs only.
+if echo "$tracked" | grep -iE '\.apk$' | grep -viE 'overlay|FrameworkResOverlay' | grep -q .; then
+  bad "APK tracked"
+else
+  ok "no APKs"
+fi
 echo "$tracked" | grep -qiE 'debug\.keystore|\.keystore$' && bad "keystore tracked" || ok "no keystores"
 echo "$tracked" | grep -qiE '\.tar\.gz$|debian-.*rootfs\.tar' && bad "rootfs tarball tracked" || ok "no rootfs tarball"
 echo "$tracked" | grep -qiE 'libimsma|libeap-aka|GmsCore\.apk|FakeStore\.apk|vending-.*\.apk' \
