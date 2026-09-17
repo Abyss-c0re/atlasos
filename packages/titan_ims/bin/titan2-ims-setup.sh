@@ -47,7 +47,11 @@ sleep 3
 # Pixel IMS step 1 in ImsManager.isVolteEnabledByPlatform: dbg overrides short-circuit true.
 setprop persist.sys.phh.ims.mtk true 2>/dev/null || true
 setprop persist.dbg.volte_avail_ovr 1 2>/dev/null || true
-setprop persist.dbg.vt_avail_ovr 1 2>/dev/null || true
+# VT .so is not on the GSI priv-app lib path. ImsCallSessionProxy
+# constructs ImsVTProvider when vilte_support=1 → incoming UnsatisfiedLinkError.
+setprop persist.dbg.vt_avail_ovr 0 2>/dev/null || true
+setprop persist.vendor.vilte_support 0 2>/dev/null || true
+setprop persist.vendor.viwifi_support 0 2>/dev/null || true
 setprop persist.dbg.wfc_avail_ovr 1 2>/dev/null || true
 setprop persist.dbg.allow_ims_off 1 2>/dev/null || true
 setprop persist.sys.phh.allow_binder_thread_on_incoming_calls 1 2>/dev/null || true
@@ -409,7 +413,11 @@ settings put global restricted_networking_mode 0 2>/dev/null || true
 setprop persist.vendor.radio.sim.mode 3 2>/dev/null || true
 setprop persist.vendor.radio.force_on 1 2>/dev/null || true
 setprop persist.dbg.volte_avail_ovr 1 2>/dev/null || true
-setprop persist.dbg.vt_avail_ovr 1 2>/dev/null || true
+# VT .so is not on the GSI priv-app lib path. ImsCallSessionProxy
+# constructs ImsVTProvider when vilte_support=1 → incoming UnsatisfiedLinkError.
+setprop persist.dbg.vt_avail_ovr 0 2>/dev/null || true
+setprop persist.vendor.vilte_support 0 2>/dev/null || true
+setprop persist.vendor.viwifi_support 0 2>/dev/null || true
 setprop persist.dbg.wfc_avail_ovr 1 2>/dev/null || true
 setprop persist.dbg.allow_ims_off 1 2>/dev/null || true
 setprop persist.dbg.ims_volte_enable 1 2>/dev/null || true
