@@ -98,11 +98,47 @@ tone_one() {
 }
 
 cmd_settings() {
-  # One static Settings RRO. Do not fabricate a shell overlay per color.
-  cmd overlay enable --user current com.titanus2.overlay.cubeicon.settings >/dev/null 2>&1 \
-    || cmd overlay enable --user 0 com.titanus2.overlay.cubeicon.settings >/dev/null 2>&1 || true
+  # Static cubeicon.settings is hardcoded crimson. Disable it so Titan
+  # Controls plate/glyph win. Fabricate is one shell overlay per color
+  # (OM rejects multi-resource). Parallelize; do not ship per-app APKs.
+  cmd overlay disable --user current com.titanus2.overlay.cubeicon.settings >/dev/null 2>&1 \
+    || cmd overlay disable --user 0 com.titanus2.overlay.cubeicon.settings >/dev/null 2>&1 || true
+  ok=0
+  fail=0
+  nrun=0
+  for n in \
+    m3_ref_palette_yellow80 m3_ref_palette_yellow90 \
+    m3_ref_palette_green80 m3_ref_palette_green90 \
+    m3_ref_palette_grey80 m3_ref_palette_grey90 \
+    m3_ref_palette_orange80 m3_ref_palette_orange90 \
+    m3_ref_palette_blue80 m3_ref_palette_blue90 \
+    m3_ref_palette_blue_variant80 m3_ref_palette_blue_variant90 \
+    m3_ref_palette_cyan80 m3_ref_palette_cyan90 \
+    m3_ref_palette_pink80 m3_ref_palette_pink90 \
+    m3_ref_palette_purple80 m3_ref_palette_purple90 \
+    m3_ref_palette_red80 m3_ref_palette_red90 \
+    homepage_generic_icon_background
+  do
+    apply_one "$n" "$SPHEX" &
+    nrun=$((nrun + 1))
+    if [ "$nrun" -ge 8 ]; then wait; nrun=0; fi
+  done
+  wait
+  nrun=0
+  for n in \
+    m3_ref_palette_yellow30 m3_ref_palette_green30 m3_ref_palette_grey30 \
+    m3_ref_palette_orange30 m3_ref_palette_blue30 m3_ref_palette_blue_variant30 \
+    m3_ref_palette_cyan30 m3_ref_palette_pink30 m3_ref_palette_purple30 \
+    m3_ref_palette_red30 icon_accent advanced_icon_color message_icon_color \
+    settingslib_colorAccentPrimary
+  do
+    apply_one "$n" "$SGHEX" &
+    nrun=$((nrun + 1))
+    if [ "$nrun" -ge 8 ]; then wait; nrun=0; fi
+  done
+  wait
   am force-stop com.android.settings >/dev/null 2>&1 || true
-  echo "settings one-rro plate=$SPLATE glyph=$SGLYPH"
+  echo "settings plate=$SPLATE glyph=$SGLYPH"
 }
 
 cmd_settings_off() {
