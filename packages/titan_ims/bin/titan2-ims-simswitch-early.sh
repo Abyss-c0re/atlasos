@@ -13,6 +13,11 @@ set_v() {
     /system/bin/resetprop_phh "$_k" "$_v" 2>/dev/null || true
   elif [ -x /data/adb/ksu/bin/resetprop ]; then
     /data/adb/ksu/bin/resetprop "$_k" "$_v" 2>/dev/null || true
+  elif [ -x /data/adb/ksud ]; then
+    /data/adb/ksud resetprop -p "$_k" "$_v" 2>/dev/null || \
+      /data/adb/ksud resetprop "$_k" "$_v" 2>/dev/null || true
+  elif [ -x /system/bin/su ]; then
+    /system/bin/su -c "resetprop $_k $_v" 2>/dev/null || true
   else
     setprop "$_k" "$_v" 2>/dev/null || true
   fi
@@ -41,13 +46,20 @@ case "$_calls" in
   [12]) want=$_calls; src=settings_calls ;;
 esac
 
-# Boot-early only: phone/settings may be down at post-fs-data.
-# After boot, persist is cache only. Do not poke a ghost tray if Calls mapping failed.
+# Boot-early: phone/settings may be down at post-fs-data — use persist cache.
+# After boot: if Calls still has a subId but siminfo mapping failed, keep
+# the persist cache. Only refuse the cache when Calls is actually unset
+# (otherwise vendor NVRAM stays on empty tray 1).
 if [ -z "$want" ]; then
   _bc=$(getprop sys.boot_completed 2>/dev/null | tr -d '\r\n ')
+  _sub=`settings get global multi_sim_voice_call 2>/dev/null | tr -d '\r\n '`
   if [ "$_bc" = "1" ]; then
-    logt "Calls tray gone after boot; not using persist cache"
-    exit 0
+    case "$_sub" in
+      ''|null|-1|0)
+        logt "Calls unset after boot; not inventing tray"
+        exit 0
+        ;;
+    esac
   fi
   _p=$(getprop persist.radio.titan2_simswitch 2>/dev/null | tr -d '\r\n ')
   case "$_p" in
