@@ -69,23 +69,43 @@ vops=$(dumpsys telephony.registry 2>/dev/null | grep -o 'mVopsSupport = [0-9]*' 
 info "voice=$voice $vops"
 case "$voice" in
   *IN_SERVICE*) ok "voice IN_SERVICE" ;;
-  *) bad "voice $voice" ;;
+  *)
+    case "$sim" in
+      *ABSENT*LOADED*|*LOADED*ABSENT*|ABSENT,LOADED|LOADED,ABSENT)
+        info "voice $voice (home SIM out — not a software fail)"
+        ;;
+      *) bad "voice $voice" ;;
+    esac
+    ;;
 esac
 
-phone=$(dumpsys phone 2>/dev/null | grep -E 'addConnection.*MMTEL|notifyFeatureCapabilitiesChanged, type=MMTEL|NO_IMS_SERVICE_CONFIGURED|isBound=' | tail -40)
+ims_apk=/system/priv-app/MtkIms/MtkIms.apk
+if unzip -l "$ims_apk" 2>/dev/null | grep -q 'classes2.dex'; then
+  ok "MtkIms has classes2.dex (IMtk stubs)"
+else
+  her "MtkIms missing classes2.dex — MmTel dies on IMtkImsConfig\$Stub"
+fi
+vilte=$(getprop persist.vendor.vilte_support | tr -d '\r')
+[ "$vilte" = "0" ] && ok "vilte_support=0 (incoming skips VT .so)" || her "vilte_support=$vilte (ImsVTProvider loadLibrary on incoming)"
+ps -A 2>/dev/null | grep -q '[c]om.mediatek.ims' && ok "com.mediatek.ims process up" || bad "com.mediatek.ims not running"
+
+phone=$(dumpsys phone 2>/dev/null | grep -E 'addConnection.*MMTEL|notifyFeatureCapabilitiesChanged, type=MMTEL|NO_IMS_SERVICE_CONFIGURED|isBound=|connectionReady' | tail -50)
 echo "$phone" | grep -q 'isBound=true' && ok "ImsService bound" || bad "ImsService not bound"
-echo "$phone" | grep -q 'NO_IMS_SERVICE_CONFIGURED' && her "NO_IMS_SERVICE_CONFIGURED (listener theater)"
+# RCS qns prints NO_IMS_SERVICE_CONFIGURED on every GSI. Only MMTEL is heresy.
+echo "$phone" | grep 'feature=MMTEL' | grep -q 'NO_IMS_SERVICE_CONFIGURED' && \
+  her "MMTEL NO_IMS_SERVICE_CONFIGURED" || ok "MMTEL not in NO_IMS_SERVICE_CONFIGURED"
 lastcaps=$(echo "$phone" | grep 'notifyFeatureCapabilitiesChanged, type=MMTEL' | tail -1)
 lastadd=$(echo "$phone" | grep 'addConnection' | grep MMTEL | tail -1)
 mmtel_voice=0
 echo "$lastadd" | grep -q VOICE && echo "$lastadd" | grep -qv 'capabilities={ }' && mmtel_voice=1
 echo "$lastcaps" | grep -q VOICE && echo "$lastcaps" | grep -qv 'capabilities={ }' && mmtel_voice=1
-if echo "$lastadd" | grep -q 'capabilities={ }' || echo "$lastcaps" | grep -q 'capabilities={ }'; then
-  her "MMTEL READY/empty caps (looks bound, no Voice) last=$lastcaps"
-elif [ "$mmtel_voice" = "1" ]; then
+if echo "$lastadd" | grep -q 'state=READY'; then
+  ok "MMTEL READY after last bind"
+fi
+if [ "$mmtel_voice" = "1" ]; then
   ok "MMTEL Voice advertised"
 else
-  info "MMTEL last=$lastcaps"
+  info "MMTEL Voice not advertised (needs IMS REGISTERED / home SIM) lastadd=$lastadd"
 fi
 
 reg=$(dumpsys telephony.registry 2>/dev/null | grep -E 'ApnSetting|LOST_CONNECTION' | tail -40)
