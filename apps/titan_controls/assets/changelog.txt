@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.87-hide-cube-if-missing (687) — 2026-09-19T22:14Z
+
+### rebuild 2026-09-19T22:14Z · 16.87-hide-cube-if-missing (687)
+
+- Rebuild (ALLOW_ROOT=1)
+
+
+- hide Sub display Cube mode when Cube Contact is not installed
+
+---
+
 ## 16.86-hide-nanobot-if-missing (686) — 2026-09-19T21:28Z
 
 - hide Nanobot auth UI when the Nanobot APK is not installed

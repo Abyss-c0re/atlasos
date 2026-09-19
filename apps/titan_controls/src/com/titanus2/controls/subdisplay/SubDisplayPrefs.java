@@ -135,13 +135,19 @@ public final class SubDisplayPrefs {
 
     public static Mode getMode(Context c) {
         SharedPreferences sp = p(c);
-        if (sp.contains("mode")) return Mode.from(sp.getString("mode", "off"));
-        if (sp.getBoolean("on", false)) return Mode.STOCK;
-        return Mode.OFF;
+        Mode m = Mode.OFF;
+        if (sp.contains("mode")) m = Mode.from(sp.getString("mode", "off"));
+        else if (sp.getBoolean("on", false)) m = Mode.STOCK;
+        if (m == Mode.CUBE && !cubeAppInstalled(c)) {
+            setMode(c, Mode.CUSTOM);
+            return Mode.CUSTOM;
+        }
+        return m;
     }
 
     public static void setMode(Context c, Mode mode) {
         if (mode == null) mode = Mode.OFF;
+        if (mode == Mode.CUBE && !cubeAppInstalled(c)) mode = Mode.CUSTOM;
         // commit() so boot races / FaceOverlay cannot re-read stale "custom"
         // after Cube was selected (apply() is async — dual-clock residual).
         p(c).edit()
@@ -168,6 +174,7 @@ public final class SubDisplayPrefs {
      */
     public static boolean cubeOwnsRear(Context c) {
         if (c == null) return false;
+        if (!cubeAppInstalled(c)) return false;
         Context app = c.getApplicationContext() != null ? c.getApplicationContext() : c;
         if (getMode(app) == Mode.CUBE) return true;
         if (SubDisplayCubeBridge.isWanted()) return true;

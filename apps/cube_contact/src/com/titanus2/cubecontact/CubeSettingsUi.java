@@ -94,6 +94,70 @@ final class CubeSettingsUi {
         return tv;
     }
 
+    interface TabListener {
+        void onTab(int index);
+    }
+
+    /** Underlined Settings tabs. Square, no Holo TabWidget. */
+    static LinearLayout tabBar(LinearLayout parent, String[] labels, TabListener listener) {
+        Context ctx = parent.getContext();
+        LinearLayout row = new LinearLayout(ctx);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout[] cells = new LinearLayout[labels.length];
+        for (int i = 0; i < labels.length; i++) {
+            final int idx = i;
+            LinearLayout cell = new LinearLayout(ctx);
+            cell.setOrientation(LinearLayout.VERTICAL);
+            cell.setGravity(Gravity.CENTER_HORIZONTAL);
+            cell.setClickable(true);
+            cell.setFocusable(true);
+            cell.setBackground(selectable(ctx));
+            cell.setLayoutParams(new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            TextView t = new TextView(ctx);
+            t.setText(labels[i]);
+            t.setGravity(Gravity.CENTER);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            t.setPadding(0, dp(t, 12), 0, dp(t, 8));
+            t.setTag("label");
+            View bar = new View(ctx);
+            bar.setTag("bar");
+            bar.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(bar, 2)));
+            cell.addView(t);
+            cell.addView(bar);
+            cell.setOnClickListener(v -> {
+                setTab(row, idx);
+                if (listener != null) listener.onTab(idx);
+            });
+            row.addView(cell);
+            cells[i] = cell;
+        }
+        row.setTag(cells);
+        parent.addView(row);
+        return row;
+    }
+
+    static void setTab(LinearLayout bar, int selected) {
+        Object tag = bar.getTag();
+        if (!(tag instanceof LinearLayout[])) return;
+        LinearLayout[] cells = (LinearLayout[]) tag;
+        Context ctx = bar.getContext();
+        for (int i = 0; i < cells.length; i++) {
+            boolean on = i == selected;
+            LinearLayout cell = cells[i];
+            TextView t = cell.findViewWithTag("label");
+            View u = cell.findViewWithTag("bar");
+            if (t != null) {
+                t.setTypeface(Typeface.SANS_SERIF, on ? Typeface.BOLD : Typeface.NORMAL);
+                t.setTextColor(on ? text(ctx) : muted(ctx));
+            }
+            if (u != null) u.setBackgroundColor(on ? text(ctx) : Color.TRANSPARENT);
+        }
+    }
+
     static TextView stateLine(LinearLayout root) {
         TextView tv = new TextView(root.getContext());
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);

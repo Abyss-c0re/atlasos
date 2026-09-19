@@ -29,6 +29,7 @@ public class SubDisplayActivity extends Activity {
     private LinearLayout options;
     private SubDisplayPrefs.Mode lastBuilt;
     private TextView colorPreview;
+    private TextView kbHint;
     private boolean cubeAvailable;
 
     private static final int[] PALETTE = {
@@ -71,7 +72,7 @@ public class SubDisplayActivity extends Activity {
         options.setOrientation(LinearLayout.VERTICAL);
         root.addView(options);
 
-        TextView kbHint = UiKit.mono(root);
+        kbHint = UiKit.mono(root);
         kbHint.setText(cubeAvailable
             ? "0 Off · 1 Face · 2 Apps · 3 Cube · L Open home · Esc"
             : "0 Off · 1 Face · 2 Apps · L Open home · Esc");
@@ -83,7 +84,11 @@ public class SubDisplayActivity extends Activity {
         if ("input".equalsIgnoreCase(raw)
             || "stock".equalsIgnoreCase(raw)
             || "aod".equalsIgnoreCase(raw)
-            || "system".equalsIgnoreCase(raw)) {
+            || "system".equalsIgnoreCase(raw)
+            || (!cubeAvailable && ("cube".equalsIgnoreCase(raw)
+                || "brain".equalsIgnoreCase(raw)
+                || "lattice".equalsIgnoreCase(raw)
+                || "neural".equalsIgnoreCase(raw)))) {
             SubDisplayService.applyMode(this, SubDisplayPrefs.Mode.CUSTOM);
         }
         // Honor current mode (apps keeps digitizer; face/off parks).
@@ -96,6 +101,34 @@ public class SubDisplayActivity extends Activity {
                 try { modeTiles[0].requestFocus(); } catch (Exception ignored) {}
             });
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        boolean have = SubDisplayPrefs.cubeAppInstalled(this);
+        cubeAvailable = have;
+        if (modeTiles[3] != null) {
+            modeTiles[3].setVisibility(have ? View.VISIBLE : View.GONE);
+        }
+        if (kbHint != null) {
+            kbHint.setText(have
+                ? "0 Off · 1 Face · 2 Apps · 3 Cube · L Open home · Esc"
+                : "0 Off · 1 Face · 2 Apps · L Open home · Esc");
+        }
+        if (!have) {
+            String raw = getSharedPreferences(SubDisplayPrefs.PREFS, MODE_PRIVATE)
+                .getString("mode", "");
+            if (raw != null && ("cube".equalsIgnoreCase(raw)
+                    || "brain".equalsIgnoreCase(raw)
+                    || "lattice".equalsIgnoreCase(raw)
+                    || "neural".equalsIgnoreCase(raw))) {
+                SubDisplayService.applyMode(this, SubDisplayPrefs.Mode.CUSTOM);
+                rebuildOptions(true);
+            }
+        }
+        rebuildOptions(false);
+        paintMode();
     }
 
     /**
@@ -702,11 +735,5 @@ public class SubDisplayActivity extends Activity {
         }
         state.setText(sb.toString());
         updateColorPreview();
-    }
-
-    @Override protected void onResume() {
-        super.onResume();
-        rebuildOptions(false);
-        paintMode();
     }
 }

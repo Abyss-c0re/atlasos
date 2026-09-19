@@ -24,8 +24,7 @@ public class CubeSettingsActivity extends Activity {
 
     private String plane = CubePlanePrefs.PLANE_FRONT;
     private TextView state;
-    private LinearLayout mainRow;
-    private LinearLayout rearRow;
+    private LinearLayout tabs;
     private final List<LinearLayout> sourceRows = new ArrayList<>();
     private final List<MatrixSource> sourceOrder = new ArrayList<>();
     private Switch spin;
@@ -43,13 +42,9 @@ public class CubeSettingsActivity extends Activity {
         CubeSettingsUi.screen(sc, root);
 
         CubeSettingsUi.title(root, "Settings");
+        tabs = CubeSettingsUi.tabBar(root, new String[]{"Main cube", "Sub display"}, i ->
+            setPlane(i == 1 ? CubePlanePrefs.PLANE_REAR : CubePlanePrefs.PLANE_FRONT));
         state = CubeSettingsUi.stateLine(root);
-
-        CubeSettingsUi.section(root, "Cube");
-        mainRow = CubeSettingsUi.choiceRow(root, "Main display", "This screen",
-            () -> setPlane(CubePlanePrefs.PLANE_FRONT));
-        rearRow = CubeSettingsUi.choiceRow(root, "Rear display", "Subscreen",
-            () -> setPlane(CubePlanePrefs.PLANE_REAR));
 
         CubeSettingsUi.section(root, "Source");
         boolean nanobotApp = RomIntegration.nanobotInstalled(this);
@@ -145,8 +140,7 @@ public class CubeSettingsActivity extends Activity {
             state.setText((rear ? "Rear" : "Main") + " · " + s.label
                 + " · spin " + (spinning ? "on" : "off"));
         }
-        CubeSettingsUi.setChosen(mainRow, !rear);
-        CubeSettingsUi.setChosen(rearRow, rear);
+        if (tabs != null) CubeSettingsUi.setTab(tabs, rear ? 1 : 0);
         for (int i = 0; i < sourceRows.size(); i++) {
             CubeSettingsUi.setChosen(sourceRows.get(i), sourceOrder.get(i) == s);
         }
