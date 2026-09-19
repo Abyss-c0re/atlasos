@@ -9,7 +9,7 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-DT2W_VER=2.182-dt2w-no-lift
+DT2W_VER=2.183-dt2w-sysfs
 
 log() {
   mkdir -p "$ST" 2>/dev/null || true
@@ -67,13 +67,15 @@ apply_dt2w() {
     settings put secure double_tap_to_wake 0 >/dev/null 2>&1 || true
     setprop persist.sys.doubletapwake 0 >/dev/null 2>&1 || true
     for d in /sys/class/input/input*; do
-      [ -f "$d/wake_gesture" ] || continue
       n=`cat "$d/name" 2>/dev/null` || continue
-      case "$n" in
-        synaptics*|fts*|goodix*|nt36*|focaltech*|touchPad|sub_touch)
-          echo 0 > "$d/wake_gesture" 2>/dev/null || true
-          ;;
-      esac
+      for g in "$d/wake_gesture" "$d/device/wake_gesture"; do
+        [ -f "$g" ] || continue
+        case "$n" in
+          synaptics*|fts*|goodix*|nt36*|focaltech*|touchPad|sub_touch)
+            echo 0 > "$g" 2>/dev/null || true
+            ;;
+        esac
+      done
     done
     echo "want=0" >"$ST/titan2_dt2w_status" 2>/dev/null || true
     chmod 666 "$ST/titan2_dt2w_status" 2>/dev/null || true
@@ -83,18 +85,20 @@ apply_dt2w() {
   settings put secure double_tap_to_wake 1 >/dev/null 2>&1 || true
   setprop persist.sys.doubletapwake 1 >/dev/null 2>&1 || true
   for d in /sys/class/input/input*; do
-    [ -f "$d/wake_gesture" ] || continue
     n=`cat "$d/name" 2>/dev/null` || continue
-    case "$n" in
-      synaptics*|fts*|goodix*|nt36*|focaltech*)
-        cur=`cat "$d/wake_gesture" 2>/dev/null`
-        [ "$cur" = "1" ] || echo 1 > "$d/wake_gesture" 2>/dev/null || true
-        ;;
-      touchPad|sub_touch)
-        cur=`cat "$d/wake_gesture" 2>/dev/null`
-        [ "$cur" = "0" ] || echo 0 > "$d/wake_gesture" 2>/dev/null || true
-        ;;
-    esac
+    for g in "$d/wake_gesture" "$d/device/wake_gesture"; do
+      [ -f "$g" ] || continue
+      case "$n" in
+        synaptics*|fts*|goodix*|nt36*|focaltech*)
+          cur=`cat "$g" 2>/dev/null | tr -d '\r\n '`
+          [ "$cur" = "1" ] || echo 1 > "$g" 2>/dev/null || true
+          ;;
+        touchPad)
+          cur=`cat "$g" 2>/dev/null | tr -d '\r\n '`
+          [ "$cur" = "0" ] || echo 0 > "$g" 2>/dev/null || true
+          ;;
+      esac
+    done
   done
   echo "want=1" >"$ST/titan2_dt2w_status" 2>/dev/null || true
   chmod 666 "$ST/titan2_dt2w_status" 2>/dev/null || true

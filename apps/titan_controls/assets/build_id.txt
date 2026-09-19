@@ -1,4 +1,4 @@
-versionName=16.90-rear-ioctl-only
-versionCode=690
-built_utc=2026-09-19T22:58Z
+versionName=16.91-dt2w-hw
+versionCode=691
+built_utc=2026-09-19T23:05Z
 allow_root=1

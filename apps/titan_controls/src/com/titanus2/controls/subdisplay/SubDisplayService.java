@@ -70,6 +70,12 @@ public class SubDisplayService extends Service {
         applySubtouchPolicy(SubDisplayService.this);
     };
     private final Runnable onScreenOffEdge = () -> {
+        // Re-arm synaptics wake_gesture before suspend. Settings=1 with
+        // sysfs=0 is why DT2W did not wake the rear (or the phone).
+        try {
+            SubDisplaySystemUi.applyDt2wPolicy(SubDisplayService.this,
+                SubDisplayPrefs.dt2wEnabled(SubDisplayService.this));
+        } catch (Exception ignored) {}
         if (!isRearMode()) return;
         ensureRear("screen-off", false);
     };

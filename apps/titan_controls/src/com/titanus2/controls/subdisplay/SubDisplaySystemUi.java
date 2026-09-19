@@ -4,6 +4,11 @@ import android.content.Context;
 import android.provider.Settings;
 import android.util.Log;
 
+import com.titanus2.controls.AgentBridge;
+import com.titanus2.controls.BuildConfig;
+
+import java.util.concurrent.TimeUnit;
+
 /** Suppress ambient duplicates; optional main DT2W (settings + kernel wake_gesture). */
 public final class SubDisplaySystemUi {
     private static final String TAG = "SubDisplaySystemUi";
@@ -55,6 +60,9 @@ public final class SubDisplaySystemUi {
         try {
             android.provider.Settings.Global.putString(
                 app.getContentResolver(), "titan2_dt2w", on ? "1" : "0");
+        } catch (Exception ignored) {}
+        try {
+            AgentBridge.put(app, "titan2_dt2w", on ? "1" : "0");
         } catch (Exception ignored) {}
         if (on) enableHardwareDt2w();
         else disableHardwareDt2w();
@@ -115,6 +123,15 @@ public final class SubDisplaySystemUi {
         shell("settings put global " + key + " " + val);
     }
     private static void shell(String cmd) {
-        // no su — priv-app Settings + agent only
+        if (cmd == null || cmd.isEmpty()) return;
+        try {
+            Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
+            if (!p.waitFor(2500, TimeUnit.MILLISECONDS)) p.destroyForcibly();
+        } catch (Exception ignored) {}
+        if (!BuildConfig.ALLOW_ROOT) return;
+        try {
+            Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", cmd});
+            if (!p.waitFor(2500, TimeUnit.MILLISECONDS)) p.destroyForcibly();
+        } catch (Exception ignored) {}
     }
 }

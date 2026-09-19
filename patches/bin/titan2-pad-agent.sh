@@ -1298,6 +1298,8 @@ _agent_boot_full() {
   (
     apply_subdisplay
     log "boot_subdisplay_apply on=`_read_subdisplay_on` bri=`_read_subdisplay_bri`"
+    apply_dt2w
+    log "boot_dt2w_apply"
   ) &
   (
     apply_fn

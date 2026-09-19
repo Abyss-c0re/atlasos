@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.91-dt2w-hw (691) — 2026-09-19T23:05Z
+
+- DT2W toggle writes synaptics wake_gesture; re-arm before sleep so rear ioctl-on follows SCREEN_ON
+
+---
+
 ## 16.90-rear-ioctl-only (690) — 2026-09-19T22:57Z
 
 ### rebuild 2026-09-19T22:58Z · 16.90-rear-ioctl-only (690)
