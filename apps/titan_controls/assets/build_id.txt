@@ -1,4 +1,4 @@
-versionName=16.89-rear-apps-pick
-versionCode=689
-built_utc=2026-09-19T22:42Z
+versionName=16.90-rear-ioctl-only
+versionCode=690
+built_utc=2026-09-19T22:58Z
 allow_root=1

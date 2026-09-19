@@ -28,18 +28,20 @@ import java.util.concurrent.atomic.AtomicLong;
  * Physical rear panel power + hard rear-touch park.
  * DT2W dual-light must not leave {@code sub_touch} as a second touchscreen.
  * <p>
- * Dual-display sleep/wake invariant (15.55+):
+ * Dual-display sleep/wake invariant (15.55+ / OEM 16.90):
  * <ul>
- *   <li>While main is <em>asleep</em>: rear only via {@link #wakeRearHardwareOnly} —
- *       never DisplayManager / startActivity (re-lights main power group).</li>
- *   <li>On real main {@code SCREEN_ON}: {@link #healMainGlass} floors main brightness
- *       only — never {@code cmd power wakeup}, never long wakelocks, never fight
- *       short-press power sleep.</li>
- *   <li>Sleep stays framework-owned (power key / timeout). We do not re-arm wake.</li>
- *   <li>15.60 lag kill: SF lists rear as <b>Follower</b> of main Pacesetter with
- *       {@code powerMode=On} even when BL=0 → dual {@code mtk_crtc} thrash
- *       (~5/s, loadavg 15 idle). Park rear via
- *       {@link #setRearHwcPowerMode} POWER_MODE_OFF, not brightness alone.</li>
+ *   <li>Agui {@code DisplayUtil} lights rear with Agold ioctl 700
+ *       ({@code /dev/agold-sub-panel} {@code 0x40044203}) + {@code lcd-backlight1}.
+ *       GSI puts display 0 and 2 in <b>DisplayGroup 0</b>, so
+ *       {@code DisplayManager.setBrightness(2)} / {@code cmd display --id 2}
+ *       wakes the main panel. Never use those for rear.</li>
+ *   <li>OEM {@code PowerManager.wakeUp(time, reason=2, details, displayId)} is
+ *       display-scoped on stock (separate groups). On this GSI it would wake
+ *       the shared group — do not call it.</li>
+ *   <li>While main is asleep: ioctl + sysfs only. No HWC ON (Follower would
+ *       poke the Pacesetter). No framework brightness.</li>
+ *   <li>On real main {@code SCREEN_ON}: {@link #healMainGlass} floors main
+ *       brightness only — never {@code cmd power wakeup}.</li>
  * </ul>
  */
 public final class SubDisplayPower {
@@ -169,10 +171,8 @@ public final class SubDisplayPower {
             int hw = fOn ? Math.round(fBri * 255f) : 0;
             if (hw < 0) hw = 0;
             if (hw > 255) hw = 255;
-            // Always set brightness + kick (was skipped when lastHw matched → dark residual)
-            setBrightness(app, fBri, hw);
             lastHw.set(hw);
-            kickHardware(fOn, hw);
+            kickHardware(app, fOn, hw);
             if (fLive) {
                 String err = SubDisplayInput.associateSubTouchToRear(app);
                 if (err != null) Log.w(TAG, "associate: " + err);
@@ -229,31 +229,18 @@ public final class SubDisplayPower {
         } catch (Exception ignored) {}
     }
 
-    private static void kickHardware(boolean on, int hw) {
-        // Default: allow framework display-2 brightness only when main is interactive
-        // (asleep + cmd display --id 2 can poke the shared power group → re-wake main).
-        kickHardware(on, hw, /*allowFrameworkDisplay*/ true);
-    }
-
-    /**
-     * @param allowFrameworkDisplay when false (main asleep / HW-only path), never
-     *                              call {@code cmd display set-brightness} — sysfs
-     *                              + subpanel_bl + pad-agent plane only.
-     */
-    private static void kickHardware(boolean on, int hw, boolean allowFrameworkDisplay) {
+    private static void kickHardware(Context ctx, boolean on, int hw) {
         String en = on ? "1" : "0";
-        String bl = String.valueOf(Math.max(0, Math.min(255, hw)));
-        boolean hwOk = false;
-        // Prefer direct system bin (init-labeled phhsu_exec may allow shell on some builds).
+        int hwClamped = Math.max(0, Math.min(255, hw));
+        boolean hwOk = writeBl(hwClamped);
         if (tryShell(new String[]{"/system/bin/titan2-subpanel-bl", en})) {
-            Log.i(TAG, "kickHardware bin ok on=" + on + " hw=" + hw);
-            tryShell(new String[]{"sh", "-c",
-                "echo " + bl + " > /sys/class/leds/lcd-backlight1/brightness 2>/dev/null; "
-                    + "echo " + bl + " > /sys/devices/platform/mtk-leds1/leds/lcd-backlight1/brightness 2>/dev/null; true"});
+            writeBl(hwClamped);
             hwOk = true;
-        } else {
+            Log.i(TAG, "kickHardware bin ok on=" + on + " hw=" + hwClamped);
+        }
+        if (!hwOk) {
             String script =
-                "ON=" + en + "; HW=" + bl + "; "
+                "ON=" + en + "; HW=" + hwClamped + "; "
                     + "BIN=/system/bin/titan2-subpanel-bl; "
                     + "[ -x /data/adb/modules/titan2_subdisplay/subpanel_bl ] && "
                     + "BIN=/data/adb/modules/titan2_subdisplay/subpanel_bl; "
@@ -263,34 +250,39 @@ public final class SubDisplayPower {
                     + "echo \"$HW\" > /sys/devices/platform/mtk-leds1/leds/lcd-backlight1/brightness 2>/dev/null; "
                     + "true";
             if (tryShell(new String[]{"su", "-c", script})) {
-                Log.i(TAG, "kickHardware su ok on=" + on + " hw=" + hw);
                 hwOk = true;
+                Log.i(TAG, "kickHardware su ok on=" + on + " hw=" + hwClamped);
             } else if (BuildConfig.ALLOW_ROOT
                     && tryShell(new String[]{"su", "0", "sh", "-c", script})) {
-                Log.i(TAG, "kickHardware su0 ok on=" + on + " hw=" + hw);
                 hwOk = true;
+                Log.i(TAG, "kickHardware su0 ok on=" + on + " hw=" + hwClamped);
             }
         }
         if (!hwOk) {
-            // Rootless product: plane + SUBDISPLAY_APPLY already stamped — pad-agent
-            // apply_subdisplay owns ioctl. Framework brightness only when allowed.
-            if (allowFrameworkDisplay) {
-                tryShell(new String[]{"cmd", "display", "set-brightness",
-                    on ? String.format(Locale.US, "%.2f", hw / 255f) : "0",
-                    "--id", "2"});
-                Log.i(TAG, "kickHardware plane/cmd path on=" + on + " hw=" + hw
-                    + " (pad-agent edge applies Agold ioctl)");
-            } else {
-                // Sysfs best-effort without su (may fail; pad-agent edge still owns).
-                tryShell(new String[]{"sh", "-c",
-                    "echo " + bl + " > /sys/class/leds/lcd-backlight1/brightness 2>/dev/null; "
-                        + "echo " + bl + " > /sys/devices/platform/mtk-leds1/leds/lcd-backlight1/brightness 2>/dev/null; true"});
-                Log.i(TAG, "kickHardware plane/sysfs-only on=" + on + " hw=" + hw
-                    + " (no framework display; sleep-safe)");
+            writeBl(hwClamped);
+            Log.i(TAG, "kickHardware plane/sysfs-only on=" + on + " hw=" + hwClamped
+                + " (pad-agent edge owns Agold ioctl)");
+        }
+        // Follower HWC ON while main is asleep pokes the Pacesetter (main glass).
+        if (isMainInteractive(ctx)) {
+            setRearHwcPowerMode(on);
+        }
+    }
+
+    private static boolean writeBl(int hw) {
+        boolean ok = false;
+        byte[] body = (Math.max(0, Math.min(255, hw)) + "\n")
+            .getBytes(StandardCharsets.UTF_8);
+        String[] paths = { BL_CLASS, BL_SYSFS };
+        for (String p : paths) {
+            try (FileOutputStream out = new FileOutputStream(p)) {
+                out.write(body);
+                ok = true;
+            } catch (Exception e) {
+                Log.d(TAG, "writeBl " + p + ": " + e.getMessage());
             }
         }
-        // 15.60: HWC powerMode for rear Follower — BL alone does not stop dual CRTC thrash.
-        setRearHwcPowerMode(on);
+        return ok;
     }
 
     /**
@@ -348,7 +340,7 @@ public final class SubDisplayPower {
         lastPower.set(false);
         powerKnown.set(true);
         lastHw.set(0);
-        kickHardware(false, 0, /*allowFrameworkDisplay*/ true);
+        kickHardware(ctx, false, 0);
         forceInhibitSubTouch();
         Log.i(TAG, "parkRearForCool");
     }
@@ -437,24 +429,6 @@ public final class SubDisplayPower {
         lastHw.set(-1);
     }
 
-    private static void setBrightness(Context ctx, float logical, int hw) {
-        try {
-            DisplayManager dm = (DisplayManager) ctx.getSystemService(Context.DISPLAY_SERVICE);
-            if (dm != null) {
-                Display rear = SubDisplayHelper.findRear(ctx);
-                int id = rear != null ? rear.getDisplayId() : 2;
-                Method m = DisplayManager.class.getMethod("setBrightness", int.class, float.class);
-                // Off path must be real 0 — max(0.01) kept rear "on" for SF follower thrash.
-                float L = hw <= 0 ? 0f : Math.max(0.01f, logical);
-                m.invoke(dm, id, L);
-            }
-        } catch (Exception e) {
-            Log.d(TAG, "setBrightness: " + e.getMessage());
-        }
-        AgentBridge.put(ctx, AgentBridge.SUBDISPLAY_BRI,
-            String.format(java.util.Locale.US, "%.2f", hw / 255f));
-    }
-
     /**
      * Light rear when main is interactive. If main is already asleep, routes to
      * {@link #wakeRearHardwareOnly} so DisplayManager cannot re-wake the main
@@ -521,8 +495,7 @@ public final class SubDisplayPower {
         lastPower.set(true);
         powerKnown.set(true);
         lastHw.set(hw);
-        // Sleep-safe: no cmd display — that can re-wake main power group.
-        kickHardware(true, hw, /*allowFrameworkDisplay*/ false);
+        kickHardware(app, true, hw);
         Log.i(TAG, "wakeRearHardwareOnly hw=" + hw + " (" + reason + ")");
     }
 

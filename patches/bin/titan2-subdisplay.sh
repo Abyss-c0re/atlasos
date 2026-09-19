@@ -9,7 +9,7 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-SUB_VER=2.175-subdisplay-peel
+SUB_VER=2.176-ioctl-only
 SUBDISP_BL=/sys/devices/platform/mtk-leds1/leds/lcd-backlight1/brightness
 SUBDISP_BL_MAX=/sys/devices/platform/mtk-leds1/leds/lcd-backlight1/max_brightness
 LAST_FILE=$ST/titan2_subdisplay_last_key
@@ -196,18 +196,15 @@ apply_subdisplay() {
       if [ -n "$SUBDISP_IOCTL_BIN" ]; then
         "$SUBDISP_IOCTL_BIN" 1 >/dev/null 2>&1 || true
       fi
-      if command -v timeout >/dev/null 2>&1; then
-        timeout 0.4 cmd display set-brightness "$bri" --id "$id" >/dev/null 2>&1 || true
-      fi
+      # Never `cmd display set-brightness --id 2`. GSI puts display 0 and 2 in
+      # DisplayGroup 0, so framework brightness wakes the main panel. OEM Agui
+      # DisplayUtil uses ADaemon ioctl 700 + lcd-backlight1 only (type 0x40044203).
       echo "$hw" > "$SUBDISP_BL" 2>/dev/null || true
       echo "$hw" > /sys/class/leds/lcd-backlight1/brightness 2>/dev/null || true
       _hb "ON id=$id bri=$bri hw=$hw"
     fi
   elif [ "$_need" = "1" ]; then
     [ -n "$SUBDISP_IOCTL_BIN" ] && "$SUBDISP_IOCTL_BIN" 0 >/dev/null 2>&1 || true
-    if command -v timeout >/dev/null 2>&1; then
-      timeout 0.4 cmd display set-brightness 0 --id "$id" >/dev/null 2>&1 || true
-    fi
     echo 0 > "$SUBDISP_BL" 2>/dev/null || true
     echo 0 > /sys/class/leds/lcd-backlight1/brightness 2>/dev/null || true
     _hb "OFF"

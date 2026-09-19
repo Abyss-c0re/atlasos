@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.90-rear-ioctl-only (690) — 2026-09-19T22:57Z
+
+### rebuild 2026-09-19T22:58Z · 16.90-rear-ioctl-only (690)
+
+- Rebuild (ALLOW_ROOT=1)
+
+
+- Rear panel: Agold ioctl 700 + lcd-backlight1 only; never framework brightness (shared DisplayGroup 0 wakes main)
+
+---
+
 ## 16.89-rear-apps-pick (689) — 2026-09-19T22:42Z
 
 ### rebuild 2026-09-19T22:42Z · 16.89-rear-apps-pick (689)
