@@ -1,4 +1,4 @@
-versionName=16.87-hide-cube-if-missing
-versionCode=687
-built_utc=2026-09-19T22:14Z
+versionName=16.88-subdisplay-stable
+versionCode=688
+built_utc=2026-09-19T22:32Z
 allow_root=1

@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.88-subdisplay-stable (688) — 2026-09-19T22:32Z
+
+- Sub display settings no longer recreate the activity on every tweak
+
+---
+
 ## 16.87-hide-cube-if-missing (687) — 2026-09-19T22:14Z
 
 ### rebuild 2026-09-19T22:14Z · 16.87-hide-cube-if-missing (687)

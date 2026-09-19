@@ -31,6 +31,13 @@ public class SubDisplayActivity extends Activity {
     private TextView colorPreview;
     private TextView kbHint;
     private boolean cubeAvailable;
+    private LinearLayout notifCountRow;
+    private LinearLayout notifScaleRow;
+    private LinearLayout clockSizeRowRef;
+    private LinearLayout timeoutRow;
+    private TextView styleClassic;
+    private TextView styleStatus;
+    private TextView styleMin;
 
     private static final int[] PALETTE = {
         0xFFF0F0F0, // White
@@ -250,7 +257,6 @@ public class SubDisplayActivity extends Activity {
             addDt2wToggle();
             // Keep digitizer live; hub/DT2W must not re-park (15.4 residual).
             SubDisplayPrefs.setRearTouchEnabled(this, false);
-            SubDisplayService.applySubtouchPolicy(this);
             return;
         }
 
@@ -302,8 +308,6 @@ public class SubDisplayActivity extends Activity {
                 UiKit.toast(this, "Cube always keeps rear when mode On");
             });
             addDt2wToggle();
-            // Digitizer live for cube touch (applySubtouchPolicy binds sub_touch→rear).
-            SubDisplayService.applySubtouchPolicy(this);
             return;
         }
 
@@ -319,20 +323,16 @@ public class SubDisplayActivity extends Activity {
 
             // Face: never rear trackpad / second cursor.
             SubDisplayPrefs.setRearTouchEnabled(this, false);
-            SubDisplayService.applySubtouchPolicy(this);
 
             UiKit.section(options, "Layout");
             LinearLayout st = UiKit.row(options);
-            TextView bClassic = UiKit.flexButton(st, "Classic",
+            styleClassic = UiKit.flexButton(st, "Classic",
                 () -> setStyle(SubDisplayPrefs.FaceStyle.CLASSIC));
-            TextView bStatus = UiKit.flexButton(st, "Status",
+            styleStatus = UiKit.flexButton(st, "Status",
                 () -> setStyle(SubDisplayPrefs.FaceStyle.STATUS));
-            TextView bMin = UiKit.flexButton(st, "Minimal",
+            styleMin = UiKit.flexButton(st, "Minimal",
                 () -> setStyle(SubDisplayPrefs.FaceStyle.MINIMAL));
-            SubDisplayPrefs.FaceStyle curStyle = SubDisplayPrefs.getFaceStyle(this);
-            UiKit.setSelected(bClassic, curStyle == SubDisplayPrefs.FaceStyle.CLASSIC);
-            UiKit.setSelected(bStatus, curStyle == SubDisplayPrefs.FaceStyle.STATUS);
-            UiKit.setSelected(bMin, curStyle == SubDisplayPrefs.FaceStyle.MINIMAL);
+            paintStyleTiles();
 
             clockSizeRow();
             colorPickerSection();
@@ -367,31 +367,34 @@ public class SubDisplayActivity extends Activity {
             });
             if (SubDisplayPrefs.widgetNotifs(this)) {
                 UiKit.section(options, "Notif icons");
-                LinearLayout cnt = UiKit.row(options);
+                notifCountRow = UiKit.row(options);
                 for (int n = 1; n <= 6; n++) {
                     final int num = n;
-                    TextView b = UiKit.flexButton(cnt, String.valueOf(num), () -> {
+                    TextView b = UiKit.flexButton(notifCountRow, String.valueOf(num), () -> {
                         SubDisplayPrefs.setNotifMaxApps(this, num);
                         faceRefresh();
                         paintMode();
+                        selectInRow(notifCountRow, num - 1);
                         UiKit.toast(this, num + " app icon" + (num > 1 ? "s" : ""));
-                        rebuildOptions(true);
                     });
                     UiKit.setSelected(b, SubDisplayPrefs.notifMaxApps(this) == num);
                 }
-                LinearLayout isz = UiKit.row(options);
+                notifScaleRow = UiKit.row(options);
                 String[] labs = {"XS", "S", "M", "L", "XL"};
                 for (int s = 0; s < 5; s++) {
                     final int sc = s;
-                    TextView b = UiKit.flexButton(isz, labs[s], () -> {
+                    TextView b = UiKit.flexButton(notifScaleRow, labs[s], () -> {
                         SubDisplayPrefs.setNotifIconScale(this, sc);
                         faceRefresh();
                         paintMode();
+                        selectInRow(notifScaleRow, sc);
                         UiKit.toast(this, "Icon " + labs[sc]);
-                        rebuildOptions(true);
                     });
                     UiKit.setSelected(b, SubDisplayPrefs.notifIconScale(this) == sc);
                 }
+            } else {
+                notifCountRow = null;
+                notifScaleRow = null;
             }
         } else {
             UiKit.note(options, "Rear display is off.");
@@ -488,7 +491,7 @@ public class SubDisplayActivity extends Activity {
         SubDisplayPrefs.setCustomInk(this, color);
         faceRefresh();
         paintMode();
-        rebuildOptions(true);
+        updateColorPreview();
         UiKit.toast(this, name);
     }
 
@@ -597,18 +600,18 @@ public class SubDisplayActivity extends Activity {
     private void setStyle(SubDisplayPrefs.FaceStyle s) {
         SubDisplayPrefs.setFaceStyle(this, s);
         faceRefresh();
-        rebuildOptions(true);
+        paintStyleTiles();
         paintMode();
     }
 
     private void clockSizeRow() {
         UiKit.section(options, "Size");
-        LinearLayout sz = UiKit.row(options);
+        clockSizeRowRef = UiKit.row(options);
         String[] labs = {"XS", "S", "M", "L", "XL"};
         int cur = SubDisplayPrefs.getClockScale(this);
         for (int i = 0; i < labs.length; i++) {
             final int sc = i;
-            TextView b = UiKit.flexButton(sz, labs[i], () -> setScale(sc));
+            TextView b = UiKit.flexButton(clockSizeRowRef, labs[i], () -> setScale(sc));
             UiKit.setSelected(b, cur == sc);
         }
     }
@@ -616,9 +619,26 @@ public class SubDisplayActivity extends Activity {
     private void setScale(int s) {
         SubDisplayPrefs.setClockScale(this, s);
         faceRefresh();
-        rebuildOptions(true);
+        selectInRow(clockSizeRowRef, s);
         paintMode();
         UiKit.toast(this, "Size " + SubDisplayPrefs.clockScaleLabel(this));
+    }
+
+    private void paintStyleTiles() {
+        SubDisplayPrefs.FaceStyle cur = SubDisplayPrefs.getFaceStyle(this);
+        UiKit.setSelected(styleClassic, cur == SubDisplayPrefs.FaceStyle.CLASSIC);
+        UiKit.setSelected(styleStatus, cur == SubDisplayPrefs.FaceStyle.STATUS);
+        UiKit.setSelected(styleMin, cur == SubDisplayPrefs.FaceStyle.MINIMAL);
+    }
+
+    private static void selectInRow(LinearLayout row, int index) {
+        if (row == null) return;
+        for (int i = 0; i < row.getChildCount(); i++) {
+            View v = row.getChildAt(i);
+            if (v instanceof TextView) {
+                UiKit.setSelected((TextView) v, i == index);
+            }
+        }
     }
 
     private void faceRefresh() {
@@ -660,22 +680,29 @@ public class SubDisplayActivity extends Activity {
         dimHold[0].setDisplay(dim + "%");
 
         UiKit.section(options, "Idle after");
-        LinearLayout to = UiKit.row(options);
+        timeoutRow = UiKit.row(options);
         int toSec = SubDisplayPrefs.getTimeoutSec(this);
-        TextView t0 = UiKit.flexButton(to, "Never", () -> setTimeout(0));
-        TextView t15 = UiKit.flexButton(to, "15s", () -> setTimeout(15));
-        TextView t45 = UiKit.flexButton(to, "45s", () -> setTimeout(45));
-        TextView t120 = UiKit.flexButton(to, "2m", () -> setTimeout(120));
-        UiKit.setSelected(t0, toSec == 0);
-        UiKit.setSelected(t15, toSec == 15);
-        UiKit.setSelected(t45, toSec == 45);
-        UiKit.setSelected(t120, toSec == 120);
+        int[] timeouts = {0, 15, 45, 120};
+        String[] tLabs = {"Never", "15s", "45s", "2m"};
+        for (int i = 0; i < timeouts.length; i++) {
+            final int sec = timeouts[i];
+            TextView b = UiKit.flexButton(timeoutRow, tLabs[i], () -> setTimeout(sec));
+            UiKit.setSelected(b, toSec == sec);
+        }
     }
 
     private void setTimeout(int sec) {
         SubDisplayPrefs.setTimeoutSec(this, sec);
         SubDisplayService.refresh(this);
-        rebuildOptions(true);
+        int[] timeouts = {0, 15, 45, 120};
+        if (timeoutRow != null) {
+            for (int i = 0; i < timeouts.length && i < timeoutRow.getChildCount(); i++) {
+                View v = timeoutRow.getChildAt(i);
+                if (v instanceof TextView) {
+                    UiKit.setSelected((TextView) v, timeouts[i] == sec);
+                }
+            }
+        }
         paintMode();
     }
 

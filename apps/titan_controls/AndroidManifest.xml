@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.controls"
-    android:versionCode="687"
-    android:versionName="16.87-hide-cube-if-missing">
+    android:versionCode="688"
+    android:versionName="16.88-subdisplay-stable">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
     <!-- Framework API: host declares + holds USE_TITAN2_API -->
     <permission
@@ -317,7 +317,8 @@
             android:exported="true"
             android:label="Sub display"
             android:launchMode="singleTop"
-            android:resizeableActivity="true">
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|uiMode|keyboardHidden|keyboard|layoutDirection">
             <intent-filter>
                 <action android:name="com.titanus2.controls.action.SUB_DISPLAY"/>
                 <category android:name="android.intent.category.DEFAULT"/>
