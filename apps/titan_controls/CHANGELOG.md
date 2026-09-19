@@ -5,6 +5,17 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.89-rear-apps-pick (689) — 2026-09-19T22:42Z
+
+### rebuild 2026-09-19T22:42Z · 16.89-rear-apps-pick (689)
+
+- Rebuild (ALLOW_ROOT=1)
+
+
+- Rear launcher app picker in Controls; Apps-mode DPI on the sub display only
+
+---
+
 ## 16.88-subdisplay-stable (688) — 2026-09-19T22:32Z
 
 - Sub display settings no longer recreate the activity on every tweak

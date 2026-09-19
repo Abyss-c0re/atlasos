@@ -35,6 +35,8 @@ public class SubDisplayActivity extends Activity {
     private LinearLayout notifScaleRow;
     private LinearLayout clockSizeRowRef;
     private LinearLayout timeoutRow;
+    private LinearLayout dpiRow;
+    private LinearLayout appsNav;
     private TextView styleClassic;
     private TextView styleStatus;
     private TextView styleMin;
@@ -135,7 +137,28 @@ public class SubDisplayActivity extends Activity {
             }
         }
         rebuildOptions(false);
+        if (appsNav != null && SubDisplayPrefs.getMode(this) == SubDisplayPrefs.Mode.APPS) {
+            UiKit.setNavSummary(appsNav, SubDisplayPrefs.launcherSummary(this));
+        }
         paintMode();
+    }
+
+    private void setAppsDpi(int dpi) {
+        SubDisplayPrefs.setAppsDpi(this, dpi);
+        if (SubDisplayPrefs.getMode(this) == SubDisplayPrefs.Mode.APPS) {
+            SubDisplayPrefs.applyAppsDensity(this);
+        }
+        int[] dps = SubDisplayPrefs.APPS_DPI_PRESETS;
+        if (dpiRow != null) {
+            for (int i = 0; i < dps.length && i < dpiRow.getChildCount(); i++) {
+                android.view.View v = dpiRow.getChildAt(i);
+                if (v instanceof TextView) {
+                    UiKit.setSelected((TextView) v, dps[i] == dpi);
+                }
+            }
+        }
+        paintMode();
+        UiKit.toast(this, "Apps " + SubDisplayPrefs.appsDpiLabel(this));
     }
 
     /**
@@ -234,21 +257,33 @@ public class SubDisplayActivity extends Activity {
         lastBuilt = mode;
         options.removeAllViews();
         colorPreview = null;
+        appsNav = null;
+        dpiRow = null;
 
         if (mode == SubDisplayPrefs.Mode.APPS) {
             briAndTimeout();
             UiKit.section(options, "Apps");
             TextView fact = UiKit.mono(options);
-            fact.setText("Digitizer on rear · Home tiles (L)");
+            fact.setText("Rear launcher · pick apps here");
             LinearLayout openRow = UiKit.row(options);
             UiKit.flexButton(openRow, "Open home", () -> {
                 SubDisplayService.launchRearHome(this);
                 UiKit.toast(this, "Rear home");
             });
-            UiKit.flexButton(openRow, "Settings", () -> {
-                SubDisplayService.launchRearSettings(this);
-                UiKit.toast(this, "Rear Settings");
-            });
+            appsNav = UiKit.navRow(options, "Launcher apps",
+                SubDisplayPrefs.launcherSummary(this),
+                () -> startActivity(new Intent(this, SubDisplayAppsActivity.class)));
+            UiKit.section(options, "Apps DPI");
+            dpiRow = UiKit.row(options);
+            int[] dps = SubDisplayPrefs.APPS_DPI_PRESETS;
+            String[] dLabs = new String[dps.length];
+            int curDpi = SubDisplayPrefs.appsDpi(this);
+            for (int i = 0; i < dps.length; i++) {
+                dLabs[i] = dps[i] <= 0 ? "Default" : String.valueOf(dps[i]);
+                final int dpi = dps[i];
+                TextView b = UiKit.flexButton(dpiRow, dLabs[i], () -> setAppsDpi(dpi));
+                UiKit.setSelected(b, curDpi == dpi);
+            }
             UiKit.section(options, "Sleep");
             addToggle("Show while main off", SubDisplayPrefs.keepRearWhenOff(this), v -> {
                 SubDisplayPrefs.setKeepRearWhenOff(this, v);
@@ -738,8 +773,8 @@ public class SubDisplayActivity extends Activity {
             return;
         }
         if (mode == SubDisplayPrefs.Mode.APPS) {
-            state.setText("Apps · digitizer · "
-                + Math.max(1, SubDisplayPrefs.getBrightnessPct(this)) + "%");
+            state.setText("Apps · " + SubDisplayPrefs.appsDpiLabel(this)
+                + " · " + Math.max(1, SubDisplayPrefs.getBrightnessPct(this)) + "%");
             return;
         }
         if (mode == SubDisplayPrefs.Mode.CUBE) {

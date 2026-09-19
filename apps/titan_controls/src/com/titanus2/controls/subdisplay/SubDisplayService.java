@@ -154,11 +154,13 @@ public class SubDisplayService extends Service {
             } catch (Exception e) {
                 Log.w(TAG, "leave-apps dismiss: " + e.getMessage());
             }
+            try { SubDisplayPrefs.clearAppsDensity(c); } catch (Exception ignored) {}
         }
         SubDisplaySystemUi.apply(c);
         if (mode == SubDisplayPrefs.Mode.APPS) {
             // 15.4: apps-on-rear plane + digitizer + associate (pad-agent 2.67 SoT).
             // 15.5: also keep FGS/ensureRear (applyApps-only left panel without service).
+            try { SubDisplayPrefs.applyAppsDensity(c); } catch (Exception ignored) {}
             SubDisplayPower.applyApps(c);
             applySubtouchPolicy(c);
             cmd(c, ACTION_APPLY);
@@ -369,7 +371,6 @@ public class SubDisplayService extends Service {
             Log.i(TAG, "launch rear Apps home");
         } catch (Exception e) {
             Log.w(TAG, "rear home: " + e.getMessage());
-            launchRearSettings(c);
         }
     }
 

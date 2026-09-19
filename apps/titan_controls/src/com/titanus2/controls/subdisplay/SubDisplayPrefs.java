@@ -473,5 +473,120 @@ public final class SubDisplayPrefs {
         return Math.max(16, Math.min(panelW / 3, px));
     }
 
+    /** 0 = panel default. Apps-mode density on the rear display only. */
+    public static final int APPS_DPI_MIN = 120;
+    public static final int APPS_DPI_MAX = 320;
+    public static final int[] APPS_DPI_PRESETS = {0, 160, 200, 240, 280, 320};
+
+    public static int appsDpi(Context c) {
+        return Math.max(0, Math.min(APPS_DPI_MAX, p(c).getInt("apps_dpi", 0)));
+    }
+
+    public static void setAppsDpi(Context c, int dpi) {
+        if (dpi > 0) dpi = Math.max(APPS_DPI_MIN, Math.min(APPS_DPI_MAX, dpi));
+        else dpi = 0;
+        p(c).edit().putInt("apps_dpi", dpi).apply();
+    }
+
+    public static String appsDpiLabel(Context c) {
+        int d = appsDpi(c);
+        if (d <= 0) return "Default";
+        return d + " dpi";
+    }
+
+    public static void applyAppsDensity(Context c) {
+        if (c == null) return;
+        android.view.Display rear = SubDisplayHelper.findRear(c);
+        if (rear == null) return;
+        int id = rear.getDisplayId();
+        int want = appsDpi(c);
+        if (want <= 0) {
+            com.titanus2.controls.DisplayDensity.clearOnDisplay(id);
+        } else {
+            com.titanus2.controls.DisplayDensity.applyOnDisplay(id, want);
+        }
+    }
+
+    public static void clearAppsDensity(Context c) {
+        if (c == null) return;
+        android.view.Display rear = SubDisplayHelper.findRear(c);
+        if (rear == null) return;
+        com.titanus2.controls.DisplayDensity.clearOnDisplay(rear.getDisplayId());
+    }
+
+    public static final int LAUNCHER_MAX = 6;
+    public static final String[] DEFAULT_LAUNCHER_IDS = {
+        ":clock", ":calc", ":camera", ":files", ":torch"
+    };
+
+    public static java.util.List<String> launcherIds(Context c) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        String raw = p(c).getString("launcher_pkgs", "");
+        if (raw != null && !raw.trim().isEmpty()) {
+            for (String s : raw.split(",")) {
+                if (s == null) continue;
+                s = s.trim();
+                if (s.isEmpty() || out.contains(s)) continue;
+                out.add(s);
+                if (out.size() >= LAUNCHER_MAX) break;
+            }
+        }
+        if (out.isEmpty()) {
+            for (String id : DEFAULT_LAUNCHER_IDS) out.add(id);
+        }
+        return out;
+    }
+
+    public static void setLauncherIds(Context c, java.util.List<String> ids) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (ids != null) {
+            for (String s : ids) {
+                if (s == null) continue;
+                s = s.trim();
+                if (s.isEmpty() || out.contains(s)) continue;
+                out.add(s);
+                if (out.size() >= LAUNCHER_MAX) break;
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < out.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(out.get(i));
+        }
+        p(c).edit().putString("launcher_pkgs", sb.toString()).apply();
+    }
+
+    public static String launcherLabel(Context c, String id) {
+        if (id == null) return "";
+        switch (id) {
+            case ":clock": return "Clock";
+            case ":calc": return "Calc";
+            case ":camera": return "Camera";
+            case ":files": return "Files";
+            case ":torch": return "Torch";
+            default:
+                break;
+        }
+        if (c == null) return id;
+        try {
+            android.content.pm.PackageManager pm = c.getPackageManager();
+            android.content.pm.ApplicationInfo ai = pm.getApplicationInfo(id, 0);
+            CharSequence lab = pm.getApplicationLabel(ai);
+            if (lab != null && lab.length() > 0) return lab.toString();
+        } catch (Exception ignored) {}
+        return id;
+    }
+
+    public static String launcherSummary(Context c) {
+        java.util.List<String> ids = launcherIds(c);
+        if (ids.isEmpty()) return "None";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ids.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(launcherLabel(c, ids.get(i)));
+        }
+        return sb.toString();
+    }
+
 }
 

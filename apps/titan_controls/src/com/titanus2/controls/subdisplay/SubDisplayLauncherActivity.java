@@ -125,6 +125,7 @@ public class SubDisplayLauncherActivity extends Activity {
 
     private TextView clockLine;
     private TextView hintLine;
+    private LinearLayout tileGrid;
     private TextView torchTile;
     private TextView firstTile;
     private final Handler h = new Handler(Looper.getMainLooper());
@@ -155,9 +156,11 @@ public class SubDisplayLauncherActivity extends Activity {
     };
 
     private static final class Tile {
+        final String id;
         final String label;
         final Runnable run;
-        Tile(String label, Runnable run) {
+        Tile(String id, String label, Runnable run) {
+            this.id = id;
             this.label = label;
             this.run = run;
         }
@@ -204,33 +207,13 @@ public class SubDisplayLauncherActivity extends Activity {
         hintLine.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         hintLine.setTypeface(android.graphics.Typeface.MONOSPACE);
         hintLine.setGravity(Gravity.CENTER_HORIZONTAL);
-        hintLine.setText("Apps · 1–6 · S Settings · H home");
+        hintLine.setText("Apps · 1–6 · H home");
         root.addView(hintLine, lp(-1, -2, 0, 0, 0, 10));
 
-        buildTiles();
-        LinearLayout grid = new LinearLayout(this);
-        grid.setOrientation(LinearLayout.VERTICAL);
-        root.addView(grid, lp(-1, -2, 0, 0, 0, 0));
-
-        for (int row = 0; row < 3; row++) {
-            LinearLayout r = new LinearLayout(this);
-            r.setOrientation(LinearLayout.HORIZONTAL);
-            r.setGravity(Gravity.CENTER);
-            for (int col = 0; col < 2; col++) {
-                int idx = row * 2 + col;
-                if (idx >= tiles.size()) break;
-                Tile t = tiles.get(idx);
-                TextView btn = tileButton((idx + 1) + "  " + t.label, t.run);
-                if (idx == 0) firstTile = btn;
-                if ("Torch".equals(t.label) || (t.label != null && t.label.startsWith("Torch"))) {
-                    torchTile = btn;
-                }
-                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(72), 1f);
-                p.setMargins(dp(4), dp(4), dp(4), dp(4));
-                r.addView(btn, p);
-            }
-            grid.addView(r, lp(-1, -2, 0, 0, 0, 0));
-        }
+        tileGrid = new LinearLayout(this);
+        tileGrid.setOrientation(LinearLayout.VERTICAL);
+        root.addView(tileGrid, lp(-1, -2, 0, 0, 0, 0));
+        rebuildTileGrid();
 
         setContentView(root);
         paintClock();
@@ -242,18 +225,79 @@ public class SubDisplayLauncherActivity extends Activity {
         }
     }
 
+    private void rebuildTileGrid() {
+        buildTiles();
+        if (tileGrid == null) return;
+        tileGrid.removeAllViews();
+        firstTile = null;
+        torchTile = null;
+        int n = Math.min(tiles.size(), SubDisplayPrefs.LAUNCHER_MAX);
+        int rows = (n + 1) / 2;
+        for (int row = 0; row < rows; row++) {
+            LinearLayout r = new LinearLayout(this);
+            r.setOrientation(LinearLayout.HORIZONTAL);
+            r.setGravity(Gravity.CENTER);
+            for (int col = 0; col < 2; col++) {
+                int idx = row * 2 + col;
+                if (idx >= n) break;
+                Tile t = tiles.get(idx);
+                TextView btn = tileButton((idx + 1) + "  " + t.label, t.run);
+                if (idx == 0) firstTile = btn;
+                if (":torch".equals(t.id) || "Torch".equals(t.label)
+                        || (t.label != null && t.label.startsWith("Torch"))) {
+                    torchTile = btn;
+                }
+                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(72), 1f);
+                p.setMargins(dp(4), dp(4), dp(4), dp(4));
+                r.addView(btn, p);
+            }
+            tileGrid.addView(r, lp(-1, -2, 0, 0, 0, 0));
+        }
+        paintTorchTile();
+        if (firstTile != null) {
+            firstTile.setFocusableInTouchMode(true);
+            firstTile.requestFocus();
+        }
+    }
+
     private void buildTiles() {
         tiles.clear();
-        tiles.add(new Tile("Settings", this::openSettings));
-        // 15.11: deskclock only — org.lineageos.etar is Calendar (mis-route residual).
-        // 15.13: explicit DeskClock (SHOW_ALARMS → HandleApiCalls blank residual).
-        tiles.add(new Tile("Clock", this::openClock));
-        tiles.add(new Tile("Calc", this::openCalc));
-        tiles.add(new Tile("Camera", this::openCamera));
-        // 15.12: never ACTION_VIEW */MIME — system Resolver (main chooser residual).
-        // Prefer FilesActivity over Launcher trampoline.
-        tiles.add(new Tile("Files", this::openFiles));
-        tiles.add(new Tile("Torch", this::toggleTorch));
+        List<String> ids = SubDisplayPrefs.launcherIds(this);
+        for (String id : ids) {
+            if (id == null || id.isEmpty()) continue;
+            tiles.add(tileFor(id));
+        }
+        if (tiles.isEmpty()) {
+            tiles.add(new Tile(":clock", "Clock", this::openClock));
+        }
+    }
+
+    private Tile tileFor(String id) {
+        switch (id) {
+            case ":clock":
+                return new Tile(id, "Clock", this::openClock);
+            case ":calc":
+                return new Tile(id, "Calc", this::openCalc);
+            case ":camera":
+                return new Tile(id, "Camera", this::openCamera);
+            case ":files":
+                return new Tile(id, "Files", this::openFiles);
+            case ":torch":
+                return new Tile(id, "Torch", this::toggleTorch);
+            default:
+                final String pkg = id;
+                return new Tile(id, SubDisplayPrefs.launcherLabel(this, pkg),
+                    () -> openPackage(pkg));
+        }
+    }
+
+    private void openPackage(String pkg) {
+        try {
+            Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
+            if (i != null) startOnRear(this, i);
+        } catch (Exception e) {
+            Log.w(TAG, "open pkg " + pkg + ": " + e.getMessage());
+        }
     }
 
     /** AlarmClock is API; avoid extra import noise if missing on compile — use string. */
@@ -302,6 +346,7 @@ public class SubDisplayLauncherActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        rebuildTileGrid();
         paintClock();
         paintTorchTile();
         h.removeCallbacks(tick);
@@ -412,7 +457,6 @@ public class SubDisplayLauncherActivity extends Activity {
                 return true;
             }
             if (kc == KeyEvent.KEYCODE_S) {
-                openSettings();
                 return true;
             }
             if (kc == KeyEvent.KEYCODE_R || kc == KeyEvent.KEYCODE_H

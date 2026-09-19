@@ -78,6 +78,23 @@ public final class DisplayDensity {
         return isLive(c, dpi);
     }
 
+    /** Secondary display only. Never DEFAULT_DISPLAY (main Tweaks DPI). */
+    public static boolean applyOnDisplay(int displayId, int dpi) {
+        if (displayId == Display.DEFAULT_DISPLAY || dpi <= 0) return false;
+        return setForcedWm(displayId, dpi, myUserId());
+    }
+
+    public static boolean clearOnDisplay(int displayId) {
+        if (displayId == Display.DEFAULT_DISPLAY) return false;
+        return clearForcedWm(displayId, myUserId());
+    }
+
+    public static int initialOnDisplay(int displayId) {
+        Integer wm = invokeInt("getInitialDisplayDensity", displayId);
+        if (wm != null && wm > 0) return wm;
+        return 160;
+    }
+
     public static boolean reset(Context c) {
         if (c == null) return false;
         int disp = displayId(c);
