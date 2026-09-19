@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.cubecontact"
-    android:versionCode="121"
-    android:versionName="2.11-cube-gl-mono">
+    android:versionCode="123"
+    android:versionName="2.13-cube-gl-mono">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
@@ -15,6 +15,11 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-feature android:name="android.hardware.vr.headtracking" android:required="false"/>
     <uses-feature android:glEsVersion="0x00020000" android:required="true"/>
+    <!-- Package visibility: hide Nanobot / Controls chrome when those APKs are absent. -->
+    <queries>
+        <package android:name="com.titanus2.nanobot"/>
+        <package android:name="com.titanus2.controls"/>
+    </queries>
 
     <application
         android:name=".CubeContactApplication"

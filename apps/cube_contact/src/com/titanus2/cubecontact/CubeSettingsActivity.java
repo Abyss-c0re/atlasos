@@ -71,7 +71,12 @@ public class CubeSettingsActivity extends Activity {
         // Matrix source
         section(root, "Lattice source", mut);
         sourceLine = mono(root, mut);
+        boolean nanobotApp = RomIntegration.nanobotInstalled(this);
+        if (!nanobotApp && CubePlanePrefs.source(this, plane) == MatrixSource.PEER) {
+            CubePlanePrefs.setSource(this, plane, MatrixSource.AUTO);
+        }
         for (MatrixSource s : MatrixSource.values()) {
+            if (s == MatrixSource.PEER && !nanobotApp) continue;
             final MatrixSource src = s;
             pill(root, s.label + " — " + s.hint, () -> {
                 CubePlanePrefs.setSource(this, plane, src);

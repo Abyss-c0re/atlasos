@@ -101,7 +101,10 @@ public class CubeContactActivity extends Activity {
         if (!getSharedPreferences("cube_viz_palette", MODE_PRIVATE).contains("privilege_mode")) {
             CubePalette.setMode(this, RomIntegration.defaultMode(this));
         }
-        bridge = new NanobotBridge(this);
+        final boolean nanobotApp = RomIntegration.nanobotInstalled(this);
+        if (nanobotApp) {
+            bridge = new NanobotBridge(this);
+        }
         int bg = Color.BLACK;
         int fg = Color.rgb(230, 210, 210);
         int mut = Color.rgb(120, 90, 90);
@@ -121,9 +124,11 @@ public class CubeContactActivity extends Activity {
         root.addView(title);
 
         TextView sub = new TextView(this);
-        sub.setText(CommanderChat.uiBanner() + "\n"
-            + RomIntegration.roleLine(this)
-            + "\nLattice · chat = Commander via CUBE (max compliance)");
+        String banner = CommanderChat.uiBanner() + "\n" + RomIntegration.roleLine(this);
+        if (nanobotApp) {
+            banner += "\nLattice · chat = Commander via CUBE (max compliance)";
+        }
+        sub.setText(banner);
         sub.setTextColor(mut);
         sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         sub.setFocusable(false);
@@ -163,6 +168,7 @@ public class CubeContactActivity extends Activity {
         status.setFocusable(false);
         root.addView(status);
 
+        if (nanobotApp) {
         ScrollView sc = new ScrollView(this);
         sc.setFocusable(false);
         chatLog = new TextView(this);
@@ -218,6 +224,7 @@ public class CubeContactActivity extends Activity {
         send.setOnClickListener(v -> sendChat());
         row.addView(send);
         root.addView(row);
+        }
 
         LinearLayout tools = new LinearLayout(this);
         tools.setOrientation(LinearLayout.HORIZONTAL);
@@ -230,13 +237,24 @@ public class CubeContactActivity extends Activity {
             startActivity(new Intent(this, SensorsActivity.class))));
         tools.addView(pill("Access", () ->
             startActivity(new Intent(this, PrivilegeActivity.class))));
-        tools.addView(pill("Nanobot", () -> {
-            try {
-                Intent i = getPackageManager()
-                    .getLaunchIntentForPackage("com.titanus2.nanobot");
-                if (i != null) startActivity(i);
-            } catch (Exception ignored) {}
-        }));
+        if (nanobotApp) {
+            tools.addView(pill("Nanobot", () -> {
+                try {
+                    Intent i = getPackageManager()
+                        .getLaunchIntentForPackage("com.titanus2.nanobot");
+                    if (i != null) startActivity(i);
+                } catch (Exception ignored) {}
+            }));
+        }
+        if (RomIntegration.controlsInstalled(this)) {
+            tools.addView(pill("Controls", () -> {
+                try {
+                    Intent i = getPackageManager()
+                        .getLaunchIntentForPackage("com.titanus2.controls");
+                    if (i != null) startActivity(i);
+                } catch (Exception ignored) {}
+            }));
+        }
         root.addView(tools);
 
         setContentView(root);
@@ -350,6 +368,7 @@ public class CubeContactActivity extends Activity {
     };
 
     private void sendChat() {
+        if (input == null || bridge == null) return;
         String line = input.getText() != null ? input.getText().toString().trim() : "";
         if (line.isEmpty()) return;
         input.setText("");
@@ -457,7 +476,9 @@ public class CubeContactActivity extends Activity {
         meaning.setText(head + gl.selectionText());
     }
 
-    private void append(String s) { chatLog.append(s); }
+    private void append(String s) {
+        if (chatLog != null) chatLog.append(s);
+    }
 
     private Button pill(String label, Runnable r) {
         Button b = new Button(this);

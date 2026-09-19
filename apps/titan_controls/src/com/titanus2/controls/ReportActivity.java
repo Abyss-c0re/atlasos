@@ -84,7 +84,11 @@ public class ReportActivity extends Activity {
         UiKit.section(root, "Screenshots");
         UiKit.button(root, "Attach image", this::pickShot);
         UiKit.button(root, "Submit report", this::submit);
-        UiKit.note(root, "Saved for Cube Flasher. Nanobot queue starts if the peer is up.");
+        if (NanobotWire.appInstalled(this)) {
+            UiKit.note(root, "Saved for Cube Flasher. Nanobot queue starts if the peer is up.");
+        } else {
+            UiKit.note(root, "Saved for Cube Flasher.");
+        }
     }
 
     private CheckBox box(LinearLayout root, String label, boolean on) {

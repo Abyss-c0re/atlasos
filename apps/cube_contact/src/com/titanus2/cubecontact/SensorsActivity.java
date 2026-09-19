@@ -167,7 +167,9 @@ public class SensorsActivity extends Activity {
 
         TextView help = new TextView(this);
         help.setText("Each cube node maps to a selected channel.\n"
-            + "Kernel = /proc + sysfs. Virtual = nanobot/app managed.");
+            + (RomIntegration.nanobotInstalled(this)
+                ? "Kernel = /proc + sysfs. Virtual = nanobot/app managed."
+                : "Kernel = /proc + sysfs. Virtual = app managed."));
         help.setTextColor(mut);
         help.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         root.addView(help);
@@ -228,7 +230,9 @@ public class SensorsActivity extends Activity {
         LinearLayout virtRow = new LinearLayout(this);
         virtRow.setOrientation(LinearLayout.HORIZONTAL);
         virtRow.addView(pill("+ Virtual", this::addVirtualDialog));
-        virtRow.addView(pill("Sync nanobot", this::syncNanobotVirtual));
+        if (RomIntegration.nanobotInstalled(this)) {
+            virtRow.addView(pill("Sync nanobot", this::syncNanobotVirtual));
+        }
         virtRow.addView(pill("Refresh", this::rebuild));
         root.addView(virtRow);
 

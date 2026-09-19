@@ -1,5 +1,6 @@
 package com.titanus2.controls;
 
+import android.content.Context;
 import android.util.Log;
 
 import org.json.JSONObject;
@@ -17,8 +18,20 @@ import java.nio.charset.StandardCharsets;
 public final class NanobotWire {
     private static final String TAG = "NanobotWire";
     public static final String PEER = "http://127.0.0.1:8787";
+    public static final String NANOBOT_PKG = "com.titanus2.nanobot";
 
     private NanobotWire() {}
+
+    /** True when the Nanobot APK is installed (user or system/priv-app). */
+    public static boolean appInstalled(Context c) {
+        if (c == null) return false;
+        try {
+            c.getPackageManager().getPackageInfo(NANOBOT_PKG, 0);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     public static boolean peerUp() {
         HttpURLConnection c = null;

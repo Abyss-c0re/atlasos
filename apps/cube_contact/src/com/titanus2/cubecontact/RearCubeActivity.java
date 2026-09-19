@@ -86,9 +86,13 @@ public class RearCubeActivity extends Activity {
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
-        // Truth face: peer BrainCube only (no demo densify as "live").
+        // Truth face: peer BrainCube only when the Nanobot APK is present.
         try {
-            CubePlanePrefs.setSource(this, CubePlanePrefs.PLANE_REAR, MatrixSource.PEER);
+            if (RomIntegration.nanobotInstalled(this)) {
+                CubePlanePrefs.setSource(this, CubePlanePrefs.PLANE_REAR, MatrixSource.PEER);
+            } else if (CubePlanePrefs.source(this, CubePlanePrefs.PLANE_REAR) == MatrixSource.PEER) {
+                CubePlanePrefs.setSource(this, CubePlanePrefs.PLANE_REAR, MatrixSource.AUTO);
+            }
             CubePlanePrefs.setAutoSpin(this, CubePlanePrefs.PLANE_REAR, true);
         } catch (Exception ignored) {}
         gl = new CubeGLView(this);

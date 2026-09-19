@@ -12,6 +12,7 @@ import android.provider.Settings;
  */
 public final class RomIntegration {
     private static final String CONTROLS_PKG = "com.titanus2.controls";
+    private static final String NANOBOT_PKG = "com.titanus2.nanobot";
 
     private RomIntegration() {}
 
@@ -61,9 +62,17 @@ public final class RomIntegration {
     }
 
     public static boolean controlsInstalled(Context c) {
-        if (c == null) return false;
+        return packageInstalled(c, CONTROLS_PKG);
+    }
+
+    public static boolean nanobotInstalled(Context c) {
+        return packageInstalled(c, NANOBOT_PKG);
+    }
+
+    private static boolean packageInstalled(Context c, String pkg) {
+        if (c == null || pkg == null || pkg.isEmpty()) return false;
         try {
-            c.getPackageManager().getPackageInfo(CONTROLS_PKG, 0);
+            c.getPackageManager().getPackageInfo(pkg, 0);
             return true;
         } catch (Exception e) {
             return false;

@@ -13,6 +13,7 @@ import android.widget.TextView;
 
 import com.titanus2.controls.AgentBridge;
 import com.titanus2.controls.DebugPrefs;
+import com.titanus2.controls.NanobotWire;
 import com.titanus2.controls.ui.UiKit;
 
 /**
@@ -47,8 +48,10 @@ public class DevToolsActivity extends Activity {
         remoteAdb = new RemoteAdbUi(this);
         remoteAdb.build(root);
 
-        nanobotPair = new NanobotPairUi(this);
-        nanobotPair.build(root);
+        if (NanobotWire.appInstalled(this)) {
+            nanobotPair = new NanobotPairUi(this);
+            nanobotPair.build(root);
+        }
 
         // ---- USB ADB ----
         UiKit.section(root, "USB ADB");
