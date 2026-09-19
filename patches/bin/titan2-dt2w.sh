@@ -4,8 +4,8 @@
 # Invoked by pad-agent:
 #   apply   — apply_dt2w (plane titan2_dt2w 0|1; default 1 when unset)
 #   version
-# Never force-enable when user/Controls turned it off.
-# Never enables wake on touchPad/sub_touch (pad surfaces stay park for DT2W).
+# Rear-panel DT2W only (OEM Agui ioctl type 100 on /dev/touch).
+# Never arms the front synaptics wake_gesture — that wakes the main glass.
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
@@ -47,60 +47,37 @@ read_first() {
   [ "$found" = "1" ] && echo "$best_v" || echo ""
 }
 
-# DT2W = digitizer double-tap only (secure/system double_tap_to_wake + sysfs).
-# NEVER couple to Settings.Secure.WAKE_GESTURE_ENABLED / ambient_tilt_to_wake —
-# those are "lift to wake" (TYPE_WAKE_GESTURE / tilt). Forcing them ON with DT2W
-# made Lift to wake un-disableable (pad-agent re-applied every boot).
+# Rear DT2W = OEM ioctl type 100 on /dev/touch (0x40044103) + KEY_POWER grab
+# on sub_touch. Never write synaptics wake_gesture (that wakes the main SoC).
 apply_dt2w() {
   want=`read_first titan2_dt2w`
   case "$want" in
     0|false|off|OFF|no|NO) want=0 ;;
     1|true|on|ON|yes|YES) want=1 ;;
     *)
-      # Fall back to settings if plane empty
-      g=`settings get secure double_tap_to_wake 2>/dev/null | tr -d '\r'`
-      case "$g" in 0) want=0 ;; *) want=1 ;; esac
+      g=`settings get global titan2_dt2w 2>/dev/null | tr -d '\r'`
+      case "$g" in 1|true|on) want=1 ;; *) want=0 ;; esac
       ;;
   esac
+  GEST=/system/bin/titan2-sub-dt2w
+  [ -x "$GEST" ] || GEST=/data/local/tmp/titan2-sub-dt2w
   if [ "$want" = "0" ]; then
-    settings put system double_tap_to_wake 0 >/dev/null 2>&1 || true
-    settings put secure double_tap_to_wake 0 >/dev/null 2>&1 || true
-    setprop persist.sys.doubletapwake 0 >/dev/null 2>&1 || true
-    for d in /sys/class/input/input*; do
-      n=`cat "$d/name" 2>/dev/null` || continue
-      for g in "$d/wake_gesture" "$d/device/wake_gesture"; do
-        [ -f "$g" ] || continue
-        case "$n" in
-          synaptics*|fts*|goodix*|nt36*|focaltech*|touchPad|sub_touch)
-            echo 0 > "$g" 2>/dev/null || true
-            ;;
-        esac
-      done
-    done
-    echo "want=0" >"$ST/titan2_dt2w_status" 2>/dev/null || true
+    if [ -x "$GEST" ]; then
+      "$GEST" disable >/dev/null 2>&1 || true
+    fi
+    pkill -f titan2-sub-dt2w >/dev/null 2>&1 || true
+    echo "want=0 rear" >"$ST/titan2_dt2w_status" 2>/dev/null || true
     chmod 666 "$ST/titan2_dt2w_status" 2>/dev/null || true
     return 0
   fi
-  settings put system double_tap_to_wake 1 >/dev/null 2>&1 || true
-  settings put secure double_tap_to_wake 1 >/dev/null 2>&1 || true
-  setprop persist.sys.doubletapwake 1 >/dev/null 2>&1 || true
-  for d in /sys/class/input/input*; do
-    n=`cat "$d/name" 2>/dev/null` || continue
-    for g in "$d/wake_gesture" "$d/device/wake_gesture"; do
-      [ -f "$g" ] || continue
-      case "$n" in
-        synaptics*|fts*|goodix*|nt36*|focaltech*)
-          cur=`cat "$g" 2>/dev/null | tr -d '\r\n '`
-          [ "$cur" = "1" ] || echo 1 > "$g" 2>/dev/null || true
-          ;;
-        touchPad)
-          cur=`cat "$g" 2>/dev/null | tr -d '\r\n '`
-          [ "$cur" = "0" ] || echo 0 > "$g" 2>/dev/null || true
-          ;;
-      esac
-    done
-  done
-  echo "want=1" >"$ST/titan2_dt2w_status" 2>/dev/null || true
+  settings put system sub_screen_enabled 1 >/dev/null 2>&1 || true
+  if [ -x "$GEST" ]; then
+    "$GEST" enable >/dev/null 2>&1 || true
+    if ! pgrep -f titan2-sub-dt2w >/dev/null 2>&1; then
+      "$GEST" >>"$ST/titan2_sub_dt2w.log" 2>&1 &
+    fi
+  fi
+  echo "want=1 rear" >"$ST/titan2_dt2w_status" 2>/dev/null || true
   chmod 666 "$ST/titan2_dt2w_status" 2>/dev/null || true
   return 0
 }

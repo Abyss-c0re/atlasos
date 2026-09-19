@@ -97,6 +97,12 @@ public class SubDisplayService extends Service {
         @Override public void onReceive(Context context, Intent intent) {
             String a = intent != null ? intent.getAction() : "?";
             Log.i(TAG, "main event " + a);
+            if ("com.agui.subdisplay.launcher.ACTION_DOUBLE_TAP_DISPLAY_WAKEUP".equals(a)) {
+                if (!SubDisplayPrefs.dt2wEnabled(SubDisplayService.this)) return;
+                SubDisplayPower.wakeRearHardwareOnly(SubDisplayService.this,
+                    "subscreen-double-tap-wakeup");
+                return;
+            }
             if (Intent.ACTION_USER_PRESENT.equals(a)) {
                 // Mode ON = user wants rear lit (Settings / side key). Do not
                 // force power off on unlock — that left toggle "On" with a dark
@@ -2713,6 +2719,13 @@ public class SubDisplayService extends Service {
                 registerReceiver(screenRxr, f, Context.RECEIVER_NOT_EXPORTED);
             } else {
                 registerReceiver(screenRxr, f);
+            }
+            IntentFilter rearDt = new IntentFilter(
+                "com.agui.subdisplay.launcher.ACTION_DOUBLE_TAP_DISPLAY_WAKEUP");
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(screenRxr, rearDt, Context.RECEIVER_EXPORTED);
+            } else {
+                registerReceiver(screenRxr, rearDt);
             }
             screenRx = true;
         } catch (Exception e) {

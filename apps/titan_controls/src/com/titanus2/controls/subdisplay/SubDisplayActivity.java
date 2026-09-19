@@ -748,11 +748,11 @@ public class SubDisplayActivity extends Activity {
 
     /** Main-panel double-tap-to-wake (optional; default on). */
     private void addDt2wToggle() {
-        UiKit.section(options, "Main wake");
-        addToggle("Double-tap to wake (main)", SubDisplayPrefs.dt2wEnabled(this), v -> {
+        UiKit.section(options, "Rear wake");
+        addToggle("Double-tap rear to wake", SubDisplayPrefs.dt2wEnabled(this), v -> {
             SubDisplayPrefs.setDt2wEnabled(this, v);
             SubDisplaySystemUi.apply(this);
-            UiKit.toast(this, v ? "DT2W on" : "DT2W off");
+            UiKit.toast(this, v ? "Rear DT2W on" : "Rear DT2W off");
         });
     }
 

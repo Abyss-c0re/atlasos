@@ -86,6 +86,7 @@ PRODUCT_PACKAGES += \
     titan2-keylayout.sh \
     titan2-keycode-inject.sh \
     titan2-dt2w.sh \
+    titan2-sub-dt2w \
     titan2-pad-idc.sh \
     titan2-plane-heal.sh \
     titan2-cube-load-land.sh \

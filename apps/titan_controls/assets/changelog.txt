@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.92-rear-dt2w (692) — 2026-09-19T23:27Z
+
+- Rear DT2W: OEM ioctl 100 on /dev/touch + grab KEY_POWER on sub_touch; never front synaptics
+
+---
+
 ## 16.91-dt2w-hw (691) — 2026-09-19T23:05Z
 
 - DT2W toggle writes synaptics wake_gesture; re-arm before sleep so rear ioctl-on follows SCREEN_ON

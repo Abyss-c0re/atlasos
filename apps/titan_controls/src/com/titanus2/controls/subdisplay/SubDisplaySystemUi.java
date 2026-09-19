@@ -48,18 +48,16 @@ public final class SubDisplaySystemUi {
     }
 
     /**
-     * Apply or clear main double-tap-to-wake (settings + main digitizer wake_gesture).
-     * Does <b>not</b> touch {@code wake_gesture_enabled} / ambient tilt — those are
-     * lift-to-wake (TYPE_WAKE_GESTURE). Coupling them to DT2W made Lift un-disableable.
+     * Rear-panel double-tap-to-wake (OEM ioctl 100 on {@code /dev/touch}).
+     * Does not arm the front synaptics {@code wake_gesture}.
      */
     public static void applyDt2wPolicy(Context app, boolean on) {
         int v = on ? 1 : 0;
-        putSecure(app, "double_tap_to_wake", v);
-        putSystem(app, "double_tap_to_wake", v);
-        putSecure(app, "gesture_double_tap", v);
         try {
             android.provider.Settings.Global.putString(
                 app.getContentResolver(), "titan2_dt2w", on ? "1" : "0");
+            android.provider.Settings.System.putInt(
+                app.getContentResolver(), "sub_screen_enabled", v);
         } catch (Exception ignored) {}
         try {
             AgentBridge.put(app, "titan2_dt2w", on ? "1" : "0");
@@ -75,31 +73,11 @@ public final class SubDisplaySystemUi {
     }
 
     private static void enableHardwareDt2w() {
-        String sh =
-            "setprop persist.sys.doubletapwake 1; "
-            + "for d in /sys/class/input/input*; do "
-            + "  n=$(cat \"$d/name\" 2>/dev/null) || continue; "
-            + "  [ -f \"$d/wake_gesture\" ] || continue; "
-            + "  case \"$n\" in "
-            + "    synaptics*|fts*|goodix*|nt36*|focaltech*) echo 1 > \"$d/wake_gesture\";; "
-            + "    touchPad|sub_touch) echo 0 > \"$d/wake_gesture\" 2>/dev/null;; "
-            + "  esac; "
-            + "done";
-        shell(sh);
+        shell("/system/bin/titan2-dt2w.sh apply");
     }
 
     private static void disableHardwareDt2w() {
-        String sh =
-            "setprop persist.sys.doubletapwake 0; "
-            + "for d in /sys/class/input/input*; do "
-            + "  n=$(cat \"$d/name\" 2>/dev/null) || continue; "
-            + "  [ -f \"$d/wake_gesture\" ] || continue; "
-            + "  case \"$n\" in "
-            + "    synaptics*|fts*|goodix*|nt36*|focaltech*|touchPad|sub_touch) "
-            + "      echo 0 > \"$d/wake_gesture\" 2>/dev/null;; "
-            + "  esac; "
-            + "done";
-        shell(sh);
+        shell("/system/bin/titan2-dt2w.sh apply");
     }
 
     private static String gS(Context ctx, String key) {
