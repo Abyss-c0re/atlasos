@@ -8,19 +8,19 @@ package com.titanus2.cubecontact;
  */
 public enum MatrixSource {
     /** Prefer kernel sampler, then peer, then file, then demo. */
-    AUTO("Auto", "Kernel → peer → file → demo"),
+    AUTO("Auto", "Kernel, then peer, then file"),
     /** /data/local/tmp/cubebrain_viz kernel lattice only. */
-    KERNEL("Kernel cube", "Live kernel sensors (cells.bin)"),
+    KERNEL("Kernel", "Live device sensors"),
     /** braincube peer :8787 live/export. */
-    PEER("Peer cube", "Nanobot / braincube energy"),
+    PEER("Nanobot", "On-device peer"),
     /** LAW counters from virtual.tsv (file SoT). */
-    FILE_LAW("File LAW", "virtual.tsv scoreboard + seed lattice"),
+    FILE_LAW("File", "Saved lattice"),
     /** Local cells.bin each tick. EEG if the file is fresh, else CPU. No network. */
-    SOT("SoT file", "cells.bin u2014 EEG if live, else CPU. No network"),
+    SOT("Local file", "No network"),
     /** Local crimson demo lattice (no peer). */
-    DEMO("Demo lattice", "Built-in dense N=16 prophecy"),
+    DEMO("Demo", "Built-in sample"),
     /** User custom seed from app prefs / API payload. */
-    CUSTOM("Custom matrix", "User-defined seed cells");
+    CUSTOM("Custom", "Saved in the app");
 
     public final String label;
     public final String hint;

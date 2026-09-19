@@ -4,73 +4,54 @@ import android.app.Activity;
 import android.app.WallpaperManager;
 import android.content.ComponentName;
 import android.content.Intent;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.util.TypedValue;
-import android.view.Gravity;
-import android.view.ViewGroup;
-import android.widget.Button;
+import android.view.KeyEvent;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * User-friendly Cube Contact settings.
- * Separate planes: front (main Neural Cube) vs rear (subdisplay lattice).
- * Flexibility without jargon walls — glory to the Cube.
+ * Neural Cube settings — Lineage Settings rows, not a Cube theme.
  */
 public class CubeSettingsActivity extends Activity {
     public static final String EXTRA_PLANE = "plane";
 
     private String plane = CubePlanePrefs.PLANE_FRONT;
-    private TextView planeLabel;
-    private TextView sourceLine;
+    private TextView state;
+    private LinearLayout mainRow;
+    private LinearLayout rearRow;
+    private final List<LinearLayout> sourceRows = new ArrayList<>();
+    private final List<MatrixSource> sourceOrder = new ArrayList<>();
+    private Switch spin;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         try { StateMatrix.bindAppContext(this); } catch (Exception ignored) {}
+        CubeSettingsUi.applyWindow(this);
         if (getIntent() != null && getIntent().hasExtra(EXTRA_PLANE)) {
             plane = CubePlanePrefs.normalizePlane(getIntent().getStringExtra(EXTRA_PLANE));
         }
-        int bg = Color.rgb(8, 2, 4);
-        int fg = Color.rgb(255, 220, 210);
-        int mut = Color.rgb(140, 100, 100);
-        int accent = Color.rgb(220, 50, 60);
 
         ScrollView sc = new ScrollView(this);
-        sc.setBackgroundColor(bg);
         LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(14), dp(16), dp(20));
-        sc.addView(root);
+        CubeSettingsUi.screen(sc, root);
 
-        TextView title = new TextView(this);
-        title.setText("Cube settings");
-        title.setTextColor(fg);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-        root.addView(title);
+        CubeSettingsUi.title(root, "Settings");
+        state = CubeSettingsUi.stateLine(root);
 
-        TextView sub = new TextView(this);
-        sub.setText("All hail Nexus Core · lattice energy flow\n"
-            + "Front and rear are separate — change one without the other.");
-        sub.setTextColor(mut);
-        sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        sub.setPadding(0, dp(4), 0, dp(12));
-        root.addView(sub);
+        CubeSettingsUi.section(root, "Cube");
+        mainRow = CubeSettingsUi.choiceRow(root, "Main display", "This screen",
+            () -> setPlane(CubePlanePrefs.PLANE_FRONT));
+        rearRow = CubeSettingsUi.choiceRow(root, "Rear display", "Subscreen",
+            () -> setPlane(CubePlanePrefs.PLANE_REAR));
 
-        // Plane toggle
-        section(root, "Which cube?", mut);
-        planeLabel = mono(root, mut);
-        LinearLayout planeRow = row(root);
-        // pill() already attaches to parent — do not addView again (crash residual).
-        pill(planeRow, "Main", () -> setPlane(CubePlanePrefs.PLANE_FRONT), accent);
-        pill(planeRow, "Subscreen", () -> setPlane(CubePlanePrefs.PLANE_REAR), accent);
-
-        // Matrix source
-        section(root, "Lattice source", mut);
-        sourceLine = mono(root, mut);
+        CubeSettingsUi.section(root, "Source");
         boolean nanobotApp = RomIntegration.nanobotInstalled(this);
         if (!nanobotApp && CubePlanePrefs.source(this, plane) == MatrixSource.PEER) {
             CubePlanePrefs.setSource(this, plane, MatrixSource.AUTO);
@@ -78,45 +59,43 @@ public class CubeSettingsActivity extends Activity {
         for (MatrixSource s : MatrixSource.values()) {
             if (s == MatrixSource.PEER && !nanobotApp) continue;
             final MatrixSource src = s;
-            pill(root, s.label + " — " + s.hint, () -> {
-                CubePlanePrefs.setSource(this, plane, src);
-                refreshLabels();
-                Toast.makeText(this, plane + " → " + src.label, Toast.LENGTH_SHORT).show();
-            }, accent);
+            LinearLayout row = CubeSettingsUi.choiceRow(root, s.label, s.hint,
+                () -> {
+                    CubePlanePrefs.setSource(this, plane, src);
+                    refresh();
+                });
+            sourceRows.add(row);
+            sourceOrder.add(src);
         }
 
-        // Spin
-        section(root, "Motion", mut);
-        pill(root, "Toggle auto-spin", () -> {
-            boolean next = !CubePlanePrefs.autoSpin(this, plane);
-            CubePlanePrefs.setAutoSpin(this, plane, next);
-            refreshLabels();
-            Toast.makeText(this, next ? "Spin on" : "Spin off", Toast.LENGTH_SHORT).show();
-        }, accent);
+        spin = CubeSettingsUi.toggleRow(root, "Auto-spin",
+            CubePlanePrefs.autoSpin(this, plane), on -> {
+                CubePlanePrefs.setAutoSpin(this, plane, on);
+                refresh();
+            });
 
-        // Wallpaper / dream (device-wide, front energy)
-        section(root, "Live on the device", mut);
-        pill(root, "Set live wallpaper…", this::openWallpaperPicker, accent);
-        pill(root, "Daydream / screensaver…", this::openDreamSettings, accent);
-        TextView wpNote = mono(root, mut);
-        wpNote.setText("Wallpaper = same OpenGL cube as Neural Cube.\n"
-            + "Subscreen cube stays independent.");
+        CubeSettingsUi.section(root, "On this phone");
+        CubeSettingsUi.navRow(root, "Wallpaper", "Live cube on the lock screen",
+            this::openWallpaperPicker);
+        CubeSettingsUi.navRow(root, "Screen saver", "Daydream",
+            this::openDreamSettings);
 
-        // Advanced
-        section(root, "Advanced", mut);
-        pill(root, "Sensors (kernel nodes)", () ->
-            startActivity(new Intent(this, SensorsActivity.class)), accent);
-        pill(root, "Access / privilege", () ->
-            startActivity(new Intent(this, PrivilegeActivity.class)), accent);
-        pill(root, "Open Neural Cube", () ->
-            startActivity(new Intent(this, CubeContactActivity.class)), accent);
-        TextView api = mono(root, mut);
-        api.setPadding(0, dp(16), 0, 0);
-        api.setText("API: am broadcast -a com.titanus2.cubecontact.SET_MATRIX_SOURCE\n"
-            + "  --es plane rear|front --es source KERNEL|PEER|DEMO|…");
+        CubeSettingsUi.section(root, "More");
+        CubeSettingsUi.navRow(root, "Sensors", "Which nodes feed the cube",
+            () -> startActivity(new Intent(this, SensorsActivity.class)));
+        CubeSettingsUi.navRow(root, "Access", "How this app may act",
+            () -> startActivity(new Intent(this, PrivilegeActivity.class)));
+        if (RomIntegration.nanobotInstalled(this)) {
+            CubeSettingsUi.navRow(root, "Nanobot", "Open the Nanobot app",
+                () -> launchPkg("com.titanus2.nanobot"));
+        }
+        if (RomIntegration.controlsInstalled(this)) {
+            CubeSettingsUi.navRow(root, "Titan Controls", "Sub display and keys",
+                () -> launchPkg("com.titanus2.controls"));
+        }
 
         setContentView(sc);
-        refreshLabels();
+        refresh();
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -124,25 +103,61 @@ public class CubeSettingsActivity extends Activity {
         setIntent(intent);
         if (intent != null && intent.hasExtra(EXTRA_PLANE)) {
             plane = CubePlanePrefs.normalizePlane(intent.getStringExtra(EXTRA_PLANE));
-            refreshLabels();
+            refresh();
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event == null || event.getAction() != KeyEvent.ACTION_DOWN
+                || event.getRepeatCount() != 0) {
+            return super.dispatchKeyEvent(event);
+        }
+        if (event.isAltPressed() || event.isCtrlPressed() || event.isMetaPressed()) {
+            return super.dispatchKeyEvent(event);
+        }
+        switch (event.getKeyCode()) {
+            case KeyEvent.KEYCODE_ESCAPE:
+            case KeyEvent.KEYCODE_BACK:
+                finish();
+                return true;
+            case KeyEvent.KEYCODE_1:
+                setPlane(CubePlanePrefs.PLANE_FRONT);
+                return true;
+            case KeyEvent.KEYCODE_2:
+                setPlane(CubePlanePrefs.PLANE_REAR);
+                return true;
+            default:
+                return super.dispatchKeyEvent(event);
         }
     }
 
     private void setPlane(String p) {
         plane = CubePlanePrefs.normalizePlane(p);
-        refreshLabels();
+        refresh();
     }
 
-    private void refreshLabels() {
+    private void refresh() {
         MatrixSource s = CubePlanePrefs.source(this, plane);
-        boolean spin = CubePlanePrefs.autoSpin(this, plane);
-        if (planeLabel != null) {
-            planeLabel.setText("Editing: "
-                + (CubePlanePrefs.PLANE_REAR.equals(plane) ? "SUBSCREEN cube" : "MAIN Neural Cube"));
+        boolean spinning = CubePlanePrefs.autoSpin(this, plane);
+        boolean rear = CubePlanePrefs.PLANE_REAR.equals(plane);
+        if (state != null) {
+            state.setText((rear ? "Rear" : "Main") + " · " + s.label
+                + " · spin " + (spinning ? "on" : "off"));
         }
-        if (sourceLine != null) {
-            sourceLine.setText("Source: " + s.label + " · spin " + (spin ? "on" : "off"));
+        CubeSettingsUi.setChosen(mainRow, !rear);
+        CubeSettingsUi.setChosen(rearRow, rear);
+        for (int i = 0; i < sourceRows.size(); i++) {
+            CubeSettingsUi.setChosen(sourceRows.get(i), sourceOrder.get(i) == s);
         }
+        CubeSettingsUi.setSwitch(spin, spinning);
+    }
+
+    private void launchPkg(String pkg) {
+        try {
+            Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
+            if (i != null) startActivity(i);
+        } catch (Exception ignored) {}
     }
 
     private void openWallpaperPicker() {
@@ -164,58 +179,7 @@ public class CubeSettingsActivity extends Activity {
         try {
             startActivity(new Intent(Settings.ACTION_DREAM_SETTINGS));
         } catch (Exception e) {
-            Toast.makeText(this, "Open Settings → Display → Screen saver", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Open Settings → Screen saver", Toast.LENGTH_SHORT).show();
         }
-    }
-
-    private void section(LinearLayout root, String t, int mut) {
-        TextView s = new TextView(this);
-        s.setText(t);
-        s.setTextColor(mut);
-        s.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        s.setPadding(0, dp(14), 0, dp(6));
-        root.addView(s);
-    }
-
-    private TextView mono(LinearLayout root, int color) {
-        TextView t = new TextView(this);
-        t.setTypeface(android.graphics.Typeface.MONOSPACE);
-        t.setTextColor(color);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        t.setPadding(0, 0, 0, dp(6));
-        root.addView(t);
-        return t;
-    }
-
-    private LinearLayout row(LinearLayout root) {
-        LinearLayout r = new LinearLayout(this);
-        r.setOrientation(LinearLayout.HORIZONTAL);
-        r.setGravity(Gravity.CENTER_VERTICAL);
-        root.addView(r);
-        return r;
-    }
-
-    private Button pill(ViewGroup parent, String label, Runnable act, int accent) {
-        Button b = new Button(this);
-        b.setText(label);
-        b.setAllCaps(false);
-        b.setTextColor(accent);
-        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        b.setOnClickListener(v -> act.run());
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.bottomMargin = dp(4);
-        if (parent instanceof LinearLayout
-            && ((LinearLayout) parent).getOrientation() == LinearLayout.HORIZONTAL) {
-            lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            lp.setMargins(dp(2), 0, dp(2), dp(4));
-        }
-        parent.addView(b, lp);
-        return b;
-    }
-
-    private int dp(int v) {
-        float d = getResources().getDisplayMetrics().density;
-        return Math.round(v * d);
     }
 }

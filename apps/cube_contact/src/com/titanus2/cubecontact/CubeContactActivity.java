@@ -66,6 +66,7 @@ public class CubeContactActivity extends Activity {
     private CubeGLView gl;
     private TextView status;
     private TextView meaning;
+    private TextView sub;
     private TextView chatLog;
     private EditText input;
     private boolean statusRunning;
@@ -123,14 +124,10 @@ public class CubeContactActivity extends Activity {
         title.setFocusable(false);
         root.addView(title);
 
-        TextView sub = new TextView(this);
-        String banner = CommanderChat.uiBanner() + "\n" + RomIntegration.roleLine(this);
-        if (nanobotApp) {
-            banner += "\nLattice · chat = Commander via CUBE (max compliance)";
-        }
-        sub.setText(banner);
+        sub = new TextView(this);
+        sub.setText(homeFact());
         sub.setTextColor(mut);
-        sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         sub.setFocusable(false);
         root.addView(sub);
 
@@ -146,7 +143,7 @@ public class CubeContactActivity extends Activity {
         TextView subNote = new TextView(this);
         subNote.setTextColor(Color.rgb(255, 90, 70));
         subNote.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        subNote.setText("OpenGL Cube Experience · levitate · mono · tap = sensor");
+        subNote.setText("Tap a node");
         subNote.setFocusable(false);
         root.addView(subNote);
 
@@ -185,7 +182,7 @@ public class CubeContactActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         input = new EditText(this);
-        input.setHint("Commander → Cube → Nanobot…");
+        input.setHint("Message");
         input.setHintTextColor(mut);
         input.setTextColor(fg);
         input.setBackgroundColor(Color.rgb(18, 6, 6));
@@ -233,28 +230,6 @@ public class CubeContactActivity extends Activity {
             i.putExtra(CubeSettingsActivity.EXTRA_PLANE, CubePlanePrefs.PLANE_FRONT);
             startActivity(i);
         }));
-        tools.addView(pill("Sensors", () ->
-            startActivity(new Intent(this, SensorsActivity.class))));
-        tools.addView(pill("Access", () ->
-            startActivity(new Intent(this, PrivilegeActivity.class))));
-        if (nanobotApp) {
-            tools.addView(pill("Nanobot", () -> {
-                try {
-                    Intent i = getPackageManager()
-                        .getLaunchIntentForPackage("com.titanus2.nanobot");
-                    if (i != null) startActivity(i);
-                } catch (Exception ignored) {}
-            }));
-        }
-        if (RomIntegration.controlsInstalled(this)) {
-            tools.addView(pill("Controls", () -> {
-                try {
-                    Intent i = getPackageManager()
-                        .getLaunchIntentForPackage("com.titanus2.controls");
-                    if (i != null) startActivity(i);
-                } catch (Exception ignored) {}
-            }));
-        }
         root.addView(tools);
 
         setContentView(root);
@@ -268,6 +243,7 @@ public class CubeContactActivity extends Activity {
         SensorPrefs.ensureDefaultVirtual(this);
         // 1.55: open front re-asserts live wallpaper dim (old cube-ux 0.92 residual).
         try { CubeSurfacePrefs.apply(this); } catch (Exception ignored) {}
+        if (sub != null) sub.setText(homeFact());
         // 1.32: while seed always promote (mid-wave-safe); promoted → 60s refresh.
         // 1.45: also reset front open-pull cadence (statusTick re-kicks while seed).
         boolean seed = true;
@@ -472,12 +448,17 @@ public class CubeContactActivity extends Activity {
 
     private void refreshMeaning() {
         if (meaning == null || gl == null) return;
-        String head = "KERNEL LATTICE · each node = live sensor\n";
-        meaning.setText(head + gl.selectionText());
+        meaning.setText(gl.selectionText());
     }
 
     private void append(String s) {
         if (chatLog != null) chatLog.append(s);
+    }
+
+    private String homeFact() {
+        MatrixSource s = CubePlanePrefs.source(this, CubePlanePrefs.PLANE_FRONT);
+        boolean spin = CubePlanePrefs.autoSpin(this, CubePlanePrefs.PLANE_FRONT);
+        return s.label + " · spin " + (spin ? "on" : "off");
     }
 
     private Button pill(String label, Runnable r) {

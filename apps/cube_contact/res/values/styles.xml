@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Opaque full black — no wallpaper show-through on IME / GL resize. -->
+    <!-- Settings / Access use the same DeviceDefault parent — runtime paints Settings grey, not Cube crimson. -->
     <style name="Theme.CubeContact.Opaque" parent="@android:style/Theme.DeviceDefault.NoActionBar">
         <item name="android:windowIsTranslucent">false</item>
         <item name="android:windowIsFloating">false</item>

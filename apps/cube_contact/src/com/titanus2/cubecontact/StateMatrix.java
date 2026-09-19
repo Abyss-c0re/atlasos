@@ -1240,8 +1240,7 @@ public final class StateMatrix {
 
     public String describeCell(int idx) {
         if (idx < 0 || n < 1 || idx >= n * n * n) {
-            return "KERNEL LATTICE  source=" + dataSource
-                + "\nEach node = live kernel/IO sensor channel.\nTap a node.";
+            return "Tap a node";
         }
         int x = idx % n;
         int y = (idx / n) % n;
