@@ -1,0 +1,136 @@
+#!/bin/bash
+# sudo for the desk.
+# The password prompt is real Debian sudo.
+# Atlas auth runs at the same time. A grant skips the password.
+# A cancel leaves the password prompt.
+set -u
+REAL=/usr/bin/sudo.real
+[ -x "$REAL" ] || REAL=/usr/bin/sudo
+if [ "${ATLAS_SUDO_INNER:-}" = 1 ]; then
+    exec "$REAL" "$@"
+fi
+
+for a in "$@"; do
+    case "$a" in
+        -n|-h|-V|--help|--version)
+            exec "$REAL" "$@"
+            ;;
+    esac
+done
+
+uid=$(id -u)
+stamp="/tmp/atlas-sudo-bypass.${uid}"
+rm -f "$stamp"
+rcf=$(mktemp /tmp/atlas-sudo-rc.XXXXXX)
+printf 'wait\n' > "$rcf"
+
+(
+    code=1
+    if [ -x /usr/local/bin/android ]; then
+        /usr/local/bin/android /system/bin/atlas-auth request --scope sudo -t 90 \
+            "sudo ${*:-shell}" >/tmp/atlas-sudo-auth.log 2>&1
+        code=$?
+    fi
+    printf '%s\n' "$code" > "$rcf"
+) &
+apid=$!
+
+close_sheet() {
+    local f id
+    for f in /var/lib/atlas-auth/req.*; do
+        [ -e "$f" ] || continue
+        id=${f##*/req.}
+        : > "/var/lib/atlas-auth/fail.${id}"
+    done
+    kill "$apid" 2>/dev/null || true
+}
+
+restore_tty() {
+    stty sane echo 2>/dev/null || true
+}
+
+run_with_password() {
+    local pass=$1
+    shift
+    printf '%s\n' "$pass" | ATLAS_SUDO_INNER=1 "$REAL" -S -p '' "$@"
+}
+
+tty_alive() { [ -t 0 ] || [ -r /dev/tty ]; }
+
+if ! tty_alive; then
+    # No terminal: Atlas auth only, otherwise real sudo (it will say
+    # a password is required, which is normal for -S/-n scripts).
+    wait "$apid" 2>/dev/null || true
+    arc=$(cat "$rcf" 2>/dev/null || echo 1)
+    rm -f "$rcf"
+    if [ "$arc" = 0 ]; then
+        printf '%s %s\n' "$uid" "$(date +%s)" > "$stamp"
+        chmod 644 "$stamp" 2>/dev/null || true
+        export ATLAS_SUDO_INNER=1
+        exec "$REAL" "$@"
+    fi
+    exec "$REAL" "$@"
+fi
+
+exec 3</dev/tty
+exec 4>/dev/tty
+stty -echo <&3 2>/dev/null || true
+printf '[sudo] password for atlas: ' >&4
+pw=""
+auth_done=0
+trap 'close_sheet; restore_tty; rm -f "$rcf"; exit 130' INT TERM
+
+while :; do
+    if [ "$auth_done" = 0 ] && ! kill -0 "$apid" 2>/dev/null; then
+        wait "$apid" 2>/dev/null || true
+        auth_done=1
+        arc=$(cat "$rcf" 2>/dev/null || echo 1)
+        if [ "$arc" = 0 ]; then
+            printf '\n' >&4
+            restore_tty
+            printf '%s %s\n' "$uid" "$(date +%s)" > "$stamp"
+            chmod 644 "$stamp" 2>/dev/null || true
+            rm -f "$rcf"
+            trap - INT TERM
+            export ATLAS_SUDO_INNER=1
+            exec "$REAL" "$@"
+        fi
+    fi
+    if IFS= read -r -s -n 1 -t 0.2 -u 3 c; then
+        if [ -z "$c" ]; then
+            printf '\n' >&4
+            restore_tty
+            close_sheet
+            rm -f "$rcf"
+            trap - INT TERM
+            tries=0
+            while [ "$tries" -lt 3 ]; do
+                run_with_password "$pw" "$@"
+                rc=$?
+                [ "$rc" -eq 0 ] && exit 0
+                tries=$((tries + 1))
+                [ "$tries" -ge 3 ] && exit "$rc"
+                pw=""
+                stty -echo <&3 2>/dev/null || true
+                printf '[sudo] password for atlas: ' >&4
+                # Finish this password in a tight read; auth already ended.
+                while IFS= read -r -s -n 1 -u 3 c2; do
+                    if [ -z "$c2" ]; then
+                        printf '\n' >&4
+                        break
+                    fi
+                    case "$c2" in
+                        $'\177'|$'\b') pw="${pw%?}" ;;
+                        *) pw+="$c2" ;;
+                    esac
+                done
+                restore_tty
+            done
+            exit 1
+        fi
+        case "$c" in
+            $'\177'|$'\b') pw="${pw%?}" ;;
+            *) pw+="$c" ;;
+        esac
+    fi
+done
