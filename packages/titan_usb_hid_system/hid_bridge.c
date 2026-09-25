@@ -191,39 +191,62 @@ static long long now_ms(void) {
     return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
 }
 
+static int read_int_file_one(const char *path, int *out, time_t *mt) {
+    if (!path || !path[0]) return -1;
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    int v = 0;
+    int ok = fscanf(f, "%d", &v) == 1;
+    fclose(f);
+    if (!ok) return -1;
+    *out = v;
+    *mt = st.st_mtime;
+    return 0;
+}
+
+/* Newest mtime wins. Same-second: first path (misc / app CE). */
 static int read_int_file(const char *a, const char *b, int def) {
-    int v = def;
-    FILE *f = fopen(a, "r");
-    if (!f && b) f = fopen(b, "r");
-    if (f) {
-        if (fscanf(f, "%d", &v) != 1) v = def;
-        fclose(f);
-    }
-    return v;
+    int va = 0, vb = 0;
+    time_t ta = 0, tb = 0;
+    int ha = read_int_file_one(a, &va, &ta) == 0;
+    int hb = b ? read_int_file_one(b, &vb, &tb) == 0 : 0;
+    if (ha && hb) return tb > ta ? vb : va;
+    if (ha) return va;
+    if (hb) return vb;
+    return def;
 }
 
 static int pad_mode_mouse = 0;
+static int pad_mode_native = 0; /* trackpad: raw ABS, no virt mouse */
 
-static int read_pad_mode_is_mouse(void) {
+static int read_pad_mode_is_native(void) {
     char buf[32];
     FILE *f = fopen(PAD_MODE_PATH, "r");
     if (!f) f = fopen(PAD_MODE_PATH2, "r");
-    if (!f) return 1; /* missing plane: do not invent Off (reconnect stall) */
-    if (!fgets(buf, sizeof buf, f)) { fclose(f); return 1; }
+    if (!f) return 0;
+    if (!fgets(buf, sizeof buf, f)) { fclose(f); return 0; }
     fclose(f);
     char *s = buf;
     while (*s == 32 || *s == 9 || *s == 10 || *s == 13) s++;
     size_t n = strlen(s);
     while (n && (s[n-1] == 10 || s[n-1] == 13 || s[n-1] == 32)) s[--n] = 0;
-    if (!s[0]) return 1;
-    if (!strcasecmp(s, "off") || !strcmp(s, "0") || !strcasecmp(s, "false")
-            || !strcasecmp(s, "trackpad") || !strcasecmp(s, "none"))
-        return 0;
-    return 1;
+    if (!s[0]) return 0;
+    return !strcasecmp(s, "trackpad") || !strcasecmp(s, "native")
+        || !strcasecmp(s, "pad");
+}
+
+static int read_pad_mode_is_mouse(void) {
+    /* HID-owned temporary touchpadd (pad_mode=off) still uses virt mouse.
+     * Only native trackpad skips it. Treating Off as "no mouse" left the
+     * uinput pointer on Titan while hidg was armed. */
+    return !read_pad_mode_is_native();
 }
 
 static void load_pad_mode(void) {
-    pad_mode_mouse = read_pad_mode_is_mouse();
+    pad_mode_native = read_pad_mode_is_native();
+    pad_mode_mouse = !pad_mode_native;
 }
 
 static void load_typing_ms(void) {
@@ -1780,6 +1803,7 @@ int main(int argc, char **argv) {
      * Do NOT grab raw touchPad when virtual mouse exists (starves touchpadd).
      */
     if (mouse_on && pad_mode_mouse) {
+        fprintf(stderr, "HID_OWN_PAD virt-mouse native=%d\n", pad_mode_native);
         rfd = open_best_rel_mouse_grab(relpath, sizeof relpath);
         if (rfd < 0 && padpath[0] && find_rel_mouse(relpath, sizeof relpath) != 0) {
             pfd = open(padpath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
@@ -2313,9 +2337,13 @@ int main(int argc, char **argv) {
             static long long last_slow;
             if (n - last_slow > 1500) {
                 load_pad_mode();
-                if (!pad_mode_mouse) {
+                /* Native trackpad: drop virt mouse, keep raw pad.
+                 * Off/mouse during HID: never unplug — that dumped the
+                 * cursor onto Titan. */
+                if (pad_mode_native) {
                     if (rfd >= 0) close_mouse_fd(&rfd, 1);
-                    if (pfd >= 0) close_mouse_fd(&pfd, 1);
+                } else if (pfd >= 0 && rfd >= 0) {
+                    close_mouse_fd(&pfd, 1);
                 }
                 load_typing_ms();
                 load_mouse_feel();

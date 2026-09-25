@@ -127,7 +127,7 @@ public final class PeerClient {
      * These are technical model ids for the optional cloud provider, not product branding.
      */
     private static final String[] CLOUD_FALLBACK_MODELS = {
-        "grok-4.5", "grok-4", "grok-3", "grok-3-mini"
+        "grok-4.6", "grok-4.5", "grok-4", "grok-3", "grok-3-mini"
     };
 
     public ModelsResult listModels() throws Exception {

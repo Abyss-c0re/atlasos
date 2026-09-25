@@ -286,13 +286,11 @@ public class NanobotService extends Service {
                     cmd.add("--lan"); // opt-in only
                 }
                 ProcessBuilder pb = new ProcessBuilder(cmd);
-                pb.environment().put("NANOBOT_HOME", home.getAbsolutePath());
-                pb.environment().put("HOME", home.getAbsolutePath());
-                pb.environment().put("NANOBOT_SHARED_SECRETS", "1");
                 java.io.File tmp = new java.io.File(getCacheDir(), "ng_peer_tmp");
                 //noinspection ResultOfMethodCallIgnored
                 tmp.mkdirs();
                 pb.environment().put("TMPDIR", tmp.getAbsolutePath());
+                NanobotCli.applyProcessEnv(this, pb.environment(), home);
                 java.io.File log = new java.io.File(getFilesDir(), "peer_spawn.log");
                 pb.redirectErrorStream(true);
                 pb.redirectOutput(ProcessBuilder.Redirect.appendTo(log));

@@ -308,6 +308,7 @@ public final class AtlasAuth {
                     && !"remote_adb".equals(sc)) {
                 writeTicket(c, "ask".equals(sc) || "exec".equals(sc) ? "screencap" : sc);
             }
+            if ("sudo".equals(sc)) writeTicket(c, "sudo");
         }
         appendLog(c, grant ? "grant" : "deny", scope, reason, cmd, grant ? "ok" : "fail");
         //noinspection ResultOfMethodCallIgnored

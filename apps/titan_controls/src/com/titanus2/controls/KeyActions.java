@@ -358,6 +358,11 @@ public final class KeyActions {
         if (KeyMapPrefs.isMouseAction(action)) {
             int wheel = mouseWheelFromAction(action);
             if (wheel != 0) {
+                if (atlasDeskFocused()) {
+                    broadcastAtlas(ctx, action, wheel);
+                    stampRemote(ctx, action);
+                    return;
+                }
                 if (HostLayoutController.isHidSessionLive(ctx)) {
                     broadcastRemote(ctx, action,
                         com.titanus2.api.Titan2ApiContract.KIND_MOUSE,
@@ -1349,6 +1354,32 @@ public final class KeyActions {
             return svc.dispatchGesture(gest, null, null);
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /** Desk focus file written by Atlas DeskActivity. 1 means the glass is the desk. */
+    private static boolean atlasDeskFocused() {
+        java.io.File f = new java.io.File("/data/local/tmp/atlas-virgl/desk-focus");
+        try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+            int b = in.read();
+            return b == '1';
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Wheel and other host events for the desk. HID is not the sink while Atlas is in front. */
+    private static void broadcastAtlas(Context ctx, String action, int wheel) {
+        Intent i = new Intent(com.titanus2.api.Titan2ApiContract.ACTION_REMOTE_INPUT);
+        i.setClassName("com.titanus2.atlas", "com.titanus2.atlas.DeskSideReceiver");
+        i.putExtra(com.titanus2.api.Titan2ApiContract.EXTRA_REMOTE_ACTION, action);
+        i.putExtra(com.titanus2.api.Titan2ApiContract.EXTRA_KIND,
+            com.titanus2.api.Titan2ApiContract.KIND_MOUSE);
+        i.putExtra(com.titanus2.api.Titan2ApiContract.EXTRA_MOUSE_WHEEL, wheel);
+        try {
+            ctx.sendBroadcast(i, com.titanus2.api.Titan2ApiContract.PERMISSION_USE);
+        } catch (Exception e) {
+            try { ctx.sendBroadcast(i); } catch (Exception ignored) {}
         }
     }
 

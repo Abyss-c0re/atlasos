@@ -393,13 +393,10 @@ public final class NanobotCli {
         cmd.add(prompt != null ? prompt : "");
         ProcessBuilder pb = new ProcessBuilder(cmd);
         Map<String, String> env = pb.environment();
-        env.put("NANOBOT_HOME", home.getAbsolutePath());
-        env.put("HOME", home.getAbsolutePath());
-        env.put("NANOBOT_SHARED_SECRETS", "1");
         //noinspection ResultOfMethodCallIgnored
         new File(c.getCacheDir(), "ng_tmp").mkdirs();
         env.put("TMPDIR", new File(c.getCacheDir(), "ng_tmp").getAbsolutePath());
-        applySslEnv(env, home);
+        applyProcessEnv(c, env, home);
         pb.redirectErrorStream(false);
         Process p = pb.start();
         sActiveChatProc = p;
@@ -464,9 +461,7 @@ public final class NanobotCli {
         ProcessBuilder pb = new ProcessBuilder(
             bin, "--home", home.getAbsolutePath(),
             "--no-stream", "-p", "@! " + (command != null ? command : "true"));
-        pb.environment().put("NANOBOT_HOME", home.getAbsolutePath());
-        pb.environment().put("HOME", home.getAbsolutePath());
-        applySslEnv(pb.environment(), home);
+        applyProcessEnv(c, pb.environment(), home);
         pb.redirectErrorStream(true);
         Process p = pb.start();
         StringBuilder sb = new StringBuilder();
@@ -477,6 +472,27 @@ public final class NanobotCli {
         }
         p.waitFor(120, TimeUnit.SECONDS);
         return sb.toString();
+    }
+
+    /**
+     * Home, SSL, and tool-schema env for a nanobot child.
+     * Local llama stays lean (GitHub 0.5.6: fat tools hang on-device).
+     * Cloud/Grok gets full Cube tools (neuralmind / project / lattice).
+     */
+    static void applyProcessEnv(Context c, Map<String, String> env, File home) {
+        if (env == null) return;
+        if (home != null) {
+            env.put("NANOBOT_HOME", home.getAbsolutePath());
+            env.put("HOME", home.getAbsolutePath());
+        }
+        env.put("NANOBOT_SHARED_SECRETS", "1");
+        applySslEnv(env, home);
+        if (c != null && PrivacyPrefs.localLlamaEnabled(c)) {
+            env.put("NANOBOT_LEAN_TOOLS", "1");
+            env.remove("NANOBOT_FULL_TOOLS");
+        } else {
+            env.put("NANOBOT_FULL_TOOLS", "1");
+        }
     }
 
     /**
@@ -535,16 +551,11 @@ public final class NanobotCli {
         cmd.add(home.getAbsolutePath());
         for (String a : args) if (a != null) cmd.add(a);
         ProcessBuilder pb = new ProcessBuilder(cmd);
-        pb.environment().put("NANOBOT_HOME", home.getAbsolutePath());
-        pb.environment().put("HOME", home.getAbsolutePath());
-        // App-owned home is single-UID; keep seal files readable for next CLI.
-        pb.environment().put("NANOBOT_SHARED_SECRETS", "1");
         File tmp = new File(c.getCacheDir(), "ng_tmp");
         //noinspection ResultOfMethodCallIgnored
         tmp.mkdirs();
         pb.environment().put("TMPDIR", tmp.getAbsolutePath());
-        // GSI: system curl has empty CApath without apex bind — force PEM/dir
-        applySslEnv(pb.environment(), home);
+        applyProcessEnv(c, pb.environment(), home);
         pb.redirectErrorStream(true);
         Process p = pb.start();
         StringBuilder sb = new StringBuilder();

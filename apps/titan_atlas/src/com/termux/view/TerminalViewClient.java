@@ -56,6 +56,9 @@ public interface TerminalViewClient {
 
     boolean readShiftKey();
 
+    /** Physical Sym hold. Stuck ALT_RIGHT / SYM meta must not count. */
+    default boolean readSymKey() { return false; }
+
     default boolean readCapsLock() { return false; }
 
     boolean readFnKey();

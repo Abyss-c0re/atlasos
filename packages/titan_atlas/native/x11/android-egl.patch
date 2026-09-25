@@ -1,0 +1,76 @@
+diff --git a/meson.build b/meson.build
+index 79aa049..37ac03a 100644
+--- a/meson.build
++++ b/meson.build
+@@ -311,14 +311,21 @@ if with_egl
+       if with_host_windows or with_host_darwin
+          have_egl = true
+       else
++         gbm_ok = false
+          if libdrm_dep.found()
+-            gbm_dep = dependency('gbm', version: '>= 18.0.0', required: require_egl)
++            gbm_dep = dependency('gbm', version: '>= 18.0.0', required: false)
++            gbm_ok = gbm_dep.found()
+          endif
+-         have_egl = gbm_dep.found() and cc.has_header('sys/mman.h', required: require_egl)
+-         conf_data.set('ENABLE_GBM', have_egl)
+-
+-         if have_egl
+-            conf_data.set('ENABLE_GBM_ALLOCATION', 1)
++         if gbm_ok
++            have_egl = cc.has_header('sys/mman.h', required: require_egl)
++            conf_data.set('ENABLE_GBM', have_egl)
++            if have_egl
++               conf_data.set('ENABLE_GBM_ALLOCATION', 1)
++            endif
++         else
++            # Android EGL has no gbm. vtest uses surfaceless EGL.
++            have_egl = true
++            conf_data.set('ENABLE_GBM', false)
+          endif
+       endif
+       conf_data.set('HAVE_EPOXY_EGL_H', have_egl)
+diff --git a/src/vrend/vrend_winsys.c b/src/vrend/vrend_winsys.c
+index d4c9b9e..87bdf27 100644
+--- a/src/vrend/vrend_winsys.c
++++ b/src/vrend/vrend_winsys.c
+@@ -76,6 +76,15 @@ int vrend_winsys_init(uint32_t flags, int preferred_fd)
+       }
+ 
+       use_context = CONTEXT_EGL;
++#elif defined(HAVE_EPOXY_EGL_H)
++      /* Android has EGL and no gbm. Surfaceless GLES is the vtest path. */
++      (void)preferred_fd;
++      egl = virgl_egl_init(EGL_DEFAULT_DISPLAY,
++                           flags & VIRGL_RENDERER_USE_SURFACELESS,
++                           flags & VIRGL_RENDERER_USE_GLES);
++      if (!egl)
++         return -1;
++      use_context = CONTEXT_EGL;
+ #else
+       (void)preferred_fd;
+       virgl_error("EGL is not supported on this platform\n");
+@@ -98,16 +107,21 @@ int vrend_winsys_init(uint32_t flags, int preferred_fd)
+ 
+ void vrend_winsys_cleanup(void)
+ {
+-#ifdef ENABLE_GBM
++#if defined(ENABLE_GBM) || defined(HAVE_EPOXY_EGL_H)
+    if (use_context == CONTEXT_EGL) {
+       virgl_egl_destroy(egl);
+       egl = NULL;
+       use_context = CONTEXT_NONE;
++#ifdef ENABLE_GBM
+       if (gbm) {
+          virgl_gbm_fini(gbm);
+          gbm = NULL;
+       }
+-   } else if (use_context == CONTEXT_EGL_EXTERNAL) {
++#endif
++   }
++#endif
++#ifdef ENABLE_GBM
++   if (use_context == CONTEXT_EGL_EXTERNAL) {
+       free(egl);
+       egl = NULL;
+       use_context = CONTEXT_NONE;

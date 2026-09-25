@@ -353,6 +353,8 @@ if [ -n "$ATLAS_APK" ] && [ -f "$SRC_ATLAS/Android.bp" ]; then
   stage_file "$SRC_ATLAS/Android.bp" "$DEST_ATLAS/Android.bp"
   stage_file "$ATLAS_APK" "$DEST_ATLAS/TitanAtlas.apk"
   [ -f "$ATLAS_PRIV" ] && stage_file "$ATLAS_PRIV" "$DEST_ATLAS/privapp-permissions-com.titanus2.atlas.xml"
+  ATLAS_DEF="$ROOT/apps/titan_atlas/permissions/default-permissions-com.titanus2.atlas.xml"
+  [ -f "$ATLAS_DEF" ] && stage_file "$ATLAS_DEF" "$DEST_ATLAS/default-permissions-com.titanus2.atlas.xml"
   stage_file "$HYB_SH" "$DEST_ATLAS/atlas-hybrid.sh"
   stage_file "$NET_SH" "$DEST_ATLAS/atlas-net.sh"
   stage_file "$SRC_ATLAS/atlas-hybrid-boot.sh" "$DEST_ATLAS/atlas-hybrid-boot.sh"

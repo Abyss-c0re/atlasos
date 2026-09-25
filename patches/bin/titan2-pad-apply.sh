@@ -356,6 +356,21 @@ kill_orient_rel() {
 # 1 once we know binary is absent — stop infinite need=1 / pad restarts.
 ORIENT_REL_MISSING=0
 
+# uinput nodes are born root:input 0660. The desk reader is the Atlas app,
+# which is not in group input, so it cannot open them until they are 0666.
+chmod_pointer_nodes() {
+  for d in /sys/class/input/event*; do
+    [ -e "$d/device/name" ] || continue
+    n=`cat "$d/device/name" 2>/dev/null` || continue
+    case "$n" in
+      titan2-virtual-mouse|titan2-orient-mouse)
+        ev=`basename "$d"`
+        chmod 666 "/dev/input/$ev" 2>/dev/null || true
+        ;;
+    esac
+  done
+}
+
 # When follow=1 in mouse mode: grab virtual mouse and re-emit rotated REL.
 # Soft only — never kill touchpadd. Missing binary is not a re-apply loop.
 ensure_orient_rel() {
@@ -368,7 +383,10 @@ ensure_orient_rel() {
   # Mirror follow without mtime thrash
   write_if_changed "$ST/titan2_pad_follow_orient" 1
   write_if_changed "$T2/titan2_pad_follow_orient" 1
-  if orient_rel_up; then return 0; fi
+  if orient_rel_up; then
+    chmod_pointer_nodes
+    return 0
+  fi
   if [ "$ORIENT_REL_MISSING" = "1" ]; then
     return 0
   fi
@@ -400,12 +418,18 @@ ensure_orient_rel() {
   ) &
   i=0
   while [ $i -lt 5 ]; do
-    orient_rel_up && return 0
+    if orient_rel_up; then
+      chmod_pointer_nodes
+      return 0
+    fi
     _sleep_brief
     i=`expr $i + 1 2>/dev/null` || i=5
   done
   # Daemon may still be starting — not a hard failure for specials path
-  orient_rel_up && return 0
+  if orient_rel_up; then
+    chmod_pointer_nodes
+    return 0
+  fi
   echo "orient-rel: starting" >> "$ORIENT_LOG" 2>/dev/null
   return 0
 }

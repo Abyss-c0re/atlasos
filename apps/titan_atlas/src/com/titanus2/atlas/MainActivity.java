@@ -24,7 +24,9 @@ import android.widget.Toast;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.TerminalView;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -143,6 +145,8 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         bar1.addView(makeCompactBtn("Exit", v -> exitApp()), barWeight());
         bar1.addView(makeCompactBtn("Load", v -> loadSeatDialog()), barWeight());
         bar1.addView(makeCompactBtn("Save", v -> saveCurrentSeat()), barWeight());
+        bar1.addView(makeCompactBtn("Desk", v ->
+            startActivity(new Intent(this, DeskActivity.class))), barWeight());
         bar1.addView(makeCompactBtn("↻", v -> restartSession()), barWeight());
         bar1.addView(makeCompactBtn("⚙", v ->
             startActivity(new Intent(this, SettingsActivity.class))), barWeight());
@@ -201,6 +205,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
             @Override
             public void onExtraKey(String key) {
                 if (termClient == null) return;
+                if ("SIDE".equals(key) || "RST".equals(key)) return;
                 termClient.sendExtraKey(key);
                 if (extraKeys != null) extraKeys.refreshModifiers();
                 if (termView != null) termView.requestFocus();
@@ -214,6 +219,21 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
             @Override
             public boolean isAltOn() {
                 return termClient != null && termClient.isStickyAlt();
+            }
+
+            @Override
+            public boolean isShiftOn() {
+                return termClient != null && termClient.isStickyShift();
+            }
+
+            @Override
+            public boolean isMetaOn() {
+                return termClient != null && termClient.isStickyMeta();
+            }
+
+            @Override
+            public boolean isCapsOn() {
+                return termClient != null && termClient.isCapsOn();
             }
         });
         LinearLayout.LayoutParams keysLp = new LinearLayout.LayoutParams(
@@ -914,6 +934,26 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
     }
 
     /**
+     * A Debian terminal joins the running Plasma session.
+     * Same display, same bus, same runtime. It does not start another desktop.
+     */
+    private static void joinDeskSession(List<String> env) {
+        File f = new File("/data/local/atlas-linux/home/atlas/atlas-x/session.env");
+        if (!f.isFile()) return;
+        try (BufferedReader in = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = in.readLine()) != null) {
+                int eq = line.indexOf('=');
+                if (eq <= 0) continue;
+                String key = line.substring(0, eq);
+                if (key.isEmpty() || key.indexOf(' ') >= 0) continue;
+                env.add(line);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    /**
      * Spawn one atlas-net (hybrid) or atlas REPL PTY. Does not attach.
      * @param shellMode {@link SessionHub#MODE_ANDROID} or {@link SessionHub#MODE_DEBIAN}
      */
@@ -1058,6 +1098,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         env.add("ATLAS_REPORTS=" + new File(home, "reports").getAbsolutePath());
         env.add("USER=" + login);
         env.add("LOGNAME=" + login);
+        if (wantDeb) joinDeskSession(env);
         env.add("ATLAS_LOGIN=" + login);
         env.add("ATLAS_ROLE=" + login);
         if (!priv) {

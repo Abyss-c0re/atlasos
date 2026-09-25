@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.atlas"
-    android:versionCode="172"
-    android:versionName="1.0.44-shift-caps">
+    android:versionCode="220"
+    android:versionName="1.0.91">
 
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
 
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -15,6 +17,7 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="com.titanus2.permission.USE_TITAN2_API" />
 
     <application
         android:name=".AtlasApp"
@@ -54,6 +57,27 @@
             android:exported="true"
             android:parentActivityName=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
+
+        <receiver
+            android:name=".DeskSideReceiver"
+            android:exported="true"
+            android:permission="com.titanus2.permission.USE_TITAN2_API">
+            <intent-filter>
+                <action android:name="com.titanus2.api.REMOTE_INPUT" />
+            </intent-filter>
+        </receiver>
+
+        <activity
+            android:name=".DeskActivity"
+            android:theme="@style/Theme.Atlas.Desk"
+            android:label="Desk"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:windowSoftInputMode="stateAlwaysHidden"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|density" />
 
         <activity
             android:name=".UsersActivity"

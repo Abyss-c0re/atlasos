@@ -112,13 +112,13 @@ hardcoded serials. The device list is whatever is on the cable right now.
 |---------|-----|
 | **BUILD** | Kitchen-cook a hybrid super (Debian + OpenWrt + OSS FM + USB audio by default) |
 | **BUILD AND FLASH** | Cook, then write the new pin over USB |
-| **FLASH SELECTED** | Write a listed pin |
+| **FLASH** | Write the one selected pin. Hidden when several pins are selected |
 | **BUILD GSI** | AtlasOS GSI (`vanilla` / `microg` / `gapps`) |
 | **PULL GITHUB** | Fast-forward this repo from `origin` |
 | **TITAN** tab | Live USB ROM + changelog since last flash |
 | USB connect | Host nanobot diagnoses (no user data), files issues, and tries a fix (PR; Abyss-c0re pushes) |
 | Controls **Report** | Bug/feature + comment + selected logs + shots; Cube Flasher pulls into outdev |
-| Pins / GSI tabs | Sort, multi-select, delete |
+| Pins / GSI tabs | Sort. Multi-select is delete only. Flash stays one pin |
 
 ETA is estimated from the selected options and last real cook/flash/GSI
 times. Progress is live from the child process — leftover `100%` logs are

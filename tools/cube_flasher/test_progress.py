@@ -21,7 +21,11 @@ def main() -> int:
     assert marker_unit("Flashing super...") == 0.18
     assert marker_unit("==> GSI systemimage (vanilla)") == 0.12
     assert marker_unit("exported pin: /tmp/x.img") == 0.92
-    from cube_flasher import fmt_secs, estimate_flash, is_usb_serial
+    from cube_flasher import fmt_secs, estimate_flash, flash_button_visible, is_usb_serial
+
+    assert flash_button_visible(1)
+    assert not flash_button_visible(0)
+    assert not flash_button_visible(2)
 
     assert fmt_secs(0) == "0s"
     assert fmt_secs(90) == "1m30s"

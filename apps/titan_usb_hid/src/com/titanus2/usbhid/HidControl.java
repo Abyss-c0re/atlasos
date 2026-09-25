@@ -820,17 +820,17 @@ public final class HidControl {
      * (soft pad does not need touchpadd grab).
      */
     public static void prepareDriverPad(Context ctx) {
-        // System pad mode is SoT. Forcing mouse here made Off/Trackpad
-        // on the phone still drive the HID guest cursor.
-        // File plane only — PadModeClient.get() is a binder hop and delayed
-        // HID start + side-key layer. Missing/unreadable = keep preparing.
+        // Trackpad stays native ABS (hid_bridge raw-pad fallback). Off is
+        // HID-owned temporary touchpadd — must still grab so the host gets
+        // the pad and Android does not. Skipping Off left Titan's cursor live.
         String raw = null;
         try { raw = readPlaneAny(ctx, "titan2_pad_mode"); } catch (Exception ignored) {}
         if (raw != null && !raw.trim().isEmpty()) {
             String mode = PadModeClient.normalize(raw);
-            if (PadModeClient.OFF.equals(mode) || PadModeClient.TRACKPAD.equals(mode)) {
+            if (PadModeClient.TRACKPAD.equals(mode)) {
                 return;
             }
+            android.util.Log.i("TitanUsbHid", "prepareDriverPad HID_OWN_PAD");
         }
         try {
             // Already mouse: keep surface/inhibit coherent. Do not restamp mode.

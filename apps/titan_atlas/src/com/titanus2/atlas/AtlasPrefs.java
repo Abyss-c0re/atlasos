@@ -298,6 +298,50 @@ public final class AtlasPrefs {
         p(c).edit().putInt("hybrid_size_g", Math.max(2, Math.min(32, g))).apply();
     }
 
+    /** Graphic session size. Xwayland rejects tiny geometries. */
+    public static int deskW(Context c) {
+        return Math.max(320, Math.min(4096, p(c).getInt("desk_w", 1440)));
+    }
+
+    public static int deskH(Context c) {
+        return Math.max(200, Math.min(4096, p(c).getInt("desk_h", 1440)));
+    }
+
+    public static void setDeskSize(Context c, int w, int h) {
+        w = Math.max(320, Math.min(4096, w));
+        h = Math.max(200, Math.min(4096, h));
+        p(c).edit().putInt("desk_w", w).putInt("desk_h", h).apply();
+    }
+
+    /** Qt scale in thousandths. 1000 = 1.0. Any value from 0.25 to 4. */
+    public static int deskScaleMilli(Context c) {
+        int v = p(c).getInt("desk_scale_milli", 1000);
+        if (v < 250 || v > 4000) return 1000;
+        return v;
+    }
+
+    public static void setDeskScaleMilli(Context c, int milli) {
+        if (milli < 250) milli = 250;
+        if (milli > 4000) milli = 4000;
+        p(c).edit().putInt("desk_scale_milli", milli).apply();
+    }
+
+    public static String deskScaleLabel(Context c) {
+        int m = deskScaleMilli(c);
+        if (m % 1000 == 0) return Integer.toString(m / 1000);
+        if (m % 100 == 0) return String.format(java.util.Locale.US, "%.1f", m / 1000.0);
+        return String.format(java.util.Locale.US, "%.2f", m / 1000.0);
+    }
+
+    /** KWin compositing. On uses the virpipe GL path when the server is up. */
+    public static boolean deskCompose(Context c) {
+        return p(c).getBoolean("desk_compose", true);
+    }
+
+    public static void setDeskCompose(Context c, boolean on) {
+        p(c).edit().putBoolean("desk_compose", on).apply();
+    }
+
     /**
      * Product: Authentication Agent FGS stays up without open terminals so
      * Remote ADB / hybrid sudo biometrics work with Wi‑Fi off (Tailscale/LTE).

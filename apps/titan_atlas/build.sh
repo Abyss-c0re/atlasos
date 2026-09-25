@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Build TitanAtlas.apk — pure C core + thin Java host
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+# Resolve the real script. Workshop invokes ./build.sh through a symlink;
+# dirname "$0" would be the symlink's directory and the APK would not land
+# next to this file.
+_SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+ROOT="$(cd "$(dirname "$_SELF")" && pwd)"
 REPO="$(cd "$ROOT/../.." && pwd)"
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
 BT=$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1)
@@ -23,6 +27,10 @@ fi
   echo "missing assets/bin/atlas — run packages/titan_atlas/build_native.sh"
   exit 1
 }
+# Session script is shell. Keep the packaged copy current even when natives are skipped.
+cp -f "$REPO/packages/titan_atlas/native/x11/atlas-desk-session.sh" \
+  "$ROOT/assets/bin/atlas-desk-session"
+chmod 755 "$ROOT/assets/bin/atlas-desk-session"
 
 # launcher icon fallback
 if [ ! -f "$ROOT/res/mipmap-hdpi/ic_launcher.png" ]; then
@@ -56,7 +64,9 @@ FIND="${FIND:-/usr/bin/find}"
 [ -x "$FIND" ] || FIND=find
 UI_SRC="$(cd "$ROOT/../ui_template/src" 2>/dev/null && pwd -P || true)"
 [ -n "$UI_SRC" ] || { echo "missing apps/ui_template/src"; exit 1; }
-mapfile -t _JAVAS < <("$FIND" -H "$BUILD/gen" "$ROOT/src" "$UI_SRC" -name '*.java')
+API_SRC="$(cd "$ROOT/../titan2_api/src" 2>/dev/null && pwd -P || true)"
+[ -n "$API_SRC" ] || { echo "missing apps/titan2_api/src"; exit 1; }
+mapfile -t _JAVAS < <("$FIND" -H "$BUILD/gen" "$ROOT/src" "$UI_SRC" "$API_SRC" -name '*.java')
 if [ "${#_JAVAS[@]}" -lt 8 ]; then
   echo "build.sh: only ${#_JAVAS[@]} java files — refusing hollow APK (src symlink?)" >&2
   exit 1

@@ -1,5 +1,5 @@
 #!/bin/bash
-# sudo for the desk.
+# sudo for Atlas, desk and terminal.
 # The password prompt is real Debian sudo.
 # Atlas auth runs at the same time. A grant skips the password.
 # A cancel leaves the password prompt.

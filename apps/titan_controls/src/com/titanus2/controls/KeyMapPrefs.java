@@ -887,6 +887,24 @@ public final class KeyMapPrefs {
             ed.putBoolean("side_defaults_sym_hold_v4", true);
             dirty = true;
         }
+        // v5: a short press on the side keys is the scroll wheel.
+        // Top goes up, bottom goes down. A chosen action is left alone.
+        if (!p.getBoolean("side_defaults_scroll_v5", false)) {
+            String[][] wheel = {
+                { "side_func2_short", ACT_MOUSE_SCROLL_UP },
+                { "side_func_short", ACT_MOUSE_SCROLL_DOWN },
+            };
+            for (String[] pair : wheel) {
+                String cur = p.getString("slot_" + pair[0], null);
+                if (cur == null || cur.isEmpty() || ACT_DEFAULT.equals(cur)
+                        || ACT_NONE.equals(cur)) {
+                    ed.putString("slot_" + pair[0], pair[1]);
+                    dirty = true;
+                }
+            }
+            ed.putBoolean("side_defaults_scroll_v5", true);
+            dirty = true;
+        }
         // Always strip chrome poison (B1)
         for (Slot s : SLOTS) {
             if (!isSideSlotId(s.id)) continue;

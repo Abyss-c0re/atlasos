@@ -79,6 +79,8 @@ def _atlasos() -> Path:
 
 
 ATLASOS = _atlasos()
+NANOBOT_SRC = Path("/home/voldemar/Dev/AI/nanobot")
+NANOBOT_WANT_VER = b"0.5.6"
 
 BRACKET_PCT = re.compile(r"\[\s*(\d{1,3})\s*%")
 FASTBOOT_PCT = re.compile(r"(?:Sending|Writing).{0,80}?(?<![0-9])(\d{1,3})\s*%")
@@ -302,31 +304,138 @@ def pick_cook_gsi(sel: str = "") -> str:
         return ""
 
 
-def sync_cook_inputs() -> list[str]:
-    """Refresh kitchen copies from AtlasOS SoT so cook cannot ship a stale NetFw."""
-    notes: list[str] = []
-    src = ATLASOS / "packages" / "titan_netfw" / "TitanNetFw.apk"
-    dst = ROOT / "packages" / "titan_netfw" / "TitanNetFw.apk"
+def _sync_cook_file(src: Path, dst: Path, notes: list[str], label: str) -> None:
+    """Copy AtlasOS SoT onto a real workshop file. Symlinks already share SoT."""
     if not src.is_file():
-        return notes
+        return
+    if dst.is_symlink():
+        return
     import shutil
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     need = True
-    if dst.is_file() and not dst.is_symlink():
+    if dst.is_file():
         need = src.stat().st_size != dst.stat().st_size or src.stat().st_mtime > dst.stat().st_mtime
-    if need:
-        if dst.is_symlink() or dst.is_file():
-            dst.unlink()
-        shutil.copy2(src, dst)
-        notes.append("synced TitanNetFw.apk")
-    xml_src = ATLASOS / "packages" / "titan_netfw" / "permissions" / "privapp-permissions-com.titanus2.netfw.xml"
-    xml_dst = ROOT / "packages" / "titan_netfw" / "permissions" / "privapp-permissions-com.titanus2.netfw.xml"
-    if xml_src.is_file() and not xml_dst.is_symlink():
-        xml_dst.parent.mkdir(parents=True, exist_ok=True)
-        if (not xml_dst.is_file()) or xml_src.stat().st_mtime > xml_dst.stat().st_mtime:
-            shutil.copy2(xml_src, xml_dst)
-            notes.append("synced netfw privapp xml")
+    if not need:
+        return
+    if dst.exists():
+        dst.unlink()
+    shutil.copy2(src, dst)
+    notes.append("synced " + label)
+
+
+def _latest_ndk() -> Path | None:
+    env = os.environ.get("ANDROID_NDK_HOME") or os.environ.get("ANDROID_NDK")
+    if env:
+        p = Path(env)
+        if p.is_dir():
+            return p
+    root = Path.home() / "Android" / "Sdk" / "ndk"
+    if not root.is_dir():
+        return None
+    vers = sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.name)
+    return vers[-1] if vers else None
+
+
+def nanobot_bin() -> Path:
+    return ROOT / "packages" / "titan2_nanobot" / "out" / "nanobot-aarch64"
+
+
+def nanobot_version_ok(path: Path) -> bool:
+    try:
+        return path.is_file() and path.stat().st_size > 100_000 and NANOBOT_WANT_VER in path.read_bytes()
+    except OSError:
+        return False
+
+
+def sync_cook_inputs() -> list[str]:
+    """Refresh kitchen copies from AtlasOS SoT so cook cannot ship a stale stack."""
+    notes: list[str] = []
+    _sync_cook_file(
+        ATLASOS / "packages" / "titan_netfw" / "TitanNetFw.apk",
+        ROOT / "packages" / "titan_netfw" / "TitanNetFw.apk",
+        notes,
+        "TitanNetFw.apk",
+    )
+    _sync_cook_file(
+        ATLASOS / "packages" / "titan_netfw" / "permissions" / "privapp-permissions-com.titanus2.netfw.xml",
+        ROOT / "packages" / "titan_netfw" / "permissions" / "privapp-permissions-com.titanus2.netfw.xml",
+        notes,
+        "netfw privapp xml",
+    )
+    _sync_cook_file(
+        ATLASOS / "packages" / "titan_usb_hid_system" / "hid_bridge",
+        ROOT / "packages" / "titan_usb_hid_system" / "hid_bridge",
+        notes,
+        "hid_bridge",
+    )
+    _sync_cook_file(
+        ATLASOS / "packages" / "gsi_product" / "prebuilt_usb_hid" / "hid_bridge",
+        ROOT / "packages" / "gsi_product" / "prebuilt_usb_hid" / "hid_bridge",
+        notes,
+        "prebuilt hid_bridge",
+    )
+    _sync_cook_file(
+        ATLASOS / "packages" / "gsi_product" / "prebuilt_touchpadd" / "titan2-touchpadd",
+        ROOT / "packages" / "gsi_product" / "prebuilt_touchpadd" / "titan2-touchpadd",
+        notes,
+        "titan2-touchpadd",
+    )
+    _sync_cook_file(
+        ATLASOS / "third_party" / "titan2-touchpadd" / "bin" / "titan2-touchpadd",
+        ROOT / "third_party" / "titan2-touchpadd" / "bin" / "titan2-touchpadd",
+        notes,
+        "touchpadd tip ELF",
+    )
+    _sync_cook_file(
+        ATLASOS / "packages" / "gsi_product" / "prebuilt_apps" / "TitanUsbHid.apk",
+        ROOT / "packages" / "gsi_product" / "prebuilt_apps" / "TitanUsbHid.apk",
+        notes,
+        "TitanUsbHid.apk",
+    )
+    _sync_cook_file(
+        ATLASOS / "apps" / "titan_usb_hid" / "TitanUsbHid.apk",
+        ROOT / "apps" / "titan_usb_hid" / "TitanUsbHid.apk",
+        notes,
+        "TitanUsbHid.apk (apps)",
+    )
+    _sync_cook_file(
+        ATLASOS / "apps" / "titan_nanobot" / "Nanobot.apk",
+        ROOT / "apps" / "titan_nanobot" / "Nanobot.apk",
+        notes,
+        "Nanobot.apk",
+    )
+    _sync_cook_file(
+        ATLASOS / "apps" / "titan_nanobot" / "TitanNanobot.apk",
+        ROOT / "apps" / "titan_nanobot" / "TitanNanobot.apk",
+        notes,
+        "TitanNanobot.apk",
+    )
+    nbin = nanobot_bin()
+    _sync_cook_file(
+        nbin,
+        ROOT / "packages" / "titan2_nanobot" / "bin" / "nanobot-aarch64",
+        notes,
+        "nanobot-aarch64 (bin)",
+    )
+    _sync_cook_file(
+        nbin,
+        ROOT / "packages" / "magisk_titan2_nanobot" / "system" / "bin" / "nanobot",
+        notes,
+        "magisk nanobot bin",
+    )
+    _sync_cook_file(
+        nbin,
+        ATLASOS / "apps" / "titan_nanobot" / "assets" / "nanobot.arm64",
+        notes,
+        "atlasos nanobot.arm64",
+    )
+    _sync_cook_file(
+        nbin,
+        ROOT / "apps" / "titan_nanobot" / "assets" / "nanobot.arm64",
+        notes,
+        "workshop nanobot.arm64",
+    )
     return notes
 
 
@@ -343,6 +452,19 @@ def cook_preflight(gsi_sel: str = "") -> str:
         return "missing AtlasOS TitanNetFw.apk"
     if apk_has_shared_user(apk):
         return "TitanNetFw.apk has sharedUserId (A12 bootloop)"
+    tp = ATLASOS / "packages" / "gsi_product" / "prebuilt_touchpadd" / "titan2-touchpadd"
+    if not tp.is_file():
+        tp = ATLASOS / "third_party" / "titan2-touchpadd" / "bin" / "titan2-touchpadd"
+    if tp.is_file() and b"mouse / HID session" not in tp.read_bytes():
+        return "stale titan2-touchpadd (missing HID session grab)"
+    br = ATLASOS / "packages" / "titan_usb_hid_system" / "hid_bridge"
+    if not br.is_file():
+        br = ATLASOS / "packages" / "gsi_product" / "prebuilt_usb_hid" / "hid_bridge"
+    if br.is_file() and b"HID_OWN_PAD" not in br.read_bytes():
+        return "stale hid_bridge (missing HID_OWN_PAD)"
+    svc = ATLASOS / "packages" / "gsi_product" / "prebuilt_usb_hid" / "service.sh"
+    if svc.is_file() and b"hidg/bridge live sess=0" not in svc.read_bytes():
+        return "stale usb hid service.sh (park still strands gadget)"
     ims = ATLASOS / "packages" / "titan_ims" / "bin" / "titan2-ims-setup.sh"
     if not ims.is_file():
         return "missing titan2-ims-setup.sh"
@@ -374,6 +496,11 @@ def tool_env(base: dict | None = None) -> dict:
     env = dict(base or os.environ)
     env["PATH"] = str(TOOLS) + os.pathsep + env.get("PATH", "")
     return env
+
+
+def flash_button_visible(n_selected: int) -> bool:
+    """Flash writes one image. Multi-select is for delete only."""
+    return n_selected == 1
 
 
 def is_usb_serial(serial: str) -> bool:
@@ -822,7 +949,7 @@ class Worker(threading.Thread):
                         continue
                     save_eta("cook", time.time() - t0)
                     if not usb_targets():
-                        self._st("cooked — connect Titan, then FLASH SELECTED")
+                        self._st("cooked — connect Titan, then FLASH")
                         self._say("Pin cooked. Connect the Titan to flash.")
                         self.bridge.finished.emit(True, img)
                         continue
@@ -976,6 +1103,104 @@ class Worker(threading.Thread):
                     self._say("TitanFm build failed.")
                     self.bridge.finished.emit(False, "titanfm rc=%s" % frc)
                     return None
+        if feats.get("with_nanobot"):
+            ndk = _latest_ndk()
+            if ndk is None:
+                self._ph("fail", 0.05)
+                self._st("no Android NDK for nanobot aarch64")
+                self._say("Cook blocked.")
+                self.bridge.finished.emit(False, "no Android NDK for nanobot")
+                return None
+            env["ANDROID_NDK_HOME"] = str(ndk)
+            env["NANOBOT_SRC"] = str(NANOBOT_SRC)
+            build_android = ROOT / "packages" / "titan2_nanobot" / "build_android.sh"
+            if not build_android.is_file():
+                self._ph("fail", 0.05)
+                self._st("missing titan2_nanobot/build_android.sh")
+                self._say("Cook blocked.")
+                self.bridge.finished.emit(False, "missing titan2_nanobot/build_android.sh")
+                return None
+            self._st("building nanobot aarch64 (0.5.6)")
+            nrc, _nblob = self._pipe(
+                ["bash", str(build_android)], env, 0.08, 0.14
+            )
+            if nrc != 0:
+                self._ph("fail", 0.05)
+                self._say("Nanobot aarch64 build failed.")
+                self.bridge.finished.emit(False, "nanobot aarch64 rc=%s" % nrc)
+                return None
+            nbin = nanobot_bin()
+            if not nanobot_version_ok(nbin):
+                self._ph("fail", 0.05)
+                self._st("nanobot-aarch64 missing 0.5.6")
+                self._say("Cook blocked.")
+                self.bridge.finished.emit(
+                    False, "stale nanobot-aarch64 (need 0.5.6 from GitHub)"
+                )
+                return None
+            nano_notes: list[str] = []
+            _sync_cook_file(
+                nbin,
+                ATLASOS / "apps" / "titan_nanobot" / "assets" / "nanobot.arm64",
+                nano_notes,
+                "atlasos nanobot.arm64",
+            )
+            _sync_cook_file(
+                nbin,
+                ROOT / "apps" / "titan_nanobot" / "assets" / "nanobot.arm64",
+                nano_notes,
+                "workshop nanobot.arm64",
+            )
+            _sync_cook_file(
+                nbin,
+                ROOT / "packages" / "magisk_titan2_nanobot" / "system" / "bin" / "nanobot",
+                nano_notes,
+                "magisk nanobot",
+            )
+            _sync_cook_file(
+                nbin,
+                ROOT / "packages" / "titan2_nanobot" / "bin" / "nanobot-aarch64",
+                nano_notes,
+                "bin nanobot-aarch64",
+            )
+            apk_sh = ATLASOS / "apps" / "titan_nanobot" / "build.sh"
+            if not apk_sh.is_file():
+                self._ph("fail", 0.05)
+                self._st("missing AtlasOS titan_nanobot/build.sh")
+                self._say("Cook blocked.")
+                self.bridge.finished.emit(False, "missing titan_nanobot/build.sh")
+                return None
+            self._st("building Nanobot APK")
+            env["NANOBOT_BIN"] = str(nbin)
+            arc, _ablob = self._pipe(
+                ["bash", str(apk_sh)], env, 0.14, 0.20, cwd=apk_sh.parent
+            )
+            if arc != 0:
+                self._ph("fail", 0.05)
+                self._say("Nanobot APK build failed.")
+                self.bridge.finished.emit(False, "titan_nanobot rc=%s" % arc)
+                return None
+            _sync_cook_file(
+                ATLASOS / "apps" / "titan_nanobot" / "Nanobot.apk",
+                ROOT / "apps" / "titan_nanobot" / "Nanobot.apk",
+                nano_notes,
+                "Nanobot.apk",
+            )
+            _sync_cook_file(
+                ATLASOS / "apps" / "titan_nanobot" / "TitanNanobot.apk",
+                ROOT / "apps" / "titan_nanobot" / "TitanNanobot.apk",
+                nano_notes,
+                "TitanNanobot.apk",
+            )
+            for note in nano_notes:
+                self._st(note)
+            apk = ROOT / "apps" / "titan_nanobot" / "TitanNanobot.apk"
+            if not apk.is_file() or apk.stat().st_size < 50_000:
+                self._ph("fail", 0.05)
+                self._st("TitanNanobot.apk missing/hollow after rebuild")
+                self._say("Cook blocked.")
+                self.bridge.finished.emit(False, "TitanNanobot.apk hollow")
+                return None
         cmd = [
             sys.executable,
             "-u",
@@ -1135,12 +1360,12 @@ class Worker(threading.Thread):
         img = job.get("image") or ""
         if not img or not Path(img).is_file():
             self._ph("fail", 0.05)
-            self._say("No image selected.")
+            self._say("No image.")
             self.bridge.finished.emit(False, "no image")
             return
         self._ph("connect", 0.7)
         self._pct(0.0)
-        self._say("Writing the selected pin. Keep the cable still.")
+        self._say("Writing the pin. Keep the cable still.")
         env = os.environ.copy()
         env["FLASH" + "_YES"] = "1"
         env["FORCE" + "_FLASH"] = "1"
@@ -1463,7 +1688,7 @@ class Flasher(LabMixin, QMainWindow):
         row = QHBoxLayout()
         self.btn_refresh = self._btn("REFRESH")
         self.btn_del = self._btn("DELETE")
-        self.btn_write = self._btn("FLASH SELECTED")
+        self.btn_write = self._btn("FLASH")
         self.btn_refresh.clicked.connect(self.refresh_builds)
         self.btn_del.clicked.connect(self.delete_selected)
         self.btn_write.clicked.connect(self.write_selected)
@@ -1596,6 +1821,8 @@ class Flasher(LabMixin, QMainWindow):
                 b.setEnabled(not busy)
         if getattr(self, "lab_word", None) is not None:
             self.lab_word.setEnabled(not busy)
+        if not busy:
+            self._sync_flash_button()
 
     def _fill_list(self, widget: QListWidget, paths: list[Path], keep: set[str]) -> None:
         widget.clear()
@@ -1772,27 +1999,30 @@ class Flasher(LabMixin, QMainWindow):
         self._arm(90)
         self.worker.submit({"kind": "pull"})
 
+    def _sync_flash_button(self) -> None:
+        if not hasattr(self, "btn_write"):
+            return
+        n = len(self._selected_paths(self.builds)) if hasattr(self, "builds") else 0
+        self.btn_write.setVisible(flash_button_visible(n))
+
     def write_selected(self) -> None:
         if self._busy:
             return
-        path = self._primary_path(self.builds)
-        if not path:
-            QMessageBox.information(self, "Cube Flasher", "Select a pin.")
+        paths = self._selected_paths(self.builds)
+        if len(paths) != 1:
+            self._sync_flash_button()
             return
-        n = len(self._selected_paths(self.builds))
+        path = paths[0]
         if not usb_targets():
             QMessageBox.information(self, "Cube Flasher", "Connect the Titan over USB.")
             return
         eta = estimate_flash(path, self.keep_data.isChecked())
-        note = Path(path).name
-        if n > 1:
-            note += "\n(%d selected — flashing the highlighted one)" % n
         if (
             QMessageBox.question(
                 self,
-                "Flash selected",
+                "Flash",
                 "Flash\n%s\nKeep data: %s\nETA ~%s"
-                % (note, self.keep_data.isChecked(), fmt_secs(eta)),
+                % (Path(path).name, self.keep_data.isChecked(), fmt_secs(eta)),
             )
             != QMessageBox.Yes
         ):
@@ -1854,6 +2084,7 @@ class Flasher(LabMixin, QMainWindow):
             "ETA  cook %s  ·  flash %s  ·  %s  ·  %s"
             % (fmt_secs(cook), fmt_secs(flash), gsi_bit, self._gsi_choice_label())
         )
+        self._sync_flash_button()
 
     def _force_diag(self) -> None:
         self._diag_serial = ""

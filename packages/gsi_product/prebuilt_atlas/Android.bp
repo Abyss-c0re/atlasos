@@ -21,6 +21,13 @@ prebuilt_etc {
     filename_from_src: true,
 }
 
+prebuilt_etc {
+    name: "default-permissions-com.titanus2.atlas.xml",
+    src: "default-permissions-com.titanus2.atlas.xml",
+    sub_dir: "default-permissions",
+    filename_from_src: true,
+}
+
 // Hybrid plane scripts (system/bin) — combined OS mount/enter/run
 sh_binary {
     name: "atlas-hybrid.sh",

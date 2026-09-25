@@ -54,17 +54,14 @@ public final class NanobotRuntime {
     public static File extractBundledBinary(Context c) {
         File out = new File(c.getFilesDir(), "nanobot");
         try {
-            // refresh if missing or smaller than asset (rough update check)
-            long assetLen = -1;
-            try (java.io.InputStream in = c.getAssets().open("nanobot.arm64")) {
-                // can't cheaply size; always extract if missing or older than 1 day stale flag
+            try (java.io.InputStream ignored = c.getAssets().open("nanobot.arm64")) {
+                // present
             } catch (Exception e) {
                 return out.isFile() ? out : null;
             }
             File stamp = new File(c.getFilesDir(), "nanobot.arm64.stamp");
-            boolean need = !out.isFile() || !stamp.isFile();
+            boolean need = !out.isFile() || out.length() < 100_000L || !stamp.isFile();
             if (!need) {
-                // re-extract if stamp older than APK lastUpdateTime
                 long upd = c.getPackageManager()
                     .getPackageInfo(c.getPackageName(), 0).lastUpdateTime;
                 if (stamp.lastModified() < upd) need = true;
@@ -78,10 +75,11 @@ public final class NanobotRuntime {
                 }
                 //noinspection ResultOfMethodCallIgnored
                 out.setExecutable(true, false);
-                //noinspection ResultOfMethodCallIgnored
-                stamp.createNewFile();
-                stamp.setLastModified(System.currentTimeMillis());
-                Log.i(TAG, "extracted bundled nanobot → " + out.getAbsolutePath());
+                try (java.io.FileOutputStream s = new java.io.FileOutputStream(stamp)) {
+                    s.write(("size=" + out.length() + "\n").getBytes(StandardCharsets.UTF_8));
+                }
+                Log.i(TAG, "extracted bundled nanobot → " + out.getAbsolutePath()
+                    + " sz=" + out.length());
             }
         } catch (Exception e) {
             Log.e(TAG, "extractBundledBinary: " + e.getMessage());
@@ -90,14 +88,9 @@ public final class NanobotRuntime {
     }
 
     public static String findBinary(Context c) {
-        // 1.10 residual: Magisk/ensure still tip-prefer shell peer when fresher
-        // (tip_sz / host_sz). App path diverged:
-        // 1.11 residual: CLI delegated here (system-first was wrong for chat/auth).
-        // 1.12 residual (auth did not work): tip /data/local/tmp/nanobot is
-        // shell_data_file — priv_app gets SELinux execute denials forever while
-        // Java canExecute() still looks true. App must never exec tip.
-        // Prefer system_file, then Magisk module, then app-private extract.
-        // Shell peer still uses tip via adb/init; UI uses system or assets.
+        // Never exec tip /data/local/tmp/nanobot (shell_data_file SELinux deny).
+        // Size-pick among system, Magisk, and APK-bundled extract so a newer
+        // APK (0.5.6+) wins over a stale /system/bin from an older cook.
         String[] product = {
             "/system/bin/nanobot",
             "/data/adb/modules/titan2_nanobot/system/bin/nanobot",
@@ -114,14 +107,15 @@ public final class NanobotRuntime {
                 bestSz = sz;
             }
         }
-        if (best != null) return best;
-        File app = new File(c.getFilesDir(), "nanobot");
-        if (app.isFile() && app.canExecute()) return app.getAbsolutePath();
         File bundled = extractBundledBinary(c);
         if (bundled != null && bundled.isFile() && bundled.canExecute()) {
-            return bundled.getAbsolutePath();
+            long sz = bundled.length();
+            if (sz > bestSz) {
+                best = bundled.getAbsolutePath();
+                bestSz = sz;
+            }
         }
-        return null;
+        return best;
     }
 
     /** Tip binary path for shell/init only — never for priv_app ProcessBuilder. */
@@ -244,8 +238,9 @@ public final class NanobotRuntime {
             Log.e(TAG, "nanobot binary not found on ROM");
             return null;
         }
-        if (bin.contains("/data/user/") || bin.contains("/data/data/")) {
-            Log.w(TAG, "skip app-private binary spawn (SELinux); wait for product peer");
+        // Tip is shell_data_file (SELinux exec deny). App-files extract is OK.
+        if (bin.startsWith("/data/local/tmp/")) {
+            Log.w(TAG, "skip tip binary spawn (SELinux); wait for product peer");
             return null;
         }
         File home = new File(SHARED_HOME);
@@ -263,16 +258,13 @@ public final class NanobotRuntime {
             cmd.add("--port");
             cmd.add(String.valueOf(PORT));
             ProcessBuilder pb = new ProcessBuilder(cmd);
-            pb.environment().put("NANOBOT_HOME", SHARED_HOME);
-            pb.environment().put("HOME", SHARED_HOME);
-            pb.environment().put("NANOBOT_SHARED_SECRETS", "1");
             try {
                 File ngTmp = new File(c.getCacheDir(), "ng_tmp");
                 //noinspection ResultOfMethodCallIgnored
                 ngTmp.mkdirs();
                 pb.environment().put("TMPDIR", ngTmp.getAbsolutePath());
             } catch (Exception ignored) {}
-            NanobotCli.applySslEnv(pb.environment(), home);
+            NanobotCli.applyProcessEnv(c, pb.environment(), home);
             // best-effort: heal system CA path for child curl
             try {
                 new ProcessBuilder("su", "0", "sh",

@@ -856,7 +856,48 @@ public final class HybridEnsure {
     /** Debian root login password on the LP image (not Android). */
     public static String setRootPass(Context c, String password) {
         if (password == null || password.isEmpty()) return "empty";
-        return setUserPass(c, "root", password);
+        String viaSu = setUserPass(c, "root", password);
+        if (viaSu != null && viaSu.contains("pass=set")) return viaSu;
+        String viaFile = setRootPassFile(c, password);
+        if (viaFile != null && viaFile.contains("pass=set")) return viaFile;
+        if (viaSu != null && !viaSu.isEmpty()) return viaSu;
+        return viaFile != null ? viaFile : "pass failed";
+    }
+
+    /**
+     * su is hidden from this app. A root helper started with the desk session
+     * reads files/root.b64 (owner must be the app) and runs chpasswd.
+     */
+    private static String setRootPassFile(Context c, String password) {
+        File dir = c.getFilesDir();
+        File req = new File(dir, "root.b64");
+        File res = new File(dir, "root.result");
+        try {
+            if (res.exists() && !res.delete()) {
+                // stale root-owned result; the helper overwrites it
+            }
+            String b64 = android.util.Base64.encodeToString(
+                password.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                android.util.Base64.NO_WRAP);
+            java.nio.file.Files.write(req.toPath(),
+                b64.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            req.setReadable(true, true);
+            req.setWritable(true, true);
+            for (int i = 0; i < 30; i++) {
+                Thread.sleep(100);
+                if (!res.isFile()) continue;
+                String s = new String(java.nio.file.Files.readAllBytes(res.toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8).trim();
+                res.delete();
+                req.delete();
+                return s.isEmpty() ? "pass=set" : s;
+            }
+            req.delete();
+            return "password helper not running";
+        } catch (Exception e) {
+            req.delete();
+            return e.getMessage() != null ? e.getMessage() : "pass failed";
+        }
     }
 
     public static String setUserPerm(Context c, String name, String key, boolean on) {

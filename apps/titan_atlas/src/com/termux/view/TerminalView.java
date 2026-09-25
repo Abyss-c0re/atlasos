@@ -767,6 +767,8 @@ public final class TerminalView extends View {
             case KeyEvent.KEYCODE_CTRL_RIGHT:
             case KeyEvent.KEYCODE_SHIFT_LEFT:
             case KeyEvent.KEYCODE_SHIFT_RIGHT:
+            case KeyEvent.KEYCODE_ALT_RIGHT:
+            case KeyEvent.KEYCODE_SYM:
             case KeyEvent.KEYCODE_MOVE_HOME:
             case KeyEvent.KEYCODE_MOVE_END:
             case KeyEvent.KEYCODE_PAGE_UP:
@@ -782,6 +784,14 @@ public final class TerminalView extends View {
                 }
                 // Shift held / one-shot letter: pre-IME so getUnicodeChar uses client shift
                 if ((mClient.readShiftKey() || mClient.readCapsLock()) && keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z) {
+                    if (event.getAction() == KeyEvent.ACTION_DOWN) return onKeyDown(keyCode, event);
+                    if (event.getAction() == KeyEvent.ACTION_UP) return onKeyUp(keyCode, event);
+                }
+                // Sym held, or a stuck ALT_RIGHT/SYM meta bit: take the key
+                // before the IME can latch Alt and turn the next letters into symbols.
+                if (mClient.readSymKey()
+                        || (event.getMetaState() & (KeyEvent.META_ALT_RIGHT_ON
+                            | KeyEvent.META_SYM_ON)) != 0) {
                     if (event.getAction() == KeyEvent.ACTION_DOWN) return onKeyDown(keyCode, event);
                     if (event.getAction() == KeyEvent.ACTION_UP) return onKeyUp(keyCode, event);
                 }
@@ -916,11 +926,13 @@ public final class TerminalView extends View {
         // via readShiftKey(). Do NOT OR event.isShiftPressed() alone — that is the sticky bug.
         final boolean shiftDown = mClient.readShiftKey();
         final boolean capsOn = mClient.readCapsLock();
-        final boolean rightAltDownFromEvent = (metaState & KeyEvent.META_ALT_RIGHT_ON) != 0;
+        // Sym is ALT_RIGHT on the product layout. A leftover META_ALT_RIGHT
+        // forces the printed symbol layer on the next letter.
+        final boolean symDown = mClient.readSymKey();
 
         int keyMod = 0;
         if (controlDown) keyMod |= KeyHandler.KEYMOD_CTRL;
-        if (event.isAltPressed() || leftAltDown) keyMod |= KeyHandler.KEYMOD_ALT;
+        if (leftAltDown) keyMod |= KeyHandler.KEYMOD_ALT;
         if (shiftDown) keyMod |= KeyHandler.KEYMOD_SHIFT;
         if (event.isNumLockOn()) keyMod |= KeyHandler.KEYMOD_NUM_LOCK;
         // https://github.com/termux/termux-app/issues/731
@@ -929,14 +941,11 @@ public final class TerminalView extends View {
             return true;
         }
 
-        // Clear Ctrl since we handle that ourselves:
-        int bitsToClear = KeyEvent.META_CTRL_MASK;
-        if (rightAltDownFromEvent) {
-            // Let right Alt/Alt Gr be used to compose characters.
-        } else {
-            // Use left alt to send to terminal (e.g. Left Alt+B to jump back a word), so remove:
-            bitsToClear |= KeyEvent.META_ALT_ON | KeyEvent.META_ALT_LEFT_ON;
-        }
+        // Drop Alt and Sym meta, then put them back only from a real hold.
+        // A stuck ALT_RIGHT was sending TitanKey.kcm ralt glyphs.
+        int bitsToClear = KeyEvent.META_CTRL_MASK
+            | KeyEvent.META_ALT_ON | KeyEvent.META_ALT_LEFT_ON | KeyEvent.META_ALT_RIGHT_ON
+            | KeyEvent.META_SYM_ON;
         // Strip residual SHIFT/CAPS from the raw event — rebuild from client only.
         // TitanKey has no CAPS key; CAPS_LOCK meta after bare Shift is a framework residual.
         bitsToClear |= KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON
@@ -946,6 +955,12 @@ public final class TerminalView extends View {
         if (shiftDown) effectiveMetaState |= KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON;
         if (capsOn) effectiveMetaState |= KeyEvent.META_CAPS_LOCK_ON;
         if (mClient.readFnKey()) effectiveMetaState |= KeyEvent.META_FUNCTION_ON;
+        if (leftAltDown) {
+            effectiveMetaState |= KeyEvent.META_ALT_ON | KeyEvent.META_ALT_LEFT_ON;
+        }
+        if (symDown) {
+            effectiveMetaState |= KeyEvent.META_ALT_ON | KeyEvent.META_ALT_RIGHT_ON;
+        }
 
         int result = event.getUnicodeChar(effectiveMetaState);
         if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)

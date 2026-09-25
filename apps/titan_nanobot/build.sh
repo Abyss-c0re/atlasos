@@ -16,6 +16,40 @@ JAR=$(command -v jar)
 BUILD=$(mktemp -d)
 trap 'rm -rf "$BUILD"' EXIT
 mkdir -p "$BUILD"/{gen,obj}
+
+# Bundle latest aarch64 nanobot (GitHub Abyss-c0re/nanobot) when an NDK
+# artifact is present. APK extract path is assets/nanobot.arm64.
+_stage_nanobot_arm64() {
+  mkdir -p "$ROOT/assets"
+  dest="$ROOT/assets/nanobot.arm64"
+  cands=()
+  [ -n "${NANOBOT_BIN:-}" ] && cands+=("$NANOBOT_BIN")
+  # atlasos/apps/titan_nanobot → products/titanus2/packages/...
+  cands+=("$ROOT/../../../titanus2/packages/titan2_nanobot/out/nanobot-aarch64")
+  # titanus2/apps/titan_nanobot → packages/...
+  cands+=("$ROOT/../../packages/titan2_nanobot/out/nanobot-aarch64")
+  cands+=("$ROOT/../../packages/titan2_nanobot/bin/nanobot-aarch64")
+  [ -f "$dest" ] && cands+=("$dest")
+  src=""
+  best=0
+  for c in "${cands[@]}"; do
+    [ -f "$c" ] || continue
+    sz=$(stat -c%s "$c")
+    if [ "$sz" -gt "$best" ]; then
+      src="$c"
+      best=$sz
+    fi
+  done
+  if [ -n "$src" ] && [ "$src" != "$dest" ]; then
+    cp -f "$src" "$dest"
+    chmod 755 "$dest"
+    echo "staged assets/nanobot.arm64 from $src ($best bytes)"
+  elif [ ! -f "$dest" ]; then
+    echo "WARN: no nanobot aarch64 to bundle — APK will use /system/bin/nanobot"
+  fi
+}
+_stage_nanobot_arm64
+
 AAPT_ASSETS=()
 if [ -d "$ROOT/assets" ]; then AAPT_ASSETS=(-A "$ROOT/assets"); fi
 "$BT/aapt" package -f -m -J "$BUILD/gen" -M "$ROOT/AndroidManifest.xml" -S "$ROOT/res" \

@@ -5,3 +5,5 @@ build/
 obj/
 *.dex
 *.class
+# Staged from packages/titan2_nanobot/out (rebuild, do not commit ELF)
+assets/nanobot.arm64

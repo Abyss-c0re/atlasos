@@ -39,4 +39,10 @@ __pycache__/
 packages/*/out/
 apps/titan_atlas/assets/bin/libatlaspty.so
 apps/titan_atlas/assets/bin/libatlasterm.so
+apps/titan_atlas/assets/bin/virgl_test_server
+apps/titan_atlas/assets/bin/libvirglrenderer.so
+apps/titan_atlas/assets/bin/libepoxy.so
+apps/titan_atlas/assets/bin/libatlas-virpipe-tfp.so
+apps/titan_atlas/assets/bin/atlas-desk-keys
+apps/titan_atlas/assets/bin/atlas-audio-bridge
 *.idsig

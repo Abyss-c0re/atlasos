@@ -1689,25 +1689,29 @@ EOF
     chmod 755 "$dest" 2>/dev/null || true
   done
   # sudo itself is real Debian sudo. Atlas auth runs beside the password.
-  for dest in \
-    "$MERGE/usr/local/bin/sudo" \
-    "$MERGE/atlas-bin/sudo"
-  do
-    dir=`dirname "$dest"`
-    case "$dir" in ''|*$'\n'*|*Toybox*) continue ;; esac
-    safe_mkdir_p "$dir" || continue
-    if [ -f /usr/local/share/atlas/sudo ]; then
-      cp -f /usr/local/share/atlas/sudo "$dest"
-    elif [ -f "$MERGE/usr/local/share/atlas/sudo" ]; then
-      cp -f "$MERGE/usr/local/share/atlas/sudo" "$dest"
-    fi
-    # The share copy is written by the image. If it is missing, keep a
-    # pointer at the real binary rather than the enterd shim.
-    if [ ! -s "$dest" ] && [ -x "$MERGE/usr/bin/sudo.real" ]; then
-      ln -sfn /usr/bin/sudo.real "$dest"
-    fi
-    chmod 755 "$dest" 2>/dev/null || true
-  done
+  # One installer covers /usr/local/bin (desk) and /atlas-bin (terminal).
+  if [ -x "$MERGE/usr/local/libexec/atlas-sudo-install.sh" ]; then
+    ATLAS_LINUX_ROOT="$MERGE" "$MERGE/usr/local/libexec/atlas-sudo-install.sh" \
+      || true
+  else
+    for dest in \
+      "$MERGE/usr/local/bin/sudo" \
+      "$MERGE/atlas-bin/sudo"
+    do
+      dir=`dirname "$dest"`
+      case "$dir" in ''|*$'\n'*|*Toybox*) continue ;; esac
+      safe_mkdir_p "$dir" || continue
+      if [ -f /usr/local/share/atlas/sudo ]; then
+        cp -f /usr/local/share/atlas/sudo "$dest"
+      elif [ -f "$MERGE/usr/local/share/atlas/sudo" ]; then
+        cp -f "$MERGE/usr/local/share/atlas/sudo" "$dest"
+      fi
+      if [ ! -s "$dest" ] && [ -x "$MERGE/usr/bin/sudo.real" ]; then
+        ln -sfn /usr/bin/sudo.real "$dest"
+      fi
+      chmod 755 "$dest" 2>/dev/null || true
+    done
+  fi
   # apt wrappers: product /system/bin/apt-hybrid.sh (finds /system/bin/atlas-auth)
   APHYB=""
   for c in \

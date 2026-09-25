@@ -27,11 +27,16 @@ import com.termux.view.TerminalViewClient;
  * tap (that felt like Caps Lock after boot). TerminalView must not trust
  * event.isShiftPressed() alone.
  *
+ * SYM (product layout maps that key to ALT_RIGHT): EventHub leaves
+ * META_ALT_RIGHT / META_SYM on later letters, and the IME treats a short
+ * Sym tap as sticky Alt. Sym is momentary while the key is held.
+ * TerminalView must not trust isAltPressed() for it.
+ *
  * INPUT_REV bumped with every intentional input change + known_good snapshot.
  */
 public final class AtlasTermClient implements TerminalViewClient, TerminalSessionClient {
     private static final String TAG = "AtlasTerm";
-    public static final String INPUT_REV = "0.9.76-shift-caps";
+    public static final String INPUT_REV = "1.0.81-sym-momentary";
 
     public interface Host {
         void onSessionFinished(int code);
@@ -44,11 +49,15 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
     private final Host host;
     private boolean stickyCtrl;
     private boolean stickyAlt;
-    /** Soft ExtraKeys shift — unused for HW; kept for parity clear paths. */
+    /** Soft ExtraKeys shift. Hardware Shift stays momentary. */
     private boolean stickyShift;
+    /** Soft ExtraKeys Meta. The next glyph is prefixed with ESC. */
+    private boolean stickyMeta;
     private boolean stickyFn;
     /** Physical SHIFT_LEFT/RIGHT currently down (momentary). */
     private boolean physShiftDown;
+    /** Physical Sym (ALT_RIGHT or KEYCODE_SYM) currently down. Not event meta. */
+    private boolean physSymDown;
     private long physShiftDownAt;
     private boolean physShiftSawLetter;
     /**
@@ -72,6 +81,13 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
 
     public boolean isStickyCtrl() { return stickyCtrl; }
     public boolean isStickyAlt() { return stickyAlt; }
+    public boolean isStickyShift() { return stickyShift; }
+    public boolean isStickyMeta() { return stickyMeta; }
+
+    public boolean isCapsOn() {
+        syncCapsFromPlane();
+        return capsLatched;
+    }
 
     public void toggleStickyCtrl() { stickyCtrl = !stickyCtrl; }
     public void toggleStickyAlt() { stickyAlt = !stickyAlt; }
@@ -89,11 +105,18 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
             case "ALT":
                 toggleStickyAlt();
                 return;
-            case "/":
-                writeRaw("/");
+            case "SHIFT":
+                stickyShift = !stickyShift;
                 return;
-            case "-":
-                writeRaw("-");
+            case "META":
+                stickyMeta = !stickyMeta;
+                return;
+            case "CAPS":
+                toggleCaps();
+                return;
+            case "GRAVE":
+                writeRaw(stickyShift ? "`" : "~");
+                consumeSoftMods();
                 return;
             default:
                 break;
@@ -107,20 +130,30 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
                 // don't clear on modifiers we don't dispatch
             }
             if (!isToggleOnly(key)) {
-                // clear sticky after arrow/letter specials that used it via readControlKey
-                // (TerminalView already read sticky during onKeyDown)
-                stickyCtrl = false;
-                stickyAlt = false;
-                stickyShift = false;
+                // TerminalView already read the latches during onKeyDown.
+                consumeSoftMods();
             }
             return;
         }
 
-        if (key.length() == 1) writeRaw(key);
+        if (key.length() == 1) {
+            char c = AtlasKeyMap.withShift(key.charAt(0), stickyShift);
+            if (stickyMeta && !stickyAlt) stickyAlt = true;
+            writeRaw(String.valueOf(c));
+            consumeSoftMods();
+        }
+    }
+
+    private void consumeSoftMods() {
+        stickyCtrl = false;
+        stickyAlt = false;
+        stickyShift = false;
+        stickyMeta = false;
     }
 
     private static boolean isToggleOnly(String key) {
-        return "CTRL".equals(key) || "ALT".equals(key);
+        return "CTRL".equals(key) || "ALT".equals(key)
+            || "SHIFT".equals(key) || "META".equals(key) || "CAPS".equals(key);
     }
 
     private void dispatchVirtualKey(int keyCode) {
@@ -174,8 +207,7 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
             case "ESC": return KeyEvent.KEYCODE_ESCAPE;
             case "TAB": return KeyEvent.KEYCODE_TAB;
             case "ENTER": return KeyEvent.KEYCODE_ENTER;
-            case "BKSP":
-            case "DEL": return KeyEvent.KEYCODE_DEL;
+            case "BKSP": return KeyEvent.KEYCODE_DEL;
             case "HOME": return KeyEvent.KEYCODE_MOVE_HOME;
             case "END": return KeyEvent.KEYCODE_MOVE_END;
             case "PGUP": return KeyEvent.KEYCODE_PAGE_UP;
@@ -184,6 +216,22 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
             case "↓": return KeyEvent.KEYCODE_DPAD_DOWN;
             case "→": return KeyEvent.KEYCODE_DPAD_RIGHT;
             case "←": return KeyEvent.KEYCODE_DPAD_LEFT;
+            case "INS": return KeyEvent.KEYCODE_INSERT;
+            case "DEL": return KeyEvent.KEYCODE_FORWARD_DEL;
+            case "PRT": return KeyEvent.KEYCODE_SYSRQ;
+            case "PAUSE": return KeyEvent.KEYCODE_BREAK;
+            case "F1": return KeyEvent.KEYCODE_F1;
+            case "F2": return KeyEvent.KEYCODE_F2;
+            case "F3": return KeyEvent.KEYCODE_F3;
+            case "F4": return KeyEvent.KEYCODE_F4;
+            case "F5": return KeyEvent.KEYCODE_F5;
+            case "F6": return KeyEvent.KEYCODE_F6;
+            case "F7": return KeyEvent.KEYCODE_F7;
+            case "F8": return KeyEvent.KEYCODE_F8;
+            case "F9": return KeyEvent.KEYCODE_F9;
+            case "F10": return KeyEvent.KEYCODE_F10;
+            case "F11": return KeyEvent.KEYCODE_F11;
+            case "F12": return KeyEvent.KEYCODE_F12;
             default: return 0;
         }
     }
@@ -214,8 +262,16 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
                 physShiftDownAt = SystemClock.uptimeMillis();
                 physShiftSawLetter = false;
                 oneShotShift = false;
-                stickyShift = false;
+                stickyShift = false; stickyMeta = false;
                 syncCapsFromPlane();
+            }
+            return true;
+        }
+        if (isSymKey(keyCode)) {
+            if (e != null && (e.getFlags() & KeyEvent.FLAG_CANCELED) != 0) {
+                physSymDown = false;
+            } else if (e == null || e.getRepeatCount() == 0) {
+                physSymDown = true;
             }
             return true;
         }
@@ -233,7 +289,7 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
             long held = now - physShiftDownAt;
             boolean bareTap = physShiftDown && !physShiftSawLetter && held < 450L;
             physShiftDown = false;
-            stickyShift = false;
+            stickyShift = false; stickyMeta = false;
             oneShotShift = false;
             if (bareTap) {
                 if (lastBareShiftUpAt > 0L && (now - lastBareShiftUpAt) <= DOUBLE_SHIFT_CAPS_MS) {
@@ -247,10 +303,14 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
             }
             return true;
         }
+        if (isSymKey(keyCode)) {
+            physSymDown = false;
+            return true;
+        }
         if (!isModifierKey(keyCode)) {
             stickyCtrl = false;
             stickyAlt = false;
-            stickyShift = false;
+            stickyShift = false; stickyMeta = false;
             oneShotShift = false;
         }
         return false;
@@ -259,6 +319,12 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
     private static boolean isShiftKey(int keyCode) {
         return keyCode == KeyEvent.KEYCODE_SHIFT_LEFT
                 || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT;
+    }
+
+    /** Titan Sym: the product layout is ALT_RIGHT. OEM inject is KEYCODE_SYM. */
+    private static boolean isSymKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_ALT_RIGHT
+                || keyCode == KeyEvent.KEYCODE_SYM;
     }
 
     private static boolean isTypingLetterKey(int keyCode) {
@@ -289,11 +355,15 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
     @Override public boolean readAltKey() { return stickyAlt; }
 
     /**
-     * Authoritative shift for TerminalView: <b>physical hold only</b>.
-     * Never returns true from stuck KeyEvent meta or bare-tap residue.
+     * Physical Shift is momentary. The soft-bar Shift latch also counts,
+     * and is cleared by the next key.
      */
     @Override public boolean readShiftKey() {
-        return physShiftDown;
+        return physShiftDown || stickyShift;
+    }
+
+    @Override public boolean readSymKey() {
+        return physSymDown;
     }
 
     @Override public boolean readCapsLock() {
@@ -369,7 +439,7 @@ public final class AtlasTermClient implements TerminalViewClient, TerminalSessio
         // One-shot Shift is consumed by the first glyph (letter or special).
         if (oneShotShift && codePoint > 0) {
             oneShotShift = false;
-            stickyShift = false;
+            stickyShift = false; stickyMeta = false;
         }
         return false;
     }

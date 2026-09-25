@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Lock
+GenericName=Lock Screen
+Comment=Lock the desk. Unlock as atlas.
+Exec=atlas-lock
+Icon=system-lock-screen
+Terminal=false
+Categories=System;Security;
+StartupNotify=false

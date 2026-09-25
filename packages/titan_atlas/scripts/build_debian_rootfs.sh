@@ -226,18 +226,33 @@ rm -f "$WORKDIR/etc/machine-id" "$WORKDIR/var/lib/dbus/machine-id" 2>/dev/null |
 log "pack $TAR"
 # Pack as root via docker so root-owned files (sudoers, ssl/private) are included.
 # Host tar as non-root silently drops them (Permission denied) → broken sudo seed.
-# Use host-native platform for pack (just tar, no arch-specific exec needed).
+# The same root step bakes the sudo wrapper onto both PATH locations.
+SUDO_SRC="$ROOT/packages/titan_atlas/native/x11"
 if ! docker run --rm \
-  -v "$WORKDIR:/rootfs:ro" \
+  -v "$WORKDIR:/rootfs" \
+  -v "$SUDO_SRC:/sudo-src:ro" \
   -v "$OUT_DIR:/out" \
   debian:trixie-slim \
-  bash -c "tar -czf /out/$(basename "$TAR") -C /rootfs . && chown $(id -u):$(id -g) /out/$(basename "$TAR")"; then
+  bash -c "set -e
+    mkdir -p /rootfs/usr/local/share/atlas /rootfs/usr/local/libexec /rootfs/usr/local/bin /rootfs/atlas-bin
+    cp -f /sudo-src/sudo /rootfs/usr/local/share/atlas/sudo
+    cp -f /sudo-src/atlas-sudo-stamp.sh /rootfs/usr/local/share/atlas/atlas-sudo-stamp
+    cp -f /sudo-src/atlas-sudo-install.sh /rootfs/usr/local/libexec/atlas-sudo-install.sh
+    chmod 755 /rootfs/usr/local/share/atlas/sudo /rootfs/usr/local/share/atlas/atlas-sudo-stamp /rootfs/usr/local/libexec/atlas-sudo-install.sh
+    ATLAS_LINUX_ROOT=/rootfs /rootfs/usr/local/libexec/atlas-sudo-install.sh
+    grep -q 'password prompt' /rootfs/usr/local/bin/sudo
+    grep -q 'password prompt' /rootfs/atlas-bin/sudo
+    test -u /rootfs/usr/bin/sudo.real
+    tar -czf /out/$(basename "$TAR") -C /rootfs .
+    chown $(id -u):$(id -g) /out/$(basename "$TAR")"; then
   log "FATAL: docker pack failed"
   exit 1
 fi
 [ -f "$TAR" ] || { log "FATAL: missing $TAR after pack"; exit 1; }
 # Re-prove critical paths inside the tar (not just workdir)
-for _rel in usr/bin/curl etc/ssl/certs/ca-certificates.crt etc/sudoers usr/bin/ping; do
+for _rel in usr/bin/curl etc/ssl/certs/ca-certificates.crt etc/sudoers usr/bin/ping \
+  usr/local/bin/sudo atlas-bin/sudo usr/local/share/atlas/sudo usr/bin/sudo.real \
+  usr/local/libexec/atlas-sudo-install.sh; do
   if ! tar -tzf "$TAR" | grep -E -q "(^|./)${_rel}$"; then
     log "FATAL: packed tar missing $_rel"
     exit 1
@@ -259,7 +274,7 @@ fi
 if ! python3 - "$TAR" <<'PY'
 import sys, tarfile
 tar = sys.argv[1]
-need = ("etc/sudoers", "etc/sudo.conf", "usr/bin/sudo")
+need = ("etc/sudoers", "etc/sudo.conf", "usr/bin/sudo", "usr/bin/sudo.real")
 with tarfile.open(tar, "r:gz") as t:
     for rel in need:
         for cand in ("./" + rel, rel):

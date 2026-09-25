@@ -38,6 +38,7 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     TitanAtlas \
     privapp-permissions-com.titanus2.atlas.xml \
+    default-permissions-com.titanus2.atlas.xml \
     atlas-hybrid.sh \
     atlas-net.sh \
     atlas-hybrid-boot.sh \

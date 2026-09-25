@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.93-side-scroll (693) — 2026-09-24T20:51Z
+
+- Build stamp (ALLOW_ROOT=1)
+
+---
+
 ## 16.92-rear-dt2w (692) — 2026-09-19T23:27Z
 
 - Rear DT2W: OEM ioctl 100 on /dev/touch + grab KEY_POWER on sub_touch; never front synaptics

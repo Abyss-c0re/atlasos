@@ -1,0 +1,21 @@
+# Everyday desk apps. No SDDM, no Flatpak, no CUPS, no fwupd.
+# Baked into atlas_linux (3072M).
+dolphin
+kate
+kwrite
+ark
+gwenview
+okular
+kcalc
+kde-spectacle
+systemsettings
+kinfocenter
+kfind
+plasma-systemmonitor
+plasma-discover
+plasma-pa
+pipewire-pulse
+pulseaudio-utils
+network-manager
+plasma-nm
+firefox-esr

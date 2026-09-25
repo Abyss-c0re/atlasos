@@ -6,5 +6,6 @@
 <exceptions>
     <exception package="com.titanus2.atlas">
         <permission name="android.permission.POST_NOTIFICATIONS" fixed="false" />
+        <permission name="android.permission.RECORD_AUDIO" fixed="false" />
     </exception>
 </exceptions>

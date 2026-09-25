@@ -129,9 +129,16 @@ public final class NativeBin {
             if (dir == null) continue;
             //noinspection ResultOfMethodCallIgnored
             dir.mkdirs();
-            for (String so : new String[] { "libatlaspty.so", "libatlasterm.so" }) {
+            long apk = 0L;
+            try {
+                apk = new File(c.getApplicationInfo().sourceDir).lastModified();
+            } catch (Exception ignored) {
+            }
+            for (String so : new String[] {
+                "libatlaspty.so", "libatlasterm.so", "libatlasdesk.so"
+            }) {
                 File out = new File(dir, so);
-                if (out.isFile() && out.length() > 1000) {
+                if (out.isFile() && out.length() > 1000 && out.lastModified() >= apk) {
                     //noinspection ResultOfMethodCallIgnored
                     out.setReadable(true, false);
                     //noinspection ResultOfMethodCallIgnored
@@ -1131,8 +1138,6 @@ public final class NativeBin {
                 + "export ATLAS_AUTH_DIR=/var/lib/atlas-auth\n"
                 + "export ATLAS_AUTH_ON_LP=" + AUTH_ON_LP + "\n"
                 + "export NANOBOT_HOME=\"" + NANOBOT_HOME + "\"\n"
-                + "export GROK_DISABLE_AUTOUPDATER=1\n"
-                + "export GROK_MAXIMUM_VERSION=1.0.25\n"
                 + "export TERM=\"${TERM:-xterm-256color}\"\n"
                 + "export LANG=\"${LANG:-C.UTF-8}\"\n"
                 + "export COLORTERM=\"${COLORTERM:-truecolor}\"\n"
@@ -1152,10 +1157,12 @@ public final class NativeBin {
                 + "export ATLAS_AUTH_DIR=/var/lib/atlas-auth\n"
                 + "export ATLAS_AUTH_ON_LP=" + AUTH_ON_LP + "\n"
                 + "export NANOBOT_HOME=\"" + NANOBOT_HOME + "\"\n"
-                + "export GROK_DISABLE_AUTOUPDATER=1\n"
-                + "export GROK_MAXIMUM_VERSION=1.0.25\n"
+                + "# Inside Debian, /home/atlas is this tree. The Android path is not\n"
+                + "# a place Grok can mkdir, so do not point HOME at it here.\n"
+                + "if [ -d /home/atlas ]; then export HOME=/home/atlas; fi\n"
                 + pathDebian
-                + "mkdir -p \"$HOME/bin\" \"$HOME/.local/bin\" 2>/dev/null || true\n"
+                + "mkdir -p \"$HOME/bin\" \"$HOME/.local/bin\" \"$HOME/.grok/data\" "
+                + "2>/dev/null || true\n"
                 + "cd \"$HOME\" 2>/dev/null || true\n";
         writeText(new File(lh, ".profile"), bodyLinux);
         writeText(new File(lh, ".bashrc"),
@@ -1239,7 +1246,15 @@ public final class NativeBin {
                 + "export ATLAS_AUTH_ON_LP=\"${ATLAS_AUTH_ON_LP:-" + AUTH_ON_LP + "}\"\n"
                 + "export ATLAS_REPORTS=\"$HOME/reports\"\n"
                 + "mkdir -p \"$HOME/reports\" \"$HOME/screenshots\" 2>/dev/null || true\n"
-                + "sudo() { \"$ATLAS_BIN/sudo\" \"$@\"; }\n"
+                + "sudo() {\n"
+                + "  if [ -x /usr/bin/sudo.real ] && [ -x /atlas-bin/sudo ]; then\n"
+                + "    /atlas-bin/sudo \"$@\"\n"
+                + "  elif [ -x /usr/bin/sudo.real ] && [ -x /usr/local/bin/sudo ]; then\n"
+                + "    /usr/local/bin/sudo \"$@\"\n"
+                + "  else\n"
+                + "    \"$ATLAS_BIN/sudo\" \"$@\"\n"
+                + "  fi\n"
+                + "}\n"
                 + "su() { \"$ATLAS_BIN/su\" \"$@\"; }\n"
                 + "unalias sudo 2>/dev/null || true\n"
                 + "unalias su 2>/dev/null || true\n");

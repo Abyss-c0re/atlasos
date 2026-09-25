@@ -109,6 +109,7 @@ public class AtlasSessionService extends Service {
         super.onCreate();
         ensureChannel();
         AuthWatch.start(this);
+        DeskAudio.start(this);
         handler.post(authPoll);
         // First health soon after FGS up (boot may still be settling), then interval.
         handler.postDelayed(hybridHealth, 12_000L);

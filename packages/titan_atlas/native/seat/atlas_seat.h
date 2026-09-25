@@ -64,6 +64,10 @@ struct atlas_seat_hello {
     char     name[16];
 } __attribute__((packed));
 
+/* ATLAS_T_PTR: hdr.fmt bit0 set means dx/dy are absolute desktop pixels.
+ * Clear means a relative pad/mouse delta. buttons still live in the payload. */
+#define ATLAS_PTR_ABSOLUTE 1u
+
 /* Pointer payload when type=PTR and nbytes>=sizeof */
 struct atlas_seat_ptr {
     int32_t dx;

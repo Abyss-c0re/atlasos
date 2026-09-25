@@ -304,7 +304,9 @@ read_ctrl() {
     [ -n "$v" ] || continue
     mt=$(stat -c %Y "$f" 2>/dev/null) || mt=0
     case "$mt" in ''|*[!0-9]*) mt=0;; esac
-    if [ "$mt" -ge "$best_mt" ] 2>/dev/null; then
+    # Strict newer wins. Same-second ties keep the earlier path (app CE)
+    # so a stale tmp 0 cannot beat a same-tick session=1 write.
+    if [ "$mt" -gt "$best_mt" ] 2>/dev/null; then
       best_mt=$mt
       best_v=$v
     fi
@@ -981,6 +983,23 @@ ensure_screen_off_hid_awake() {
 while true; do
   loop_n=$((loop_n + 1))
   sess=$(bool01 "$(read_ctrl titan2_usb_hid_session)")
+  # Recover split-brain: gadget still armed while a stale plane read sess=0.
+  # Any live plane 1 wins. All-0 + hidg falls through so teardown can run.
+  if [ "$sess" = "0" ] && hid_ready 2>/dev/null; then
+    for _sf in \
+      /data/user/0/com.titanus2.usbhid/files/titan2_usb_hid_session \
+      /data/misc/titan2/titan2_usb_hid_session \
+      /data/local/tmp/titan2_usb_hid_session
+    do
+      [ -f "$_sf" ] || continue
+      _sv=$(bool01 "$(cat "$_sf" 2>/dev/null | tr -d '\r\n ')")
+      if [ "$_sv" = "1" ]; then
+        sess=1
+        log "session recover — $_sf=1 gadget armed"
+        break
+      fi
+    done
+  fi
   # 0.16.16: never arm while CE locked (password/keyguard after reboot residual).
   if [ "$sess" = "1" ] && ! user_unlocked; then
     if [ "${_logged_locked:-0}" != "1" ]; then
@@ -996,19 +1015,31 @@ while true; do
   # 0.16.18 cube-load-park: under load≥8 with session off, only edge-wait on
   # session plane (skip full mouse/grab/keys/host/dual-bridge thrash). Start
   # exclusive still lands within HEAT_INTERVAL_S.
+  # Never park while hidg/bridge is live — that stranded titan_hid with
+  # --nomouse and left the pad on the phone.
   HEAT_PARK=0
   li=$(load_1m_int)
   case "$li" in ''|*[!0-9]*) li=0;; esac
   if [ "$li" -ge "$HEAT_LOAD_GE" ] 2>/dev/null; then HEAT_PARK=1; fi
   if [ "$HEAT_PARK" -eq 1 ] && [ "$sess" = "0" ]; then
-    if [ "${_logged_heat_park:-0}" != "1" ]; then
-      log "cube-load-park load=$li sess=0 interval=${HEAT_INTERVAL_S}s"
-      _logged_heat_park=1
+    if hid_ready 2>/dev/null || pidof hid_bridge >/dev/null 2>&1; then
+      if [ "${_logged_heat_live:-0}" != "1" ]; then
+        log "cube-load-park skip — hidg/bridge live sess=0 (run loop)"
+        _logged_heat_live=1
+      fi
+    else
+      _logged_heat_live=0
+      if [ "${_logged_heat_park:-0}" != "1" ]; then
+        log "cube-load-park load=$li sess=0 interval=${HEAT_INTERVAL_S}s"
+        _logged_heat_park=1
+      fi
+      # Keep last_* coherent so session edge after park still runs changed=1 path.
+      last_sess=0
+      sleep "$HEAT_INTERVAL_S"
+      continue
     fi
-    # Keep last_* coherent so session edge after park still runs changed=1 path.
-    last_sess=0
-    sleep "$HEAT_INTERVAL_S"
-    continue
+  else
+    _logged_heat_live=0
   fi
   _logged_heat_park=0
   # Screen-off HID: keep input + gadget powered (every ~2s while session live)

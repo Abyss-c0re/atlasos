@@ -1,0 +1,15 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Id": "org.kde.plasma.atlasstatus",
+        "Name": "Atlas phone",
+        "Description": "Battery, LTE signal, and the active network from Android",
+        "Category": "System Information",
+        "EnabledByDefault": true,
+        "License": "GPL-2.0+",
+        "Version": "1"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-MainScript": "ui/main.qml",
+    "X-Plasma-Provides": ["org.kde.plasma.atlasstatus"]
+}

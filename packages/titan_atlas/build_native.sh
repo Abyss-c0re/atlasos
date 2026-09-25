@@ -135,6 +135,33 @@ chmod 755 "$PTY_SO"
 _cp "$PTY_SO" "$APP_ASSETS/libatlaspty.so"
 echo "OK $PTY_SO ($(stat -c%s "$PTY_SO") bytes) → assets/bin/libatlaspty.so"
 
+# Present viewer for the Desk button (memfd pull + seat input).
+DESK_SO="$OUT_DIR/libatlasdesk.so"
+"$CC" -O2 -fPIC -shared -D_GNU_SOURCE \
+  -I"$ROOT/native/x11" -I"$ROOT/native/seat" \
+  -o "$DESK_SO" "$ROOT/native/x11/desk_jni.c" -llog
+chmod 755 "$DESK_SO"
+_cp "$DESK_SO" "$APP_ASSETS/libatlasdesk.so"
+echo "OK $DESK_SO ($(stat -c%s "$DESK_SO") bytes) → assets/bin/libatlasdesk.so"
+_cp "$ROOT/native/x11/atlas-desk-session.sh" "$APP_ASSETS/atlas-desk-session"
+_cp "$ROOT/native/x11/atlas-desk-install.sh" "$APP_ASSETS/atlas-desk-install"
+chmod 755 "$APP_ASSETS/atlas-desk-session" "$APP_ASSETS/atlas-desk-install"
+if [ -f "$ROOT/native/x11/atlas-desk-keys.c" ]; then
+  build_one atlas-desk-keys "$ROOT/native/x11/atlas-desk-keys.c" "1.0.64-focus"
+fi
+if [ -f "$ROOT/native/x11/atlas-desk-pad.c" ]; then
+  build_one atlas-desk-pad "$ROOT/native/x11/atlas-desk-pad.c" "1.0.64-focus"
+fi
+# AAudio bridge. Not ALSA. build_one only links -llog.
+if [ -f "$ROOT/native/x11/atlas-audio-bridge.c" ]; then
+  AUDIO_OUT="$OUT_DIR/atlas-audio-bridge"
+  "$CC" -O2 -fPIE -pie -Wall -Wextra -D_GNU_SOURCE \
+    -o "$AUDIO_OUT" "$ROOT/native/x11/atlas-audio-bridge.c" -laaudio -llog
+  chmod 755 "$AUDIO_OUT"
+  _cp "$AUDIO_OUT" "$APP_ASSETS/atlas-audio-bridge"
+  echo "OK $AUDIO_OUT ($(stat -c%s "$AUDIO_OUT") bytes) → assets/bin/atlas-audio-bridge"
+fi
+
 # Keep hybrid script staged
 if [ -f "$ROOT/scripts/atlas-hybrid.sh" ]; then
   _cp "$ROOT/scripts/atlas-hybrid.sh" "$APP_ASSETS/atlas-hybrid.sh"

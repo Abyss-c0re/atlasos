@@ -1,4 +1,4 @@
-versionName=16.92-rear-dt2w
-versionCode=692
-built_utc=2026-09-19T23:27Z
+versionName=16.93-side-scroll
+versionCode=693
+built_utc=2026-09-24T20:51Z
 allow_root=1

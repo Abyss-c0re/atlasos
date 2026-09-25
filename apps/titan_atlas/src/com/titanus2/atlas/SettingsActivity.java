@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
@@ -36,8 +38,14 @@ public class SettingsActivity extends Activity {
     private TextView sizeLab;
     private LinearLayout backupsNav;
     private TextView ttlLab;
+    private TextView deskStatus;
+    private EditText deskWField;
+    private EditText deskHField;
+    private EditText deskScaleField;
     private LinearLayout authLogNav;
     private LinearLayout authBinsNav;
+    private LinearLayout sideTopRow;
+    private LinearLayout sideBotRow;
 
     private static final String[] THEMES = {
         "dark", "light", "green", "amber", "cube"
@@ -45,6 +53,12 @@ public class SettingsActivity extends Activity {
     private static final String[] THEME_LABELS = {
         "Dark", "Light", "Green", "Amber", "Cube"
     };
+
+    private void cycleSide(String slot, LinearLayout row) {
+        String next = DeskSideKeys.next(DeskSideKeys.action(this, slot));
+        DeskSideKeys.set(this, slot, next);
+        UiKit.setNavSummary(row, DeskSideKeys.label(next));
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -80,6 +94,17 @@ public class SettingsActivity extends Activity {
         });
         UiKit.toggle(root, "Keep screen on", AtlasPrefs.keepScreenOn(this),
             on -> AtlasPrefs.setKeepScreenOn(this, on));
+
+        UiKit.section(root, "Side buttons");
+        UiKit.note(root, "Short press is the scroll wheel. Top up, bottom down.");
+        sideTopRow = UiKit.navRow(root, "Side · top",
+            DeskSideKeys.label(DeskSideKeys.action(this,
+                com.titanus2.api.Titan2ApiContract.SLOT_SIDE2_SHORT)),
+            () -> cycleSide(com.titanus2.api.Titan2ApiContract.SLOT_SIDE2_SHORT, sideTopRow));
+        sideBotRow = UiKit.navRow(root, "Side · bottom",
+            DeskSideKeys.label(DeskSideKeys.action(this,
+                com.titanus2.api.Titan2ApiContract.SLOT_SIDE_SHORT)),
+            () -> cycleSide(com.titanus2.api.Titan2ApiContract.SLOT_SIDE_SHORT, sideBotRow));
 
         // ——— Privileges (what is allowed) ———
         // Primary model: manage access. Bio is optional enforcement below.
@@ -229,6 +254,34 @@ public class SettingsActivity extends Activity {
         UiKit.flexButton(diskRow2, "Wipe", this::confirmWipe);
         UiKit.button(root, "Fix home ownership", this::healHome);
         UiKit.button(root, "Fix Debian uid", this::healDebianUid);
+
+        UiKit.section(root, "Desktop");
+        UiKit.note(root,
+            "Panel size and Qt scale apply the next time Desk starts. "
+                + "Compositing uses the Mali GPU through virpipe.");
+        deskStatus = UiKit.mono(root);
+        deskStatus.setText(deskSummary());
+        deskWField = numField(String.valueOf(AtlasPrefs.deskW(this)));
+        deskHField = numField(String.valueOf(AtlasPrefs.deskH(this)));
+        deskScaleField = new EditText(this);
+        deskScaleField.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        deskScaleField.setText(AtlasPrefs.deskScaleLabel(this));
+        deskScaleField.setHint("scale");
+        LinearLayout sizeRow = UiKit.row(root);
+        sizeRow.addView(deskWField, new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        sizeRow.addView(deskHField, new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        sizeRow.addView(deskScaleField, new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        UiKit.button(root, "Apply resolution", this::applyDeskFields);
+        UiKit.toggle(root, "KWin compositing", AtlasPrefs.deskCompose(this), on -> {
+            AtlasPrefs.setDeskCompose(this, on);
+            toast(on ? "GPU compose on next Desk" : "compose off next Desk");
+        });
+        LinearLayout deskRow = UiKit.row(root);
+        UiKit.flexButton(deskRow, "Install KDE", this::installKde);
+        UiKit.flexButton(deskRow, "Desk status", this::refreshDeskStatus);
 
         UiKit.section(root, "Agent");
         UiKit.toggle(root, "Keep-alive notification", AtlasPrefs.keepAlive(this), on -> {
@@ -555,6 +608,65 @@ public class SettingsActivity extends Activity {
 
     private void toast(String s) {
         AtlasUi.toast(this, s);
+    }
+
+    private EditText numField(String text) {
+        EditText e = new EditText(this);
+        e.setInputType(InputType.TYPE_CLASS_NUMBER);
+        e.setText(text);
+        e.setSingleLine(true);
+        return e;
+    }
+
+    private String deskSummary() {
+        return AtlasPrefs.deskW(this) + "×" + AtlasPrefs.deskH(this)
+            + "  scale " + AtlasPrefs.deskScaleLabel(this);
+    }
+
+    private void applyDeskFields() {
+        int w;
+        int h;
+        float scale;
+        try {
+            w = Integer.parseInt(deskWField.getText().toString().trim());
+            h = Integer.parseInt(deskHField.getText().toString().trim());
+            scale = Float.parseFloat(deskScaleField.getText().toString().trim());
+        } catch (NumberFormatException ex) {
+            toast("width, height, scale");
+            return;
+        }
+        if (w < 320 || h < 200 || w > 4096 || h > 4096 || scale < 0.25f || scale > 4f) {
+            toast("320–4096, scale 0.25–4");
+            return;
+        }
+        AtlasPrefs.setDeskSize(this, w, h);
+        AtlasPrefs.setDeskScaleMilli(this, Math.round(scale * 1000f));
+        deskWField.setText(String.valueOf(AtlasPrefs.deskW(this)));
+        deskHField.setText(String.valueOf(AtlasPrefs.deskH(this)));
+        deskScaleField.setText(AtlasPrefs.deskScaleLabel(this));
+        if (deskStatus != null) deskStatus.setText(deskSummary());
+        toast(deskSummary());
+    }
+
+    private void installKde() {
+        toast("Installing KDE…");
+        runIo(() -> {
+            String out = DeskSession.install(SettingsActivity.this);
+            String tail = out.length() > 180 ? out.substring(out.length() - 180) : out;
+            main.post(() -> {
+                if (deskStatus != null) deskStatus.setText(tail.replace('\n', ' '));
+                toast(out.contains("DONE") ? "KDE installed" : "KDE install failed");
+            });
+        });
+    }
+
+    private void refreshDeskStatus() {
+        runIo(() -> {
+            String out = DeskSession.status();
+            main.post(() -> {
+                if (deskStatus != null) deskStatus.setText(out.replace('\n', ' '));
+            });
+        });
     }
 
     @Override
