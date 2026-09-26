@@ -1066,7 +1066,7 @@ class Worker(threading.Thread):
         self._pct(0.0)
         self._say("Cooking a new pin.")
         env = os.environ.copy()
-        env["ATLAS_LINUX_SIZE_M"] = "1536"
+        env["ATLAS_LINUX_SIZE_M"] = "4286"
         env["ATLAS_OPENWRT_SIZE_M"] = "128"
         feats = normalize_planes(job.get("features") or {})
         reason = cook_preflight(job.get("gsi") or "")

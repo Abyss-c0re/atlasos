@@ -81,15 +81,25 @@ static int send_all(int fd, const void *buf, size_t n) {
     return 0;
 }
 
-static int send_key(uint32_t code, int down) {
-    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+/* One connection. Reconnecting per key made Return and letters late. */
+static int seat_fd = -1;
+
+static void seat_close(void) {
+    if (seat_fd >= 0) close(seat_fd);
+    seat_fd = -1;
+}
+
+static int seat_open(void) {
+    int fd;
     struct sockaddr_un a;
     struct seat_hdr h;
     struct seat_hello hi;
+    if (seat_fd >= 0) return 0;
+    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return -1;
     memset(&a, 0, sizeof(a));
     a.sun_family = AF_UNIX;
-    if (strlen(sockpath) >= sizeof(a.sun_path)) {
+    if (!sockpath || strlen(sockpath) >= sizeof(a.sun_path)) {
         close(fd);
         return -1;
     }
@@ -110,18 +120,25 @@ static int send_key(uint32_t code, int down) {
         close(fd);
         return -1;
     }
+    seat_fd = fd;
+    return 0;
+}
+
+static int send_key(uint32_t code, int down) {
+    struct seat_hdr h;
+    int try;
     memset(&h, 0, sizeof(h));
     h.magic = MAGIC_INP;
     h.ver = SEAT_VER;
     h.type = T_KEY;
     h.w = code;
     h.h = down ? 1u : 0u;
-    if (send_all(fd, &h, sizeof(h)) != 0) {
-        close(fd);
-        return -1;
+    for (try = 0; try < 2; try++) {
+        if (seat_open() != 0) return -1;
+        if (send_all(seat_fd, &h, sizeof(h)) == 0) return 0;
+        seat_close();
     }
-    close(fd);
-    return 0;
+    return -1;
 }
 
 /* Same host map as hid_bridge: Sym is the printed layer, not XKB AltGr.
@@ -271,6 +288,8 @@ static void plane_action(const char *name, const char *fallback, char *out, size
     snprintf(out, n, "%s", fallback);
 }
 
+static void drop_grab(void);
+
 static void exec_sh(const char *cmd) {
     pid_t p = fork();
     if (p < 0) return;
@@ -282,24 +301,44 @@ static void exec_sh(const char *cmd) {
 
 /* Short/long Home is the Controls keymap (titan2_km_recents_*), fired as KEY_FIRE.
  * Never keyevent 187 and never RecentsActivity. */
+static void note_unfocus(void) {
+    int fd = open(FOCUS_PATH, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
+    if (fd < 0) return;
+    if (write(fd, "0\n", 2) != 2) {
+        /* best effort */
+    }
+    close(fd);
+}
+
 static void fire_home(int held_long) {
     char act[40];
-    char cmd[256];
+    char cmd[768];
+    /* The grab ate this press. Let go before asking the system to go home,
+     * or the next press is eaten too. Leave the desk first: Home and
+     * Recents otherwise open underneath this fullscreen window. */
+    drop_grab();
+    note_unfocus();
     plane_action(held_long ? "titan2_km_recents_long" : "titan2_km_recents_short",
                  held_long ? "recents" : "home", act, sizeof(act));
     snprintf(cmd, sizeof(cmd),
-             "exec /system/bin/am broadcast --user 0 -a com.titanus2.controls.KEY_FIRE "
-             "-p com.titanus2.controls --es action %s --ei scan 580",
-             act);
+             "/system/bin/am broadcast --user 0 -a com.titanus2.atlas.DESK_LEAVE "
+             "-p com.titanus2.atlas >/dev/null 2>&1; "
+             "/system/bin/am broadcast --user 0 -a com.titanus2.controls.KEY_FIRE "
+             "-p com.titanus2.controls --es action %s --ei scan 580 >/dev/null 2>&1%s",
+             act,
+             (!held_long && strcmp(act, "home") == 0)
+                 ? "; /system/bin/am start --user 0 -a android.intent.action.MAIN "
+                   "-c android.intent.category.HOME >/dev/null 2>&1"
+                 : "");
     exec_sh(cmd);
 }
 
-/* Back leaves the desk and drops the Android keyguard if it is up.
- * wm is backgrounded: a stuck dismiss must not block the leave broadcast.
- * GLOBAL_ACTION_BACK would hit this same window. */
+/* Back returns to the Debian shell. No keyguard sheet, and the grab
+ * must be gone before the shell reads the next key. */
 static void fire_leave(void) {
-    exec_sh("/system/bin/wm dismiss-keyguard >/dev/null 2>&1 & "
-            "/system/bin/am broadcast --user 0 -a com.titanus2.atlas.DESK_LEAVE "
+    drop_grab();
+    note_unfocus();
+    exec_sh("/system/bin/am broadcast --user 0 -a com.titanus2.atlas.DESK_LEAVE "
             "-p com.titanus2.atlas >/dev/null 2>&1");
 }
 
@@ -530,7 +569,7 @@ int main(int argc, char **argv) {
             }
             continue;
         }
-        /* Back returns from this screen. Do not feed it to KDE. */
+        /* Back returns to the Debian shell. Enter (28) stays a seat key. */
         if (ev.code == 158) {
             if (ev.value == 0) fire_leave();
             continue;
@@ -584,5 +623,6 @@ int main(int argc, char **argv) {
     }
     release_seat();
     release_dev();
+    seat_close();
     return 0;
 }

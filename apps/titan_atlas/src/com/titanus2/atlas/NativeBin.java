@@ -708,15 +708,23 @@ public final class NativeBin {
     /** Shared on-device nanobot home (Nanobot app owns the peer list). */
     public static final String NANOBOT_HOME = "/data/local/tmp/nanobot_home";
 
-    /** Grok is a user CLI. The OS does not write {@code ~/.grok}. */
-
     /**
-     * Nanobot peers are owned by the Nanobot app + Titan command plane.
-     * Atlas must not seed hive MCP (blackcube/braincube/nexuscore) or force
-     * {@code enabled:true}. Default is off.
+     * BlackCube is the lab peer for the on-device Grok agent.
+     * Home is wiped with userdata, so the bridge and token live on the
+     * Debian LP. This only merges that one server back into {@code ~/.grok}.
      */
     public static void ensureNanobotMcp(Context c) {
-        /* no-op — do not write mcp_servers.json */
+        if (c == null) return;
+        File lib = new File(LINUX_HOME, ".local/libexec");
+        //noinspection ResultOfMethodCallIgnored
+        lib.mkdirs();
+        File mcp = new File(lib, "atlas-blackcube-mcp");
+        File inst = new File(lib, "atlas-blackcube-install.sh");
+        extractAssetAtomic(c, "bin/atlas-blackcube-mcp", mcp);
+        extractAssetAtomic(c, "bin/atlas-blackcube-install.sh", inst);
+        File sh = inst.isFile() ? inst : new File(binDir(c), "atlas-blackcube-install.sh");
+        if (!sh.isFile()) return;
+        runTimed(new String[] { "/system/bin/sh", sh.getAbsolutePath() }, 8);
     }
 
     private static String readText(File f) {
@@ -1163,12 +1171,17 @@ public final class NativeBin {
                 + pathDebian
                 + "mkdir -p \"$HOME/bin\" \"$HOME/.local/bin\" \"$HOME/.grok/data\" "
                 + "2>/dev/null || true\n"
-                + "cd \"$HOME\" 2>/dev/null || true\n";
+                + "cd \"$HOME\" 2>/dev/null || true\n"
+                + "[ -x /usr/local/libexec/atlas-blackcube-install.sh ] && "
+                + "/usr/local/libexec/atlas-blackcube-install.sh >/dev/null 2>&1 || true\n";
         writeText(new File(lh, ".profile"), bodyLinux);
         writeText(new File(lh, ".bashrc"),
             "# Atlas Deb interactive — source PATH helper\n"
                 + "[ -f \"$HOME/.profile\" ] && . \"$HOME/.profile\"\n"
+                + "[ -x /usr/local/libexec/atlas-blackcube-install.sh ] && "
+                + "/usr/local/libexec/atlas-blackcube-install.sh >/dev/null 2>&1 || true\n"
                 + "hash -r 2>/dev/null || true\n");
+        ensureNanobotMcp(c);
         writeText(new File(home, ".bash_profile"),
             "# Atlas\n[ -f \"$HOME/.profile\" ] && . \"$HOME/.profile\"\n"
                 + "[ -f \"$HOME/.bashrc\" ] && . \"$HOME/.bashrc\"\n");

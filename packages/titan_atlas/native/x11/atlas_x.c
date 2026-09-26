@@ -1656,9 +1656,9 @@ static int spawn_xwayland(struct ax_server *srv) {
         snprintf(name, sizeof(name), ":%d", disp);
         setenv("XDG_RUNTIME_DIR", srv->dir, 1);
         setenv("WAYLAND_DISPLAY", "wayland-0", 1);
-        /* Glamor keeps the frame on the GPU. Forcing it off made every
-         * frame a CPU memfd copy and the desk lagged. */
-        unsetenv("XWAYLAND_NO_GLAMOR");
+        /* This compositor has no GBM. Glamor init fails and the fallback
+         * leaves the root buffer black while the cursor still updates. */
+        setenv("XWAYLAND_NO_GLAMOR", "1", 1);
         execlp("Xwayland", "Xwayland", name, "-geometry", geom, "-noreset", "-nolisten", "tcp",
                "-ac", (char *)NULL);
         _exit(127);

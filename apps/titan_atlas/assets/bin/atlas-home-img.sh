@@ -1,0 +1,1 @@
+../../../../patches/bin/atlas-home-img.sh

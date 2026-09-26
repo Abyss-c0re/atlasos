@@ -36,6 +36,7 @@ public class SettingsActivity extends Activity {
     private TextView hybridStatus;
     private TextView debianUserStatus;
     private TextView sizeLab;
+    private TextView homeSizeLab;
     private LinearLayout backupsNav;
     private TextView ttlLab;
     private TextView deskStatus;
@@ -255,6 +256,43 @@ public class SettingsActivity extends Activity {
         UiKit.button(root, "Fix home ownership", this::healHome);
         UiKit.button(root, "Fix Debian uid", this::healDebianUid);
 
+        UiKit.section(root, "Debian home");
+        UiKit.note(root,
+            "Home is an ext4 image in Atlas storage. "
+                + "Recreate makes an empty one. Export and Load use "
+                + "/sdcard/Atlas/debian-home.img.");
+        homeSizeLab = UiKit.sliderLabel(root, homeSizeLabel());
+        int homeIdx = 2;
+        int homeNow = AtlasPrefs.homeImgG(this);
+        for (int i = 0; i < AtlasPrefs.HOME_IMG_G.length; i++) {
+            if (AtlasPrefs.HOME_IMG_G[i] == homeNow) homeIdx = i;
+        }
+        UiKit.slider(root, AtlasPrefs.HOME_IMG_G.length - 1, homeIdx,
+            new SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
+                    if (!u) return;
+                    int g = AtlasPrefs.HOME_IMG_G[
+                        Math.max(0, Math.min(AtlasPrefs.HOME_IMG_G.length - 1, p))];
+                    AtlasPrefs.setHomeImgG(SettingsActivity.this, g);
+                    if (homeSizeLab != null) homeSizeLab.setText(homeSizeLabel());
+                }
+                @Override public void onStartTrackingTouch(SeekBar s) {}
+                @Override public void onStopTrackingTouch(SeekBar s) {}
+            });
+        LinearLayout homeRow = UiKit.row(root);
+        UiKit.flexButton(homeRow, "Apply size", this::applyHomeSize);
+        UiKit.flexButton(homeRow, "Recreate", this::confirmRecreateHome);
+        LinearLayout homeRow2 = UiKit.row(root);
+        UiKit.flexButton(homeRow2, "Export", this::exportHome);
+        UiKit.flexButton(homeRow2, "Load", this::confirmLoadHome);
+        UiKit.toggle(root, "Phone storage read-write", AtlasPrefs.sdcardRw(this), on -> {
+            AtlasPrefs.setSdcardRw(this, on);
+            runIo(() -> {
+                final String o = HomeImage.applySdcard(SettingsActivity.this);
+                main.post(() -> toast(o));
+            });
+        });
+
         UiKit.section(root, "Desktop");
         UiKit.note(root,
             "Panel size and Qt scale apply the next time Desk starts. "
@@ -278,6 +316,44 @@ public class SettingsActivity extends Activity {
         UiKit.toggle(root, "KWin compositing", AtlasPrefs.deskCompose(this), on -> {
             AtlasPrefs.setDeskCompose(this, on);
             toast(on ? "GPU compose on next Desk" : "compose off next Desk");
+        });
+        UiKit.note(root,
+            "Full screen panel. Keys opens around it and the desktop stays full screen. "
+                + "Style, size, and transparency apply when you return to the desk.");
+        TextView orbLab = UiKit.mono(root);
+        orbLab.setText(orbSummary());
+        LinearLayout styleRow = UiKit.row(root);
+        TextView[] orbTiles = new TextView[3];
+        String[] orbStyles = {"bar", "stack", "cross"};
+        String[] orbNames = {"Bar", "Stack", "Cross"};
+        for (int i = 0; i < orbStyles.length; i++) {
+            final String pick = orbStyles[i];
+            orbTiles[i] = UiKit.flexButton(styleRow, orbNames[i], () -> {
+                AtlasPrefs.setOrbStyle(this, pick);
+                for (int j = 0; j < orbTiles.length; j++) {
+                    UiKit.setSelected(orbTiles[j], orbStyles[j].equals(pick));
+                }
+                orbLab.setText(orbSummary());
+            });
+            UiKit.setSelected(orbTiles[i], pick.equals(AtlasPrefs.orbStyle(this)));
+        }
+        UiKit.slider(root, 80, AtlasPrefs.orbSize(this) - 70, new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
+                if (!fromUser) return;
+                AtlasPrefs.setOrbSize(SettingsActivity.this, 70 + progress);
+                orbLab.setText(orbSummary());
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) {}
+        });
+        UiKit.slider(root, 70, 100 - AtlasPrefs.orbOpacity(this), new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
+                if (!fromUser) return;
+                AtlasPrefs.setOrbOpacity(SettingsActivity.this, 100 - progress);
+                orbLab.setText(orbSummary());
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) {}
         });
         LinearLayout deskRow = UiKit.row(root);
         UiKit.flexButton(deskRow, "Install KDE", this::installKde);
@@ -493,6 +569,79 @@ public class SettingsActivity extends Activity {
         });
     }
 
+    private String homeSizeLabel() {
+        return "Home image " + AtlasPrefs.homeImgG(this) + "G";
+    }
+
+    private void applyHomeSize() {
+        toast("home " + AtlasPrefs.homeImgG(this) + "G…");
+        runIo(() -> {
+            boolean ok = AtlasAuth.requestBlocking(
+                SettingsActivity.this, "Resize Debian home", 90);
+            if (!ok) {
+                main.post(() -> toast("Denied"));
+                return;
+            }
+            final String o = HomeImage.grow(SettingsActivity.this);
+            main.post(() -> {
+                toast(o);
+                if (homeSizeLab != null) homeSizeLab.setText(homeSizeLabel());
+            });
+        });
+    }
+
+    private void confirmRecreateHome() {
+        new AlertDialog.Builder(this)
+            .setTitle("Recreate home?")
+            .setMessage("Replaces the home image with an empty "
+                + AtlasPrefs.homeImgG(this) + "G image. The Debian system stays.")
+            .setPositiveButton("Recreate", (d, w) -> runIo(() -> {
+                boolean ok = AtlasAuth.requestBlocking(
+                    SettingsActivity.this, "Recreate Debian home", 90);
+                if (!ok) {
+                    main.post(() -> toast("Denied"));
+                    return;
+                }
+                final String o = HomeImage.recreate(SettingsActivity.this);
+                main.post(() -> toast(o));
+            }))
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
+    private void exportHome() {
+        toast("exporting home…");
+        runIo(() -> {
+            final String o = HomeImage.exportImage(SettingsActivity.this);
+            main.post(() -> toast(o));
+        });
+    }
+
+    private void confirmLoadHome() {
+        final EditText path = new EditText(this);
+        path.setSingleLine(true);
+        path.setText(HomeImage.EXPORT_PATH);
+        new AlertDialog.Builder(this)
+            .setTitle("Load home image")
+            .setMessage("Replaces the current home with this ext4 image.")
+            .setView(path)
+            .setPositiveButton("Load", (d, w) -> {
+                final String src = path.getText().toString().trim();
+                runIo(() -> {
+                    boolean ok = AtlasAuth.requestBlocking(
+                        SettingsActivity.this, "Load Debian home", 90);
+                    if (!ok) {
+                        main.post(() -> toast("Denied"));
+                        return;
+                    }
+                    final String o = HomeImage.load(SettingsActivity.this, src);
+                    main.post(() -> toast(o));
+                });
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
     private void healHome() {
         toast("bridge heal…");
         runIo(() -> {
@@ -621,6 +770,13 @@ public class SettingsActivity extends Activity {
     private String deskSummary() {
         return AtlasPrefs.deskW(this) + "×" + AtlasPrefs.deskH(this)
             + "  scale " + AtlasPrefs.deskScaleLabel(this);
+    }
+
+    private String orbSummary() {
+        String style = AtlasPrefs.orbStyle(this);
+        String name = "cross".equals(style) ? "Cross" : "stack".equals(style) ? "Stack" : "Bar";
+        return name + "  size " + AtlasPrefs.orbSize(this)
+            + "  transparency " + (100 - AtlasPrefs.orbOpacity(this));
     }
 
     private void applyDeskFields() {

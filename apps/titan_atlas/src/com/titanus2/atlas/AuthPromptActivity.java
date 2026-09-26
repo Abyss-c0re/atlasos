@@ -227,14 +227,15 @@ public class AuthPromptActivity extends Activity {
         t.setGravity(Gravity.CENTER);
         t.setTypeface(android.graphics.Typeface.MONOSPACE);
         root.addView(t);
-        android.widget.Button yes = new android.widget.Button(this);
-        yes.setText("Approve");
-        yes.setOnClickListener(v -> grant());
-        root.addView(yes);
-        android.widget.Button no = new android.widget.Button(this);
-        no.setText("Deny");
-        no.setOnClickListener(v -> deny());
-        root.addView(no);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(AtlasUi.chromeButton(this, "Approve", v -> grant()),
+            AtlasUi.chromeSlot(this));
+        row.addView(AtlasUi.chromeButton(this, "Deny", v -> deny()),
+            AtlasUi.chromeSlot(this));
+        root.addView(row, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         setContentView(root);
     }
 

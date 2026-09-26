@@ -37,6 +37,17 @@ public final class KeyActions {
 
     private KeyActions() {}
 
+    /** The desk is fullscreen and show-when-locked. Move it back so Home
+     *  and Recents are the window the user actually sees. */
+    private static void leaveAtlasDesk(Context ctx) {
+        if (ctx == null) return;
+        try {
+            Intent leave = new Intent("com.titanus2.atlas.DESK_LEAVE");
+            leave.setPackage("com.titanus2.atlas");
+            ctx.sendBroadcast(leave);
+        } catch (Exception ignored) {}
+    }
+
     public static void run(Context ctx, String action) {
         if (action == null || KeyMapPrefs.ACT_DEFAULT.equals(action)) return;
         if (KeyMapPrefs.ACT_NONE.equals(action)) return;
@@ -75,12 +86,13 @@ public final class KeyActions {
             }
             switch (action) {
                 case KeyMapPrefs.ACT_HOME:
-                    // TITAN_RECENTS_LAW: screen-on HW = GLOBAL_ACTION_HOME.
-                    // ButtonPlane KEYCODE_HOME is a GSI no-op and starved this.
-                    if (svc != null) {
-                        global(ctx, svc, AccessibilityService.GLOBAL_ACTION_HOME);
-                    } else if (!ButtonPlane.home(ctx)) {
-                        global(ctx, svc, AccessibilityService.GLOBAL_ACTION_HOME);
+                    // Screen-on Home is GLOBAL_ACTION_HOME. KEYCODE_HOME inject
+                    // is a no-op on this GSI, so the launcher intent is the
+                    // fallback. The desk must leave first or it stays on top.
+                    leaveAtlasDesk(ctx);
+                    if (svc == null || !svc.performGlobalAction(
+                            AccessibilityService.GLOBAL_ACTION_HOME)) {
+                        ButtonPlane.home(ctx);
                     }
                     break;
                 case KeyMapPrefs.ACT_BACK:
@@ -91,12 +103,13 @@ public final class KeyActions {
                     }
                     break;
                 case KeyMapPrefs.ACT_RECENTS:
-                    // LAW: only GLOBAL_ACTION_RECENTS. Never RecentsActivity / 187.
+                    // LAW: GLOBAL_ACTION_RECENTS, else StatusBar showRecentApps.
+                    // Never RecentsActivity and never keyevent 187.
                     armOverviewCool(ctx);
-                    if (svc != null) {
-                        global(ctx, svc, AccessibilityService.GLOBAL_ACTION_RECENTS);
-                    } else if (!ButtonPlane.recents(ctx)) {
-                        global(ctx, svc, AccessibilityService.GLOBAL_ACTION_RECENTS);
+                    leaveAtlasDesk(ctx);
+                    if (svc == null || !svc.performGlobalAction(
+                            AccessibilityService.GLOBAL_ACTION_RECENTS)) {
+                        ButtonPlane.recents(ctx);
                     }
                     break;
                 case KeyMapPrefs.ACT_NOTIFICATIONS:

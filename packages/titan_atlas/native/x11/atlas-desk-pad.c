@@ -33,7 +33,10 @@
 #define PTR_PATH "/data/local/tmp/atlas-virgl/desk-ptr"
 /* Same file atlas-desk-keys watches. 0, missing, or stale: Android owns
  * the trackpad. The app uid cannot kill a root-owned grabber. */
-#define FOCUS_PATH "/data/local/tmp/atlas-virgl/desk-focus"
+/* Separate from desk-focus. That file is the keyboard grab, and it must
+ * drop when the window loses focus so the physical Home key still works.
+ * The trackpad stays with the desk for the whole time the activity is up. */
+#define FOCUS_PATH "/data/local/tmp/atlas-virgl/desk-pad"
 #define FOCUS_STALE_MS 8000
 
 struct seat_hdr {
@@ -64,6 +67,7 @@ static int ndev;
 static int cur_x = 540, cur_y = 540;
 static int desk_w = 1440, desk_h = 1440;
 static int cur_known;
+static int focus_held;
 static uint32_t buttons;
 static int32_t acc_x, acc_y, acc_w;
 
@@ -108,12 +112,22 @@ static void write_ptr_file(void) {
     close(fd);
 }
 
-static int send_ptr(int32_t x, int32_t y, int32_t wheel, uint32_t btns) {
-    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+/* One connection for the whole grab. A fresh socket per delta drops
+ * events and the KDE pointer lags behind the finger. */
+static int seat_fd = -1;
+
+static void seat_close(void) {
+    if (seat_fd >= 0) close(seat_fd);
+    seat_fd = -1;
+}
+
+static int seat_open(void) {
+    int fd;
     struct sockaddr_un a;
     struct seat_hdr h;
     struct seat_hello hi;
-    struct seat_ptr p;
+    if (seat_fd >= 0) return 0;
+    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return -1;
     memset(&a, 0, sizeof(a));
     a.sun_family = AF_UNIX;
@@ -138,6 +152,14 @@ static int send_ptr(int32_t x, int32_t y, int32_t wheel, uint32_t btns) {
         close(fd);
         return -1;
     }
+    seat_fd = fd;
+    return 0;
+}
+
+static int send_ptr(int32_t x, int32_t y, int32_t wheel, uint32_t btns) {
+    struct seat_hdr h;
+    struct seat_ptr p;
+    int try;
     memset(&p, 0, sizeof(p));
     p.dx = x;
     p.dy = y;
@@ -149,14 +171,14 @@ static int send_ptr(int32_t x, int32_t y, int32_t wheel, uint32_t btns) {
     h.type = T_PTR;
     h.fmt = 1; /* absolute desktop pixel, same one drawn on the picture */
     h.nbytes = sizeof(p);
-    /* Header alone is not a frame. atlas-x drops the event on EOF if the
-     * payload never arrives, and the X pointer stays where Java last put it. */
-    if (send_all(fd, &h, sizeof(h)) != 0 || send_all(fd, &p, sizeof(p)) != 0) {
-        close(fd);
-        return -1;
+    for (try = 0; try < 2; try++) {
+        if (seat_open() != 0) return -1;
+        if (send_all(seat_fd, &h, sizeof(h)) == 0
+            && send_all(seat_fd, &p, sizeof(p)) == 0)
+            return 0;
+        seat_close();
     }
-    close(fd);
-    return 0;
+    return -1;
 }
 
 /* The desk size moves (windowed hole vs full glass). Never stop short of it. */
@@ -205,16 +227,41 @@ static long long mono_ms(void) {
     return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
 }
 
+/* Same cooldown Controls and hid_bridge use. Palm on the keybed is the pad. */
+static int typing_guard_ms(void) {
+    static long long at;
+    static int cached = 600;
+    long long now = mono_ms();
+    int v;
+    if (at && now - at < 500) return cached;
+    at = now;
+    v = read_plane_int("/data/misc/titan2/titan2_pad_cursor_cool_ms",
+                       "/data/local/tmp/titan2_pad_cursor_cool_ms", 0);
+    if (v < 50)
+        v = read_plane_int("/data/misc/titan2/titan2_pad_cursor_pause_ms",
+                           "/data/local/tmp/titan2_pad_cursor_pause_ms", 0);
+    if (v < 50)
+        v = read_plane_int("/data/misc/titan2/titan2_usb_hid_typing_ms",
+                           "/data/local/tmp/titan2_usb_hid_typing_ms", 600);
+    if (v < 0) v = 0;
+    if (v > 5000) v = 5000;
+    cached = v;
+    return cached;
+}
+
 static int typing_locked(void) {
     int n = 0;
-    long long ts = 0;
+    long long ts = 0, age;
     FILE *f = fopen("/data/local/tmp/atlas-virgl/desk-keys-held", "r");
     if (!f) return 0;
     if (fscanf(f, "%d %lld", &n, &ts) != 2) n = 0;
     fclose(f);
-    /* Only while a key is actually down. A stale count must not freeze the pad. */
-    if (n <= 0 || ts <= 0) return 0;
-    return (mono_ms() - ts) < 400;
+    if (ts <= 0) return 0;
+    age = mono_ms() - ts;
+    if (age < 0) return 0;
+    /* Held key, or the same post-key settle HID uses. */
+    if (n > 0 && age < 400) return 1;
+    return age < typing_guard_ms();
 }
 
 /* hid_bridge scale_rel: titan2_usb_hid_speed / accel. Defaults 100% / off. */
@@ -301,24 +348,36 @@ static int open_virtual_mice(void) {
         if (n <= 0) continue;
         name[n] = 0;
         if (name[n - 1] == '\n') name[n - 1] = 0;
-        /* orient-rel owns the first virtual mouse and re-emits the finger
-         * as titan2-orient-mouse. That is the device Android was moving. */
-        if (strcmp(name, "titan2-virtual-mouse") != 0 &&
-            strcmp(name, "titan2-orient-mouse") != 0)
+        /* Only the oriented mouse. The raw titan2-virtual-mouse belongs
+         * to titan2-orient-rel. Grabbing it on the first scan, before
+         * orient-mouse exists, steals the pad and the intercept never
+         * recovers until this process starts again. */
+        if (strcmp(name, "titan2-orient-mouse") != 0)
             continue;
-        forward = !strcmp(name, "titan2-orient-mouse");
+        forward = 1;
         snprintf(dpath, sizeof(dpath), "/dev/input/event%d", i);
         fd = open(dpath, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
         if (fd < 0) {
-            perror(dpath);
+            fprintf(stderr, "pad open %s (%s)\n", dpath, strerror(errno));
+            fflush(stderr);
             continue;
         }
         {
-            /* orient-rel already owns the first virtual mouse. Take the one
-             * Android was reading. A failed grab is not our stream.
+            /* InputReader grabs a new node for a moment. Retry EBUSY
+             * instead of giving up for the life of this process.
              * Non-NULL grabs. NULL releases. A pointer to 0 does not. */
-            if (ioctl(fd, EVIOCGRAB, (void *)1) != 0) {
+            int tries, got = 0;
+            for (tries = 0; tries < 20; tries++) {
+                if (ioctl(fd, EVIOCGRAB, (void *)1) == 0) {
+                    got = 1;
+                    break;
+                }
+                if (errno != EBUSY && errno != EAGAIN) break;
+                usleep(25000);
+            }
+            if (!got) {
                 fprintf(stderr, "pad skip %s (%s)\n", dpath, strerror(errno));
+                fflush(stderr);
                 close(fd);
                 continue;
             }
@@ -326,9 +385,17 @@ static int open_virtual_mice(void) {
         devs[ndev].fd = fd;
         devs[ndev].forward = forward;
         ndev++;
-        fprintf(stderr, "pad %s %s\n", dpath, forward ? "forward" : "drop");
+        fprintf(stderr, "pad %s forward\n", dpath);
+        fflush(stderr);
     }
     return ndev;
+}
+
+static int still_orient(int fd) {
+    char name[64];
+    memset(name, 0, sizeof(name));
+    if (ioctl(fd, EVIOCGNAME(sizeof(name) - 1), name) < 0) return 0;
+    return strcmp(name, "titan2-orient-mouse") == 0;
 }
 
 static void ungrab(void) {
@@ -359,19 +426,15 @@ static int desk_wants_grab(void) {
     if (fd < 0) return 0;
     n = (int)read(fd, b, sizeof(b));
     close(fd);
-    return n > 0 && b[0] == '1';
-}
-
-static void arm_forward(void) {
-    int i, any = 0;
-    for (i = 0; i < ndev; i++) if (devs[i].forward) any = 1;
-    /* No orient-mouse yet: the raw virtual mouse is the host device. */
-    if (!any) {
-        for (i = 0; i < ndev; i++) {
-            devs[i].forward = 1;
-            fprintf(stderr, "pad forward raw %d\n", i);
-        }
+    if (n <= 0) {
+        /* A replace of the focus file can be observed empty for a moment.
+         * That is not the desk letting go. */
+        if (age < 400 && focus_held) return 1;
+        focus_held = 0;
+        return 0;
     }
+    focus_held = (b[0] == '1');
+    return focus_held;
 }
 
 int main(int argc, char **argv) {
@@ -380,12 +443,14 @@ int main(int argc, char **argv) {
         return 2;
     }
     sockpath = argv[1];
+    setvbuf(stderr, NULL, _IOLBF, 0);
     signal(SIGTERM, on_sig);
     signal(SIGINT, on_sig);
     signal(SIGCHLD, SIG_IGN);
+    int waits = 0;
     while (!stop) {
         struct pollfd pf[MAX_DEV];
-        int i, pr;
+        int i, pr, dead = 0;
         /* Shade, lock, or another app. The phone owns the trackpad. */
         if (!desk_wants_grab()) {
             if (ndev > 0) {
@@ -397,16 +462,27 @@ int main(int argc, char **argv) {
         }
         if (ndev < 1) {
             if (open_virtual_mice() < 1) {
+                if ((waits++ % 10) == 0)
+                    fprintf(stderr, "pad waiting for orient-mouse\n");
                 poll(NULL, 0, 200);
                 continue;
             }
-            arm_forward();
             fprintf(stderr, "focus held, touchpad grabbed mice=%d\n", ndev);
+            waits = 0;
         }
         for (i = 0; i < ndev; i++) {
+            if (!still_orient(devs[i].fd)) {
+                fprintf(stderr, "pad node changed, reopening\n");
+                dead = 1;
+                break;
+            }
             pf[i].fd = devs[i].fd;
             pf[i].events = POLLIN;
             pf[i].revents = 0;
+        }
+        if (dead) {
+            ungrab();
+            continue;
         }
         pr = poll(pf, (nfds_t)ndev, 100);
         if (pr < 0 && errno == EINTR) continue;
@@ -414,6 +490,11 @@ int main(int argc, char **argv) {
         if (pr == 0) continue;
         for (i = 0; i < ndev; i++) {
             struct input_event ev;
+            if (pf[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+                fprintf(stderr, "pad device gone, reopening\n");
+                dead = 1;
+                break;
+            }
             if ((pf[i].revents & POLLIN) == 0) continue;
             for (;;) {
                 ssize_t n = read(devs[i].fd, &ev, sizeof(ev));
@@ -421,10 +502,16 @@ int main(int argc, char **argv) {
                     if (devs[i].forward) on_event(&ev);
                     continue;
                 }
+                if (n < 0 && (errno == EAGAIN || errno == EINTR)) break;
+                fprintf(stderr, "pad read failed, reopening\n");
+                dead = 1;
                 break;
             }
+            if (dead) break;
         }
+        if (dead) ungrab();
     }
     ungrab();
+    seat_close();
     return 0;
 }

@@ -145,12 +145,15 @@ _cp "$DESK_SO" "$APP_ASSETS/libatlasdesk.so"
 echo "OK $DESK_SO ($(stat -c%s "$DESK_SO") bytes) → assets/bin/libatlasdesk.so"
 _cp "$ROOT/native/x11/atlas-desk-session.sh" "$APP_ASSETS/atlas-desk-session"
 _cp "$ROOT/native/x11/atlas-desk-install.sh" "$APP_ASSETS/atlas-desk-install"
+_cp "$ROOT/native/x11/atlas-bwrap.py" "$APP_ASSETS/atlas-bwrap.py"
+_cp "$ROOT/native/x11/atlas-bwrap-install.sh" "$APP_ASSETS/atlas-bwrap-install.sh"
+chmod 755 "$APP_ASSETS/atlas-bwrap.py" "$APP_ASSETS/atlas-bwrap-install.sh"
 chmod 755 "$APP_ASSETS/atlas-desk-session" "$APP_ASSETS/atlas-desk-install"
 if [ -f "$ROOT/native/x11/atlas-desk-keys.c" ]; then
-  build_one atlas-desk-keys "$ROOT/native/x11/atlas-desk-keys.c" "1.0.64-focus"
+  build_one atlas-desk-keys "$ROOT/native/x11/atlas-desk-keys.c" "1.0.103-seat"
 fi
 if [ -f "$ROOT/native/x11/atlas-desk-pad.c" ]; then
-  build_one atlas-desk-pad "$ROOT/native/x11/atlas-desk-pad.c" "1.0.64-focus"
+  build_one atlas-desk-pad "$ROOT/native/x11/atlas-desk-pad.c" "1.0.103-seat"
 fi
 # AAudio bridge. Not ALSA. build_one only links -llog.
 if [ -f "$ROOT/native/x11/atlas-audio-bridge.c" ]; then

@@ -44,6 +44,11 @@ sh_binary {
     src: "atlas-hybrid-boot.sh",
 }
 
+sh_binary {
+    name: "atlas-home-img.sh",
+    src: "atlas-home-img.sh",
+}
+
 // ROM base ELFs — priv-app is UI only. Execute from system_file, never app data.
 // Staged by stage_gsi_product.sh from packages/titan_atlas/out or assets/bin.
 cc_prebuilt_binary {

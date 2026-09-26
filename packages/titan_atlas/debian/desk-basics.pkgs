@@ -1,5 +1,7 @@
-# Everyday desk apps. No SDDM, no Flatpak, no CUPS, no fwupd.
-# Baked into atlas_linux (3072M).
+# Everyday desk apps. No SDDM, no CUPS, no fwupd.
+# Flatpak is included. This kernel has no user namespaces, so
+# atlas-bwrap-install.sh replaces /usr/bin/bwrap.
+# Baked into atlas_linux.
 dolphin
 kate
 kwrite
@@ -13,9 +15,14 @@ kinfocenter
 kfind
 plasma-systemmonitor
 plasma-discover
+plasma-discover-backend-flatpak
+flatpak
 plasma-pa
+pipewire
+wireplumber
 pipewire-pulse
 pulseaudio-utils
+gpgv
 network-manager
 plasma-nm
 firefox-esr

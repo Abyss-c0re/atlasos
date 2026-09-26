@@ -30,7 +30,15 @@ fi
 # Session script is shell. Keep the packaged copy current even when natives are skipped.
 cp -f "$REPO/packages/titan_atlas/native/x11/atlas-desk-session.sh" \
   "$ROOT/assets/bin/atlas-desk-session"
-chmod 755 "$ROOT/assets/bin/atlas-desk-session"
+cp -f "$REPO/packages/titan_atlas/native/x11/atlas-desk-stop.sh" \
+  "$ROOT/assets/bin/atlas-desk-stop.sh"
+chmod 755 "$ROOT/assets/bin/atlas-desk-session" "$ROOT/assets/bin/atlas-desk-stop.sh"
+cp -f "$REPO/packages/titan_atlas/native/x11/atlas-blackcube-mcp" \
+  "$ROOT/assets/bin/atlas-blackcube-mcp"
+cp -f "$REPO/packages/titan_atlas/native/x11/atlas-blackcube-install.sh" \
+  "$ROOT/assets/bin/atlas-blackcube-install.sh"
+chmod 755 "$ROOT/assets/bin/atlas-blackcube-mcp" \
+  "$ROOT/assets/bin/atlas-blackcube-install.sh"
 
 # launcher icon fallback
 if [ ! -f "$ROOT/res/mipmap-hdpi/ic_launcher.png" ]; then

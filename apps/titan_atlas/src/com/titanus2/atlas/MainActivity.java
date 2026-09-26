@@ -11,6 +11,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -147,6 +148,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         bar1.addView(makeCompactBtn("Save", v -> saveCurrentSeat()), barWeight());
         bar1.addView(makeCompactBtn("Desk", v ->
             startActivity(new Intent(this, DeskActivity.class))), barWeight());
+        bar1.addView(makeCompactBtn("Keys", v -> toggleExtraKeys()), barWeight());
         bar1.addView(makeCompactBtn("↻", v -> restartSession()), barWeight());
         bar1.addView(makeCompactBtn("⚙", v ->
             startActivity(new Intent(this, SettingsActivity.class))), barWeight());
@@ -240,6 +242,8 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         keysLp.weight = 0f;
         root.addView(extraKeys, keysLp);
+        extraKeys.setVisibility(AtlasPrefs.extraKeysOpen(this)
+            ? View.VISIBLE : View.GONE);
 
         setContentView(root);
         root.requestApplyInsets();
@@ -447,18 +451,7 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
     }
 
     private Button makeCompactBtn(String label, View.OnClickListener click) {
-        Button b = new Button(this, null, android.R.attr.borderlessButtonStyle);
-        b.setText(label);
-        b.setAllCaps(false);
-        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        b.setTextColor(AtlasUi.chromeOnTerm(this));
-        b.setMinHeight(dp(36));
-        b.setMinimumHeight(dp(36));
-        b.setMinWidth(0);
-        b.setMinimumWidth(0);
-        b.setPadding(dp(4), dp(4), dp(4), dp(4));
-        b.setOnClickListener(click);
-        return b;
+        return AtlasUi.chromeButton(this, label, click);
     }
 
     /** @deprecated use makeCompactBtn */
@@ -782,6 +775,19 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         } else {
             restartSession();
             shellSwitchInFlight = false;
+        }
+    }
+
+    private void toggleExtraKeys() {
+        boolean on = extraKeys != null && extraKeys.getVisibility() != View.VISIBLE;
+        AtlasPrefs.setExtraKeysOpen(this, on);
+        if (extraKeys != null) extraKeys.setVisibility(on ? View.VISIBLE : View.GONE);
+        if (termView != null) {
+            termView.post(() -> {
+                if (termView.getWidth() > 0 && termView.getHeight() > 0) {
+                    termView.updateSize();
+                }
+            });
         }
     }
 
@@ -1351,14 +1357,23 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
     }
 
     @Override
-    public void onBackPressed() {
-        // Back hides UI but keep-alive can retain sessions; use Exit to kill all.
-        if (AtlasPrefs.keepAlive(this) && SessionHub.liveCount() > 0) {
-            refreshKeepAlive();
-            moveTaskToBack(true);
-        } else {
-            exitApp();
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        /* Return is a newline. It must not activate Exit or any other button. */
+        if (event != null && termView != null
+                && (event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                    || event.getKeyCode() == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+            if (!termView.hasFocus()) termView.requestFocus();
+            return termView.dispatchKeyEvent(event);
         }
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public void onBackPressed() {
+        /* Back leaves the window. The Debian session stays. Exit is the
+         * control that ends it. */
+        if (SessionHub.liveCount() > 0) refreshKeepAlive();
+        moveTaskToBack(true);
     }
 
     private int dp(int v) {

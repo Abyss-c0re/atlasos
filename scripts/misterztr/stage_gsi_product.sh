@@ -357,6 +357,8 @@ if [ -n "$ATLAS_APK" ] && [ -f "$SRC_ATLAS/Android.bp" ]; then
   [ -f "$ATLAS_DEF" ] && stage_file "$ATLAS_DEF" "$DEST_ATLAS/default-permissions-com.titanus2.atlas.xml"
   stage_file "$HYB_SH" "$DEST_ATLAS/atlas-hybrid.sh"
   stage_file "$NET_SH" "$DEST_ATLAS/atlas-net.sh"
+  HOME_IMG_SH="$ROOT/patches/bin/atlas-home-img.sh"
+  [ -f "$HOME_IMG_SH" ] && stage_file "$HOME_IMG_SH" "$DEST_ATLAS/atlas-home-img.sh"
   stage_file "$SRC_ATLAS/atlas-hybrid-boot.sh" "$DEST_ATLAS/atlas-hybrid-boot.sh"
   stage_file "$SRC_ATLAS/atlas-hybrid.rc" "$DEST_ATLAS/atlas-hybrid.rc"
   for h in atlas-hybrid-ctl.sh atlas-hybrid-watch.sh; do
@@ -412,7 +414,8 @@ if [ -n "$ATLAS_APK" ] && [ -f "$SRC_ATLAS/Android.bp" ]; then
     fi
   done
   chmod 755 "$DEST_ATLAS/atlas-hybrid.sh" "$DEST_ATLAS/atlas-net.sh" \
-    "$DEST_ATLAS/atlas-hybrid-boot.sh" "$DEST_ATLAS/atlas-hybrid-ctl.sh" \
+    "$DEST_ATLAS/atlas-hybrid-boot.sh" "$DEST_ATLAS/atlas-home-img.sh" \
+    "$DEST_ATLAS/atlas-hybrid-ctl.sh" \
     "$DEST_ATLAS/atlas-hybrid-watch.sh" 2>/dev/null || true
   # Optional essentials rootfs (large) — not required for stage; device may bootstrap later
   ROOTFS_TAR="${ATLAS_ROOTFS_TAR:-$ROOT/out/atlas_rootfs/debian-trixie-arm64-rootfs.tar.gz}"

@@ -42,6 +42,7 @@ PRODUCT_PACKAGES += \
     atlas-hybrid.sh \
     atlas-net.sh \
     atlas-hybrid-boot.sh \
+    atlas-home-img.sh \
     atlas-hybrid-ctl.sh \
     atlas-hybrid-watch.sh \
     atlas-hybrid.rc \

@@ -10,8 +10,12 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.GridLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Special-key panel. Same keys in the terminal and on the desk.
@@ -42,8 +46,13 @@ public final class ExtraKeysView extends LinearLayout {
     private Button metaBtn;
     private Button capsBtn;
     private int keyBg;
+    private int keyRgb;
     private int keyFg;
     private int keyOnBg;
+    private final List<Button> made = new ArrayList<>();
+    private final List<LinearLayout> homeRows = new ArrayList<>();
+    private final List<Integer> homeIndex = new ArrayList<>();
+    private boolean inRing;
 
     public ExtraKeysView(Context c, Listener listener) {
         super(c);
@@ -67,8 +76,12 @@ public final class ExtraKeysView extends LinearLayout {
             line.setOrientation(HORIZONTAL);
             line.setGravity(Gravity.CENTER);
             line.setClickable(false);
+            homeRows.add(line);
+            int rowIndex = homeRows.size() - 1;
             for (String key : row) {
                 Button b = makeKey(c, key);
+                made.add(b);
+                homeIndex.add(rowIndex);
                 if ("CTRL".equals(key)) ctrlBtn = b;
                 if ("ALT".equals(key)) altBtn = b;
                 if ("SHIFT".equals(key)) shiftBtn = b;
@@ -78,12 +91,18 @@ public final class ExtraKeysView extends LinearLayout {
                 if ("SYM".equals(key)) {
                     b.setOnClickListener(v -> showSymbols());
                 }
+                int cell = dp(52);
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-                lp.setMargins(dp(1), dp(1), dp(1), dp(1));
+                    cell, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.setMargins(dp(2), dp(2), dp(2), dp(2));
                 line.addView(b, lp);
             }
-            addView(line, new LayoutParams(
+            HorizontalScrollView scroller = new HorizontalScrollView(c);
+            scroller.setHorizontalScrollBarEnabled(false);
+            scroller.setFillViewport(false);
+            scroller.addView(line, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            addView(scroller, new LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
@@ -98,10 +117,11 @@ public final class ExtraKeysView extends LinearLayout {
         int g = Math.min(255, Color.green(bg) + 18);
         int b = Math.min(255, Color.blue(bg) + 18);
         setBackgroundColor(Color.rgb(r, g, b));
-        keyBg = Color.rgb(
+        keyRgb = Color.rgb(
             Math.min(255, r + 20),
             Math.min(255, g + 20),
             Math.min(255, b + 20));
+        keyBg = keyRgb;
         keyFg = fg;
         int cur = AtlasPrefs.cursorColor(c);
         keyOnBg = (cur == fg || cur == bg) ? fg : cur;
@@ -127,6 +147,7 @@ public final class ExtraKeysView extends LinearLayout {
 
     private Button makeKey(Context c, String key) {
         Button b = new Button(c, null, android.R.attr.borderlessButtonStyle);
+        b.setTag(key);
         b.setText(key);
         b.setAllCaps(false);
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
@@ -202,6 +223,108 @@ public final class ExtraKeysView extends LinearLayout {
         } else {
             b.setBackgroundColor(keyBg);
             b.setTextColor(keyFg);
+        }
+    }
+
+    /** Windowed strip. Puts every key back on its original row. */
+    public void mountBottom() {
+        inRing = false;
+        for (int i = 0; i < made.size(); i++) {
+            Button b = made.get(i);
+            detach(b);
+            LinearLayout line = homeRows.get(homeIndex.get(i));
+            int cell = dp(52);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                cell, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(dp(2), dp(2), dp(2), dp(2));
+            line.addView(b, lp);
+        }
+        applyTermChrome(getContext());
+    }
+
+    /**
+     * Full-screen ring. Keys leave the bottom strip and sit on the four
+     * sides of the floating panel. The desktop underneath stays full screen.
+     */
+    public void mountRing(LinearLayout top, LinearLayout left, LinearLayout right,
+                          LinearLayout bottom, int cellPx, int alphaPercent) {
+        inRing = true;
+        top.setOrientation(VERTICAL);
+        bottom.setOrientation(VERTICAL);
+        top.removeAllViews();
+        left.removeAllViews();
+        right.removeAllViews();
+        bottom.removeAllViews();
+        for (Button b : made) detach(b);
+        paintAlpha(alphaPercent);
+        addRow(top, cellPx, "ESC", "GRAVE", "BKSP", "/", "INS", "DEL", "PRT", "PAUSE");
+        addRow(top, cellPx, "TAB", "CTRL", "ALT", "META", "SYM");
+        addCol(left, cellPx, "SIDE", "RST", "SHIFT", "CAPS");
+        addCol(right, cellPx, "HOME", "END", "PGUP", "PGDN", "↑", "←", "↓", "→");
+        addRow(bottom, cellPx, "F1", "F2", "F3", "F4", "F5", "F6");
+        addRow(bottom, cellPx, "F7", "F8", "F9", "F10", "F11", "F12");
+        setVisibility(GONE);
+    }
+
+    public List<Button> buttons() {
+        return made;
+    }
+
+    public boolean isRing() {
+        return inRing;
+    }
+
+    private void addRow(LinearLayout host, int cellPx, String... ids) {
+        LinearLayout line = new LinearLayout(getContext());
+        line.setOrientation(HORIZONTAL);
+        line.setGravity(Gravity.CENTER);
+        for (String id : ids) addSized(line, findKey(id), cellPx, true);
+        host.addView(line, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    private void addCol(LinearLayout host, int cellPx, String... ids) {
+        host.setOrientation(VERTICAL);
+        host.setGravity(Gravity.CENTER);
+        for (String id : ids) addSized(host, findKey(id), cellPx, false);
+    }
+
+    private void addSized(LinearLayout host, Button b, int cellPx, boolean wide) {
+        if (b == null) return;
+        detach(b);
+        int w = wide ? Math.max(cellPx, dp(36)) : cellPx;
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, cellPx);
+        int m = Math.max(1, cellPx / 16);
+        lp.setMargins(m, m, m, m);
+        b.setMinimumWidth(0);
+        b.setMinWidth(0);
+        b.setMinimumHeight(cellPx);
+        host.addView(b, lp);
+    }
+
+    private Button findKey(String id) {
+        for (Button b : made) {
+            if (id.equals(b.getTag())) return b;
+        }
+        return null;
+    }
+
+    private void paintAlpha(int alphaPercent) {
+        int a = Math.max(30, Math.min(100, alphaPercent)) * 255 / 100;
+        keyBg = Color.argb(a, Color.red(keyRgb), Color.green(keyRgb), Color.blue(keyRgb));
+        tintTree(this);
+        for (Button b : made) {
+            if (b != ctrlBtn && b != altBtn && b != shiftBtn && b != metaBtn && b != capsBtn) {
+                b.setBackgroundColor(keyBg);
+                b.setTextColor(keyFg);
+            }
+        }
+        refreshModifiers();
+    }
+
+    private void detach(View v) {
+        if (v.getParent() instanceof ViewGroup) {
+            ((ViewGroup) v.getParent()).removeView(v);
         }
     }
 

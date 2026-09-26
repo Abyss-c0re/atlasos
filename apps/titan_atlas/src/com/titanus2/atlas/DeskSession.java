@@ -52,6 +52,7 @@ public final class DeskSession {
         } catch (Exception e) {
             return e.getMessage() != null ? e.getMessage() : "extract failed";
         }
+        HomeImage.publish(c);
         File bindir = NativeBin.binDir(c);
         String bin = new File(bindir, "atlas-desk-session").getAbsolutePath();
         int w = AtlasPrefs.deskW(c);
@@ -65,12 +66,31 @@ public final class DeskSession {
         String vdir = "/data/local/tmp/atlas-virgl";
         String cmd = ""
             + "mkdir -p " + CHROOT + "/home/atlas/atlas-x "
-            + CHROOT + "/usr/local/bin " + CHROOT + "/tmp/atlas-virgl " + vdir + "; "
+            + CHROOT + "/usr/local/bin " + CHROOT + "/usr/local/libexec "
+            + CHROOT + "/tmp/atlas-virgl " + vdir + "; "
+            + "if [ -f '" + new File(bindir, "atlas-bwrap.py").getAbsolutePath() + "' ]; then "
+            + "cp -f '" + new File(bindir, "atlas-bwrap.py").getAbsolutePath() + "' "
+            + CHROOT + "/usr/local/libexec/atlas-bwrap.py; "
+            + "cp -f '" + new File(bindir, "atlas-bwrap-install.sh").getAbsolutePath() + "' "
+            + CHROOT + "/usr/local/libexec/atlas-bwrap-install.sh; "
+            + "chmod 755 " + CHROOT + "/usr/local/libexec/atlas-bwrap.py "
+            + CHROOT + "/usr/local/libexec/atlas-bwrap-install.sh; "
+            + "if [ -f '" + new File(bindir, "atlas-bwrap-bin").getAbsolutePath() + "' ]; then "
+            + "cp -f '" + new File(bindir, "atlas-bwrap-bin").getAbsolutePath() + "' "
+            + CHROOT + "/usr/local/libexec/atlas-bwrap-bin; "
+            + "fi; "
+            + "fi; "
             + "chmod 0777 " + CHROOT + "/home/atlas/atlas-x " + vdir + "; "
             + "if ! grep -q ' " + CHROOT + "/tmp/atlas-virgl ' /proc/mounts; then "
             + "mount --bind " + vdir + " " + CHROOT + "/tmp/atlas-virgl; fi; "
             + "mkdir -p " + CHROOT + "/sdcard " + CHROOT + "/mnt; "
-            + "if ! grep -q ' " + CHROOT + "/sdcard ' /proc/mounts; then "
+            + "if [ -x /system/bin/atlas-home-img.sh ]; then "
+            + "/system/bin/atlas-home-img.sh ensure >/dev/null 2>&1 || true; "
+            + "/system/bin/atlas-home-img.sh sdcard >/dev/null 2>&1 || true; "
+            + "elif [ -x '" + new File(bindir, "atlas-home-img.sh").getAbsolutePath() + "' ]; then "
+            + "'" + new File(bindir, "atlas-home-img.sh").getAbsolutePath() + "' ensure >/dev/null 2>&1 || true; "
+            + "'" + new File(bindir, "atlas-home-img.sh").getAbsolutePath() + "' sdcard >/dev/null 2>&1 || true; "
+            + "elif ! grep -q ' " + CHROOT + "/sdcard ' /proc/mounts; then "
             + "mount --bind /storage/emulated/0 " + CHROOT + "/sdcard "
             + "|| mount --bind /sdcard " + CHROOT + "/sdcard || true; fi; "
             + "if ! pidof virgl_test_server >/dev/null 2>&1; then "
@@ -89,6 +109,19 @@ public final class DeskSession {
             + "i=$((i+1)); sleep 0.1; done; "
             + "cp -f '" + bin + "' " + CHROOT + "/usr/local/bin/atlas-desk-session; "
             + "chmod 755 " + CHROOT + "/usr/local/bin/atlas-desk-session; "
+            + "mkdir -p " + CHROOT + "/usr/local/libexec; "
+            + "if [ -f '" + new File(bindir, "atlas-desk-stop.sh").getAbsolutePath() + "' ]; then "
+            + "cp -f '" + new File(bindir, "atlas-desk-stop.sh").getAbsolutePath() + "' "
+            + CHROOT + "/usr/local/libexec/atlas-desk-stop.sh; "
+            + "chmod 755 " + CHROOT + "/usr/local/libexec/atlas-desk-stop.sh; "
+            + "fi; "
+            + "if [ -f '" + bindir + "/atlas-bwrap.py' ]; then "
+            + "mkdir -p " + CHROOT + "/usr/local/libexec; "
+            + "cp -f '" + bindir + "/atlas-bwrap.py' " + CHROOT + "/usr/local/libexec/atlas-bwrap.py; "
+            + "cp -f '" + bindir + "/atlas-bwrap-install.sh' " + CHROOT + "/usr/local/libexec/atlas-bwrap-install.sh || true; "
+            + "chmod 755 " + CHROOT + "/usr/local/libexec/atlas-bwrap.py "
+            + CHROOT + "/usr/local/libexec/atlas-bwrap-install.sh || true; "
+            + "fi; "
             + "printf '%s\\n' \"$(getprop persist.sys.timezone)\" > " + vdir + "/android-tz; "
             + "chroot " + CHROOT + " /usr/bin/env -i "
             + "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
@@ -129,10 +162,12 @@ public final class DeskSession {
 
     static void prepareAudioFifos() {
         String vdir = "/data/local/tmp/atlas-virgl";
-        root("mkdir -p " + vdir + "; "
+        root("mkdir -p " + vdir + " " + CHROOT + "/tmp/atlas-virgl; "
             + "if [ ! -p " + vdir + "/audio-play ]; then mkfifo -m 666 " + vdir + "/audio-play; fi; "
             + "if [ ! -p " + vdir + "/audio-cap ]; then mkfifo -m 666 " + vdir + "/audio-cap; fi; "
             + "chmod 666 " + vdir + "/audio-play " + vdir + "/audio-cap; "
+            + "if ! grep -q ' " + CHROOT + "/tmp/atlas-virgl ' /proc/mounts; then "
+            + "mount --bind " + vdir + " " + CHROOT + "/tmp/atlas-virgl; fi; "
             + "echo FIFOS");
     }
 

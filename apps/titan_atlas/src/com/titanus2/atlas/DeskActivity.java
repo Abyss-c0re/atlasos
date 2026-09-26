@@ -1,12 +1,14 @@
 package com.titanus2.atlas;
 
 import android.app.Activity;
-import android.app.KeyguardManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -17,10 +19,12 @@ import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.util.TypedValue;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -48,6 +52,10 @@ public class DeskActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final ExecutorService input = Executors.newSingleThreadExecutor();
+    /** Controls binder. The desk pump owns {@code io}, so this must be its own thread. */
+    private final ExecutorService binder = Executors.newSingleThreadExecutor();
+    private String sideTop = com.titanus2.api.Titan2ApiContract.ACT_MOUSE_SCROLL_UP;
+    private String sideBot = com.titanus2.api.Titan2ApiContract.ACT_MOUSE_SCROLL_DOWN;
     private final AtomicBoolean run = new AtomicBoolean(true);
     private FrameLayout wrap;
     private LinearLayout chrome;
@@ -55,8 +63,30 @@ public class DeskActivity extends Activity {
     private Button fullBtn;
     private Button sideBtn;
     private Button restartBtn;
-    private Button exitFull;
-    private Button restartFull;
+    private FrameLayout orbDock;
+    private View orbBall;
+    private Button orbExit;
+    private Button orbRestart;
+    private Button orbKeys;
+    private Button orbSide;
+    private Button orbBack;
+    private LinearLayout orbPanel;
+    private LinearLayout orbCluster;
+    private LinearLayout ringTop;
+    private LinearLayout ringLeft;
+    private LinearLayout ringRight;
+    private LinearLayout ringBottom;
+    private Button keysBtn;
+    private Button backBtn;
+    private boolean orbOpen;
+    private boolean orbParked;
+    private boolean orbHeld;
+    private boolean orbOnBall;
+    private boolean orbDragging;
+    private float orbDownX;
+    private float orbDownY;
+    private float orbStartX;
+    private float orbStartY;
     private int chromeDown = -1;
     private volatile boolean restarting;
     private ExtraKeysView keys;
@@ -82,11 +112,21 @@ public class DeskActivity extends Activity {
     private long homeDownAt;
     private boolean leaveRegistered;
     private static final String DESK_FOCUS = "/data/local/tmp/atlas-virgl/desk-focus";
-    /** Refresh while focused. Readers release if this goes stale (~8s). */
+    private static final String DESK_PAD = "/data/local/tmp/atlas-virgl/desk-pad";
+    /** Keyboard grab. Stops when the window loses focus so Home still works. */
     private final Runnable focusTick = new Runnable() {
         @Override public void run() {
             if (!hasWindowFocus()) return;
-            writeDeskFocus(true);
+            writeFlag(DESK_FOCUS, "desk-focus.next", true);
+            main.postDelayed(this, 2000);
+        }
+    };
+    /** Trackpad grab. Stays while this activity is resumed, even if window
+     *  focus has not arrived yet. */
+    private final Runnable padTick = new Runnable() {
+        @Override public void run() {
+            if (isFinishing()) return;
+            writeFlag(DESK_PAD, "desk-pad.next", true);
             main.postDelayed(this, 2000);
         }
     };
@@ -112,30 +152,34 @@ public class DeskActivity extends Activity {
         root.setFocusable(true);
         root.setFocusableInTouchMode(true);
 
+        int barBg = AtlasPrefs.bgColor(this);
+        status = new TextView(this);
+        status.setTextColor(AtlasUi.chromeOnTerm(this));
+        status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        status.setTypeface(Typeface.MONOSPACE);
+        status.setSingleLine(true);
+        status.setMinHeight(dp(28));
+        status.setGravity(Gravity.CENTER_VERTICAL);
+        status.setPadding(dp(6), dp(2), dp(6), dp(2));
+        status.setBackgroundColor(barBg);
+        status.setText("starting desk…");
+        root.addView(status, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         chrome = new LinearLayout(this);
         chrome.setOrientation(LinearLayout.HORIZONTAL);
-        chrome.setPadding(16, 8, 16, 8);
-        status = new TextView(this);
-        status.setTextColor(0xFFB0BEC5);
-        status.setTextSize(12f);
-        status.setText("starting desk…");
-        chrome.addView(status, new LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        fullBtn = new Button(this);
-        fullBtn.setText("Full screen");
-        fullBtn.setAllCaps(false);
-        fullBtn.setOnClickListener(v -> setFull(!full));
-        chrome.addView(fullBtn);
-        restartBtn = new Button(this);
-        restartBtn.setText("Restart");
-        restartBtn.setAllCaps(false);
-        restartBtn.setOnClickListener(v -> reloadView());
-        chrome.addView(restartBtn);
-        sideBtn = new Button(this);
-        sideBtn.setText("Side");
-        sideBtn.setAllCaps(false);
-        sideBtn.setOnClickListener(v -> showSideKeys());
-        chrome.addView(sideBtn);
+        chrome.setGravity(Gravity.CENTER_VERTICAL);
+        chrome.setBackgroundColor(barBg);
+        chrome.setPadding(dp(2), 0, dp(2), dp(2));
+        backBtn = AtlasUi.chromeButton(this, "Back", v -> leaveDesk());
+        fullBtn = AtlasUi.chromeButton(this, "Full screen", v -> setFull(!full));
+        restartBtn = AtlasUi.chromeButton(this, "Restart", v -> reloadView());
+        sideBtn = AtlasUi.chromeButton(this, "Side", v -> showSideKeys());
+        keysBtn = AtlasUi.chromeButton(this, "Keys", v -> toggleExtraKeys());
+        chrome.addView(backBtn, AtlasUi.chromeSlot(this));
+        chrome.addView(fullBtn, AtlasUi.chromeSlot(this));
+        chrome.addView(restartBtn, AtlasUi.chromeSlot(this));
+        chrome.addView(sideBtn, AtlasUi.chromeSlot(this));
+        chrome.addView(keysBtn, AtlasUi.chromeSlot(this));
         root.addView(chrome, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -166,31 +210,12 @@ public class DeskActivity extends Activity {
         });
         root.addView(keys, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        keys.setVisibility(AtlasPrefs.extraKeysOpen(this)
+            ? View.VISIBLE : View.GONE);
         wrap = new FrameLayout(this);
         wrap.addView(root);
         wrap.setFitsSystemWindows(true);
-        exitFull = new Button(this);
-        exitFull.setText("Exit full screen");
-        exitFull.setAllCaps(false);
-        exitFull.setVisibility(View.GONE);
-        exitFull.setOnClickListener(v -> setFull(false));
-        FrameLayout.LayoutParams exitLp = new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP | Gravity.END);
-        exitLp.setMargins(0, 12, 12, 0);
-        wrap.addView(exitFull, exitLp);
-        restartFull = new Button(this);
-        restartFull.setText("Restart");
-        restartFull.setAllCaps(false);
-        restartFull.setVisibility(View.GONE);
-        restartFull.setOnClickListener(v -> reloadView());
-        FrameLayout.LayoutParams rstLp = new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP | Gravity.END);
-        rstLp.setMargins(0, 12, 220, 0);
-        wrap.addView(restartFull, rstLp);
+        buildOrb();
         setContentView(wrap);
         View content = findViewById(android.R.id.content);
         View.OnApplyWindowInsetsListener edge = (v, insets) -> {
@@ -205,6 +230,7 @@ public class DeskActivity extends Activity {
         root.requestFocus();
         deskRoot = root;
         setFull(false);
+        wrap.post(this::parkOrb);
         image.post(this::fitDeskToView);
 
         if (!DeskClient.load(this)) {
@@ -214,11 +240,34 @@ public class DeskActivity extends Activity {
         io.execute(() -> {
             DeskSideKeys.ensureScrollDefault(DeskActivity.this);
             String started = DeskSession.start(this);
-            if (started != null && !started.contains("Cannot run program")) {
-                main.post(() -> status.setText(oneLine(started)));
+            if (started != null && !started.contains("STARTED")
+                    && !started.contains("restarting")) {
+                main.post(() -> {
+                    if (status != null) status.setText(oneLine(started));
+                });
             }
             pump();
         });
+    }
+
+    private void toggleExtraKeys() {
+        boolean on = !AtlasPrefs.extraKeysOpen(this);
+        AtlasPrefs.setExtraKeysOpen(this, on);
+        if (full) {
+            /* Keys stay on the glass. They do not drop the desktop out of full screen. */
+            if (keys != null) keys.setVisibility(View.GONE);
+            if (on && !orbOpen) setOrbOpen(true);
+            else {
+                showRing(on);
+                anchorGrip();
+            }
+            return;
+        }
+        showRing(false);
+        if (keys != null) {
+            keys.mountBottom();
+            keys.setVisibility(on ? View.VISIBLE : View.GONE);
+        }
     }
 
     private void setFull(boolean on) {
@@ -260,9 +309,24 @@ public class DeskActivity extends Activity {
         if (wrap != null) wrap.setFitsSystemWindows(!on);
         applyBarPadding();
         chrome.setVisibility(on ? View.GONE : View.VISIBLE);
-        if (keys != null) keys.setVisibility(on ? View.GONE : View.VISIBLE);
-        if (exitFull != null) exitFull.setVisibility(on ? View.VISIBLE : View.GONE);
-        if (restartFull != null) restartFull.setVisibility(on ? View.VISIBLE : View.GONE);
+        if (status != null) status.setVisibility(on ? View.GONE : View.VISIBLE);
+        if (keys != null) {
+            if (on) {
+                keys.setVisibility(View.GONE);
+            } else {
+                showRing(false);
+                keys.mountBottom();
+                keys.setVisibility(AtlasPrefs.extraKeysOpen(this)
+                    ? View.VISIBLE : View.GONE);
+            }
+        }
+        if (orbDock != null) {
+            orbDock.setVisibility(on ? View.VISIBLE : View.GONE);
+            if (!on) orbParked = false;
+            /* Collapsed until the ball is tapped, unless Keys is already open. */
+            if (on && AtlasPrefs.extraKeysOpen(this)) setOrbOpen(true);
+            else setOrbOpen(false);
+        }
         fullBtn.setText("Full screen");
         if (wrap != null) wrap.post(this::applyBarPadding);
         if (image != null) image.post(this::fitDeskToView);
@@ -335,10 +399,321 @@ public class DeskActivity extends Activity {
         }, "desk-size").start();
     }
 
+    /** Full-screen panel. Keys open around it. The glass stays full screen. */
+    private void buildOrb() {
+        orbDock = new FrameLayout(this);
+        orbDock.setVisibility(View.GONE);
+        TextView handle = new TextView(this);
+        handle.setText("☰");
+        handle.setGravity(Gravity.CENTER);
+        handle.setTextColor(AtlasUi.chromeOnTerm(this));
+        orbBall = handle;
+        orbBack = orbAction("Back", v -> leaveDesk());
+        orbExit = orbAction("Exit", v -> setFull(false));
+        orbRestart = orbAction("Restart", v -> reloadView());
+        orbSide = orbAction("Side", v -> showSideKeys());
+        orbKeys = orbAction("Keys", v -> toggleExtraKeys());
+        ringTop = ringBox();
+        ringLeft = ringBox();
+        ringRight = ringBox();
+        ringBottom = ringBox();
+        orbPanel = new LinearLayout(this);
+        orbPanel.setGravity(Gravity.CENTER);
+        LinearLayout mid = new LinearLayout(this);
+        mid.setOrientation(LinearLayout.HORIZONTAL);
+        mid.setGravity(Gravity.CENTER);
+        mid.addView(ringLeft);
+        mid.addView(orbPanel);
+        mid.addView(ringRight);
+        orbCluster = new LinearLayout(this);
+        orbCluster.setOrientation(LinearLayout.VERTICAL);
+        orbCluster.setGravity(Gravity.CENTER);
+        orbCluster.addView(ringTop);
+        orbCluster.addView(mid);
+        orbCluster.addView(ringBottom);
+        orbCluster.setVisibility(View.GONE);
+        orbDock.addView(orbCluster, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.CENTER));
+        orbDock.addView(orbBall, new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.CENTER));
+        wrap.addView(orbDock, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP | Gravity.START));
+        applyFloatChrome();
+    }
+
+    private LinearLayout ringBox() {
+        LinearLayout box = new LinearLayout(this);
+        box.setGravity(Gravity.CENTER);
+        box.setVisibility(View.GONE);
+        return box;
+    }
+
+    private Button orbAction(String label, View.OnClickListener click) {
+        Button b = AtlasUi.chromeButton(this, label, click);
+        b.setGravity(Gravity.CENTER);
+        return b;
+    }
+
+    /** Restyle the floating panel from Settings. Safe when the desk is not full screen. */
+    private void applyFloatChrome() {
+        if (orbPanel == null) return;
+        int size = AtlasPrefs.orbSize(this);
+        int opacity = AtlasPrefs.orbOpacity(this);
+        int alpha = opacity * 255 / 100;
+        int bg = AtlasPrefs.bgColor(this);
+        int cell = Math.max(dp(32), dp(40) * size / 100);
+        GradientDrawable sheet = new GradientDrawable();
+        sheet.setColor(Color.argb(alpha, Color.red(bg), Color.green(bg), Color.blue(bg)));
+        orbPanel.setBackground(sheet);
+        orbPanel.setPadding(dp(2), dp(2), dp(2), dp(2));
+        for (Button b : new Button[] { orbBack, orbExit, orbRestart, orbSide, orbKeys }) {
+            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(10f, 12f * size / 100f));
+            b.setMinimumHeight(cell);
+            b.setMinHeight(cell);
+        }
+        int ball = Math.max(dp(44), dp(56) * size / 100);
+        GradientDrawable circle = new GradientDrawable();
+        circle.setShape(GradientDrawable.OVAL);
+        circle.setColor(Color.argb(alpha, Color.red(bg), Color.green(bg), Color.blue(bg)));
+        circle.setStroke(dp(2), AtlasUi.chromeOnTerm(this));
+        orbBall.setBackground(circle);
+        if (orbBall instanceof TextView) {
+            ((TextView) orbBall).setTextSize(TypedValue.COMPLEX_UNIT_SP,
+                Math.max(14f, 18f * size / 100f));
+        }
+        ViewGroup.LayoutParams blp = orbBall.getLayoutParams();
+        if (blp != null) {
+            blp.width = ball;
+            blp.height = ball;
+            orbBall.setLayoutParams(blp);
+        }
+        layoutOrbPanel(cell);
+        if (orbOpen) {
+            orbCluster.setVisibility(View.VISIBLE);
+            if (full && AtlasPrefs.extraKeysOpen(this)) showRing(true);
+        } else {
+            collapseGrip();
+        }
+    }
+
+    private void layoutOrbPanel(int cell) {
+        String style = AtlasPrefs.orbStyle(this);
+        orbPanel.removeAllViews();
+        detach(orbBall);
+        if ("bar".equals(style)) {
+            orbPanel.setOrientation(LinearLayout.HORIZONTAL);
+            addPanel(orbBall, cell, cell);
+            addPanel(orbBack, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
+            addPanel(orbExit, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
+            addPanel(orbRestart, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
+            addPanel(orbSide, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
+            addPanel(orbKeys, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
+            return;
+        }
+        if ("stack".equals(style)) {
+            orbPanel.setOrientation(LinearLayout.VERTICAL);
+            addPanel(orbBall, cell, cell);
+            addPanel(orbBack, LinearLayout.LayoutParams.MATCH_PARENT, cell);
+            addPanel(orbExit, LinearLayout.LayoutParams.MATCH_PARENT, cell);
+            addPanel(orbRestart, LinearLayout.LayoutParams.MATCH_PARENT, cell);
+            addPanel(orbSide, LinearLayout.LayoutParams.MATCH_PARENT, cell);
+            addPanel(orbKeys, LinearLayout.LayoutParams.MATCH_PARENT, cell);
+            return;
+        }
+        orbPanel.setOrientation(LinearLayout.VERTICAL);
+        addPanel(orbBack, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
+        LinearLayout mid = new LinearLayout(this);
+        mid.setOrientation(LinearLayout.HORIZONTAL);
+        mid.setGravity(Gravity.CENTER);
+        addInto(mid, orbKeys, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
+        addInto(mid, orbBall, cell, cell);
+        addInto(mid, orbExit, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
+        orbPanel.addView(mid, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        addPanel(orbRestart, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
+        addPanel(orbSide, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
+    }
+
+    private void addPanel(View v, int w, int h) {
+        addInto(orbPanel, v, w, h);
+    }
+
+    private void addInto(LinearLayout host, View v, int w, int h) {
+        detach(v);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h);
+        int m = dp(1);
+        lp.setMargins(m, m, m, m);
+        host.addView(v, lp);
+    }
+
+    private void detach(View v) {
+        if (v != null && v.getParent() instanceof ViewGroup) {
+            ((ViewGroup) v.getParent()).removeView(v);
+        }
+    }
+
+    private int cell() {
+        return Math.max(dp(32), dp(40) * AtlasPrefs.orbSize(this) / 100);
+    }
+
+    private void setOrbOpen(boolean on) {
+        orbOpen = on;
+        if (orbDock == null) return;
+        if (on) {
+            layoutOrbPanel(cell());
+            orbCluster.setVisibility(View.VISIBLE);
+            showRing(AtlasPrefs.extraKeysOpen(this));
+        } else {
+            showRing(false);
+            collapseGrip();
+        }
+        anchorGrip();
+    }
+
+    /** Only the round handle. The panel and the keys are hidden. */
+    private void collapseGrip() {
+        if (orbCluster != null) orbCluster.setVisibility(View.GONE);
+        if (orbBall == null || orbDock == null) return;
+        detach(orbBall);
+        int ball = Math.max(dp(44), dp(56) * AtlasPrefs.orbSize(this) / 100);
+        orbDock.addView(orbBall, new FrameLayout.LayoutParams(ball, ball, Gravity.CENTER));
+    }
+
+    private void showRing(boolean on) {
+        if (ringTop == null) return;
+        if (on && full && keys != null) {
+            keys.mountRing(ringTop, ringLeft, ringRight, ringBottom,
+                cell(), AtlasPrefs.orbOpacity(this));
+        }
+        int vis = on && full ? View.VISIBLE : View.GONE;
+        ringTop.setVisibility(vis);
+        ringLeft.setVisibility(vis);
+        ringRight.setVisibility(vis);
+        ringBottom.setVisibility(vis);
+    }
+
+    /** Keep the handle where the finger left it when the panel grows. */
+    private void anchorGrip() {
+        if (orbDock == null || orbBall == null) return;
+        if (!orbParked) {
+            if (orbDock.getVisibility() == View.VISIBLE)
+                orbDock.post(() -> orbDock.post(this::parkOrb));
+            return;
+        }
+        int[] before = new int[2];
+        orbBall.getLocationOnScreen(before);
+        final int cx = before[0] + Math.max(orbBall.getWidth(), 1) / 2;
+        final int cy = before[1] + Math.max(orbBall.getHeight(), 1) / 2;
+        orbDock.post(() -> orbDock.post(() -> {
+            int[] now = new int[2];
+            orbBall.getLocationOnScreen(now);
+            float dx = cx - (now[0] + orbBall.getWidth() / 2f);
+            float dy = cy - (now[1] + orbBall.getHeight() / 2f);
+            placeOrb(orbDock.getX() + dx, orbDock.getY() + dy);
+        }));
+    }
+
+    private void parkOrb() {
+        if (wrap == null || orbDock == null) return;
+        if (orbDock.getVisibility() != View.VISIBLE) return;
+        int w = wrap.getWidth();
+        if (w <= 0) return;
+        orbParked = true;
+        int dockW = orbDock.getWidth();
+        if (dockW <= 0) dockW = dp(220);
+        int top = dp(72);
+        WindowInsets insets = wrap.getRootWindowInsets();
+        if (insets != null && Build.VERSION.SDK_INT >= 29) {
+            top = Math.max(top, insets.getSystemGestureInsets().top + dp(12));
+        }
+        placeOrb(w - dockW - dp(12), top);
+    }
+
+    private void placeOrb(float x, float y) {
+        if (wrap == null || orbDock == null) return;
+        int pw = wrap.getWidth();
+        int ph = wrap.getHeight();
+        int w = orbDock.getWidth();
+        int h = orbDock.getHeight();
+        if (w <= 0) w = dp(56);
+        if (h <= 0) h = w;
+        float maxX = Math.max(0f, pw - w);
+        float maxY = Math.max(0f, ph - h);
+        if (x < 0f) x = 0f;
+        if (y < 0f) y = 0f;
+        if (x > maxX) x = maxX;
+        if (y > maxY) y = maxY;
+        orbDock.setX(x);
+        orbDock.setY(y);
+    }
+
+    /** Drag the handle. Button and key presses are delivered to the views. */
+    private boolean orbTouch(MotionEvent e) {
+        if (!full || orbDock == null || orbDock.getVisibility() != View.VISIBLE) return false;
+        if (hitFloatButton(e)) return false;
+        int act = e.getActionMasked();
+        boolean onBall = hitView(orbBall, e);
+        boolean onDock = onBall || hitView(orbDock, e);
+        if (act == MotionEvent.ACTION_DOWN || act == MotionEvent.ACTION_POINTER_DOWN) {
+            if (!onDock) return false;
+            orbHeld = true;
+            orbDragging = false;
+            orbOnBall = onBall;
+            orbDownX = e.getRawX();
+            orbDownY = e.getRawY();
+            orbStartX = orbDock.getX();
+            orbStartY = orbDock.getY();
+            return true;
+        }
+        if (!orbHeld) return false;
+        if (act == MotionEvent.ACTION_MOVE) {
+            float dx = e.getRawX() - orbDownX;
+            float dy = e.getRawY() - orbDownY;
+            int dragSlop = dp(8);
+            if (!orbDragging && dx * dx + dy * dy > (float) dragSlop * dragSlop) orbDragging = true;
+            if (orbDragging && orbOnBall) placeOrb(orbStartX + dx, orbStartY + dy);
+            return true;
+        }
+        if (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL) {
+            boolean drag = orbDragging;
+            boolean ball = orbOnBall;
+            orbHeld = false;
+            orbDragging = false;
+            orbOnBall = false;
+            if (act == MotionEvent.ACTION_CANCEL || drag) return true;
+            if (ball) {
+                Log.i("AtlasDesk", orbOpen ? "orb close" : "orb open");
+                setOrbOpen(!orbOpen);
+            }
+            return true;
+        }
+        return orbHeld;
+    }
+
+    private boolean hitFloatButton(MotionEvent e) {
+        if (!full) return false;
+        for (Button b : new Button[] { orbBack, orbExit, orbRestart, orbSide, orbKeys }) {
+            if (hitView(b, e)) return true;
+        }
+        if (keys != null && keys.isRing()) {
+            for (Button b : keys.buttons()) {
+                if (hitView(b, e)) return true;
+            }
+        }
+        return false;
+    }
+
+    private int dp(int v) {
+        return Math.round(v * getResources().getDisplayMetrics().density);
+    }
+
     /** Returns true when this event was a press on a desk control. */
     private boolean chromePress(MotionEvent e) {
         int act = e.getActionMasked();
-        Button[] row = { fullBtn, restartBtn, sideBtn, exitFull, restartFull };
+        Button[] row = { backBtn, fullBtn, restartBtn, sideBtn, keysBtn };
         if (act == MotionEvent.ACTION_DOWN || act == MotionEvent.ACTION_POINTER_DOWN) {
             chromeDown = -1;
             for (int i = 0; i < row.length; i++) {
@@ -367,23 +742,25 @@ public class DeskActivity extends Activity {
     }
 
     private boolean hitView(View v, MotionEvent e) {
+        return hitView(v, e, 0);
+    }
+
+    /**
+     * A GONE parent keeps its child's old rectangle. Full screen hides the
+     * windowed bar that way, and a tap on Exit was landing on Side.
+     */
+    private boolean hitView(View v, MotionEvent e, int slop) {
         if (v == null || v.getVisibility() != View.VISIBLE) return false;
+        if (v.getWidth() <= 0 || v.getHeight() <= 0) return false;
+        for (android.view.ViewParent p = v.getParent(); p instanceof View; p = p.getParent()) {
+            if (((View) p).getVisibility() != View.VISIBLE) return false;
+        }
         int[] loc = new int[2];
         v.getLocationOnScreen(loc);
         float x = e.getRawX();
         float y = e.getRawY();
-        return x >= loc[0] && x < loc[0] + v.getWidth()
-            && y >= loc[1] && y < loc[1] + v.getHeight();
-    }
-
-    private boolean hitExit(MotionEvent e) {
-        if (exitFull == null || exitFull.getVisibility() != View.VISIBLE) return false;
-        int[] loc = new int[2];
-        exitFull.getLocationOnScreen(loc);
-        float x = e.getRawX();
-        float y = e.getRawY();
-        return x >= loc[0] && x < loc[0] + exitFull.getWidth()
-            && y >= loc[1] && y < loc[1] + exitFull.getHeight();
+        return x >= loc[0] - slop && x < loc[0] + v.getWidth() + slop
+            && y >= loc[1] - slop && y < loc[1] + v.getHeight() + slop;
     }
 
     /** Stop Plasma and KWin, then start that session again. The glass stays up. */
@@ -395,7 +772,9 @@ public class DeskActivity extends Activity {
             String msg = DeskSession.restart(DeskActivity.this);
             main.post(() -> {
                 restarting = false;
-                if (status != null) status.setText(oneLine(msg));
+                if (status != null && msg != null && !msg.contains("restarting")) {
+                    status.setText(oneLine(msg));
+                }
             });
         }, "desk-restart").start();
     }
@@ -467,6 +846,15 @@ public class DeskActivity extends Activity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent e) {
+        /* Full-screen chrome sits on top of the picture. Give that strip to
+         * the real buttons before the glass or the trackpad eats the tap. */
+        if (hitFloatButton(e)) return super.dispatchTouchEvent(e);
+        if (orbTouch(e)) return true;
+        /* The key panel is touchscreen too. Without this, every tap is
+         * sent to the glass and the keys never receive it. */
+        if (keys != null && keys.getVisibility() == View.VISIBLE && hitView(keys, e)) {
+            return super.dispatchTouchEvent(e);
+        }
         /* A finger on the bar must hit the buttons. The glass path used to
          * eat that tap, which is why Side and Restart did nothing. */
         if ((isGlass(e) || isPad(e)) && chromePress(e)) return true;
@@ -533,8 +921,6 @@ public class DeskActivity extends Activity {
             pb.redirectErrorStream(true);
             pb.redirectOutput(new File(dir, "pad.log"));
             padProc = pb.start();
-            writePtrFile(540, 540);
-            sendPtr(540, 540, 0, 0, 1);
             Log.i("AtlasDesk", "pad " + bin.length());
         } catch (Exception e) {
             Log.w("AtlasDesk", "pad: " + e.getMessage());
@@ -544,37 +930,48 @@ public class DeskActivity extends Activity {
     private void stopPadReader() {
         Process p = padProc;
         padProc = null;
-        if (p != null) {
-            p.destroy();
-            try {
-                if (!p.waitFor(400, TimeUnit.MILLISECONDS)) p.destroyForcibly();
-            } catch (InterruptedException e) {
-                p.destroyForcibly();
-                Thread.currentThread().interrupt();
-            }
-        }
-        try {
-            Process k = Runtime.getRuntime().exec(new String[] {
-                "/system/bin/sh", "-c",
-                "kill $(pidof atlas-desk-pad) 2>/dev/null; exit 0"
-            });
-            if (!k.waitFor(300, TimeUnit.MILLISECONDS)) k.destroyForcibly();
-        } catch (Exception ignored) {
-        }
+        if (p != null) p.destroyForcibly();
     }
 
-    /** 1 while this window is focused. Readers drop the devices when it is not. */
+    /** 1 while this window is focused. The keyboard reader uses this file. */
     private void writeDeskFocus(boolean on) {
+        writeFlag(DESK_FOCUS, "desk-focus.next", on);
+    }
+
+    /** 1 while this activity is resumed. The trackpad reader uses this file. */
+    private void writePadHold(boolean on) {
+        writeFlag(DESK_PAD, "desk-pad.next", on);
+    }
+
+    private void writeFlag(String path, String tmpName, boolean on) {
         try {
             File dir = new File("/data/local/tmp/atlas-virgl");
             if (!dir.isDirectory() && !dir.mkdirs()) return;
-            File f = new File(DESK_FOCUS);
-            Files.write(f.toPath(), (on ? "1\n" : "0\n").getBytes());
-            f.setReadable(true, false);
-            f.setWritable(true, false);
+            File f = new File(path);
+            File next = new File(dir, tmpName);
+            Files.write(next.toPath(), (on ? "1\n" : "0\n").getBytes());
+            next.setReadable(true, false);
+            next.setWritable(true, false);
+            try {
+                Files.move(next.toPath(), f.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (Exception atomic) {
+                Files.move(next.toPath(), f.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (Exception e) {
             Log.w("AtlasDesk", "focus: " + e.getMessage());
         }
+    }
+
+    /** Trackpad stays for the whole time the desk is open. */
+    private void setPadHeld(boolean on) {
+        main.removeCallbacks(padTick);
+        writePadHold(on);
+        if (!on) return;
+        main.postDelayed(padTick, 2000);
+        if (!alive(padProc)) startPadReader();
     }
 
     private static boolean alive(Process p) {
@@ -715,24 +1112,57 @@ public class DeskActivity extends Activity {
         return new int[] { px, py };
     }
 
+    private String sideMessage() {
+        return "Top: " + DeskSideKeys.label(sideTop)
+            + "\nBottom: " + DeskSideKeys.label(sideBot)
+            + "\n\nShort press is the scroll wheel. Tap a row to change it.";
+    }
+
+    /**
+     * Controls lookup blocks for seconds. The last time it ran inside the
+     * touch that opened this dialog, input dispatch timed out and Atlas died.
+     */
     private void showSideKeys() {
-        String top = DeskSideKeys.action(this, com.titanus2.api.Titan2ApiContract.SLOT_SIDE2_SHORT);
-        String bot = DeskSideKeys.action(this, com.titanus2.api.Titan2ApiContract.SLOT_SIDE_SHORT);
-        new android.app.AlertDialog.Builder(this)
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
             .setTitle("Side buttons")
-            .setMessage("Top: " + DeskSideKeys.label(top)
-                + "\nBottom: " + DeskSideKeys.label(bot)
-                + "\n\nShort press is the scroll wheel. Tap a row to change it.")
-            .setPositiveButton("Top · " + DeskSideKeys.label(top), (d, w) -> {
-                String n = DeskSideKeys.next(top);
-                DeskSideKeys.set(this, com.titanus2.api.Titan2ApiContract.SLOT_SIDE2_SHORT, n);
-            })
-            .setNegativeButton("Bottom · " + DeskSideKeys.label(bot), (d, w) -> {
-                String n = DeskSideKeys.next(bot);
-                DeskSideKeys.set(this, com.titanus2.api.Titan2ApiContract.SLOT_SIDE_SHORT, n);
-            })
+            .setMessage(sideMessage())
+            .setPositiveButton("Top", (d, w) -> cycleSide(true))
+            .setNegativeButton("Bottom", (d, w) -> cycleSide(false))
             .setNeutralButton("Close", null)
-            .show();
+            .create();
+        dialog.show();
+        binder.execute(() -> {
+            String top = DeskSideKeys.action(DeskActivity.this,
+                com.titanus2.api.Titan2ApiContract.SLOT_SIDE2_SHORT);
+            String bot = DeskSideKeys.action(DeskActivity.this,
+                com.titanus2.api.Titan2ApiContract.SLOT_SIDE_SHORT);
+            main.post(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                sideTop = top;
+                sideBot = bot;
+                if (!dialog.isShowing()) return;
+                dialog.setMessage(sideMessage());
+                android.widget.Button pos = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
+                android.widget.Button neg = dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE);
+                if (pos != null) pos.setText("Top · " + DeskSideKeys.label(top));
+                if (neg != null) neg.setText("Bottom · " + DeskSideKeys.label(bot));
+            });
+        });
+    }
+
+    private void cycleSide(boolean topSlot) {
+        binder.execute(() -> {
+            String slot = topSlot
+                ? com.titanus2.api.Titan2ApiContract.SLOT_SIDE2_SHORT
+                : com.titanus2.api.Titan2ApiContract.SLOT_SIDE_SHORT;
+            String live = DeskSideKeys.action(DeskActivity.this, slot);
+            String n = DeskSideKeys.next(live);
+            DeskSideKeys.set(DeskActivity.this, slot, n);
+            main.post(() -> {
+                if (topSlot) sideTop = n;
+                else sideBot = n;
+            });
+        });
     }
 
     private static int buttonMask(MotionEvent e) {
@@ -753,12 +1183,7 @@ public class DeskActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (Build.VERSION.SDK_INT >= 26) {
-            KeyguardManager km = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
-            if (km != null && km.isKeyguardLocked()) {
-                km.requestDismissKeyguard(this, null);
-            }
-        }
+        applyFloatChrome();
         if (deskRoot != null) deskRoot.requestFocus();
         if (!leaveRegistered) {
             IntentFilter filter = new IntentFilter("com.titanus2.atlas.DESK_LEAVE");
@@ -769,6 +1194,9 @@ public class DeskActivity extends Activity {
             }
             leaveRegistered = true;
         }
+        /* Keyboard only while this window is focused, so Home still works.
+         * The trackpad stays for the whole time the desk is open. */
+        setPadHeld(true);
         setDeskFocused(hasWindowFocus());
         DeskSession.startAudio(this);
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
@@ -780,13 +1208,14 @@ public class DeskActivity extends Activity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        /* Shade, lock screen, or another app. The phone owns the keys and pad. */
+        /* Focus loss gives TitanKey back so scan 580 reaches Controls.
+         * The trackpad grab is not cleared here. */
         setDeskFocused(hasFocus);
-        if (hasFocus && full) setFull(true);
     }
 
     @Override
     protected void onPause() {
+        setPadHeld(false);
         setDeskFocused(false);
         if (leaveRegistered) {
             try {
@@ -798,22 +1227,20 @@ public class DeskActivity extends Activity {
         super.onPause();
     }
 
-    /** Leave the desk and show the Android task that was under it.
-     *  If the keyguard is up, dismiss it instead of revealing the lock shade. */
+    /** Back returns to the Debian shell under this screen. The shell
+     *  session stays up. Enter is a seat key and does not come here. */
     private void leaveDesk() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            KeyguardManager km = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
-            if (km != null && km.isKeyguardLocked()) {
-                km.requestDismissKeyguard(this, new KeyguardManager.KeyguardDismissCallback() {
-                    @Override public void onDismissSucceeded() { moveTaskToBack(true); }
-                    @Override public void onDismissCancelled() { moveTaskToBack(true); }
-                    @Override public void onDismissError() { moveTaskToBack(true); }
-                });
-                if (deskRoot != null) deskRoot.postDelayed(() -> moveTaskToBack(true), 400);
-                return;
-            }
+        if (isFinishing()) return;
+        setPadHeld(false);
+        setDeskFocused(false);
+        try {
+            Intent shell = new Intent(this, MainActivity.class);
+            shell.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(shell);
+        } catch (Exception ignored) {
         }
-        moveTaskToBack(true);
+        finish();
     }
 
     /**
@@ -824,11 +1251,26 @@ public class DeskActivity extends Activity {
     private void fireNav(boolean heldLong) {
         String action = plane(heldLong ? "titan2_km_recents_long" : "titan2_km_recents_short",
                 heldLong ? "recents" : "home");
+        /* Drop the keyboard grab and this window. Otherwise Home and Recents
+         * run underneath the desk and look like the key did nothing. */
+        setPadHeld(false);
+        setDeskFocused(false);
+        leaveDesk();
         Intent fire = new Intent("com.titanus2.controls.KEY_FIRE");
         fire.setPackage("com.titanus2.controls");
         fire.putExtra("action", action);
         fire.putExtra("scan", 580);
         sendBroadcast(fire);
+        if (!heldLong && "home".equals(action)) {
+            try {
+                Intent home = new Intent(Intent.ACTION_MAIN);
+                home.addCategory(Intent.CATEGORY_HOME);
+                home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                startActivity(home);
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     private static String plane(String name, String fallback) {
@@ -854,7 +1296,8 @@ public class DeskActivity extends Activity {
             return super.dispatchKeyEvent(event);
         }
         int key = event.getKeyCode();
-        /* Back leaves this screen. It does not stay inside the desk. */
+        /* Back returns to the Debian shell. Enter is scan 28 and stays
+         * on the seat. A focused chrome button must not see it. */
         if (key == KeyEvent.KEYCODE_BACK) {
             /* A mouse right-click is delivered as Back. Do not leave the desk. */
             int src = event.getSource();
@@ -875,7 +1318,7 @@ public class DeskActivity extends Activity {
                 long held = homeDownAt == 0 ? 0
                         : android.os.SystemClock.uptimeMillis() - homeDownAt;
                 homeDownAt = 0;
-                boolean longHold = key == KeyEvent.KEYCODE_APP_SWITCH || held >= 700;
+                boolean longHold = held >= 700;
                 fireNav(longHold);
             }
             return true;
@@ -1135,11 +1578,13 @@ public class DeskActivity extends Activity {
     @Override
     protected void onDestroy() {
         run.set(false);
+        setPadHeld(false);
         setDeskFocused(false);
         stopPadReader();
         stopKeyReader();
         io.shutdownNow();
         input.shutdownNow();
+        binder.shutdownNow();
         if (image != null) image.setImageDrawable(null);
         if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
         bitmap = null;

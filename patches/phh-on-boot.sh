@@ -98,6 +98,11 @@ settings put global camera_double_tap_power_gesture_disabled 1 2>/dev/null || tr
 settings put global power_button_long_press 1 2>/dev/null || true
 settings put secure long_press_power_assistant 0 2>/dev/null || true
 
+# DesktopInput.onResume throws on purpose. Disable it before the activity
+# can be resumed. A later pass repeats this after services settle.
+pm disable me.phh.treble.app/me.phh.treble.app.DesktopInput >/dev/null 2>&1 || true
+pm disable me.phh.treble.app/me.phh.treble.app.Starter >/dev/null 2>&1 || true
+
 # Pad agent + USB HID + display: init owns long-lived services (single start).
 # Only ctl.start — never background-fork a second agent (dual → InputReader thrash).
 setprop ctl.start titan2-pad-agent 2>/dev/null || true
@@ -129,10 +134,8 @@ settings put secure usb_audio_automatic_routing_disabled 1 2>/dev/null || true
   #    jar is injected but startup is still fragile; disable Starter.
   # Controls owns IMS. Treble SettingsActivity is vendor quirks only.
   # Product does not need Desktop/Starter.
-  pm disable me.phh.treble.app/.DesktopInput >/dev/null 2>&1 || true
-  pm disable me.phh.treble.app/.Starter >/dev/null 2>&1 || true
-  pm disable-user --user 0 me.phh.treble.app/.DesktopInput >/dev/null 2>&1 || true
-  pm disable-user --user 0 me.phh.treble.app/.Starter >/dev/null 2>&1 || true
+  pm disable me.phh.treble.app/me.phh.treble.app.DesktopInput >/dev/null 2>&1 || true
+  pm disable me.phh.treble.app/me.phh.treble.app.Starter >/dev/null 2>&1 || true
 ) &
 #
 # Density is applied in titan2-display (cube ~300 for tablet Settings two-pane).

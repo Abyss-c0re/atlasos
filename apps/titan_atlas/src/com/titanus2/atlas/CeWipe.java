@@ -118,6 +118,19 @@ public final class CeWipe {
      * Used on Atlas Clear data and Settings → Wipe.
      */
     public static void resetLinuxHome(Context c) {
+        String img = HomeImage.recreate(c);
+        if (img != null && (img.startsWith("home recreated") || img.startsWith("home image"))) {
+            if (c != null) {
+                try {
+                    NativeBin.ensureUserInstallDirs(c);
+                    NativeBin.ensureShellProfile(c);
+                } catch (Exception e) {
+                    Log.w(TAG, "reseed profile: " + e.getMessage());
+                }
+            }
+            Log.i(TAG, img);
+            return;
+        }
         File home = new File(NativeBin.LINUX_HOME);
         if (home.isDirectory()) {
             File[] kids = home.listFiles();

@@ -221,17 +221,25 @@ bring_up_from_lp() {
   echo Titan2 >/proc/sys/kernel/hostname 2>/dev/null || true
   echo Titan2 >"$LP_MNT/etc/hostname" 2>/dev/null || true
   echo Titan2 >"$MERGE/etc/hostname" 2>/dev/null || true
-  # Hive MCP is not product on this phone. Strip leftover seed.
+  # BlackCube is the Atlas Grok peer. Do not strip it.
+  # A leftover BrainCube seed is not the on-device agent path.
   for _mcp in \
     "$ATLAS_LINUX_HOME/.nanobot/mcp_servers.json" \
     /data/local/atlas-home/atlas/.nanobot/mcp_servers.json \
     /data/data/com.titanus2.atlas/files/.nanobot/mcp_servers.json
   do
     [ -f "$_mcp" ] || continue
-    if grep -q blackcube "$_mcp" 2>/dev/null || grep -q braincube "$_mcp" 2>/dev/null; then
+    if grep -q braincube "$_mcp" 2>/dev/null && ! grep -q blackcube "$_mcp" 2>/dev/null; then
       printf '%s\n' '{"servers":[]}' >"$_mcp" 2>/dev/null || rm -f "$_mcp"
     fi
   done
+  if [ -x "$LP_MNT/usr/local/libexec/atlas-blackcube-install.sh" ]; then
+    ATLAS_LINUX_ROOT="$LP_MNT" ATLAS_LINUX_HOME="$ATLAS_LINUX_HOME" \
+      "$LP_MNT/usr/local/libexec/atlas-blackcube-install.sh" || true
+  elif [ -x "$MERGE/usr/local/libexec/atlas-blackcube-install.sh" ]; then
+    ATLAS_LINUX_ROOT="$MERGE" ATLAS_LINUX_HOME="$ATLAS_LINUX_HOME" \
+      "$MERGE/usr/local/libexec/atlas-blackcube-install.sh" || true
+  fi
 
   bind_android 2>/dev/null || true
   heal_merge_essentials 2>/dev/null || true
@@ -264,6 +272,14 @@ bring_up_from_lp() {
 # empty system:system — bind real home there or curl|bash / cargo / npm mkdir fail.
 bind_linux_home() {
   need_root || return 1
+  for _hs in /system/bin/atlas-home-img.sh \
+      /data/user/0/com.titanus2.atlas/files/bin/atlas-home-img.sh \
+      /data/data/com.titanus2.atlas/files/bin/atlas-home-img.sh; do
+    if [ -x "$_hs" ]; then
+      "$_hs" ensure || log "home image not mounted"
+      break
+    fi
+  done
   AU=`stat -c %u /data/data/com.titanus2.atlas 2>/dev/null \
     || stat -c %u /data/user/0/com.titanus2.atlas 2>/dev/null || true`
   mkdir -p "$ATLAS_LINUX_HOME" "$ATLAS_LINUX_HOME/reports" \
@@ -1478,7 +1494,10 @@ bind_android() {
     case "$_st" in
       allow|1|shared)
         bind_rbind /storage "$MERGE/storage"
-        if [ -d /sdcard ] || [ -L /sdcard ]; then
+        _hs=/system/bin/atlas-home-img.sh
+        if [ -x "$_hs" ]; then
+          "$_hs" sdcard || true
+        elif [ -d /sdcard ] || [ -L /sdcard ]; then
           bind_one /sdcard "$MERGE/sdcard"
         fi
         ;;
@@ -1930,6 +1949,10 @@ ensure_admin_user() {
     if [ -f "$pw" ]; then
       if grep -q "^atlas:" "$pw" 2>/dev/null; then
         sed -i "s#^atlas:[^:]*:[^:]*:[^:]*:#atlas:x:${uid}:${uid}:#" "$pw" 2>/dev/null || true
+        # Keep one atlas row. A second copy makes nss and sudo warn.
+        awk 'BEGIN{n=0} /^atlas:/{n++; if(n>1) next} {print}' "$pw" >"$pw.atlas" \
+          && [ -s "$pw.atlas" ] && mv "$pw.atlas" "$pw"
+        rm -f "$pw.atlas" 2>/dev/null || true
       else
         echo "atlas:x:${uid}:${uid}:Atlas:${home}:/bin/bash" >>"$pw"
       fi
@@ -1941,6 +1964,9 @@ ensure_admin_user() {
       sed -i "/^admin:/d" "$gr" 2>/dev/null || true
       if grep -q "^atlas:" "$gr" 2>/dev/null; then
         sed -i "s#^atlas:x:[^:]*:#atlas:x:${uid}:#" "$gr" 2>/dev/null || true
+        awk 'BEGIN{n=0} /^atlas:/{n++; if(n>1) next} {print}' "$gr" >"$gr.atlas" \
+          && [ -s "$gr.atlas" ] && mv "$gr.atlas" "$gr"
+        rm -f "$gr.atlas" 2>/dev/null || true
       else
         echo "atlas:x:${uid}:" >>"$gr"
       fi
@@ -3057,7 +3083,14 @@ heal_debian_tree() {
   if [ -n "$body" ]; then
     printf '%s\n' "$body" >"$tree/etc/resolv.conf" 2>/dev/null || true
   fi
-  [ -f "$tree/etc/hosts" ] || printf '127.0.0.1 localhost\n::1 localhost\n' >"$tree/etc/hosts"
+  # An empty hosts file still "exists". sudo warns until the hostname resolves.
+  hn=`tr -d '[:space:]' <"$tree/etc/hostname" 2>/dev/null || true`
+  [ -n "$hn" ] || hn=localhost
+  if [ ! -s "$tree/etc/hosts" ] || ! grep -q 'localhost' "$tree/etc/hosts" 2>/dev/null; then
+    printf '127.0.0.1\tlocalhost %s\n::1\tlocalhost ip6-localhost ip6-loopback\n' "$hn" >"$tree/etc/hosts"
+  elif ! grep -q "$hn" "$tree/etc/hosts" 2>/dev/null; then
+    sed -i "s/^127\\.0\\.0\\.1[[:space:]].*/127.0.0.1\tlocalhost $hn/" "$tree/etc/hosts" 2>/dev/null || true
+  fi
 
   if [ -d "$tree/etc/apt" ]; then
     # single sources.list — drop duplicate deb822 that doubles suites

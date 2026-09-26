@@ -105,6 +105,38 @@ public final class AtlasUi {
         return Math.round(v * c.getResources().getDisplayMetrics().density);
     }
 
+    /**
+     * Terminal tool-row control. Desk chrome uses the same widget so the
+     * two planes do not grow a second button style.
+     */
+    public static Button chromeButton(Context c, String label, View.OnClickListener click) {
+        Button b = new Button(c, null, android.R.attr.borderlessButtonStyle);
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setSingleLine(true);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        b.setTextColor(chromeOnTerm(c));
+        b.setMinHeight(dp(c, 36));
+        b.setMinimumHeight(dp(c, 36));
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setPadding(dp(c, 4), dp(c, 4), dp(c, 4), dp(c, 4));
+        b.setOnClickListener(click);
+        /* Hardware Return must type into the shell, not click a chrome button. */
+        b.setFocusable(false);
+        b.setFocusableInTouchMode(false);
+        return b;
+    }
+
+    /** Equal share of a horizontal chrome row. */
+    public static LinearLayout.LayoutParams chromeSlot(Context c) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        int m = dp(c, 1);
+        lp.setMargins(m, 0, m, 0);
+        return lp;
+    }
+
     public static void section(LinearLayout root, String name) {
         Context c = root.getContext();
         TextView t = new TextView(c);

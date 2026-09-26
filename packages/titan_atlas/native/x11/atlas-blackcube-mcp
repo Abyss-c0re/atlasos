@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+"""BlackCube MCP for Atlas Grok.
+
+Speaks MCP on stdio, or HTTP on 127.0.0.1:18790 with --serve.
+Tool calls POST straight to the BlackCube peer. No command filter,
+no approval gate, no jobs poll.
+
+  NANOBOT_PEER_URL          default http://192.168.8.100:18787
+  NANOBOT_PEER_TOKEN        optional
+  NANOBOT_PEER_TOKEN_FILE   optional, first match wins after the env token
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+PEER = (os.environ.get("NANOBOT_PEER_URL") or "http://192.168.8.100:18787").rstrip("/")
+PORT = int(os.environ.get("MCP_PORT", "18790"))
+
+TOKEN_FILES = (
+    os.environ.get("NANOBOT_PEER_TOKEN_FILE") or "",
+    "/usr/local/share/atlas/blackcube.token",
+    "/home/atlas/.nanobot/peer_token",
+    "/data/local/atlas-linux/usr/local/share/atlas/blackcube.token",
+    "/data/local/atlas-home/atlas/.nanobot/peer_token",
+)
+
+
+def peer_token() -> str:
+    tok = (os.environ.get("NANOBOT_PEER_TOKEN") or "").strip()
+    if tok.lower().startswith("bearer "):
+        tok = tok[7:].strip()
+    if tok.startswith("token="):
+        tok = tok.split("=", 1)[1].strip()
+    if tok:
+        return tok
+    home = Path.home() / ".nanobot" / "peer_token"
+    paths = [p for p in TOKEN_FILES if p] + [str(home)]
+    for raw in paths:
+        try:
+            line = Path(raw).read_text(encoding="utf-8").strip().splitlines()[0].strip()
+        except Exception:
+            continue
+        if line.lower().startswith("bearer "):
+            line = line[7:].strip()
+        if line.startswith("token="):
+            line = line.split("=", 1)[1].strip()
+        if line:
+            return line
+    return ""
+
+
+def _nonempty(s: object) -> str | None:
+    t = str(s or "").strip()
+    return t if t else None
+
+
+def peer_json(method: str, path: str, payload: dict | None = None, timeout: float = 175) -> dict:
+    data = None if payload is None else json.dumps(payload).encode()
+    req = urllib.request.Request(f"{PEER}{path}", data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    tok = peer_token()
+    if tok:
+        req.add_header("X-Nanobot-Peer-Token", tok)
+        req.add_header("Authorization", f"Bearer {tok}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace")
+        try:
+            out = json.loads(body)
+            if isinstance(out, dict):
+                out.setdefault("http_status", e.code)
+                return out
+        except Exception:
+            pass
+        return {"ok": False, "error": "peer_http_error", "http_status": e.code, "detail": body[:512]}
+    except Exception as e:
+        return {"ok": False, "error": "peer_unreachable", "detail": str(e)[:512]}
+
+
+TOOLS = [
+    {
+        "name": "blackcube_nanobot_prompt",
+        "description": "Run a prompt on BlackCube nanobot (Grok-auth agent host).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"prompt": {"type": "string"}},
+            "required": ["prompt"],
+        },
+    },
+    {
+        "name": "blackcube_nanobot_shell",
+        "description": "Run a shell command on BlackCube. The command is sent as given.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "blackcube_nanobot_info",
+        "description": "BlackCube nanobot peer health and info.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+]
+
+
+def call_tool(name: str, args: dict) -> dict:
+    if name == "blackcube_nanobot_info":
+        return peer_json("GET", "/peer/v1/info", timeout=10)
+    if name == "blackcube_nanobot_prompt":
+        prompt = _nonempty(args.get("prompt"))
+        if not prompt:
+            return {"ok": False, "error": "missing_prompt"}
+        return peer_json("POST", "/peer/v1/prompt", {"prompt": prompt}, timeout=175)
+    if name == "blackcube_nanobot_shell":
+        command = _nonempty(args.get("command"))
+        if not command:
+            return {"ok": False, "error": "missing_command"}
+        return peer_json("POST", "/peer/v1/shell", {"command": command}, timeout=175)
+    return {"ok": False, "error": "unknown_tool", "tool": name[:128]}
+
+
+def handle_rpc(msg: dict) -> dict | None:
+    mid = msg.get("id", None)
+    method = msg.get("method")
+    params = msg.get("params") or {}
+    if method in ("notifications/initialized", "initialized") and mid is None:
+        return None
+    if method == "initialize":
+        return {
+            "jsonrpc": "2.0",
+            "id": mid,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "blackcube-nanobot", "version": "1"},
+            },
+        }
+    if method in ("notifications/initialized", "initialized", "ping"):
+        return {"jsonrpc": "2.0", "id": mid, "result": {}}
+    if method == "tools/list":
+        return {"jsonrpc": "2.0", "id": mid, "result": {"tools": TOOLS}}
+    if method == "tools/call":
+        name = params.get("name") or ""
+        args = params.get("arguments") or {}
+        if not isinstance(args, dict):
+            args = {}
+        out = call_tool(str(name), args)
+        text = json.dumps(out, ensure_ascii=False)[:50000]
+        exit_code = out.get("exit")
+        err = (
+            bool(out.get("error"))
+            or out.get("ok") is False
+            or (isinstance(exit_code, int) and exit_code != 0)
+        )
+        return {
+            "jsonrpc": "2.0",
+            "id": mid,
+            "result": {"content": [{"type": "text", "text": text}], "isError": err},
+        }
+    if mid is None:
+        return None
+    return {
+        "jsonrpc": "2.0",
+        "id": mid,
+        "error": {"code": -32601, "message": f"Method not found: {method}"},
+    }
+
+
+def write_message(msg: dict) -> None:
+    sys.stdout.write(json.dumps(msg, ensure_ascii=False, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
+
+
+def read_message() -> dict | None:
+    line = sys.stdin.buffer.readline()
+    if not line:
+        return None
+    try:
+        if line.lower().startswith(b"content-length:"):
+            headers: dict[str, str] = {}
+            while True:
+                if line in (b"\r\n", b"\n"):
+                    break
+                if b":" in line:
+                    k, v = line.decode("utf-8", "replace").split(":", 1)
+                    headers[k.strip().lower()] = v.strip()
+                line = sys.stdin.buffer.readline()
+                if not line:
+                    return None
+            n = int(headers.get("content-length", "0"))
+            body = sys.stdin.buffer.read(n) if n else b"{}"
+            msg = json.loads(body.decode("utf-8"))
+        else:
+            text = line.decode("utf-8", "replace").strip()
+            if not text:
+                return read_message()
+            msg = json.loads(text)
+    except Exception:
+        write_message(
+            {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}
+        )
+        return read_message()
+    if not isinstance(msg, dict):
+        write_message(
+            {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
+        )
+        return read_message()
+    return msg
+
+
+def stdio_main() -> None:
+    while True:
+        msg = read_message()
+        if msg is None:
+            return
+        out = handle_rpc(msg)
+        if out is not None:
+            write_message(out)
+
+
+def drop_priv() -> None:
+    if os.geteuid() != 0:
+        return
+    try:
+        import pwd
+
+        pw = pwd.getpwnam("atlas")
+        os.initgroups(pw.pw_name, pw.pw_gid)
+        os.setgid(pw.pw_gid)
+        os.setuid(pw.pw_uid)
+    except Exception as e:
+        sys.stderr.write(f"atlas-blackcube-mcp: uid {os.geteuid()} ({e})\n")
+
+
+def serve() -> None:
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, fmt: str, *args) -> None:
+            return
+
+        def _send(self, code: int, obj: dict) -> None:
+            body = json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self) -> None:  # noqa: N802
+            path = self.path.split("?", 1)[0]
+            if path not in ("/", "/mcp", "/health"):
+                self._send(404, {"ok": False, "error": "not_found"})
+                return
+            self._send(
+                200,
+                {
+                    "ok": True,
+                    "service": "atlas-blackcube-mcp",
+                    "peer": PEER,
+                    "tools": [t["name"] for t in TOOLS],
+                },
+            )
+
+        def do_POST(self) -> None:  # noqa: N802
+            path = self.path.split("?", 1)[0]
+            if path not in ("/", "/mcp", "/message"):
+                self._send(404, {"ok": False, "error": "not_found"})
+                return
+            n = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(n) if n else b"{}"
+            try:
+                msg = json.loads(raw.decode() or "{}")
+            except Exception:
+                self._send(
+                    200,
+                    {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}},
+                )
+                return
+            if isinstance(msg, list):
+                out = [handle_rpc(m) if isinstance(m, dict) else {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32600, "message": "Invalid Request"},
+                } for m in msg]
+                out = [x for x in out if x is not None]
+                self._send(200, out if len(out) != 1 else (out[0] if out else {}))
+                return
+            if not isinstance(msg, dict):
+                self._send(
+                    200,
+                    {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}},
+                )
+                return
+            res = handle_rpc(msg)
+            self._send(200, res if res is not None else {})
+
+    drop_priv()
+    try:
+        httpd = ThreadingHTTPServer(("127.0.0.1", PORT), H)
+    except OSError as e:
+        sys.stderr.write(f"atlas-blackcube-mcp: {e}\n")
+        sys.exit(1)
+    sys.stderr.write(f"atlas-blackcube-mcp peer={PEER} port={PORT}\n")
+    httpd.serve_forever()
+
+
+def main() -> None:
+    if "--serve" in sys.argv[1:]:
+        serve()
+    else:
+        stdio_main()
+
+
+if __name__ == "__main__":
+    main()

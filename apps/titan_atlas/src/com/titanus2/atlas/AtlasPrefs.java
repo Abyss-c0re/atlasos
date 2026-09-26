@@ -298,6 +298,56 @@ public final class AtlasPrefs {
         p(c).edit().putInt("hybrid_size_g", Math.max(2, Math.min(32, g))).apply();
     }
 
+    /** Debian home image size in GiB. The file lives in app storage. */
+    public static final int[] HOME_IMG_G = {8, 16, 32, 64, 128, 256};
+
+    public static int homeImgG(Context c) {
+        int g = p(c).getInt("home_img_g", 32);
+        for (int choice : HOME_IMG_G) {
+            if (choice == g) return g;
+        }
+        return 32;
+    }
+
+    public static void setHomeImgG(Context c, int g) {
+        int use = 32;
+        for (int choice : HOME_IMG_G) {
+            if (choice == g) use = choice;
+        }
+        p(c).edit().putInt("home_img_g", use).apply();
+        writeAppFile(c, "home-img-mib", Integer.toString(use * 1024));
+    }
+
+    /** Bind phone storage into Debian so the atlas user can write it. */
+    public static boolean sdcardRw(Context c) {
+        return p(c).getBoolean("sdcard_rw", false);
+    }
+
+    /** On-screen key panel. Closed until the Keys spoiler is opened. */
+    public static boolean extraKeysOpen(Context c) {
+        return p(c).getBoolean("extra_keys_open", false);
+    }
+
+    public static void setExtraKeysOpen(Context c, boolean on) {
+        p(c).edit().putBoolean("extra_keys_open", on).apply();
+    }
+
+    public static void setSdcardRw(Context c, boolean on) {
+        p(c).edit().putBoolean("sdcard_rw", on).apply();
+        writeAppFile(c, "sdcard-rw", on ? "1" : "0");
+    }
+
+    private static void writeAppFile(Context c, String name, String body) {
+        if (c == null) return;
+        try {
+            java.io.File f = new java.io.File(c.getFilesDir(), name);
+            try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) {
+                o.write((body + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     /** Graphic session size. Xwayland rejects tiny geometries. */
     public static int deskW(Context c) {
         return Math.max(320, Math.min(4096, p(c).getInt("desk_w", 1440)));
@@ -340,6 +390,46 @@ public final class AtlasPrefs {
 
     public static void setDeskCompose(Context c, boolean on) {
         p(c).edit().putBoolean("desk_compose", on).apply();
+    }
+
+    /** Full-screen panel shape: bar, stack, or cross. */
+    public static String orbStyle(Context c) {
+        String s = p(c).getString("orb_style", "cross");
+        if ("bar".equals(s) || "stack".equals(s) || "cross".equals(s)) return s;
+        return "cross";
+    }
+
+    public static void setOrbStyle(Context c, String style) {
+        if (!"bar".equals(style) && !"stack".equals(style) && !"cross".equals(style)) {
+            style = "cross";
+        }
+        p(c).edit().putString("orb_style", style).apply();
+    }
+
+    /** Full-screen panel scale, percent. 100 is the normal control size. */
+    public static int orbSize(Context c) {
+        int v = p(c).getInt("orb_size", 100);
+        if (v < 70 || v > 150) return 100;
+        return v;
+    }
+
+    public static void setOrbSize(Context c, int percent) {
+        if (percent < 70) percent = 70;
+        if (percent > 150) percent = 150;
+        p(c).edit().putInt("orb_size", percent).apply();
+    }
+
+    /** Full-screen panel opacity, percent. 100 is solid. */
+    public static int orbOpacity(Context c) {
+        int v = p(c).getInt("orb_opacity", 88);
+        if (v < 30 || v > 100) return 88;
+        return v;
+    }
+
+    public static void setOrbOpacity(Context c, int percent) {
+        if (percent < 30) percent = 30;
+        if (percent > 100) percent = 100;
+        p(c).edit().putInt("orb_opacity", percent).apply();
     }
 
     /**

@@ -16,10 +16,14 @@ while true; do
                     /usr/local/libexec/atlas-desk-stop.sh \
                     >>"$LOG" 2>&1
             fi
+            tz=$(getprop persist.sys.timezone 2>/dev/null)
+            [ -n "$tz" ] || tz=Europe/Vilnius
             chroot "$CH" /usr/bin/env -i \
                 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
                 HOME=/home/atlas USER=atlas LOGNAME=atlas \
+                ATLAS_TZ="$tz" \
                 ATLAS_DESK_RESTART=1 ATLAS_DESK_W=1440 ATLAS_DESK_H=1440 \
+                ATLAS_DESK_COMPOSE=1 \
                 /usr/bin/setsid /usr/local/bin/atlas-desk-session \
                 </dev/null >>"$LOG" 2>&1 &
         fi
