@@ -1,4 +1,4 @@
-versionName=16.93-side-scroll
-versionCode=693
-built_utc=2026-09-24T20:51Z
-allow_root=1
+versionName=16.95-notif-led
+versionCode=695
+built_utc=2026-09-26T17:24Z
+allow_root=0

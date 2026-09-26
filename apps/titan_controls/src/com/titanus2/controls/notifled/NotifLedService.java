@@ -15,18 +15,19 @@ import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.view.Display;
 
+import java.util.HashSet;
+
 /**
  * Publishes alert presence to pad-agent for keyboard LED.
  *
  * Rules (product):
  * <ul>
  *   <li>Screen interactive / unlocked → LED never held for notifs; baseline cleared.</li>
- *   <li>On lock (SCREEN_OFF) → record lock epoch; force blink off until a <em>new</em>
- *       notification arrives after that epoch.</li>
- *   <li>Blink only while screen off AND there is at least one user alert posted
- *       at/after the current lock epoch (or after unlock baseline).</li>
- *   <li>On unlock (USER_PRESENT / SCREEN_ON interactive) → clear active blink;
- *       next lock only flashes for notifications that arrive after that lock.</li>
+ *   <li>On lock (SCREEN_OFF) → remember every notification already on screen.
+ *       Only a key that was not there at lock can blink.</li>
+ *   <li>Players, media sessions, and persistent or ongoing notices never count,
+ *       even if they refresh while the screen is off.</li>
+ *   <li>Unlocked or the screen is on → blink is off.</li>
  * </ul>
  */
 public class NotifLedService extends NotificationListenerService {
@@ -42,6 +43,9 @@ public class NotifLedService extends NotificationListenerService {
      * never flash on the next lock unless re-posted as new.
      */
     private volatile long seenThroughPostTime;
+    /** Notification keys already present when the screen went off. Updates of
+     *  those keys are not new alerts. */
+    private final HashSet<String> keysAtLock = new HashSet<>();
 
     private DisplayManager displayManager;
     private final DisplayManager.DisplayListener displayListener =
@@ -57,16 +61,10 @@ public class NotifLedService extends NotificationListenerService {
             if (intent == null) return;
             String a = intent.getAction();
             if (Intent.ACTION_SCREEN_OFF.equals(a)) {
-                // New lock session: only posts after this moment count.
-                lockEpochElapsed = SystemClock.elapsedRealtime();
-                // Keep seenThroughPostTime — old notifs still do not count.
-                NotifLedController.setActiveAlerts(NotifLedService.this, false);
+                beginLock();
             } else if (Intent.ACTION_SCREEN_ON.equals(a)
                     || Intent.ACTION_USER_PRESENT.equals(a)) {
-                // Unlock: clear blink and mark all current alerts as old.
-                lockEpochElapsed = 0;
-                markAllCurrentAsSeen();
-                NotifLedController.setActiveAlerts(NotifLedService.this, false);
+                endLock();
             }
             schedule();
         }
@@ -114,9 +112,11 @@ public class NotifLedService extends NotificationListenerService {
             registerReceiver(screenRx, f);
         }
         NotifLedController.publishConfig(this);
-        // Boot: treat existing as seen; only new posts after next lock flash.
-        markAllCurrentAsSeen();
-        NotifLedController.setActiveAlerts(this, false);
+        if (isInteractive()) {
+            endLock();
+        } else {
+            beginLock();
+        }
         publish();
     }
 
@@ -166,6 +166,34 @@ public class NotifLedService extends NotificationListenerService {
         return false;
     }
 
+    private void snapshotKeys(HashSet<String> into) {
+        into.clear();
+        try {
+            StatusBarNotification[] all = getActiveNotifications();
+            if (all == null) return;
+            for (StatusBarNotification sbn : all) {
+                if (sbn == null || sbn.getKey() == null) continue;
+                into.add(sbn.getKey());
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /** Screen went off or the listener attached while it was already off. */
+    private void beginLock() {
+        lockEpochElapsed = SystemClock.elapsedRealtime();
+        snapshotKeys(keysAtLock);
+        markAllCurrentAsSeen();
+        NotifLedController.setActiveAlerts(this, false);
+    }
+
+    /** Unlocked or the display is on. Nothing already showing may blink later. */
+    private void endLock() {
+        lockEpochElapsed = 0;
+        keysAtLock.clear();
+        markAllCurrentAsSeen();
+        NotifLedController.setActiveAlerts(this, false);
+    }
+
     private void markAllCurrentAsSeen() {
         long max = seenThroughPostTime;
         try {
@@ -178,7 +206,6 @@ public class NotifLedService extends NotificationListenerService {
                 }
             }
         } catch (Exception ignored) {}
-        // Also advance past "now" so in-flight posts during unlock edge don't flash.
         long now = System.currentTimeMillis();
         if (now > max) max = now;
         seenThroughPostTime = max;
@@ -189,14 +216,11 @@ public class NotifLedService extends NotificationListenerService {
      * watermark. Uses postTime (wall) + lockElapsed for the lock edge.
      */
     private boolean isNewSinceLock(StatusBarNotification sbn) {
-        if (sbn == null) return false;
+        if (sbn == null || lockEpochElapsed <= 0) return false;
+        String key = sbn.getKey();
+        if (key != null && keysAtLock.contains(key)) return false;
         long post = sbn.getPostTime();
         if (post <= seenThroughPostTime) return false;
-        if (lockEpochElapsed <= 0) return false;
-        // postTime is wall clock; lock uses elapsed. Approximate: if posted
-        // after we marked seenThrough, and we are in a lock session, it is new.
-        // Tighten: require postTime >= seenThroughPostTime (already) and that
-        // the post is not older than the lock session wall estimate.
         long lockWall = System.currentTimeMillis()
             - (SystemClock.elapsedRealtime() - lockEpochElapsed);
         return post >= lockWall - 250L;
@@ -220,17 +244,12 @@ public class NotifLedService extends NotificationListenerService {
             NotifLedController.publishConfig(this);
             // Looking at the phone: never hold notif LED; treat current as seen.
             if (isInteractive()) {
-                if (lockEpochElapsed != 0) {
-                    lockEpochElapsed = 0;
-                    markAllCurrentAsSeen();
-                }
-                NotifLedController.setActiveAlerts(this, false);
+                endLock();
                 return;
             }
-            // Screen off / locked: only NEW alerts since this lock.
+            // Screen off. Remember what was already there, then only new keys.
             if (lockEpochElapsed <= 0) {
-                // SCREEN_OFF missed (Doze edge) — start lock session now.
-                lockEpochElapsed = SystemClock.elapsedRealtime();
+                beginLock();
             }
             int count = 0;
             if (all != null) {
@@ -260,8 +279,14 @@ public class NotifLedService extends NotificationListenerService {
         int flags = n.flags;
         if ((flags & Notification.FLAG_ONGOING_EVENT) != 0) return false;
         if ((flags & Notification.FLAG_FOREGROUND_SERVICE) != 0) return false;
+        if ((flags & Notification.FLAG_NO_CLEAR) != 0) return false;
         if ((flags & Notification.FLAG_GROUP_SUMMARY) != 0) return false;
         if ((flags & Notification.FLAG_LOCAL_ONLY) != 0) return false;
+        if (n.extras != null) {
+            if (n.extras.containsKey(Notification.EXTRA_MEDIA_SESSION)) return false;
+            String template = n.extras.getString(Notification.EXTRA_TEMPLATE);
+            if (template != null && template.contains("MediaStyle")) return false;
+        }
         if ("com.titanus2.controls".equals(sbn.getPackageName())) return false;
         if ("com.titanus2.cubecontact".equals(sbn.getPackageName())) return false;
         if ("android".equals(sbn.getPackageName())) return false;

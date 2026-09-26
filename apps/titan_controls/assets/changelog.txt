@@ -5,6 +5,23 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.95-notif-led (695) — 2026-09-26T17:24Z
+
+### rebuild 2026-09-26T17:24Z · 16.95-notif-led (695)
+
+- Keyboard light stays off while the phone is unlocked. After the screen turns off it blinks only for a notification that was not already there. Players, media sessions, and persistent notices never count.
+
+
+- Keyboard light stays off while the phone is unlocked. After the screen turns off it blinks only for a notification that was not already there. Players, media sessions, and persistent notices never count.
+
+---
+
+## 16.94-home (694) — 2026-09-25T22:58Z
+
+- Short press of the physical Home key goes home. A hold opens recents. The desk moves back first so those screens are visible.
+
+---
+
 ## 16.93-side-scroll (693) — 2026-09-24T20:51Z
 
 - Build stamp (ALLOW_ROOT=1)
