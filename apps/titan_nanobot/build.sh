@@ -71,7 +71,15 @@ grep -a -F 'Lcom/titanus2/nanobot/MainActivity;' "$BUILD/classes.dex" >/dev/null
 cp "$BUILD/resources.ap_" "$BUILD/unsigned.apk"
 (cd "$BUILD" && "$BT/aapt" add unsigned.apk classes.dex)
 "$BT/zipalign" -f -p 4 "$BUILD/unsigned.apk" "$BUILD/aligned.apk"
-KS="$ROOT/debug.keystore"
+# Sign with the keystore next to this script's real path. The Titan
+# system app cert lives in the atlasos tree. Invoking this file through the
+# titanus2 symlink otherwise picks that directory's different debug.keystore
+# and adb install fails with INSTALL_FAILED_UPDATE_INCOMPATIBLE.
+PHYS="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+KS="$PHYS/debug.keystore"
+if [ ! -f "$KS" ]; then
+  KS="$ROOT/debug.keystore"
+fi
 if [ ! -f "$KS" ]; then
   keytool -genkeypair -keystore "$KS" -storepass android -keypass android \
     -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
