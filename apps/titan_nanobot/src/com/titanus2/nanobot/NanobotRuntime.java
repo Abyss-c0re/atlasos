@@ -109,6 +109,12 @@ public final class NanobotRuntime {
         }
         File bundled = extractBundledBinary(c);
         if (bundled != null && bundled.isFile() && bundled.canExecute()) {
+            File sys = new File("/system/bin/nanobot");
+            // APK extract is newer than the immutable /system copy after an
+            // update. Size-only lost ties and kept the ROM binary that
+            // deleted device_login on CLI exit.
+            if (!sys.isFile() || bundled.lastModified() > sys.lastModified())
+                return bundled.getAbsolutePath();
             long sz = bundled.length();
             if (sz > bestSz) {
                 best = bundled.getAbsolutePath();

@@ -310,19 +310,32 @@ public final class NanobotCli {
             Log.w(TAG, "authPoll: ignore stale peer signed_in (no session file)");
             peer = null;
         }
-        if (peer != null && (peer.optBoolean("signed_in", false)
-                || peer.optBoolean("login_pending", false))) {
+        if (peer != null && peer.optBoolean("signed_in", false) && sessionOnDisk()) {
             return annotateDisk(peer);
         }
+        // Always exchange via CLI. A peer that only echoes login_pending has
+        // not finished the browser approval, and returning that status used
+        // to skip --auth-poll entirely.
+        JSONObject cli = null;
         try {
-            JSONObject st = runJson(c, 20000, "--auth-status");
+            cli = runJson(c, 45000, "--auth-poll");
             healSharedSessionPerms();
-            if (st != null && st.optBoolean("signed_in", false)) return annotateDisk(st);
+            if (cli != null && (cli.optBoolean("signed_in", false)
+                    || cli.optBoolean("login_pending", false))) {
+                return annotateDisk(cli);
+            }
         } catch (Exception e) {
-            Log.w(TAG, "cli auth-status: " + e.getMessage());
+            Log.w(TAG, "authPoll cli: " + e.getMessage());
         }
+        if (peer != null && peer.optBoolean("login_pending", false))
+            return annotateDisk(peer);
+        if (cli != null) return annotateDisk(cli);
         if (peer != null) return annotateDisk(peer);
-        return annotateDisk(runJson(c, 45000, "--auth-poll"));
+        JSONObject empty = new JSONObject();
+        empty.put("ok", false);
+        empty.put("signed_in", false);
+        empty.put("login_pending", false);
+        return empty;
     }
 
     /** Persist Grok cloud backend for subsequent CLI invocations. */
