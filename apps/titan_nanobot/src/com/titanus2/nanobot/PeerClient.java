@@ -105,6 +105,17 @@ public final class PeerClient {
         return post("/api/settings", body);
     }
 
+    public JSONObject settings() throws Exception {
+        return get("/api/settings");
+    }
+
+    /** Grok reasoning effort: empty, low, medium, high, or xhigh. */
+    public JSONObject setReasoningEffort(String effort) throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("reasoning_effort", effort == null ? "" : effort);
+        return post("/api/settings", body);
+    }
+
     /** Outbound MCP servers config (phone → remote MCP). */
     public JSONObject mcpServersList() throws Exception {
         return get("/api/mcp/servers");

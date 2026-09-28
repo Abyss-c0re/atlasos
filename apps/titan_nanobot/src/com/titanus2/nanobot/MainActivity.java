@@ -67,6 +67,8 @@ public class MainActivity extends Activity {
     private ScrollView settingsPage;
     private LinearLayout chatLog;
     private LinearLayout modelRow;
+    private LinearLayout effortRow;
+    private android.widget.HorizontalScrollView effortScroll;
     private ScrollView chatScroll;
     private EditText input;
     private EditText baseUrlEdit;
@@ -129,6 +131,7 @@ public class MainActivity extends Activity {
     private boolean providerSignedIn; // cloud session when needs_browser
     private String currentBackend = "grok"; // grok | local
     private String currentModel = "";
+    private String currentEffort = "";
     private Runnable authPoll;
 
     /** Pending attachments (images + documents) — ChatGPT-style chip strip. */
@@ -382,7 +385,17 @@ public class MainActivity extends Activity {
         modelRow.setOrientation(LinearLayout.HORIZONTAL);
         modelRow.setPadding(dp(10), dp(6), dp(10), dp(6));
         hs.addView(modelRow);
-        page.addView(hs, new LinearLayout.LayoutParams(
+        effortScroll = new android.widget.HorizontalScrollView(this);
+        effortScroll.setHorizontalScrollBarEnabled(false);
+        effortRow = new LinearLayout(this);
+        effortRow.setOrientation(LinearLayout.HORIZONTAL);
+        effortRow.setPadding(dp(10), 0, dp(10), dp(6));
+        effortScroll.addView(effortRow);
+        LinearLayout modelStrips = new LinearLayout(this);
+        modelStrips.setOrientation(LinearLayout.VERTICAL);
+        modelStrips.addView(hs);
+        modelStrips.addView(effortScroll);
+        page.addView(modelStrips, new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         chatScroll = new ScrollView(this);
@@ -1020,10 +1033,17 @@ public class MainActivity extends Activity {
                     }
                     r.error = LlamaRuntime.isServerUp() ? "direct llama (no agent)" : "engine DOWN — Start model";
                 }
+                String effortNow = "";
+                try {
+                    JSONObject st = peer.settings();
+                    if (st != null) effortNow = st.optString("reasoning_effort", "");
+                } catch (Exception ignored) {}
+                final String effortF = effortNow;
                 final PeerClient.ModelsResult fr = r;
                 final boolean loc = localUi;
                 final boolean engineUp = loc && LlamaRuntime.isServerUp();
                 h.post(() -> {
+                    currentEffort = effortF != null ? effortF : "";
                     currentModel = fr.current != null ? fr.current : currentModel;
                     if (loc && PeerClient.looksLikeCloudOnlyModel(currentModel)) {
                         currentModel = "";
@@ -1037,14 +1057,74 @@ public class MainActivity extends Activity {
                         String note = fr.error != null && !fr.error.isEmpty() ? fr.error : "ok";
                         modelStatus.setText(scope + " · " + eng + " · " + note
                             + "\nUsing: " + (currentModel.isEmpty() ? "—" : currentModel)
+                            + (loc ? "" : "\nEffort: " + (currentEffort.isEmpty() ? "default" : currentEffort))
                             + "\nBase: " + (fr.baseUrl == null || fr.baseUrl.isEmpty() ? "—" : fr.baseUrl));
                     }
                     fillModelChips(fr.ids, currentModel, loc);
+                    fillEffortChips();
                 });
             } catch (Exception e) {
                 h.post(() -> {
                     if (modelStatus != null) modelStatus.setText("Models error: " + e.getMessage());
                     fillModelChips(null, currentModel, localUi);
+                });
+            }
+        });
+    }
+
+    private void fillEffortChips() {
+        if (effortScroll == null) return;
+        boolean local = modelsShouldBeLocal();
+        effortScroll.setVisibility(local ? View.GONE : View.VISIBLE);
+        if (local || effortRow == null) return;
+        effortRow.removeAllViews();
+        TextView scope = new TextView(this);
+        scope.setText("Effort:");
+        scope.setTextColor(C_ACCENT);
+        scope.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        scope.setPadding(dp(4), dp(8), dp(8), dp(6));
+        effortRow.addView(scope);
+        String cur = currentEffort == null ? "" : currentEffort;
+        String[][] tiers = {
+            {"", "Default"},
+            {"low", "Low"},
+            {"medium", "Medium"},
+            {"high", "High"},
+            {"xhigh", "Extra"},
+        };
+        for (String[] tier : tiers) {
+            final String id = tier[0];
+            boolean on = id.equals(cur);
+            Button b = pill(tier[1], on);
+            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            b.setOnClickListener(v -> pickEffort(id));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.rightMargin = dp(6);
+            effortRow.addView(b, lp);
+        }
+    }
+
+    private void pickEffort(String effort) {
+        final String want = effort == null ? "" : effort;
+        setBusy(true, want.isEmpty() ? "Effort: default" : "Effort: " + want);
+        io.execute(() -> {
+            try {
+                JSONObject j = peer.setReasoningEffort(want);
+                String got = j != null ? j.optString("reasoning_effort", "") : want;
+                h.post(() -> {
+                    setBusy(false, null);
+                    currentEffort = got;
+                    fillEffortChips();
+                    if (modelStatus != null && !modelsShouldBeLocal()) {
+                        refreshModels();
+                    }
+                    toast(got.isEmpty() ? "Effort: server default" : "Effort: " + got);
+                });
+            } catch (Exception e) {
+                h.post(() -> {
+                    setBusy(false, null);
+                    toast(e.getMessage() != null ? e.getMessage() : "effort failed");
                 });
             }
         });
