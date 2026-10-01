@@ -9,7 +9,10 @@ export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 # Phase 1.5+: GSI /system/bin/titan2-touchpadd (INPROC_PARK) SoT; tip if TITAN2_TOUCHPADD_TIP=1.
 TOUCHPADD=/system/bin/titan2-touchpadd
-if [ "${TITAN2_TOUCHPADD_TIP:-0}" = "1" ] && [ -x /data/local/tmp/titan2-touchpadd ] \
+if [ -x /data/local/tmp/titan2-touchpadd ] \
+    && grep -aqF 'sub_touch HID surface' /data/local/tmp/titan2-touchpadd 2>/dev/null; then
+  TOUCHPADD=/data/local/tmp/titan2-touchpadd
+elif [ "${TITAN2_TOUCHPADD_TIP:-0}" = "1" ] && [ -x /data/local/tmp/titan2-touchpadd ] \
     && grep -aqF 'INPROC_PARK' /data/local/tmp/titan2-touchpadd 2>/dev/null; then
   TOUCHPADD=/data/local/tmp/titan2-touchpadd
 elif [ -x /system/bin/titan2-touchpadd ] && grep -aqF 'INPROC_PARK' /system/bin/titan2-touchpadd 2>/dev/null; then
@@ -115,25 +118,37 @@ LAST_FN=""; LAST_CHAR_MOD=""; LAST_CHAR_SCAN=""; LAST_HOST_LAYOUT=""
 LAST_CM_MT=""; LAST_SC_MT=""; LAST_FN_MT=""; LAST_HL_MT=""; LAST_SM_MT=""
 LAST_IDC_KIND=""; LAST_PAD_MT=0; LAST_CLICK_MT=0; LAST_FOLLOW_MT=0; LAST_LOCK_MT=0; LAST_GATE_MT=0; LAST_CE=""
 # peels 2.160–2.212: see OPTIMIZE_SOURCE_PRODUCT.md
-AGENT_VER="${AGENT_VER:-2.234-login-gate}"
+AGENT_VER="${AGENT_VER:-2.250-heat-park-idle}"
 # Force pin: refuse non-2.x garbage + force upgrade sticky env older than 2.160
 # (lab residual: sticky 2.6x/2.12x never picked tip peels). hot_reload still 2.NN*.
 case "$AGENT_VER" in
-  2.20[0-9]*|2.21[0-9]*|2.22[0-9]*|2.23[0-9]*|2.19[0-9]*|2.18[0-9]*|2.17[0-9]*|2.16[0-9]*) ;;
-  *) AGENT_VER="2.234-login-gate" ;;
+  2.20[0-9]*|2.21[0-9]*|2.22[0-9]*|2.23[0-9]*|2.24[0-9]*|2.25[0-9]*|2.19[0-9]*|2.18[0-9]*|2.17[0-9]*|2.16[0-9]*) ;;
+  *) AGENT_VER="2.250-heat-park-idle" ;;
 esac
 log() { echo "pad-agent $AGENT_VER live $1" > "$AGENT_STATUS" 2>/dev/null; chmod 666 "$AGENT_STATUS" 2>/dev/null; }
 # Lightweight status stamp (no chmod every tick — 2.34+ heartbeat path).
 _log_hb() { echo "pad-agent $AGENT_VER live $1" > "$AGENT_STATUS" 2>/dev/null; }
 # Shared short sleep (2.211 densify): prefer usleep; fallback coarse sleep.
+_HAVE_USLEEP=
+command -v usleep >/dev/null 2>&1 && _HAVE_USLEEP=1
 _usleep_us() {
   _u="${1:-20000}"
-  if command -v usleep >/dev/null 2>&1; then usleep "$_u"; return 0; fi
+  if [ -n "$_HAVE_USLEEP" ]; then usleep "$_u"; return 0; fi
   case "$_u" in
     5000|12000|15000) sleep 0.01 ;;
     50000) sleep 0.05 ;;
     100000) sleep 0.1 ;;
-    *) sleep 0.02 ;;
+    1000000) sleep 1 ;;
+    2000000) sleep 2 ;;
+    3000000) sleep 3 ;;
+    4000000) sleep 4 ;;
+    *)
+      if [ "$_u" -ge 1000000 ] 2>/dev/null; then
+        sleep $(( _u / 1000000 ))
+      else
+        sleep 0.02
+      fi
+      ;;
   esac
 }
 _lock_pid() { cat "$AGENT_LOCKDIR/pid" 2>/dev/null | tr -d '\r\n '; }
@@ -436,8 +451,9 @@ _maybe_hot_reload_staged_agent
 
 # True if we still own the singleton lock (exit main loop if not).
 _still_lock_owner() {
-  cur=`_lock_pid`
-  [ "$cur" = "$$" ]
+  v=
+  _read_line_file "$AGENT_LOCKDIR/pid" >/dev/null || true
+  [ "$v" = "$$" ]
 }
 
 # --- Main-loop densify (2.201): shared reexec / lock / keys_pause / drain ---
@@ -600,7 +616,16 @@ read_first() {
   done
   # Controls 11.32+ mirrors KM/pad plane to Settings.Global — use when no file win
   if [ -z "$best_v" ] || [ "$best_mt" -eq 0 ] 2>/dev/null; then
-    g=`settings get global "$name" 2>/dev/null`
+    if [ "$HEAT_PARK" = 1 ]; then
+      case "$name" in
+        titan2_dev_action) g=$_SG_DEV ;;
+        titan2_fw_action) g=$_SG_FW ;;
+        titan2_ims_action) g=$_SG_IMS ;;
+        *) g=$(settings get global "$name" 2>/dev/null) ;;
+      esac
+    else
+      g=$(settings get global "$name" 2>/dev/null)
+    fi
     case "$g" in
       *$'
 ') g=${g%$'
@@ -725,6 +750,7 @@ screen_is_on() {
 read_sub_mode() {
   m=`read_first titan2_sub_mode | tr 'A-Z' 'a-z' | tr -d '\r\n '`
   case "$m" in
+    hid|hidmouse|hid_mouse) echo hid; return ;;
     apps|app|launcher|touch|interactive) echo apps; return ;;
     cube|lattice|brain|neural) echo cube; return ;;
     face|clock|stock|custom|aod) echo face; return ;;
@@ -740,6 +766,15 @@ read_subtouch_inhibit() {
         "assoc:"*">local:"*|"assoc:"*">unique:"*) echo 0 ;;
         *) echo 1 ;;
       esac
+      ;;
+    hid|hidmouse)
+      if [ -f /system/usr/idc/sub_touch.idc ] \
+          && grep -q 'deviceType *= *ignore' /system/usr/idc/sub_touch.idc 2>/dev/null \
+          && ! grep -q 'deviceType *= *touchScreen' /system/usr/idc/sub_touch.idc 2>/dev/null; then
+        echo 0
+      else
+        echo 1
+      fi
       ;;
     *) echo 1 ;;
   esac
@@ -760,13 +795,20 @@ clear_ctrl_name() {
 # Product path: agent root apply (Controls does not need Magisk Superuser).
 # Payload: "enable <epoch>" | "deny-uid <uid> <epoch>" — trailing 10+ digit nonce stripped.
 apply_fw_action() {
-  act=`read_first titan2_fw_action`
-  if [ -z "$act" ]; then
-    g=`settings get global titan2_fw_action 2>/dev/null | tr -d '\r\n'`
-    case "$g" in ""|null|NULL) ;; *) act=$g ;; esac
-  fi
-  if [ -z "$act" ] && [ -s "$ST/titan2_fw_action" ]; then
-    act=`_read_line_file "$ST/titan2_fw_action"`
+  if [ "$HEAT_PARK" = 1 ]; then
+    _heat_action_val titan2_fw_action
+    act="$_actv"
+  else
+    act=$(read_first titan2_fw_action) || act=
+    if [ -z "$act" ]; then
+      g=$(settings get global titan2_fw_action 2>/dev/null) || g=
+      case "$g" in ""|null|NULL) ;; *) act=$g ;; esac
+    fi
+    if [ -z "$act" ] && [ -s "$ST/titan2_fw_action" ]; then
+      v=
+      _read_line_file "$ST/titan2_fw_action" >/dev/null || true
+      act="$v"
+    fi
   fi
   [ -n "$act" ] || return 0
   # Clear ALL sources first so we never re-fire next tick.
@@ -835,13 +877,20 @@ _LAST_DEV_ACT=""
 _LAST_DEV_TS=0
 
 apply_dev_action() {
-  act=`read_first titan2_dev_action`
-  if [ -z "$act" ]; then
-    g=`settings get global titan2_dev_action 2>/dev/null | tr -d '\r\n '`
-    case "$g" in ""|null|NULL) ;; *) act=$g ;; esac
-  fi
-  if [ -z "$act" ] && [ -s "$ST/titan2_dev_action" ]; then
-    act=`_read_line_file "$ST/titan2_dev_action"`
+  if [ "$HEAT_PARK" = 1 ]; then
+    _heat_action_val titan2_dev_action
+    act="$_actv"
+  else
+    act=$(read_first titan2_dev_action) || act=
+    if [ -z "$act" ]; then
+      g=$(settings get global titan2_dev_action 2>/dev/null) || g=
+      case "$g" in ""|null|NULL) ;; *) act=$g ;; esac
+    fi
+    if [ -z "$act" ] && [ -s "$ST/titan2_dev_action" ]; then
+      v=
+      _read_line_file "$ST/titan2_dev_action" >/dev/null || true
+      act="$v"
+    fi
   fi
   [ -n "$act" ] || return 0
   # Clear ALL sources first so we never re-fire the opposite action next tick.
@@ -937,26 +986,31 @@ apply_led() { _peel_run titan2-keyled-write.sh keyled-write apply; }
 
 # Cool/heat LED edge (2.197/2.207 densify): screen + brightness/timeout → apply_led.
 _led_edge_tick() {
-  # Cool: every call site tick. Heat: only every 4th even tick (caller gates %2).
   _led_tick=0
   [ "$HEAT_PARK" != "1" ] && _led_tick=1
-  [ "$HEAT_PARK" = "1" ] && [ $((loop_n % 4)) -eq 0 ] && _led_tick=1
-  _scrp=`getprop debug.tracing.screen_state 2>/dev/null | tr -d '\r\n \t'`
+  [ "$HEAT_PARK" = "1" ] && [ $((loop_n % 40)) -eq 0 ] && _led_tick=1
+  _heat_screen
   case "$_scrp" in
     2|6) [ "$LAST_SCREEN" = "0" ] && { bump; _led_tick=1; }; LAST_SCREEN=1 ;;
-    1|3|4) LAST_SCREEN=0; _led_tick=1 ;;
+    1|3|4)
+      [ "$LAST_SCREEN" != "0" ] && _led_tick=1
+      LAST_SCREEN=0
+      ;;
     *)
       if screen_is_on; then
         [ "$LAST_SCREEN" = "0" ] && { bump; _led_tick=1; }
         LAST_SCREEN=1
       else
-        LAST_SCREEN=0; _led_tick=1
+        [ "$LAST_SCREEN" != "0" ] && _led_tick=1
+        LAST_SCREEN=0
       fi
       ;;
   esac
-  CUR_BRIGHT=`read_led_plane titan2_keyled_brightness`
+  _heat_led_num titan2_keyled_brightness
+  CUR_BRIGHT=$_ln
   if [ "$CUR_BRIGHT" != "$LAST_BRIGHT" ]; then LAST_BRIGHT=$CUR_BRIGHT; bump; _led_tick=1; fi
-  CUR_TO=`read_led_plane titan2_keyled_timeout`
+  _heat_led_num titan2_keyled_timeout
+  CUR_TO=$_ln
   if [ "$CUR_TO" != "$LAST_TO" ]; then LAST_TO=$CUR_TO; bump; _led_tick=1; fi
   [ "$_led_tick" = "1" ] && apply_led
   return 0
@@ -1069,12 +1123,106 @@ _cool_idle_park_plane() { _peel_run titan2-cool-park.sh cool-park apply; }
 # Heat gate (main-loop hot path)
 HEAT_LOAD_GE=${HEAT_LOAD_GE:-8}
 # CubalC free-flow: 2s heat park made pad QS lag. Cap deep-idle; human wake is 20ms.
-HEAT_IDLE_US=${HEAT_IDLE_US:-50000}
+HEAT_IDLE_US=${HEAT_IDLE_US:-2000000}
 HEAT_IDLE_HUMAN_US=${HEAT_IDLE_HUMAN_US:-15000}
+HEAT_PARK_SLEEP_S=${HEAT_PARK_SLEEP_S:-2}
+_heat_settings_cache() {
+  # Heat ticks must not binder-call settings 20 times a second.
+  # File-backed actions stay immediate. Settings fallback refreshes every 2s.
+  [ "$HEAT_PARK" = 1 ] || return 0
+  _sg_sec=
+  IFS= read -r _sg_sec < /proc/uptime || return 0
+  _sg_sec=${_sg_sec%%.*}
+  case "$_sg_sec" in ''|*[!0-9]*) return 0 ;; esac
+  if [ -n "$_SG_SEC" ] && [ $((_sg_sec - _SG_SEC)) -lt 2 ] 2>/dev/null; then
+    return 0
+  fi
+  _SG_SEC=$_sg_sec
+  _SG_DEV=$(settings get global titan2_dev_action 2>/dev/null) || _SG_DEV=
+  _SG_FW=$(settings get global titan2_fw_action 2>/dev/null) || _SG_FW=
+  _SG_IMS=$(settings get global titan2_ims_action 2>/dev/null) || _SG_IMS=
+}
+
+_ctrl_line() {
+  v=
+  _read_line_file "$1" >/dev/null || true
+}
+_ctrl_sig() {
+  _ctrl_line "$T2/$1"
+  _sig="$v"
+  _ctrl_line "$ST/$1"
+  _sig="${_sig}|$v"
+}
+_set_pad_mode_now() {
+  _ctrl_line "$ST/titan2_pad_mode"
+  [ -n "$v" ] || _ctrl_line "$T2/titan2_pad_mode"
+  case "$v" in
+    mouse|MOUSE|1|module|MODULE|on|ON|global|GLOBAL) mode_now=mouse ;;
+    trackpad|TRACKPAD|pad|PAD|native|NATIVE) mode_now=trackpad ;;
+    *) mode_now=off ;;
+  esac
+}
+_heat_action_val() {
+  _ctrl_line "$T2/$1"
+  _ha="$v"
+  _ctrl_line "$ST/$1"
+  _hb="$v"
+  if [ -z "$_ha" ] && [ -z "$_hb" ]; then
+    case "$1" in
+      titan2_dev_action) _actv="$_SG_DEV" ;;
+      titan2_fw_action) _actv="$_SG_FW" ;;
+      titan2_ims_action) _actv="$_SG_IMS" ;;
+      *) _actv= ;;
+    esac
+    case "$_actv" in ''|null|NULL) _actv= ;; esac
+    return 0
+  fi
+  _actv=$(read_first "$1" 2>/dev/null) || _actv=
+}
+_heat_led_num() {
+  _ctrl_line "$T2/$1"
+  _la="$v"
+  _ctrl_line "$ST/$1"
+  _lb="$v"
+  case "$_la" in ''|*[!0-9]*) _la= ;; esac
+  case "$_lb" in ''|*[!0-9]*) _lb= ;; esac
+  if [ -n "$_la" ] && [ -n "$_lb" ] && [ "$_la" != "$_lb" ]; then
+    _mt1=$(stat -c %Y "$T2/$1" 2>/dev/null) || _mt1=0
+    _mt2=$(stat -c %Y "$ST/$1" 2>/dev/null) || _mt2=0
+    if [ "$_mt2" -ge "$_mt1" ] 2>/dev/null; then _ln=$_lb; else _ln=$_la; fi
+  elif [ -n "$_lb" ]; then
+    _ln=$_lb
+  else
+    _ln=$_la
+  fi
+}
+_heat_screen() {
+  if [ "$HEAT_PARK" = 1 ]; then
+    _hs=
+    IFS= read -r _hs < /proc/uptime || _hs=0
+    _hs=${_hs%%.*}
+    case "$_hs" in ''|*[!0-9]*) _hs=0 ;; esac
+    if [ -n "${_SCR_SEC:-}" ] && [ $((_hs - _SCR_SEC)) -lt 1 ] 2>/dev/null; then
+      _scrp=$_SCR_CACHE
+      return 0
+    fi
+    _SCR_SEC=$_hs
+  fi
+  _scrp=$(getprop debug.tracing.screen_state 2>/dev/null) || _scrp=
+  while :; do
+    case "$_scrp" in
+      [[:space:]]*) _scrp=${_scrp#?} ;;
+      *) break ;;
+    esac
+  done
+  _SCR_CACHE=$_scrp
+}
 _cube_heat_park() {
-  set -- $(cat /proc/loadavg 2>/dev/null)
-  _load1=${1%%.*}
-  case "$_load1" in ''|*[!0-9]*) _load1=0 ;; esac
+  _la=
+  IFS= read -r _la < /proc/loadavg || return 1
+  _load1=${_la%% *}
+  _load1=${_load1%%.*}
+  case "$_load1" in ''|*[!0-9]*) return 1 ;; esac
   [ "$_load1" -ge "${HEAT_LOAD_GE:-8}" ] 2>/dev/null
 }
 _read_pad_mode_files() {
@@ -1230,10 +1378,13 @@ _ensure_keycode_drain_alive
 # Covers: orient-rel, mouse/caret/trackpad/stop, apply_pad.
 
 _run_pad_apply() {
-  # KEEP_DATA leftover /data/local/tmp/titan2-pad-apply.sh (2.215) outranked
-  # /system 2.219 and lockparked every boot. Product apply is the ROM script.
+  # Staged apply only when it is the HID-mouse peel. Any other tmp apply
+  # outranked /system and lockparked boot (2.215).
   _s=/system/bin/titan2-pad-apply.sh
-  if [ ! -f "$_s" ]; then
+  if [ -f "$ST/titan2-pad-apply.sh" ] \
+      && grep -q '2.237-sub-hid' "$ST/titan2-pad-apply.sh" 2>/dev/null; then
+    _s="$ST/titan2-pad-apply.sh"
+  elif [ ! -f "$_s" ]; then
     _s=`_sysbin titan2-pad-apply.sh` || {
       log "pad-apply missing — install titan2-pad-apply.sh"
       return 1
@@ -1310,7 +1461,12 @@ _agent_boot_full() {
 
 # One-shot IMS action plane (heat + cool). Props stay rate-limited elsewhere.
 _ims_oneshot_tick() {
-  _ia=`read_first titan2_ims_action 2>/dev/null`
+  if [ "$HEAT_PARK" = 1 ]; then
+    _heat_action_val titan2_ims_action
+    _ia="$_actv"
+  else
+    _ia=$(read_first titan2_ims_action 2>/dev/null) || _ia=
+  fi
   case "$_ia" in
     heal|rebind|rearm|create_apn|install|force_lte) apply_ims_action ;;
   esac
@@ -1388,6 +1544,9 @@ _props_belt_tick() {
 _cool_rare_belts() {
   # Rear-pointer abandon + long_press/IME/dim/sensor (cool only; 2.209).
   if [ $((loop_n % 30)) -eq 5 ]; then
+    case "`read_sub_mode`" in
+      hid) ;;
+      *)
     for _d in "$T2" "$ST"; do
       printf 1 >"$_d/titan2_subtouch_inhibit" 2>/dev/null || true
       chmod 666 "$_d/titan2_subtouch_inhibit" 2>/dev/null || true
@@ -1404,6 +1563,8 @@ _cool_rare_belts() {
         done
         _settings_put_bg global titan2_input_surface "$_ns"
         set_pad_inhibited 1
+        ;;
+    esac
         ;;
     esac
   fi
@@ -1457,18 +1618,19 @@ _ensure_side_key() {
 # stale singleton before spawn so ensure can revive without remount/su.
 # 2.219: pidfile-only live check — never walk all /proc (hangs, dual-kill thrash).
 _ensure_key_watch() {
-  _kw_pid=`cat "$ST/titan2_key_watch.pid" 2>/dev/null | tr -d '\r\n '`
+  # 2.250: kill -0 on pidfile is enough. comm may be sh; failed cmdline grep != dead.
+  # NEVER delete titan2_key_watch.lock.d while the pid is alive.
+  _kw_pid=
+  IFS= read -r _kw_pid < "$ST/titan2_key_watch.pid" 2>/dev/null || _kw_pid=
+  case "$_kw_pid" in *$'\r'*) _kw_pid=${_kw_pid%$'\r'} ;; esac
   _kw_live=0
   _kw_keep=
   case "$_kw_pid" in
     ''|*[!0-9]*) ;;
     *)
       if kill -0 "$_kw_pid" 2>/dev/null; then
-        # Confirm cmdline without full /proc walk
-        if grep -a -F -q "titan2-key-watch" "/proc/$_kw_pid/cmdline" 2>/dev/null; then
-          _kw_live=1
-          _kw_keep=$_kw_pid
-        fi
+        _kw_live=1
+        _kw_keep=$_kw_pid
       fi
       ;;
   esac
@@ -1501,20 +1663,123 @@ _ensure_key_watch() {
   fi
   _ensure_peel_daemon titan2-key-watch.sh titan2-key-watch titan2_key_watch.pid titan2_key_watch.log run
 }
-# Listed-but-crashed TrackpadAccessService makes PWM swallow F24 Home.
-# Bounce the service so it can bind; key-watch owns Home until a11y_live=1.
+# Listed-but-crashed TrackpadAccessService: KeyboardInterceptor swallows F24
+# and Home dies. titan2_a11y_live=1 survives reboot, so a live stamp must not
+# skip the heal. Same-value settings put does not clear mCrashedServices —
+# the component has to leave the enabled list, then come back.
+# Key-watch reads titan2_a11y_crashed and owns screen-on Home until the
+# crashed set is actually empty.
 _heal_a11y_bind() {
+  now=`date +%s 2>/dev/null` || return 0
+  case "$now" in ''|*[!0-9]*) return 0 ;; esac
+  last=`cat "$ST/titan2_a11y_heal_at" 2>/dev/null | tr -d '\r\n '`
+  case "$last" in ''|*[!0-9]*) last=0 ;; esac
+  age=$((now - last))
+  [ "$age" -lt 20 ] 2>/dev/null && return 0
+  if [ -d "$ST/titan2_a11y_heal.lock.d" ]; then
+    return 0
+  fi
+  echo "$now" >"$ST/titan2_a11y_heal_at" 2>/dev/null || true
+  (
+    mkdir "$ST/titan2_a11y_heal.lock.d" 2>/dev/null || exit 0
+    trap 'rmdir "$ST/titan2_a11y_heal.lock.d" 2>/dev/null' EXIT
+    _heal_a11y_bind_once
+  ) >/dev/null 2>&1 &
+}
+
+_a11y_mark_crashed() {
+  _v="$1"
+  for _d in "$ST" "$T2"; do
+    printf '%s\n' "$_v" >"$_d/titan2_a11y_crashed" 2>/dev/null || true
+    chmod 666 "$_d/titan2_a11y_crashed" 2>/dev/null || true
+  done
+}
+
+# 0 crashed, 1 not crashed, 2 dumpsys failed (do not clear the plane).
+_a11y_svc_in_crashed() {
+  _line=`dumpsys accessibility 2>/dev/null | grep -F 'Crashed services:' | head -n 1`
+  case "$_line" in
+    *TrackpadAccessService*) return 0 ;;
+    *Crashed\ services:*) return 1 ;;
+  esac
+  return 2
+}
+
+_heal_a11y_bind_once() {
+  svc=com.titanus2.controls/com.titanus2.controls.TrackpadAccessService
+  _a11y_svc_in_crashed
+  _crc=$?
+  if [ "$_crc" -eq 2 ]; then
+    return 0
+  fi
+  if [ "$_crc" -eq 0 ]; then
+    _a11y_mark_crashed 1
+    # Zombie heartbeat keeps live=1 and key-watch would yield. Lie until
+    # the crashed set is empty.
+    printf '0\n' >"$ST/titan2_a11y_live" 2>/dev/null || true
+    printf '0\n' >"$T2/titan2_a11y_live" 2>/dev/null || true
+    settings put global titan2_a11y_live 0 >/dev/null 2>&1 || true
+    # Back off if a toggle already failed this boot — flapping a11y is worse
+    # than key-watch owning Home.
+    fail=`cat "$ST/titan2_a11y_heal_fail" 2>/dev/null | tr -d '\r\n '`
+    case "$fail" in ''|*[!0-9]*) fail=0 ;; esac
+    now=`date +%s 2>/dev/null` || now=0
+    fage=$((now - fail))
+    if [ "$fail" -gt 0 ] 2>/dev/null && [ "$fage" -lt 600 ] 2>/dev/null; then
+      return 0
+    fi
+    cur=`settings get secure enabled_accessibility_services 2>/dev/null | tr -d '\r'`
+    others=""
+    oldifs=$IFS
+    IFS=:
+    for s in $cur; do
+      case "$s" in
+        ''|*TrackpadAccessService*) ;;
+        *) others="${others:+$others:}$s" ;;
+      esac
+    done
+    IFS=$oldifs
+    settings put secure enabled_accessibility_services "$others" >/dev/null 2>&1 || true
+    # Observer must see the component gone or mCrashedServices stays put.
+    sleep 0.6
+    if [ -n "$others" ]; then
+      settings put secure enabled_accessibility_services "${others}:$svc" >/dev/null 2>&1 || true
+    else
+      settings put secure enabled_accessibility_services "$svc" >/dev/null 2>&1 || true
+    fi
+    settings put secure accessibility_enabled 1 >/dev/null 2>&1 || true
+    sleep 1.2
+    _a11y_svc_in_crashed
+    _crc=$?
+    if [ "$_crc" -eq 0 ]; then
+      echo "$now" >"$ST/titan2_a11y_heal_fail" 2>/dev/null || true
+      _a11y_mark_crashed 1
+    elif [ "$_crc" -eq 1 ]; then
+      rm -f "$ST/titan2_a11y_heal_fail" 2>/dev/null || true
+      _a11y_mark_crashed 0
+    fi
+    return 0
+  fi
+  rm -f "$ST/titan2_a11y_heal_fail" 2>/dev/null || true
+  _a11y_mark_crashed 0
   live=`cat "$ST/titan2_a11y_live" 2>/dev/null | tr -d '\r\n '`
   case "$live" in 1|true|on) return 0 ;; esac
-  svc=com.titanus2.controls/com.titanus2.controls.TrackpadAccessService
-  settings put secure enabled_accessibility_services "$svc" 2>/dev/null || true
-  settings put secure accessibility_enabled 1 2>/dev/null || true
+  settings put secure enabled_accessibility_services "$svc" >/dev/null 2>&1 || true
+  settings put secure accessibility_enabled 1 >/dev/null 2>&1 || true
 }
 
 _ensure_watch_daemons() {
   _ensure_typing_watch 2>/dev/null || true
   _ensure_side_key 2>/dev/null || true
-  _ensure_key_watch 2>/dev/null || true
+  # 2.250: key-watch ensure at most every 10s (cool path only; heat never calls this).
+  _ekw_now=
+  IFS= read -r _ekw_now < /proc/uptime 2>/dev/null || _ekw_now=0
+  _ekw_now=${_ekw_now%%.*}
+  case "$_ekw_now" in ''|*[!0-9]*) _ekw_now=0 ;; esac
+  if [ -z "${_EKW_LAST_S:-}" ] || [ $((_ekw_now - _EKW_LAST_S)) -ge 10 ] 2>/dev/null; then
+    _EKW_LAST_S=$_ekw_now
+    _ensure_key_watch 2>/dev/null || true
+  fi
   _heal_a11y_bind 2>/dev/null || true
   _ensure_peel_daemon titan2-wifi-heal.sh titan2-wifi-heal \
     titan2_wifi_heal.pid titan2-wifi-heal.log watch 2>/dev/null || true
@@ -1566,7 +1831,10 @@ _schedule_apply_pad() { apply_pad; }
 # Cool residual mouse daemon health + orient-rel (2.206 densify).
 _mouse_health_tick() {
   mode_now=`read_pad_mode`
-  [ "$mode_now" = "mouse" ] || return 0
+  sub_now=`read_sub_mode`
+  if [ "$mode_now" != "mouse" ] && [ "$sub_now" != "hid" ]; then
+    return 0
+  fi
   TP_PID_CACHE=""
   if ! tp_up; then
     if [ -f "$PAD_STATUS" ] && grep -q 'typing_lock=1' "$PAD_STATUS" 2>/dev/null; then
@@ -1639,13 +1907,24 @@ _pad_tp_down_dirty() {
 # Sets globals: pad_dirty, pad_mt, click_mt, follow_mt, surface_mt, flip_mt, mode_now
 _pad_edge_sample() {
   pad_dirty=0
-  pad_mt=`mtime_max titan2_pad_mode`
-  [ "$pad_mt" != "$LAST_PAD_MT" ] && pad_dirty=1
-  lock_mt=`mtime_max titan2_input_lock`
-  [ "$lock_mt" != "$LAST_LOCK_MT" ] && pad_dirty=1
+  if [ "$HEAT_PARK" = "1" ]; then
+    _ctrl_sig titan2_pad_mode
+    [ "$_sig" != "${LAST_PAD_SIG:-}" ] && pad_dirty=1
+    LAST_PAD_SIG=$_sig
+    pad_mt=${LAST_PAD_MT:-0}
+    _ctrl_sig titan2_input_lock
+    [ "$_sig" != "${LAST_LOCK_SIG:-}" ] && pad_dirty=1
+    LAST_LOCK_SIG=$_sig
+    lock_mt=${LAST_LOCK_MT:-0}
+  else
+    pad_mt=$(mtime_max titan2_pad_mode) || pad_mt=0
+    [ "$pad_mt" != "$LAST_PAD_MT" ] && pad_dirty=1
+    lock_mt=$(mtime_max titan2_input_lock) || lock_mt=0
+    [ "$lock_mt" != "$LAST_LOCK_MT" ] && pad_dirty=1
+  fi
   LAST_LOCK_MT=$lock_mt
   if [ "$HEAT_PARK" = "1" ]; then
-    mode_now=`_read_pad_mode_files`
+    _set_pad_mode_now
     [ "$mode_now" != "$LAST_PAD" ] && pad_dirty=1
     # Secondary pad planes ~60s @2s under heat (click/follow/surface/flip).
     if [ $((loop_n % 30)) -eq 0 ]; then
@@ -1653,6 +1932,8 @@ _pad_edge_sample() {
       follow_mt=`mtime_max titan2_pad_follow_orient`
       surface_mt=`mtime_max titan2_input_surface`
       flip_mt=`mtime_max titan2_sub_touch_flip_x`
+      _fy=`mtime_max titan2_sub_touch_flip_y` || _fy=0
+      [ "${_fy:-0}" -gt "${flip_mt:-0}" ] 2>/dev/null && flip_mt=$_fy
       [ "$click_mt" != "$LAST_CLICK_MT" ] && pad_dirty=1
       [ "$follow_mt" != "$LAST_FOLLOW_MT" ] && pad_dirty=1
       [ "$surface_mt" != "${LAST_SURFACE_MT:-0}" ] && pad_dirty=1
@@ -1669,6 +1950,8 @@ _pad_edge_sample() {
     follow_mt=`mtime_max titan2_pad_follow_orient`
     surface_mt=`mtime_max titan2_input_surface`
     flip_mt=`mtime_max titan2_sub_touch_flip_x`
+      _fy=`mtime_max titan2_sub_touch_flip_y` || _fy=0
+      [ "${_fy:-0}" -gt "${flip_mt:-0}" ] 2>/dev/null && flip_mt=$_fy
     [ "$click_mt" != "$LAST_CLICK_MT" ] && pad_dirty=1
     [ "$follow_mt" != "$LAST_FOLLOW_MT" ] && pad_dirty=1
     [ "$surface_mt" != "${LAST_SURFACE_MT:-0}" ] && pad_dirty=1
@@ -1694,54 +1977,13 @@ _pad_edge_micro_loop() {
   apply_led
 }
 
-# Heat thin-body rare belts then deep-idle continue (2.121/2.208 densify).
-# Caller already set HEAT_PARK=1 and pad-edge sample ran.
+# 2.250 heat park: in-shell only. Zero forks per tick while load >= HEAT_LOAD_GE.
+# No grep/stat/pidof/settings/date/getevent/chmod/background subshell.
+# Sleep lengthens while heat stays high. Never re-exec for missing getevent.
 _heat_thin_body() {
-  # Remote ADB / Dev actions MUST run in heat park — human toggle cannot wait for cool.
-  apply_dev_action
-  if [ $((loop_n % 30)) -eq 0 ]; then
-    _maybe_hot_reload_staged_agent
-  fi
-  _log_hb "ok i=$loop_n pad=$LAST_PAD heat=thin fn=$LAST_FN char=$LAST_CHAR_MOD sp=$LAST_CHAR_SCAN hlay=$LAST_HOST_LAYOUT"
-  _heal_singleton_lock
-  # 2.215: Home key-watch must heal in heat (was cool-only ensure → dead Home).
-  if [ $((loop_n % 15)) -eq 1 ]; then
-    _ensure_key_watch 2>/dev/null || true
-  fi
-  if [ $((loop_n % 30)) -eq 1 ]; then
-    _ensure_keycode_drain_alive
-  fi
-  if [ $((loop_n % 15)) -eq 0 ]; then
-    _specials_dirty_apply || true
-    _subdisplay_edge_tick 0
-  fi
-  if [ $((loop_n % 90)) -eq 11 ]; then
-    ( _put_wallpaper_dim_settings_only ) &
-  fi
-  if [ $((loop_n % 90)) -eq 0 ]; then
-    _prune_orphan_agent_roots
-    _kick_cube_load_tip_land
-    _heat_getevent_heal_tick
-  fi
-  if [ $((loop_n % 15)) -eq 7 ]; then
-    ge_q=`_getevent_count`
-    if [ "$ge_q" -eq 0 ] 2>/dev/null; then
-      _heat_reexec_if_aged "heat_input_dead_fast getevent=0 re-exec" 25 0 || true
-    fi
-  fi
-  if [ $((loop_n % 100)) -eq 0 ]; then
-    _heal_session_off_remote_q
-    _clear_sticky_keys_pause
-  fi
-  if [ $((loop_n % 30)) -eq 0 ]; then
-    log "cube-load-edge-park load park interval_us=${HEAT_IDLE_US:-2000000}"
-  fi
-  # LED + IMS oneshot every heat tick (must not stall VoLTE under load≥8).
-  _ims_oneshot_tick
-  apply_led
+  _log_hb "ok i=$loop_n pad=${LAST_PAD:-?} heat=park sleep=${_HEAT_SLEEP_S:-2}s"
   _heat_idle_sleep
 }
-
 
 # --- Heat/getevent + subdisplay densify (2.204) ---
 # Stamp heat heal time and pure-reexec. $1=reason $2=min_age_s $3=kill_orphans 0|1
@@ -1770,25 +2012,10 @@ _getevent_count() {
 # Heat thin-body getevent heal (dead=0 → reexec; thrash>8 → kill+reexec).
 # 2.223: pad off + HID 0 is Cube idle — do not restore getevent pile.
 _heat_getevent_heal_tick() {
-  if ! hid_session_on; then
-    case "`_read_pad_mode_files`" in
-      off) return 0 ;;
-    esac
-  fi
-  ge_n=`_getevent_count`
-  if [ "$ge_n" -eq 0 ] 2>/dev/null; then
-    _heat_reexec_if_aged "heat_input_dead getevent=0 re-exec (restore key/side watchers)" 30 0 || true
-  elif [ "$ge_n" -gt 8 ] 2>/dev/null; then
-    if ! _heat_reexec_if_aged "heat_heal getevent=$ge_n re-exec" 120 1; then
-      last_h=`cat "$ST/titan2_heat_heal_s" 2>/dev/null | tr -d '\r\n '`
-      now_h=`date +%s`
-      case "$last_h" in ''|*[!0-9]*) last_h=0 ;; esac
-      age_h=`expr $now_h - $last_h 2>/dev/null` || age_h=999
-      log "heat_warn getevent=$ge_n (heal cooldown ${age_h}s)"
-    fi
-  fi
+  # 2.250: never re-exec because getevent is missing during heat/screen-off idle.
   return 0
 }
+
 
 # Subdisplay apply-stamp edge (cheap). Optional mtime heal when $1=mtime.
 _subdisplay_edge_tick() {
@@ -1826,40 +2053,30 @@ _subdisplay_edge_tick() {
 
 # Heat idle sleep (typing hot / pointer / deep). Shared heat thin + cool heat park.
 _heat_idle_sleep() {
-  # CubalC free-flow: human UI wake / fresh pad_mode → ≤15ms, never 2s park.
-  # Keep pad_wake inode 666 (ImpulseSnap app uid cannot create under tmp).
-  if [ -s "$ST/titan2_pad_wake" ]; then
+  # 2.250: zero forks. wake=human short; else lengthen 2->3->4s.
+  if [ -e "$ST/titan2_pad_wake" ]; then
     : >"$ST/titan2_pad_wake" 2>/dev/null || true
-    chmod 666 "$ST/titan2_pad_wake" 2>/dev/null || true
+    _HEAT_SLEEP_S=2
+    _HEAT_STREAK=0
     _usleep_us "${HEAT_IDLE_HUMAN_US:-15000}"
     return 0
   fi
-  _pmt=`stat -c %Y "$ST/titan2_pad_mode" 2>/dev/null` || _pmt=0
-  _now=`date +%s 2>/dev/null` || _now=0
-  case "$_pmt" in ''|*[!0-9]*) _pmt=0 ;; esac
-  case "$_now" in ''|*[!0-9]*) _now=0 ;; esac
-  if [ "$_now" -gt 0 ] && [ "$_pmt" -gt 0 ] 2>/dev/null \
-      && [ $((_now - _pmt)) -le 2 ] 2>/dev/null; then
-    _usleep_us "${HEAT_IDLE_HUMAN_US:-15000}"
-    return 0
-  fi
-  _pm_heat=`cat "$T2/titan2_pad_mode" 2>/dev/null | tr -d '\r\n \t'`
-  [ -n "$_pm_heat" ] || _pm_heat=`cat "$ST/titan2_pad_mode" 2>/dev/null | tr -d '\r\n \t'`
-  if _typing_plane_hot; then
-    _usleep_us 50000
+  case "${_HEAT_STREAK:-0}" in ''|*[!0-9]*) _HEAT_STREAK=0 ;; esac
+  _HEAT_STREAK=$((_HEAT_STREAK + 1))
+  if [ "$_HEAT_STREAK" -ge 6 ] 2>/dev/null; then
+    _HEAT_SLEEP_S=4
+  elif [ "$_HEAT_STREAK" -ge 3 ] 2>/dev/null; then
+    _HEAT_SLEEP_S=3
   else
-    case "$_pm_heat" in
-      mouse|trackpad) _usleep_us 50000 ;;
-      *)
-        if command -v usleep >/dev/null 2>&1; then
-          usleep "${HEAT_IDLE_US:-50000}"
-        else
-          sleep 0.05
-        fi
-        ;;
-    esac
+    _HEAT_SLEEP_S=${HEAT_PARK_SLEEP_S:-2}
   fi
+  case "$_HEAT_SLEEP_S" in
+    4) _usleep_us 4000000 ;;
+    3) _usleep_us 3000000 ;;
+    *) _usleep_us "${HEAT_IDLE_US:-2000000}" ;;
+  esac
 }
+
 
 
 # Removed: titan2_icon_apply watcher. Magisk 2s loop + unique timestamps
@@ -1887,16 +2104,23 @@ loop_n=0
 # 2.174/2.176: side KEY_FIRE + key-watch daemons (not in-process getevent).
 _ensure_watch_daemons
 while true; do
-  loop_n=`expr $loop_n + 1 2>/dev/null` || loop_n=1
+  loop_n=$((loop_n + 1))
 
   # Keep peeled watch alive (crash / pure-exec); park logic is not main-path SoT.
-  # 2.215: every 10 loops (was 40) — Home key-watch must revive under heat.
+  # 2.250: heat gate FIRST — if hot, park in-shell only (zero forks) and continue.
+  # No settings/dev/fw/icon/pad-edge/getevent/key-watch while load>=8.
+  HEAT_PARK=0
+  if _cube_heat_park; then
+    HEAT_PARK=1
+    _heat_thin_body
+    continue
+  fi
+  _HEAT_STREAK=0
+  _heat_settings_cache
+
+  # 2.250: cool-path only watcher ensure (heat already continued above).
   [ $((loop_n % 10)) -eq 1 ] && _ensure_watch_daemons
 
-  # 2.122: heat gate FIRST so pad-edge can park under load≥8 (2.121 still paid
-  # 5× mtime_max + read_pad_mode every heat tick before thin-body continue).
-  HEAT_PARK=0
-  if _cube_heat_park; then HEAT_PARK=1; fi
 
   # 2.83/2.203: PAD EDGE BEFORE heartbeat/subdisplay (shared sample helper).
   # Dev actions every loop top — before any continue (heat/pad/tight).
@@ -1905,21 +2129,43 @@ while true; do
   _icon_apply_tick
 
   _pad_edge_sample
-  gate_mt=`mtime_max titan2_pad_gate`
-  if [ "$gate_mt" != "${LAST_GATE_MT:-0}" ]; then
-    LAST_GATE_MT=$gate_mt
-    _gv=`cat "$ST/titan2_pad_gate" 2>/dev/null | tr -d '\r\n '`
+  if [ "$HEAT_PARK" = "1" ]; then
+    _ctrl_line "$ST/titan2_pad_gate"
+    _gv="$v"
+    [ -n "$_gv" ] || { _ctrl_line "$T2/titan2_pad_gate"; _gv="$v"; }
     if [ "$_gv" != "${LAST_GATE_VAL:-}" ]; then
       LAST_GATE_VAL=$_gv
       pad_dirty=1
     fi
+  else
+    gate_mt=$(mtime_max titan2_pad_gate) || gate_mt=0
+    if [ "$gate_mt" != "${LAST_GATE_MT:-0}" ]; then
+      LAST_GATE_MT=$gate_mt
+      _ctrl_line "$ST/titan2_pad_gate"
+      _gv="$v"
+      if [ "$_gv" != "${LAST_GATE_VAL:-}" ]; then
+        LAST_GATE_VAL=$_gv
+        pad_dirty=1
+      fi
+    fi
   fi
-  # Parked until login. Only apply persisted mode after Controls opens the gate.
-  if [ "$pad_dirty" != "1" ] && [ -f "$PAD_STATUS" ] \
-      && grep -qE 'applied=(lockpark|boot_safe)' "$PAD_STATUS" 2>/dev/null; then
-    _g=`cat "$ST/titan2_pad_gate" 2>/dev/null | tr -d '\r\n '`
-    [ -n "$_g" ] || _g=`cat "$T2/titan2_pad_gate" 2>/dev/null | tr -d '\r\n '`
-    case "$_g" in open|OPEN|1) pad_dirty=1 ;; esac
+  if [ "$pad_dirty" != "1" ] && [ -f "$PAD_STATUS" ]; then
+    if [ "$HEAT_PARK" = "1" ]; then
+      _ctrl_line "$PAD_STATUS"
+      case "$v" in
+        *applied=lockpark*|*applied=boot_safe*) _reopen=1 ;;
+        *) _reopen=0 ;;
+      esac
+    else
+      _reopen=0
+      grep -qE 'applied=(lockpark|boot_safe)' "$PAD_STATUS" 2>/dev/null && _reopen=1
+    fi
+    if [ "$_reopen" = 1 ]; then
+      _ctrl_line "$ST/titan2_pad_gate"
+      _g="$v"
+      [ -n "$_g" ] || { _ctrl_line "$T2/titan2_pad_gate"; _g="$v"; }
+      case "$_g" in open|OPEN|1) pad_dirty=1 ;; esac
+    fi
   fi
   if [ "$pad_dirty" = "1" ]; then
     _schedule_apply_pad
