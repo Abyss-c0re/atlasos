@@ -1,4 +1,4 @@
-versionName=16.95-notif-led
-versionCode=695
-built_utc=2026-09-26T17:24Z
+versionName=16.99-hid-pad-free
+versionCode=699
+built_utc=2026-09-30T13:46Z
 allow_root=0

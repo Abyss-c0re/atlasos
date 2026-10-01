@@ -6,7 +6,7 @@
 #   subtouch <ignore|native|flipx|apps>
 #   associate          — bind sub_touch → rear display
 #   clear              — drop sub_touch association
-#   digitizer_post     — apps|cube → touchScreen only if assoc binds; else ignore
+#   digitizer_post     — apps|cube → touchScreen pinned to the rear viewport, else inhibit
 #   inhibit <0|1> [force] — set_pad_inhibited sysfs park (2.186)
 #   kind               — print last touchPad kind
 #   version
@@ -15,10 +15,16 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-IDC_VER=2.224-subtouch-failclosed
+IDC_VER=2.228-no-i2c-rebind
 _IDC_STAGE=/data/adb/titan2/idc
 KIND_FILE=$ST/titan2_idc_kind
 ASSOC_FILE=$ST/titan2_subtouch_assoc_state
+# InputReader reads touch.displayId. device.displayPort is not a binding.
+# This id is the rear panel in display_settings.xml; dumpsys overrides it.
+REAR_UID_FALLBACK=local:4627039422300187651
+REAR_OK_FILE=$ST/titan2_subtouch_rear_ok
+REAR_PROBE_FILE=$ST/titan2_subtouch_rear_probe
+INPUT_SNAP=$ST/titan2_subtouch_input_snap
 
 log() {
   mkdir -p "$ST" 2>/dev/null || true
@@ -74,6 +80,7 @@ read_sub_mode() {
   m=`read_first titan2_sub_mode`
   m=`echo "$m" | tr 'A-Z' 'a-z' | tr -d '\r\n '`
   case "$m" in
+    hid|hidmouse|hid_mouse) echo hid; return ;;
     apps|app|launcher|touch|interactive) echo apps; return ;;
     cube|lattice|brain|neural) echo cube; return ;;
     face|clock|stock|custom|aod) echo face; return ;;
@@ -188,122 +195,328 @@ set_touchpad_idc() {
   return 0
 }
 
-# sub_touch.idc: ignore | native | flipx | apps
-set_subtouch_idc() {
-  kind="$1"
-  IDC_DIR=/system/usr/idc
-  ETC=/system/etc/titan2_idc
-  STAGE=`_idc_stage_dir`
-  if [ "$kind" = "apps" ] || [ "$kind" = "touchscreen" ] || [ "$kind" = "touchScreen" ]; then
-    src=$ETC/sub_touch.touchscreen.idc
-    [ -f "$src" ] || src=$IDC_DIR/sub_touch.touchscreen.idc
-    [ -f "$src" ] || src=$STAGE/sub_touch.touchscreen.idc
-    if [ ! -f "$src" ]; then
-      cat > "$STAGE/sub_touch.touchscreen.idc" << 'IDCEOF'
-# Rear digitizer as touchscreen for display-2 apps (sub_mode=apps).
-# Association to display uniqueId still required for correct viewport.
-device.internal = 1
-touch.deviceType = touchScreen
-touch.orientationAware = 1
-device.displayPort = 3
-IDCEOF
-      _label_idc_for_inputreader "$STAGE/sub_touch.touchscreen.idc"
-      src="$STAGE/sub_touch.touchscreen.idc"
+# Lab EventHub descriptor. Stable across reboots on this panel.
+_subtouch_descriptor() {
+  echo d498fd4b8ff8c34cb9de09546f4b0e8a26606f5f
+}
+
+_safe_svc_word() {
+  case "$1" in
+    ''|*[!A-Za-z0-9:_-]*) return 1 ;;
+  esac
+  return 0
+}
+
+_now_s() {
+  date +%s 2>/dev/null || echo 0
+}
+
+_refresh_input_snap() {
+  force="${1:-0}"
+  if [ "$force" != "1" ] && [ -f "$INPUT_SNAP" ]; then
+    mt=`stat -c %Y "$INPUT_SNAP" 2>/dev/null` || mt=0
+    now=`_now_s`
+    case "$mt" in ''|*[!0-9]*) mt=0 ;; esac
+    case "$now" in ''|*[!0-9]*) now=0 ;; esac
+    age=`expr "$now" - "$mt" 2>/dev/null` || age=999
+    if [ "$age" -ge 0 ] && [ "$age" -lt 2 ]; then
+      return 0
     fi
-    kind=apps
-  elif [ "$kind" = "flipx" ]; then
-    src=$ETC/sub_touch.pointer.flipx.idc
-    [ -f "$src" ] || src=$ETC/sub_touch.native.idc
-    [ -f "$src" ] || src=$IDC_DIR/sub_touch.native.idc
-  elif [ "$kind" = "native" ]; then
-    src=$ETC/sub_touch.native.idc
-    [ -f "$src" ] || src=$IDC_DIR/sub_touch.native.idc
-  else
-    src=$ETC/sub_touch.idc
-    [ -f "$src" ] || src=$IDC_DIR/sub_touch.idc
-    kind=ignore
   fi
-  [ -f "$src" ] || return 1
-  _label_idc_for_inputreader "$src"
-  cp "$src" "$STAGE/sub_touch.idc" 2>/dev/null
-  _label_idc_for_inputreader "$STAGE/sub_touch.idc"
-  ok=0
-  mount -o remount,rw /system 2>/dev/null || mount -o remount,rw / 2>/dev/null || true
-  cp "$src" $IDC_DIR/sub_touch.idc 2>/dev/null && ok=1
-  _label_idc_for_inputreader $IDC_DIR/sub_touch.idc
-  if [ "$ok" = "0" ] && [ -f "$STAGE/sub_touch.idc" ]; then
-    umount $IDC_DIR/sub_touch.idc 2>/dev/null || true
-    mount --bind "$STAGE/sub_touch.idc" $IDC_DIR/sub_touch.idc 2>/dev/null && ok=1
+  dumpsys input >"$INPUT_SNAP" 2>/dev/null || true
+  chmod 666 "$INPUT_SNAP" 2>/dev/null || true
+  return 0
+}
+
+_rear_uid_from_snap() {
+  uid=""
+  if [ -f "$INPUT_SNAP" ]; then
+    uid=`grep 'Viewport INTERNAL:' "$INPUT_SNAP" 2>/dev/null \
+      | grep -v 'displayId=0,' \
+      | sed -n 's/.*uniqueId=\(local:[0-9][0-9]*\).*/\1/p' \
+      | head -1`
   fi
+  case "$uid" in
+    local:[0-9]*) echo "$uid" ;;
+    *) echo "$REAR_UID_FALLBACK" ;;
+  esac
+}
+
+_rear_display_unique_id() {
+  if [ -n "${_REAR_UID_CACHED:-}" ]; then
+    echo "$_REAR_UID_CACHED"
+    return 0
+  fi
+  _refresh_input_snap 0
+  _REAR_UID_CACHED=`_rear_uid_from_snap`
+  echo "$_REAR_UID_CACHED"
+}
+
+# False when dumpsys produced nothing we can judge. Do not fail closed on that.
+_snap_usable() {
+  [ -s "$INPUT_SNAP" ] || return 1
+  grep -q 'Viewport INTERNAL:' "$INPUT_SNAP" 2>/dev/null
+}
+
+# Viewport line for the sub_touch InputReader device, not the EventHub node.
+_subtouch_viewport_line() {
+  sed -n '/^  Device [0-9][0-9]*: sub_touch$/,/^  Device [0-9]/p' \
+    "$INPUT_SNAP" 2>/dev/null \
+    | grep 'Viewport INTERNAL:' | head -1
+}
+
+# 0 when the cooked viewport is the rear panel and not display 0.
+# $1=1 bypasses the 2s probe cache (use after a rebind).
+_rear_viewport_ok() {
+  force="${1:-0}"
+  if [ "$force" != "1" ] && [ -f "$REAR_PROBE_FILE" ]; then
+    line=`_read_line_file "$REAR_PROBE_FILE"`
+    ts=`echo "$line" | sed 's/ .*//'`
+    st=`echo "$line" | sed 's/^[0-9][0-9]* //'`
+    now=`_now_s`
+    case "$ts" in ''|*[!0-9]*) ts=0 ;; esac
+    case "$now" in ''|*[!0-9]*) now=0 ;; esac
+    age=`expr "$now" - "$ts" 2>/dev/null` || age=999
+    if [ "$age" -ge 0 ] && [ "$age" -lt 2 ]; then
+      [ "$st" = "ok" ]
+      return $?
+    fi
+  fi
+  _refresh_input_snap "$force"
+  uid=`_rear_display_unique_id`
+  line=`_subtouch_viewport_line`
+  st=bad
+  case "$line" in
+    *'displayId=0,'*) st=bad ;;
+    *'uniqueId=local:4627039422300187648'*) st=bad ;;
+    *"uniqueId=$uid"*) st=ok ;;
+  esac
+  now=`_now_s`
+  printf '%s %s\n' "$now" "$st" >"$REAR_PROBE_FILE" 2>/dev/null || true
+  chmod 666 "$REAR_PROBE_FILE" 2>/dev/null || true
+  [ "$st" = "ok" ]
+}
+
+_idc_has_pin() {
+  idc=/system/usr/idc/sub_touch.idc
+  [ -f "$idc" ] || return 1
+  grep -F -q 'touch.deviceType = touchScreen' "$idc" 2>/dev/null || return 1
+  # Fallback id is the lab rear panel. Skip dumpsys when the IDC already has it.
+  if grep -F -q "touch.displayId = $REAR_UID_FALLBACK" "$idc" 2>/dev/null; then
+    return 0
+  fi
+  uid=`_rear_display_unique_id`
+  grep -F -q "touch.displayId = $uid" "$idc" 2>/dev/null
+}
+
+_stamp_rear_ok() {
+  mkdir -p "$ST" 2>/dev/null || true
+  _now_s >"$REAR_OK_FILE" 2>/dev/null || printf 1 >"$REAR_OK_FILE"
+  chmod 666 "$REAR_OK_FILE" 2>/dev/null || true
+}
+
+_rear_ok_fresh() {
+  [ -f "$REAR_OK_FILE" ] || return 1
+  mt=`stat -c %Y "$REAR_OK_FILE" 2>/dev/null` || return 1
+  now=`_now_s`
+  case "$mt" in ''|*[!0-9]*) return 1 ;; esac
+  case "$now" in ''|*[!0-9]*) return 1 ;; esac
+  age=`expr "$now" - "$mt" 2>/dev/null` || return 1
+  [ "$age" -ge 0 ] && [ "$age" -lt 12 ]
+}
+
+_drop_rear_proof() {
+  rm -f "$REAR_OK_FILE" "$REAR_PROBE_FILE" "$INPUT_SNAP" 2>/dev/null || true
+  _REAR_UID_CACHED=""
+}
+
+_subtouch_sysfs_inh() {
+  want="$1"
+  case "$want" in 0|1) ;; *) return 1 ;; esac
   for d in /sys/class/input/input*; do
     [ -e "$d/name" ] || continue
     n=`cat "$d/name" 2>/dev/null` || continue
     [ "$n" = "sub_touch" ] || continue
     for inhf in "$d/inhibited" "$d/device/inhibited"; do
       [ -e "$inhf" ] || continue
-      echo 1 > "$inhf" 2>/dev/null || true
-      _sleep_brief
-      echo 0 > "$inhf" 2>/dev/null || true
+      echo "$want" > "$inhf" 2>/dev/null || true
     done
+  done
+}
+
+_uevent_subtouch() {
+  for d in /sys/class/input/input*; do
+    [ -e "$d/name" ] || continue
+    n=`cat "$d/name" 2>/dev/null` || continue
+    [ "$n" = "sub_touch" ] || continue
     echo change > "$d/uevent" 2>/dev/null || true
   done
-  # Do NOT stomp touchPad kind file (agent LAST_IDC_KIND is touchPad-only).
-  return 0
 }
 
-# Lab-known EventHub descriptor + rear uniqueId (no dumpsys on hot path).
-_subtouch_descriptor() {
-  echo d498fd4b8ff8c34cb9de09546f4b0e8a26606f5f
+# Parameters AssociatedDisplay uses quotes. The viewport line does not.
+# Empty displayId='' means InputReader opened sub_touch before the pin existed.
+_reader_has_display_pin() {
+  _refresh_input_snap "${1:-0}"
+  uid=`_rear_uid_from_snap`
+  case "$uid" in
+    local:[0-9]*) ;;
+    *) uid=$REAR_UID_FALLBACK ;;
+  esac
+  sed -n '/^  Device [0-9][0-9]*: sub_touch$/,/^  Device [0-9]/p' \
+    "$INPUT_SNAP" 2>/dev/null \
+    | grep -F "displayId='$uid'" >/dev/null 2>&1
 }
 
-_rear_display_unique_id() {
-  echo local:4627039422300187651
+# Parameters displayId is whatever InputReader read when the node opened.
+# Do not unbind/bind 2-005a. The sub_touch driver is hynitron_touch, and a
+# second probe misc_register()s "touch" again. That EEXIST leaves misc_list
+# corrupt and misc_open panics the kernel about ten seconds later.
+_ensure_reader_loaded() {
+  _reader_has_display_pin 0 && return 0
+  _idc_has_pin || return 1
+  _hb "subtouch reader pin empty — leave driver bound"
+  log "subtouch reader pin empty — no i2c rebind"
+  return 1
+}
+
+_sleep_settle() {
+  if command -v usleep >/dev/null 2>&1; then
+    usleep 250000
+  else
+    sleep 0.3 2>/dev/null || sleep 1
+  fi
+}
+
+# Success is a Parcel reply with no Exception. service call exits 0 on SecurityException.
+_svc_reply_ok() {
+  echo "$1" | grep -q -i 'Exception' && return 1
+  echo "$1" | grep -q 'Parcel'
 }
 
 _svc_input_call() {
-  _ok=0
+  for _a in "$@"; do
+    _safe_svc_word "$_a" || return 1
+  done
+  _argstr=""
+  for _a in "$@"; do
+    _argstr="$_argstr $_a"
+  done
+  _svc_out=""
   if [ "`id -u 2>/dev/null`" = "0" ]; then
     for _su in /data/adb/magisk/su /sbin/su /system/xbin/su /system/bin/su; do
       [ -x "$_su" ] || continue
-      "$_su" 2000 -c "service call input $*" >/dev/null 2>&1 && _ok=1 && break
-      "$_su" shell -c "service call input $*" >/dev/null 2>&1 && _ok=1 && break
+      _svc_out=`"$_su" 1000 -c "/system/bin/service call input $_argstr" 2>&1` || true
+      _svc_reply_ok "$_svc_out" && return 0
+      _svc_out=`"$_su" 2000 -c "/system/bin/service call input $_argstr" 2>&1` || true
+      _svc_reply_ok "$_svc_out" && return 0
     done
   fi
-  if [ "$_ok" != "1" ]; then
-    service call input "$@" >/dev/null 2>&1 && _ok=1 || true
+  _svc_out=`/system/bin/service call input "$@" 2>&1` || true
+  _svc_reply_ok "$_svc_out"
+}
+
+_remember_assoc() {
+  desc="$1"
+  uid="$2"
+  _set_last_assoc "assoc:$desc>$uid"
+  for _d in "$T2" "$ST"; do
+    [ -d "$_d" ] || continue
+    printf '%s' "$uid" >"$_d/titan2_subtouch_assoc" 2>/dev/null || true
+    chmod 666 "$_d/titan2_subtouch_assoc" 2>/dev/null || true
+  done
+  settings put global titan2_subtouch_assoc "$uid" 2>/dev/null || true
+}
+
+# sub_touch.idc: ignore | native | flipx | apps
+# Always stages touch.displayId. Does not uninhibit — caller proves the viewport first.
+set_subtouch_idc() {
+  kind="$1"
+  IDC_DIR=/system/usr/idc
+  STAGE=`_idc_stage_dir`
+  uid=`_rear_display_unique_id`
+  _safe_svc_word "$uid" || uid=$REAR_UID_FALLBACK
+  case "$kind" in
+    apps|touchscreen|touchScreen|native|flipx) kind=apps ;;
+    *) kind=ignore ;;
+  esac
+  dest="$STAGE/sub_touch.want.idc"
+  tmp="$dest.tmp"
+  if [ "$kind" = "ignore" ]; then
+    cat >"$tmp" << EOF
+device.internal = 1
+touch.deviceType = ignore
+touch.displayId = $uid
+EOF
+  else
+    cat >"$tmp" << EOF
+device.internal = 1
+touch.deviceType = touchScreen
+touch.orientationAware = 1
+touch.displayId = $uid
+EOF
   fi
-  [ "$_ok" = "1" ]
+  mv -f "$tmp" "$dest" 2>/dev/null || cp "$tmp" "$dest"
+  rm -f "$tmp" 2>/dev/null || true
+  _label_idc_for_inputreader "$dest"
+  if cmp -s "$dest" "$IDC_DIR/sub_touch.idc" 2>/dev/null; then
+    if [ ! -f "$STAGE/sub_touch.idc" ] || ! cmp -s "$dest" "$STAGE/sub_touch.idc" 2>/dev/null; then
+      cp "$dest" "$STAGE/sub_touch.idc" 2>/dev/null || true
+      _label_idc_for_inputreader "$STAGE/sub_touch.idc"
+    fi
+    return 0
+  fi
+  # Inhibit across the reload. Uninhibit only after the rear viewport is proven.
+  _subtouch_sysfs_inh 1
+  cp "$dest" "$STAGE/sub_touch.idc" 2>/dev/null || return 1
+  _label_idc_for_inputreader "$STAGE/sub_touch.idc"
+  ok=0
+  mount -o remount,rw /system 2>/dev/null || mount -o remount,rw / 2>/dev/null || true
+  cp "$dest" $IDC_DIR/sub_touch.idc 2>/dev/null && ok=1
+  _label_idc_for_inputreader $IDC_DIR/sub_touch.idc
+  if [ "$ok" = "0" ] && [ -f "$STAGE/sub_touch.idc" ]; then
+    umount $IDC_DIR/sub_touch.idc 2>/dev/null || true
+    mount --bind "$STAGE/sub_touch.idc" $IDC_DIR/sub_touch.idc 2>/dev/null && ok=1
+  fi
+  if [ "$ok" != "1" ]; then
+    _hb "subtouch idc install failed"
+    _drop_rear_proof
+    return 1
+  fi
+  # The new file is what the next open reads. Uevent does not reload an
+  # already-open node. i2c unbind/bind panics hynitron — never do it.
+  _uevent_subtouch
+  _drop_rear_proof
+  return 0
 }
 
 associate_sub_touch_display() {
   desc=`_subtouch_descriptor`
   uid=`_rear_display_unique_id`
-  [ -n "$desc" ] && [ -n "$uid" ] || return 1
-  want="assoc:$desc>$uid"
-  if [ "`_last_assoc`" = "$want" ]; then
-    return 0
-  fi
+  _safe_svc_word "$desc" || return 1
+  _safe_svc_word "$uid" || return 1
+  # Assoc-file equality is not proof: service call exits 0 on SecurityException.
   if _svc_input_call 43 s16 "$desc" s16 "$uid"; then
-    _set_last_assoc "$want"
-    for _d in "$T2" "$ST"; do
-      [ -d "$_d" ] || continue
-      printf "%s" "$uid" >"$_d/titan2_subtouch_assoc" 2>/dev/null || true
-      chmod 666 "$_d/titan2_subtouch_assoc" 2>/dev/null || true
-    done
-    settings put global titan2_subtouch_assoc "$uid" 2>/dev/null || true
-    _hb "subtouch assoc ok →$uid"
+    _remember_assoc "$desc" "$uid"
+    _hb "subtouch assoc ok -> $uid"
     return 0
   fi
+  if _rear_viewport_ok 1; then
+    _remember_assoc "$desc" "$uid"
+    _hb "subtouch assoc already rear"
+    return 0
+  fi
+  _set_last_assoc ""
   _hb "subtouch assoc fail (service call)"
   return 1
 }
 
 clear_sub_touch_display() {
   desc=`_subtouch_descriptor`
-  if [ -n "$desc" ]; then
+  if _safe_svc_word "$desc"; then
     _svc_input_call 44 s16 "$desc" || true
   fi
   _set_last_assoc ""
+  _drop_rear_proof
   for _d in "$T2" "$ST" /data/adb/titan2; do
     [ -d "$_d" ] || continue
     printf none >"$_d/titan2_subtouch_assoc" 2>/dev/null || true
@@ -313,21 +526,104 @@ clear_sub_touch_display() {
   return 0
 }
 
+_subtouch_idc_is_ignore() {
+  _f=/system/usr/idc/sub_touch.idc
+  [ -f "$_f" ] || return 1
+  grep -q 'deviceType *= *ignore' "$_f" 2>/dev/null || return 1
+  grep -q 'deviceType *= *touchScreen' "$_f" 2>/dev/null && return 1
+  return 0
+}
+
+_fail_closed_subtouch() {
+  _hb "subtouch fail-closed — inhibit, ignore pin, no primary"
+  _subtouch_sysfs_inh 1
+  set_subtouch_idc ignore 2>/dev/null || true
+  clear_sub_touch_display 2>/dev/null || true
+  _subtouch_sysfs_inh 1
+}
+
 digitizer_post() {
   case "`read_sub_mode`" in
     apps|cube)
-      # Never leave touchScreen unbound — pending assoc = main-display ghost.
-      set_subtouch_idc apps 2>/dev/null || true
-      if associate_sub_touch_display; then
+      # File pin plus rear viewport: load touch.displayId once, then leave it.
+      if _idc_has_pin && _rear_viewport_ok 0; then
+        _ensure_reader_loaded || true
+        if _rear_viewport_ok 1; then
+          _subtouch_sysfs_inh 0
+          _stamp_rear_ok
+          _desc=`_subtouch_descriptor`
+          _uid=`_rear_display_unique_id`
+          if [ "`_last_assoc`" != "assoc:${_desc}>${_uid}" ]; then
+            _remember_assoc "$_desc" "$_uid"
+          fi
+          return 0
+        fi
+      fi
+      # Empty dumpsys must not clear a pin or the rear association.
+      if _idc_has_pin && ! _snap_usable; then
+        if _rear_ok_fresh; then
+          _subtouch_sysfs_inh 0
+          return 0
+        fi
+        _hb "subtouch dumpsys empty — leave pin, stay inhibited"
+        _subtouch_sysfs_inh 1
         return 0
       fi
-      _hb "subtouch fail-closed (assoc pending/fail) — ignore"
-      set_subtouch_idc ignore 2>/dev/null || true
+      _subtouch_sysfs_inh 1
+      set_subtouch_idc apps 2>/dev/null || true
+      _ensure_reader_loaded || true
+      _sleep_settle
+      if ! _rear_viewport_ok 1; then
+        associate_sub_touch_display || true
+        _sleep_settle
+      fi
+      if ! _rear_viewport_ok 1; then
+        line=`_subtouch_viewport_line`
+        case "$line" in
+          *'displayId=0,'*)
+            # Step 1 beats touch.displayId. Drop a primary association and rebind.
+            desc=`_subtouch_descriptor`
+            _safe_svc_word "$desc" && _svc_input_call 44 s16 "$desc" || true
+            _set_last_assoc ""
+            associate_sub_touch_display || true
+            _sleep_settle
+            ;;
+        esac
+      fi
+      if _rear_viewport_ok 1; then
+        _subtouch_sysfs_inh 0
+        _stamp_rear_ok
+        _hb "subtouch rear pin ok"
+        return 0
+      fi
+      # Reopen can outrun dumpsys. Keep the touchScreen pin and the association
+      # instead of rewriting ignore, which would make the next open fall through.
+      if _idc_has_pin; then
+        _hb "subtouch rear not proven — keep pin, stay inhibited"
+        _subtouch_sysfs_inh 1
+        return 0
+      fi
+      _fail_closed_subtouch
+      ;;
+    hid|hidmouse)
+      # Ignore first, then uninhibit so touchpadd can grab. Never a touchscreen.
+      _subtouch_sysfs_inh 1
+      if ! set_subtouch_idc ignore; then
+        _fail_closed_subtouch
+        return 0
+      fi
       clear_sub_touch_display 2>/dev/null || true
+      if _subtouch_idc_is_ignore; then
+        _subtouch_sysfs_inh 0
+      else
+        _fail_closed_subtouch
+      fi
       ;;
     *)
+      _subtouch_sysfs_inh 1
       set_subtouch_idc ignore 2>/dev/null || true
       clear_sub_touch_display 2>/dev/null || true
+      _subtouch_sysfs_inh 1
       ;;
   esac
   return 0
@@ -346,10 +642,19 @@ read_pad_mode() {
   echo off
 }
 
-# Shared surface → PAD_SURFACE for touchpadd (hw|none only after 2.63).
+# HID mouse keeps sub|both. Outside HID those tokens still collapse.
 read_pad_surface() {
   s=`read_first titan2_input_surface`
   s=`echo "$s" | tr 'A-Z' 'a-z' | tr -d '\r\n '`
+  case "`read_sub_mode`" in
+    hid)
+      case "`read_pad_mode`" in
+        mouse) echo both ;;
+        *) echo sub ;;
+      esac
+      return 0
+      ;;
+  esac
   case "$s" in
     sub|rear|sub_touch|both|all|dual) s=hw ;;
     none|off) s=none ;;
@@ -430,46 +735,65 @@ set_pad_inhibited() {
   fi
   mode=$(read_pad_mode)
   surface=$(read_pad_surface)
+  submode=$(read_sub_mode)
   hw_inh=1
   subtouch_inh=1
-  if [ "$want_inh" = "0" ]; then
-    case "$mode" in
-      off|OFF|0|"") hw_inh=1 ;;
-      *)
-        case "$surface" in
-          hw|both|sub) hw_inh=0 ;;
-          *) hw_inh=1 ;;
-        esac
-        ;;
-    esac
-  fi
+  case "$mode" in
+    mouse)
+      case "$surface" in
+        hw|both) hw_inh=0 ;;
+        *) hw_inh=1 ;;
+      esac
+      ;;
+    trackpad) hw_inh=0 ;;
+    *)
+      hw_inh=1
+      if [ "$submode" != "hid" ] && hid_needs_mouse 2>/dev/null; then hw_inh=0; fi
+      ;;
+  esac
   if [ "$want_inh" = "1" ]; then
     case "$force_inh" in
       force|1|true|yes|typing)
         hw_inh=1
         ;;
       *)
-        if hid_needs_mouse 2>/dev/null; then hw_inh=0; else hw_inh=1; fi
+        if [ "$submode" = "hid" ]; then
+          case "$mode" in
+            trackpad) hw_inh=0 ;;
+            mouse)
+              case "$surface" in hw|both) hw_inh=0 ;; *) hw_inh=1 ;; esac
+              ;;
+            *) hw_inh=1 ;;
+          esac
+        elif hid_needs_mouse 2>/dev/null; then
+          hw_inh=0
+        else
+          hw_inh=1
+        fi
         ;;
     esac
   fi
-  case "$mode" in
-    off|OFF|0|"")
-      if ! hid_needs_mouse 2>/dev/null; then hw_inh=1; fi
-      ;;
-  esac
-  case "`read_sub_mode`" in
+  case "$submode" in
     apps|cube)
-      # Fail closed: only pad-idc last-assoc (not Cube Global, which lies).
-      sa=`_last_assoc`
-      case "$sa" in
-        "assoc:"*">local:"*|"assoc:"*">unique:"*) subtouch_inh=0 ;;
-        *) subtouch_inh=1 ;;
-      esac
+      # Uninhibit only when the IDC pin is loaded and the rear viewport was
+      # proven. The assoc stamp used to go true on a service-call exit 0.
+      subtouch_inh=1
+      if _idc_has_pin; then
+        if _rear_ok_fresh || _rear_viewport_ok 0; then
+          subtouch_inh=0
+          _stamp_rear_ok
+        fi
+      fi
+      ;;
+    hid)
+      if _subtouch_idc_is_ignore; then subtouch_inh=0; else subtouch_inh=1; fi
       ;;
     *) subtouch_inh=1 ;;
   esac
   virt_inh="$hw_inh"
+  if [ "$submode" = "hid" ] || [ "$mode" = "mouse" ]; then
+    virt_inh=0
+  fi
   case "$force_inh" in
     force|1|true|yes|typing) virt_inh=1 ;;
   esac

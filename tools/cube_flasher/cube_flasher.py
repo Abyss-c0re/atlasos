@@ -140,6 +140,7 @@ FEATURE_FALLBACK = [
     ("with_stock_camera", "Prefer stock camera", True),
     ("with_square_chrome", "Square chrome RROs (lab)", False),
     ("with_nanobot", "Nanobot agent (lab)", False),
+    ("with_moonlight", "Moonlight (Titan)", False),
 ]
 ROOT_ENGINES = ["none", "magisk_release", "magisk_source", "kernelsu_source"]
 GSI_FLAVORS = ["vanilla", "microg", "gapps"]

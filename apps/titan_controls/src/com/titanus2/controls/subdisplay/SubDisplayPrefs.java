@@ -4,6 +4,9 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.provider.Settings;
 
+import com.titanus2.controls.AgentBridge;
+import com.titanus2.controls.InputSurfaceController;
+
 /**
  * Exclusive sub-display mode + custom face look (dense mono face, not giant GSI clock).
  * <p>
@@ -13,7 +16,7 @@ public final class SubDisplayPrefs {
     public static final String PREFS = "titan2_subdisplay";
 
     public enum Mode {
-        OFF, STOCK, CUSTOM, APPS, CUBE;
+        OFF, STOCK, CUSTOM, APPS, CUBE, HID;
 
         public static Mode from(String s) {
             if (s == null) return OFF;
@@ -28,6 +31,8 @@ public final class SubDisplayPrefs {
                     return APPS;
                 case "CUBE": case "BRAIN": case "LATTICE": case "NEURAL":
                     return CUBE;
+                case "HID": case "HIDMOUSE": case "HID_MOUSE":
+                    return HID;
                 case "INPUT": case "TRACKPAD": case "PAD": return OFF; // retired
                 default: return OFF;
             }
@@ -39,6 +44,7 @@ public final class SubDisplayPrefs {
                 case CUSTOM: return "Face";
                 case APPS: return "Apps";
                 case CUBE: return "Cube";
+                case HID: return "HID";
                 default: return "Off";
             }
         }
@@ -158,10 +164,11 @@ public final class SubDisplayPrefs {
         try {
             String sm = mode == Mode.OFF ? "off"
                 : (mode == Mode.APPS ? "apps"
-                    : (mode == Mode.CUBE ? "cube" : "face"));
+                    : (mode == Mode.CUBE ? "cube"
+                        : (mode == Mode.HID ? "hid" : "face")));
             Settings.Global.putString(c.getContentResolver(), "titan2_sub_mode", sm);
             Settings.Secure.putString(c.getContentResolver(), "titan2_sub_mode", sm);
-            if (mode == Mode.CUBE || mode == Mode.APPS) {
+            if (mode == Mode.CUBE || mode == Mode.APPS || mode == Mode.HID) {
                 Settings.Secure.putInt(c.getContentResolver(),
                     SubDisplayContract.KEY_SUPPRESS_SYSUI_AOD, 1);
             }
@@ -325,8 +332,38 @@ public final class SubDisplayPrefs {
      * abandoned (dual-cursor / palm residual with main pad). Prefs flag kept
      * cleared so cool land never re-opens surface=sub.
      */
+    public static boolean isHidMouse(Context c) {
+        return c != null && getMode(c) == Mode.HID;
+    }
+
+    /** Rear-only, or rear plus the keyboard pad once that pad is in mouse mode. */
+    public static String hidSource(Context c) {
+        String s = "sub";
+        try {
+            s = p(c).getString("hid_source", "sub");
+        } catch (Exception ignored) {}
+        if (s == null) return "sub";
+        s = s.trim().toLowerCase();
+        if ("both".equals(s) || "all".equals(s) || "dual".equals(s)) return "both";
+        return "sub";
+    }
+
+    public static void setHidSource(Context c, String src) {
+        if (c == null) return;
+        src = src != null && ("both".equalsIgnoreCase(src)
+            || "all".equalsIgnoreCase(src) || "dual".equalsIgnoreCase(src))
+            ? "both" : "sub";
+        p(c).edit().putString("hid_source", src).commit();
+        try {
+            AgentBridge.put(c, "titan2_sub_hid_source", src);
+            Settings.Global.putString(c.getContentResolver(), "titan2_sub_hid_source", src);
+        } catch (Exception ignored) {}
+        if (isHidMouse(c)) InputSurfaceController.apply(c);
+    }
+
+    /** 0 while HID mouse owns sub_touch. Face/off stay parked. */
     public static String subtouchInhibitValue(Context c) {
-        return "1";
+        return isHidMouse(c) ? "0" : "1";
     }
 
     /**

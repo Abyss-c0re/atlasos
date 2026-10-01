@@ -211,6 +211,17 @@ public class SubDisplayService extends Service {
             } catch (Exception ignored) {}
             return;
         }
+        if (mode == SubDisplayPrefs.Mode.HID) {
+            try { SubDisplayLauncherActivity.dismiss(c); } catch (Exception ignored) {}
+            SubDisplayFaceOverlay.hide(c);
+            SubDisplayFaceActivity.dismiss(c);
+            SubDisplayPower.invalidatePowerState();
+            SubDisplayPower.apply(c, true,
+                Math.max(1, SubDisplayPrefs.getBrightnessPct(c)), true);
+            InputSurfaceController.apply(c);
+            cmd(c, ACTION_APPLY);
+            return;
+        }
         cmd(c, ACTION_APPLY);
     }
 
@@ -220,6 +231,10 @@ public class SubDisplayService extends Service {
         // start() and paint TitanRearFace over the sacred lattice.
         if (prev == SubDisplayPrefs.Mode.CUBE) {
             applyMode(c, SubDisplayPrefs.Mode.CUBE);
+            return;
+        }
+        if (prev == SubDisplayPrefs.Mode.HID) {
+            applyMode(c, SubDisplayPrefs.Mode.HID);
             return;
         }
         if (prev == SubDisplayPrefs.Mode.APPS) {
@@ -256,8 +271,9 @@ public class SubDisplayService extends Service {
     public static void toggle(Context c) {
         // Side-key / quick toggle: face On ↔ Off (never silent flip into apps).
         SubDisplayPrefs.Mode m = SubDisplayPrefs.getMode(c);
-        if (m == SubDisplayPrefs.Mode.CUSTOM || m == SubDisplayPrefs.Mode.STOCK) stop(c);
-        else if (m == SubDisplayPrefs.Mode.APPS) stop(c);
+        if (m == SubDisplayPrefs.Mode.CUSTOM || m == SubDisplayPrefs.Mode.STOCK
+                || m == SubDisplayPrefs.Mode.APPS
+                || m == SubDisplayPrefs.Mode.HID) stop(c);
         else start(c);
     }
 
@@ -265,7 +281,8 @@ public class SubDisplayService extends Service {
     public static void nudgeWake(Context c) {
         SubDisplayPrefs.Mode m = SubDisplayPrefs.getMode(c);
         if (m == SubDisplayPrefs.Mode.CUSTOM || m == SubDisplayPrefs.Mode.APPS
-                || m == SubDisplayPrefs.Mode.CUBE) {
+                || m == SubDisplayPrefs.Mode.CUBE
+                || m == SubDisplayPrefs.Mode.HID) {
             cmd(c, ACTION_WAKE);
         }
     }
@@ -273,7 +290,8 @@ public class SubDisplayService extends Service {
         // Bump rear active period (independent of main)
         SubDisplayPrefs.Mode m = SubDisplayPrefs.getMode(c);
         if (m == SubDisplayPrefs.Mode.CUSTOM || m == SubDisplayPrefs.Mode.APPS
-                || m == SubDisplayPrefs.Mode.CUBE) {
+                || m == SubDisplayPrefs.Mode.CUBE
+                || m == SubDisplayPrefs.Mode.HID) {
             cmd(c, ACTION_WAKE);
         }
     }
@@ -289,6 +307,23 @@ public class SubDisplayService extends Service {
     public static void applySubtouchPolicy(Context c) {
         if (c == null) return;
         SubDisplayPrefs.Mode mode = SubDisplayPrefs.getMode(c);
+        if (mode == SubDisplayPrefs.Mode.HID) {
+            AgentBridge.put(c, AgentBridge.SUBTOUCH_INHIBIT, "0");
+            AgentBridge.put(c, AgentBridge.SUB_MODE, "hid");
+            String surface = InputSurfaceController.hidSurface(c);
+            AgentBridge.put(c, InputSurfaceController.PLANE_SURFACE, surface);
+            try {
+                android.provider.Settings.Global.putString(
+                    c.getContentResolver(), "titan2_subtouch_inhibit", "0");
+                android.provider.Settings.Global.putString(
+                    c.getContentResolver(), "titan2_sub_mode", "hid");
+                android.provider.Settings.Global.putString(
+                    c.getContentResolver(), InputSurfaceController.PLANE_SURFACE, surface);
+            } catch (Exception ignored) {}
+            // IDC ignore + grab. Do not associate, and do not uninhibit here.
+            SubDisplayInput.clearAssociation(c);
+            return;
+        }
         boolean apps = mode == SubDisplayPrefs.Mode.APPS;
         boolean cube = mode == SubDisplayPrefs.Mode.CUBE;
         // Live digitizer for independent rear content (apps launcher OR OpenGL cube)
@@ -310,15 +345,11 @@ public class SubDisplayService extends Service {
                     AgentBridge.get(c, "titan2_input_surface", "none")));
         } catch (Exception ignored) {}
         if (rearTouchLive) {
-            // Bind sub_touch → rear uniqueId so InputDispatcher targets display 2 only.
+            // Best-effort bind. Do not stamp "pending": that overwrote the rear
+            // unique id every tick and the agent treated a cleared association
+            // as success (unbound sub_touch then drives the primary panel).
             String err = SubDisplayInput.associateSubTouchToRear(c);
             if (err != null) Log.d(TAG, sm + " associate: " + err);
-            // Plane stamp for pad-agent edge apply (idc + service call 43)
-            try {
-                android.provider.Settings.Global.putString(
-                    c.getContentResolver(), "titan2_subtouch_assoc", "pending");
-            } catch (Exception ignored) {}
-            AgentBridge.put(c, "titan2_subtouch_assoc", "pending");
         } else {
             SubDisplayInput.clearAssociation(c);
             SubDisplayPower.forceInhibitSubTouch();
@@ -2692,7 +2723,8 @@ public class SubDisplayService extends Service {
         return m == SubDisplayPrefs.Mode.CUSTOM
             || m == SubDisplayPrefs.Mode.STOCK
             || m == SubDisplayPrefs.Mode.APPS
-            || m == SubDisplayPrefs.Mode.CUBE;
+            || m == SubDisplayPrefs.Mode.CUBE
+            || m == SubDisplayPrefs.Mode.HID;
     }
 
     private boolean isFaceMode() {
@@ -2766,7 +2798,8 @@ public class SubDisplayService extends Service {
         // 15.4: never clobber APPS/CUBE → CUSTOM on every APPLY/WAKE/REFRESH.
         if (mode != SubDisplayPrefs.Mode.APPS
                 && mode != SubDisplayPrefs.Mode.CUSTOM
-                && mode != SubDisplayPrefs.Mode.CUBE) {
+                && mode != SubDisplayPrefs.Mode.CUBE
+                && mode != SubDisplayPrefs.Mode.HID) {
             SubDisplayPrefs.setMode(this, SubDisplayPrefs.Mode.CUSTOM);
             mode = SubDisplayPrefs.Mode.CUSTOM;
         }
@@ -2876,6 +2909,44 @@ public class SubDisplayService extends Service {
     /**
      * @param bumpActive true = reset rear idle timer (sleep start / DT2W)
      */
+    /** Panel on. Rear touch is the virtual mouse, not a second pointer on this glass. */
+    private void ensureHidRear(String why, boolean bumpActive) {
+        if (!shouldShowRear()) {
+            SubDisplayPower.invalidatePowerState();
+            SubDisplayPower.apply(this, false);
+            SubDisplayFaceOverlay.hide(this);
+            SubDisplayFaceActivity.dismiss(this);
+            try { SubDisplayCubeBridge.dismiss(this); } catch (Exception ignored) {}
+            try { SubDisplayLauncherActivity.dismiss(this); } catch (Exception ignored) {}
+            applySubtouchPolicy(this);
+            Log.i(TAG, "hid rear off (" + why + "/no-show)");
+            startFg();
+            return;
+        }
+        if (bumpActive || rearActiveAt == 0) {
+            rearActiveAt = SystemClock.elapsedRealtime();
+            rearIdle = false;
+        }
+        int bri = Math.max(1, SubDisplayPrefs.getBrightnessPct(this));
+        if (why != null && (why.contains("screen") || why.contains("watchdog")
+                || why.contains("late") || why.contains("DT2W") || why.contains("start"))) {
+            SubDisplayPower.invalidatePowerState();
+        }
+        SubDisplayFaceOverlay.hide(this);
+        SubDisplayFaceActivity.dismiss(this);
+        try { SubDisplayCubeBridge.dismiss(this); } catch (Exception ignored) {}
+        try { SubDisplayLauncherActivity.dismiss(this); } catch (Exception ignored) {}
+        if (!isMainInteractive()) {
+            SubDisplayPower.wakeRearHardwareOnly(this,
+                why != null ? why : "hid/asleep");
+        } else {
+            SubDisplayPower.apply(this, true, bri, true);
+        }
+        applySubtouchPolicy(this);
+        Log.i(TAG, "hid rear bri=" + bri + "% (" + why + ")");
+        startFg();
+    }
+
     private void ensureRear(String why, boolean bumpActive) {
         SubDisplayPrefs.Mode mode = SubDisplayPrefs.getMode(this);
         if (mode == SubDisplayPrefs.Mode.STOCK) {
@@ -2884,7 +2955,12 @@ public class SubDisplayService extends Service {
         }
         if (mode != SubDisplayPrefs.Mode.CUSTOM
                 && mode != SubDisplayPrefs.Mode.APPS
-                && mode != SubDisplayPrefs.Mode.CUBE) return;
+                && mode != SubDisplayPrefs.Mode.CUBE
+                && mode != SubDisplayPrefs.Mode.HID) return;
+        if (mode == SubDisplayPrefs.Mode.HID) {
+            ensureHidRear(why, bumpActive);
+            return;
+        }
 
         // Cube owns rear: prefs OR plane tokens (sacred — no Face/AOD clocks).
         if (mode == SubDisplayPrefs.Mode.CUBE || SubDisplayPrefs.cubeOwnsRear(this)) {
@@ -2950,6 +3026,15 @@ public class SubDisplayService extends Service {
                     SubDisplayCubeBridge.show(this, false);
                 }
                 Log.i(TAG, "cube rear HW-only mainAsleep (" + why + ")");
+                startFg();
+                return;
+            }
+
+            int wantHwAwake = Math.max(1, Math.min(255, Math.round(bri * 2.55f)));
+            // Steady park: a healthy cube must not reconfigure sub_touch every
+            // tick. That reload left it unbound and it became the primary panel.
+            if (!edgeInvalidate && SubDisplayPower.isSteadyOn(wantHwAwake)) {
+                Log.d(TAG, "cube rear steady park mainAwake (" + why + ")");
                 startFg();
                 return;
             }
@@ -3134,7 +3219,9 @@ public class SubDisplayService extends Service {
         int to = SubDisplayPrefs.getTimeoutSec(this);
         String idle = to <= 0 ? "always bright when shown" : ("idle " + to + "s");
         SubDisplayPrefs.Mode m = SubDisplayPrefs.getMode(this);
-        String modeLine = m == SubDisplayPrefs.Mode.CUBE
+        String modeLine = m == SubDisplayPrefs.Mode.HID
+            ? ("HID mouse · " + idle)
+            : m == SubDisplayPrefs.Mode.CUBE
             ? "Cube · rear lattice (no clock)"
             : m == SubDisplayPrefs.Mode.APPS
             ? ("Apps · " + idle)

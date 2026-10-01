@@ -489,6 +489,10 @@ public final class AgentBridge {
                 // 15.3: apply stamp + sub_mode (face|apps|off) for agent 2.65.
                 // 15.29: optional main DT2W plane for pad-agent apply_dt2w.
                 return true;
+            case "titan2_sub_touch_flip_x":
+            case "titan2_sub_touch_flip_y":
+                // Rear digitizer HID mouse only. "0" is a real off, not a clear.
+                return true;
             case SPECIALS_METHOD:
             case CHAR_MOD:
             case FN_MODE:
@@ -603,6 +607,8 @@ public final class AgentBridge {
             case "titan2_usb_hid_keys_pause":
             case "titan2_host_layout_keys_pause":
             case "titan2_keycode_inject_pause":
+            case "titan2_sub_touch_flip_x":
+            case "titan2_sub_touch_flip_y":
                 return true;
             default:
                 return false;

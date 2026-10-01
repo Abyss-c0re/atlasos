@@ -2,6 +2,8 @@ package com.titanus2.atlas;
 
 import android.app.AlertDialog;
 import android.content.Context;
+
+import com.titanus2.api.KeyGlyphs;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.util.TypedValue;
@@ -10,7 +12,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.GridLayout;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 
@@ -30,14 +31,6 @@ public final class ExtraKeysView extends LinearLayout {
         boolean isMetaOn();
         boolean isCapsOn();
     }
-
-    /** Same glyphs as the HID pad specials layer. */
-    private static final String[] SYMBOLS = {
-        "0", "1", "2", "3", "(", ")", "_", "-", "/", ":",
-        "@", "4", "5", "6", "*", "#", "+", "\"", "'",
-        "!", "7", "8", "9", ".", ",", "?",
-        "`", "~", "[", "]", "{", "}", "\\", "|", ";", "<", ">", "=",
-    };
 
     private final Listener listener;
     private Button ctrlBtn;
@@ -63,14 +56,28 @@ public final class ExtraKeysView extends LinearLayout {
         setClickable(false);
         setFocusable(false);
 
-        String[][] rows = {
-            {"SIDE", "RST"},
-            {"ESC", "GRAVE", "BKSP", "/", "HOME", "↑", "END", "PGUP"},
-            {"TAB", "CTRL", "ALT", "META", "←", "↓", "→", "PGDN"},
-            {"SHIFT", "CAPS", "SYM", "INS", "DEL", "PRT", "PAUSE"},
-            {"F1", "F2", "F3", "F4", "F5", "F6"},
-            {"F7", "F8", "F9", "F10", "F11", "F12"},
-        };
+        buildRows(c);
+
+        refreshModifiers();
+    }
+
+    /** Rebuild after Settings changes which groups are shown. */
+    public void reload() {
+        if (inRing) return;
+        Context c = getContext();
+        removeAllViews();
+        made.clear();
+        homeRows.clear();
+        homeIndex.clear();
+        ctrlBtn = altBtn = shiftBtn = metaBtn = capsBtn = null;
+        buildRows(c);
+        applyTermChrome(c);
+    }
+
+    private void buildRows(Context c) {
+        String[][] rows = KeyGlyphs.rows(
+            AtlasPrefs.keysNav(c), AtlasPrefs.keysMods(c),
+            AtlasPrefs.keysFn(c), AtlasPrefs.keysEdit(c));
         for (String[] row : rows) {
             LinearLayout line = new LinearLayout(c);
             line.setOrientation(HORIZONTAL);
@@ -88,25 +95,16 @@ public final class ExtraKeysView extends LinearLayout {
                 if ("META".equals(key)) metaBtn = b;
                 if ("CAPS".equals(key)) capsBtn = b;
                 if ("GRAVE".equals(key)) b.setText("~");
-                if ("SYM".equals(key)) {
-                    b.setOnClickListener(v -> showSymbols());
-                }
-                int cell = dp(52);
+                if ("SYM".equals(key)) b.setOnClickListener(v -> showSymbols());
+                /* Weight, not a fixed 52dp. Eight keys stay inside the screen. */
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    cell, ViewGroup.LayoutParams.WRAP_CONTENT);
-                lp.setMargins(dp(2), dp(2), dp(2), dp(2));
+                    0, dp(36), 1f);
+                lp.setMargins(dp(1), dp(1), dp(1), dp(1));
                 line.addView(b, lp);
             }
-            HorizontalScrollView scroller = new HorizontalScrollView(c);
-            scroller.setHorizontalScrollBarEnabled(false);
-            scroller.setFillViewport(false);
-            scroller.addView(line, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            addView(scroller, new LayoutParams(
+            addView(line, new LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
-
-        refreshModifiers();
     }
 
     /** Re-tint when the user returns from Settings. */
@@ -175,7 +173,7 @@ public final class ExtraKeysView extends LinearLayout {
         grid.setColumnCount(6);
         int pad = dp(4);
         grid.setPadding(pad, pad, pad, pad);
-        for (String glyph : SYMBOLS) {
+        for (String glyph : KeyGlyphs.SYMBOLS) {
             Button cell = new Button(c, null, android.R.attr.borderlessButtonStyle);
             cell.setText(glyph);
             cell.setAllCaps(false);
@@ -233,10 +231,9 @@ public final class ExtraKeysView extends LinearLayout {
             Button b = made.get(i);
             detach(b);
             LinearLayout line = homeRows.get(homeIndex.get(i));
-            int cell = dp(52);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                cell, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(dp(2), dp(2), dp(2), dp(2));
+                0, dp(36), 1f);
+            lp.setMargins(dp(1), dp(1), dp(1), dp(1));
             line.addView(b, lp);
         }
         applyTermChrome(getContext());
@@ -259,7 +256,7 @@ public final class ExtraKeysView extends LinearLayout {
         paintAlpha(alphaPercent);
         addRow(top, cellPx, "ESC", "GRAVE", "BKSP", "/", "INS", "DEL", "PRT", "PAUSE");
         addRow(top, cellPx, "TAB", "CTRL", "ALT", "META", "SYM");
-        addCol(left, cellPx, "SIDE", "RST", "SHIFT", "CAPS");
+        addCol(left, cellPx, "SHIFT", "CAPS");
         addCol(right, cellPx, "HOME", "END", "PGUP", "PGDN", "↑", "←", "↓", "→");
         addRow(bottom, cellPx, "F1", "F2", "F3", "F4", "F5", "F6");
         addRow(bottom, cellPx, "F7", "F8", "F9", "F10", "F11", "F12");

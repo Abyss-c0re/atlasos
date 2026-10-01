@@ -77,13 +77,9 @@ public final class SubDisplayInput {
                 Log.i(TAG, "addPortAssociation 3→" + displayId);
                 return null;
             }
-            // A16 signature-only residual — pad-agent 2.67 owns association via
-            // shell service call. Leave plane stamp for agent edge-apply.
-            try {
-                android.provider.Settings.Global.putString(
-                    ctx.getContentResolver(), "titan2_subtouch_assoc", "pending");
-            } catch (Exception ignored) {}
-            Log.w(TAG, "app associate denied (A16 signature-only); pad-agent 2.67 SoT");
+            // A16 signature-only. pad-idc owns the association. Do not stamp
+            // "pending" — that cleared a good rear unique id.
+            Log.w(TAG, "app associate denied (A16 signature-only); pad-idc SoT");
             return "association API denied — agent shell path";
         } catch (Exception e) {
             Log.w(TAG, "associate: " + e.getMessage());

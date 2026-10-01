@@ -1840,47 +1840,7 @@ public final class HostLayoutController {
     }
 
     public static int[] usHidForChar(char c) {
-        final int SH = 0x02;
-        if (c >= 'a' && c <= 'z') return new int[]{0, 0x04 + (c - 'a')};
-        if (c >= 'A' && c <= 'Z') return new int[]{SH, 0x04 + (c - 'A')};
-        if (c >= '1' && c <= '9') return new int[]{0, 0x1e + (c - '1')};
-        if (c == '0') return new int[]{0, 0x27};
-        switch (c) {
-            case ' ': return new int[]{0, 0x2c};
-            case '-': return new int[]{0, 0x2d};
-            case '=': return new int[]{0, 0x2e};
-            case '[': return new int[]{0, 0x2f};
-            case ']': return new int[]{0, 0x30};
-            case '\\': return new int[]{0, 0x31};
-            case ';': return new int[]{0, 0x33};
-            case '\'': return new int[]{0, 0x34};
-            case '`': return new int[]{0, 0x35};
-            case ',': return new int[]{0, 0x36};
-            case '.': return new int[]{0, 0x37};
-            case '/': return new int[]{0, 0x38};
-            case '!': return new int[]{SH, 0x1e};
-            case '@': return new int[]{SH, 0x1f};
-            case '#': return new int[]{SH, 0x20};
-            case '$': return new int[]{SH, 0x21};
-            case '%': return new int[]{SH, 0x22};
-            case '^': return new int[]{SH, 0x23};
-            case '&': return new int[]{SH, 0x24};
-            case '*': return new int[]{SH, 0x25};
-            case '(': return new int[]{SH, 0x26};
-            case ')': return new int[]{SH, 0x27};
-            case '_': return new int[]{SH, 0x2d};
-            case '+': return new int[]{SH, 0x2e};
-            case '{': return new int[]{SH, 0x2f};
-            case '}': return new int[]{SH, 0x30};
-            case '|': return new int[]{SH, 0x31};
-            case ':': return new int[]{SH, 0x33};
-            case '"': return new int[]{SH, 0x34};
-            case '~': return new int[]{SH, 0x35};
-            case '<': return new int[]{SH, 0x36};
-            case '>': return new int[]{SH, 0x37};
-            case '?': return new int[]{SH, 0x38};
-            default: return null;
-        }
+        return com.titanus2.api.KeyGlyphs.hidFor(c);
     }
 
     private static String hidUsageName(int usage) {

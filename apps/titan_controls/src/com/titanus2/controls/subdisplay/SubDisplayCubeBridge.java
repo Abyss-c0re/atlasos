@@ -55,8 +55,6 @@ public final class SubDisplayCubeBridge {
             // Live digitizer for cube gestures (pad-agent associates sub_touch→rear).
             android.provider.Settings.Global.putString(app.getContentResolver(),
                 "titan2_subtouch_inhibit", "0");
-            android.provider.Settings.Global.putString(app.getContentResolver(),
-                "titan2_subtouch_assoc", "pending");
             try {
                 java.io.File f = new java.io.File("/data/local/tmp/titan2_sub_mode");
                 java.io.FileWriter w = new java.io.FileWriter(f);

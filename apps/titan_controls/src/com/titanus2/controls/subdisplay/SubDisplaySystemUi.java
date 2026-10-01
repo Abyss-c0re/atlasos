@@ -23,6 +23,7 @@ public final class SubDisplaySystemUi {
         // Publish contract so SystemUI RROs can hide secondary keyguard clock.
         // Also when cubeOwnsRear (plane tokens) even if prefs still lag.
         if (mode == SubDisplayPrefs.Mode.CUBE || mode == SubDisplayPrefs.Mode.APPS
+                || mode == SubDisplayPrefs.Mode.HID
                 || SubDisplayPrefs.cubeOwnsRear(app)) {
             putSecure(app, "doze_always_on", 0);
             putSecure(app, "doze_always_on_wallpaper_enabled", 0);

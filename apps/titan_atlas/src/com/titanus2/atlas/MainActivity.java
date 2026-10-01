@@ -355,7 +355,10 @@ public class MainActivity extends Activity implements AtlasTermClient.Host {
         AtlasPrefs.publishHidFocus(this, hasWindowFocus());
         // Re-apply theme (user may have changed Settings)
         TermTheme.applyToView(this, termView, root);
-        if (extraKeys != null) extraKeys.applyTermChrome(this);
+        if (extraKeys != null) {
+            extraKeys.reload();
+            extraKeys.applyTermChrome(this);
+        }
         if (session != null) {
             TermTheme.applyToSession(this, session, termView);
         }

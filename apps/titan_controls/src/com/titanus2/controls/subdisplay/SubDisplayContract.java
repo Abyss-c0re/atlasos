@@ -53,7 +53,8 @@ public final class SubDisplayContract {
         // Face owns rear chrome only when Custom/Stock. Cube/Apps: suppress
         // SystemUI ambient/keyguard clocks so nothing obstructs the resident.
         boolean face = mode == SubDisplayPrefs.Mode.STOCK || mode == SubDisplayPrefs.Mode.CUSTOM;
-        boolean cubeOrApps = mode == SubDisplayPrefs.Mode.CUBE || mode == SubDisplayPrefs.Mode.APPS;
+        boolean cubeOrApps = mode == SubDisplayPrefs.Mode.CUBE || mode == SubDisplayPrefs.Mode.APPS
+            || mode == SubDisplayPrefs.Mode.HID;
         boolean suppress = cubeOrApps || (face && !SubDisplayPrefs.allowSystemUiAod(app));
         putInt(app, KEY_SUPPRESS_SYSUI_AOD, suppress ? 1 : 0);
         putInt(app, KEY_DISPLAY_ID, 2);

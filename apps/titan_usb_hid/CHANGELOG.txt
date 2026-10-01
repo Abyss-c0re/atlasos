@@ -3,3 +3,4 @@
 2026-08-24T19:51:46Z fix(hid): stop A2DP race and freeze host mouse while typing
 2026-08-24T20:46:13Z BT HID: Stop stays stopped; one reconnect tick; no ACL/800ms spam
 2026-08-26T01:10:00Z BT HID: forbid A2DP/HFP on PC before connect; 8s CONNECTING timeout
+2026-09-29T20:45:42Z fix(hid): BT keyboard is the USB 8-byte report

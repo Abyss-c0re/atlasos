@@ -54,21 +54,17 @@ public class DeskActivity extends Activity {
     private final ExecutorService input = Executors.newSingleThreadExecutor();
     /** Controls binder. The desk pump owns {@code io}, so this must be its own thread. */
     private final ExecutorService binder = Executors.newSingleThreadExecutor();
-    private String sideTop = com.titanus2.api.Titan2ApiContract.ACT_MOUSE_SCROLL_UP;
-    private String sideBot = com.titanus2.api.Titan2ApiContract.ACT_MOUSE_SCROLL_DOWN;
     private final AtomicBoolean run = new AtomicBoolean(true);
     private FrameLayout wrap;
     private LinearLayout chrome;
     private TextView status;
     private Button fullBtn;
-    private Button sideBtn;
     private Button restartBtn;
     private FrameLayout orbDock;
     private View orbBall;
     private Button orbExit;
     private Button orbRestart;
     private Button orbKeys;
-    private Button orbSide;
     private Button orbBack;
     private LinearLayout orbPanel;
     private LinearLayout orbCluster;
@@ -173,12 +169,10 @@ public class DeskActivity extends Activity {
         backBtn = AtlasUi.chromeButton(this, "Back", v -> leaveDesk());
         fullBtn = AtlasUi.chromeButton(this, "Full screen", v -> setFull(!full));
         restartBtn = AtlasUi.chromeButton(this, "Restart", v -> reloadView());
-        sideBtn = AtlasUi.chromeButton(this, "Side", v -> showSideKeys());
         keysBtn = AtlasUi.chromeButton(this, "Keys", v -> toggleExtraKeys());
         chrome.addView(backBtn, AtlasUi.chromeSlot(this));
         chrome.addView(fullBtn, AtlasUi.chromeSlot(this));
         chrome.addView(restartBtn, AtlasUi.chromeSlot(this));
-        chrome.addView(sideBtn, AtlasUi.chromeSlot(this));
         chrome.addView(keysBtn, AtlasUi.chromeSlot(this));
         root.addView(chrome, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -191,10 +185,6 @@ public class DeskActivity extends Activity {
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         keys = new ExtraKeysView(this, new ExtraKeysView.Listener() {
             @Override public void onExtraKey(String key) {
-                if ("SIDE".equals(key)) {
-                    showSideKeys();
-                    return;
-                }
                 if ("RST".equals(key)) {
                     reloadView();
                     return;
@@ -411,7 +401,6 @@ public class DeskActivity extends Activity {
         orbBack = orbAction("Back", v -> leaveDesk());
         orbExit = orbAction("Exit", v -> setFull(false));
         orbRestart = orbAction("Restart", v -> reloadView());
-        orbSide = orbAction("Side", v -> showSideKeys());
         orbKeys = orbAction("Keys", v -> toggleExtraKeys());
         ringTop = ringBox();
         ringLeft = ringBox();
@@ -469,7 +458,7 @@ public class DeskActivity extends Activity {
         sheet.setColor(Color.argb(alpha, Color.red(bg), Color.green(bg), Color.blue(bg)));
         orbPanel.setBackground(sheet);
         orbPanel.setPadding(dp(2), dp(2), dp(2), dp(2));
-        for (Button b : new Button[] { orbBack, orbExit, orbRestart, orbSide, orbKeys }) {
+        for (Button b : new Button[] { orbBack, orbExit, orbRestart, orbKeys }) {
             b.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(10f, 12f * size / 100f));
             b.setMinimumHeight(cell);
             b.setMinHeight(cell);
@@ -509,7 +498,6 @@ public class DeskActivity extends Activity {
             addPanel(orbBack, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
             addPanel(orbExit, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
             addPanel(orbRestart, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
-            addPanel(orbSide, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
             addPanel(orbKeys, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
             return;
         }
@@ -519,7 +507,6 @@ public class DeskActivity extends Activity {
             addPanel(orbBack, LinearLayout.LayoutParams.MATCH_PARENT, cell);
             addPanel(orbExit, LinearLayout.LayoutParams.MATCH_PARENT, cell);
             addPanel(orbRestart, LinearLayout.LayoutParams.MATCH_PARENT, cell);
-            addPanel(orbSide, LinearLayout.LayoutParams.MATCH_PARENT, cell);
             addPanel(orbKeys, LinearLayout.LayoutParams.MATCH_PARENT, cell);
             return;
         }
@@ -534,7 +521,6 @@ public class DeskActivity extends Activity {
         orbPanel.addView(mid, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         addPanel(orbRestart, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
-        addPanel(orbSide, LinearLayout.LayoutParams.WRAP_CONTENT, cell);
     }
 
     private void addPanel(View v, int w, int h) {
@@ -695,7 +681,7 @@ public class DeskActivity extends Activity {
 
     private boolean hitFloatButton(MotionEvent e) {
         if (!full) return false;
-        for (Button b : new Button[] { orbBack, orbExit, orbRestart, orbSide, orbKeys }) {
+        for (Button b : new Button[] { orbBack, orbExit, orbRestart, orbKeys }) {
             if (hitView(b, e)) return true;
         }
         if (keys != null && keys.isRing()) {
@@ -713,7 +699,7 @@ public class DeskActivity extends Activity {
     /** Returns true when this event was a press on a desk control. */
     private boolean chromePress(MotionEvent e) {
         int act = e.getActionMasked();
-        Button[] row = { backBtn, fullBtn, restartBtn, sideBtn, keysBtn };
+        Button[] row = { backBtn, fullBtn, restartBtn, keysBtn };
         if (act == MotionEvent.ACTION_DOWN || act == MotionEvent.ACTION_POINTER_DOWN) {
             chromeDown = -1;
             for (int i = 0; i < row.length; i++) {
@@ -1112,59 +1098,6 @@ public class DeskActivity extends Activity {
         return new int[] { px, py };
     }
 
-    private String sideMessage() {
-        return "Top: " + DeskSideKeys.label(sideTop)
-            + "\nBottom: " + DeskSideKeys.label(sideBot)
-            + "\n\nShort press is the scroll wheel. Tap a row to change it.";
-    }
-
-    /**
-     * Controls lookup blocks for seconds. The last time it ran inside the
-     * touch that opened this dialog, input dispatch timed out and Atlas died.
-     */
-    private void showSideKeys() {
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-            .setTitle("Side buttons")
-            .setMessage(sideMessage())
-            .setPositiveButton("Top", (d, w) -> cycleSide(true))
-            .setNegativeButton("Bottom", (d, w) -> cycleSide(false))
-            .setNeutralButton("Close", null)
-            .create();
-        dialog.show();
-        binder.execute(() -> {
-            String top = DeskSideKeys.action(DeskActivity.this,
-                com.titanus2.api.Titan2ApiContract.SLOT_SIDE2_SHORT);
-            String bot = DeskSideKeys.action(DeskActivity.this,
-                com.titanus2.api.Titan2ApiContract.SLOT_SIDE_SHORT);
-            main.post(() -> {
-                if (isFinishing() || isDestroyed()) return;
-                sideTop = top;
-                sideBot = bot;
-                if (!dialog.isShowing()) return;
-                dialog.setMessage(sideMessage());
-                android.widget.Button pos = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
-                android.widget.Button neg = dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE);
-                if (pos != null) pos.setText("Top · " + DeskSideKeys.label(top));
-                if (neg != null) neg.setText("Bottom · " + DeskSideKeys.label(bot));
-            });
-        });
-    }
-
-    private void cycleSide(boolean topSlot) {
-        binder.execute(() -> {
-            String slot = topSlot
-                ? com.titanus2.api.Titan2ApiContract.SLOT_SIDE2_SHORT
-                : com.titanus2.api.Titan2ApiContract.SLOT_SIDE_SHORT;
-            String live = DeskSideKeys.action(DeskActivity.this, slot);
-            String n = DeskSideKeys.next(live);
-            DeskSideKeys.set(DeskActivity.this, slot, n);
-            main.post(() -> {
-                if (topSlot) sideTop = n;
-                else sideBot = n;
-            });
-        });
-    }
-
     private static int buttonMask(MotionEvent e) {
         int st = e.getButtonState();
         int b = 0;
@@ -1184,6 +1117,8 @@ public class DeskActivity extends Activity {
     protected void onResume() {
         super.onResume();
         applyFloatChrome();
+        if (keys != null && !full) keys.reload();
+        binder.execute(() -> DeskSideKeys.publish(DeskActivity.this));
         if (deskRoot != null) deskRoot.requestFocus();
         if (!leaveRegistered) {
             IntentFilter filter = new IntentFilter("com.titanus2.atlas.DESK_LEAVE");
@@ -1217,6 +1152,7 @@ public class DeskActivity extends Activity {
     protected void onPause() {
         setPadHeld(false);
         setDeskFocused(false);
+        binder.execute(() -> DeskSideKeys.release(DeskActivity.this));
         if (leaveRegistered) {
             try {
                 unregisterReceiver(deskLeave);

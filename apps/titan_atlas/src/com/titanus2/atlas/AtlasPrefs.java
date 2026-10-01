@@ -432,6 +432,24 @@ public final class AtlasPrefs {
         p(c).edit().putInt("orb_opacity", percent).apply();
     }
 
+    public static boolean keysNav(Context c) { return p(c).getBoolean("keys_nav", true); }
+    public static boolean keysMods(Context c) { return p(c).getBoolean("keys_mods", true); }
+    public static boolean keysFn(Context c) { return p(c).getBoolean("keys_fn", true); }
+    public static boolean keysEdit(Context c) { return p(c).getBoolean("keys_edit", true); }
+
+    public static void setKeysNav(Context c, boolean on) {
+        p(c).edit().putBoolean("keys_nav", on).apply();
+    }
+    public static void setKeysMods(Context c, boolean on) {
+        p(c).edit().putBoolean("keys_mods", on).apply();
+    }
+    public static void setKeysFn(Context c, boolean on) {
+        p(c).edit().putBoolean("keys_fn", on).apply();
+    }
+    public static void setKeysEdit(Context c, boolean on) {
+        p(c).edit().putBoolean("keys_edit", on).apply();
+    }
+
     /**
      * Product: Authentication Agent FGS stays up without open terminals so
      * Remote ADB / hybrid sudo biometrics work with Wi‑Fi off (Tailscale/LTE).

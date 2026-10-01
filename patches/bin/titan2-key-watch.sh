@@ -5,7 +5,7 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-KW_VER=2.236-home-if-a11y-dead
+KW_VER=2.237-home-across-reboot
 KW_STATUS=$ST/titan2_key_watch_status
 KW_PID=$ST/titan2_key_watch.pid
 KW_LOCK=$ST/titan2_key_watch.lock
@@ -175,6 +175,36 @@ _fire_nav() {
 # Listed is not live. After wipe TrackpadAccessService stays in
 # enabled_accessibility_services while crashed — PWM and this script both
 # yielded and Home was dead. Only the heartbeat file means connected.
+# Crashed set + a fresh heartbeat is the reboot failure: interceptor eats
+# F24 and this script used to yield. dumpsys is the truth; cache 8s.
+_a11y_crashed() {
+  now_s=`date +%s 2>/dev/null` || now_s=0
+  stamp=`cat "$ST/titan2_a11y_crashed_at" 2>/dev/null | tr -d '\r\n '`
+  case "$stamp" in ''|*[!0-9]*) stamp=0 ;; esac
+  age=$((now_s - stamp))
+  if [ "$age" -ge 8 ] 2>/dev/null || [ "$stamp" -eq 0 ] 2>/dev/null; then
+    echo "$now_s" >"$ST/titan2_a11y_crashed_at" 2>/dev/null || true
+    line=`dumpsys accessibility 2>/dev/null | grep -F 'Crashed services:' | head -n 1`
+    case "$line" in
+      *TrackpadAccessService*) v=1 ;;
+      *Crashed\ services:*) v=0 ;;
+      *) v="" ;;
+    esac
+    if [ -n "$v" ]; then
+      printf '%s\n' "$v" >"$ST/titan2_a11y_crashed" 2>/dev/null || true
+      chmod 666 "$ST/titan2_a11y_crashed" 2>/dev/null || true
+    fi
+  fi
+  v=`cat "$ST/titan2_a11y_crashed" 2>/dev/null | tr -d '\r\n '`
+  case "$v" in 1|true|on|yes) return 0 ;; esac
+  return 1
+}
+
+_a11y_owns_nav() {
+  _a11y_crashed && return 1
+  _a11y_live_fresh
+}
+
 _a11y_live_fresh() {
   v=`read_km titan2_a11y_live`
   case "$v" in 1|true|on) ;; *) return 1 ;; esac
@@ -194,8 +224,9 @@ _a11y_live_fresh() {
 # Only scan 0x244 = KEY_APPSELECT (580)
 _recents_handle() {
   val="$1"
-  # Controls a11y owns screen-on Home/Recents. Dual fire closes overview / eats Home.
-  if _a11y_live_fresh; then
+  # Controls a11y owns screen-on Home/Recents when it is actually bound.
+  # Crashed + fresh heartbeat used to yield here and Home went nowhere.
+  if _a11y_owns_nav; then
     return 0
   fi
   km_en=`read_km titan2_km_enabled`
@@ -326,17 +357,18 @@ run_key_watch() {
   log "start ver=$KW_VER dev=$DEV LONG_MS=$LONG_MS"
   while true; do
     # Yield TitanKey only when Controls a11y is actually bound.
-    # Screen-on + crashed a11y used to yield forever → dead Home.
-    if _a11y_live_fresh; then
+    # Screen-on + crashed a11y used to yield forever, and the getevent
+    # loop then bailed because the screen was on — Home stayed dead.
+    if _a11y_owns_nav; then
       log "a11y live — yield TitanKey (no getevent)"
       sleep 2
       continue
     fi
     [ -e "$DEV" ] || { sleep 1; DEV=`discover_titankey`; continue; }
-    log "screen off — KEY_FIRE getevent $DEV"
+    log "a11y dead — KEY_FIRE getevent $DEV"
     getevent "$DEV" 2>/dev/null | while read -r line; do
-      if _screen_on || _a11y_live_fresh; then
-        log "screen/a11y live — drop getevent"
+      if _a11y_owns_nav; then
+        log "a11y live — drop getevent"
         break
       fi
       _handle_ev_line "$line"

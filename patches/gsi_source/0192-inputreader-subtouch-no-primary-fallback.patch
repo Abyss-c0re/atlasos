@@ -1,0 +1,24 @@
+diff --git a/services/inputflinger/reader/mapper/TouchInputMapper.cpp b/services/inputflinger/reader/mapper/TouchInputMapper.cpp
+--- a/services/inputflinger/reader/mapper/TouchInputMapper.cpp
++++ b/services/inputflinger/reader/mapper/TouchInputMapper.cpp
+@@ -518,6 +518,19 @@ std::optional<DisplayViewport> TouchInputMapper::findViewport() {
+         return viewport;
+     }
+ 
++    // Titan 2: sub_touch is DIRECT. Two INTERNAL viewports exist, and
++    // getDisplayViewportByType(INTERNAL) prefers the default display.
++    // An unbound rear digitizer then becomes the primary touchscreen
++    // (cube on the sub display stops receiving those touches).
++    // Port 3 is the rear panel. No port → disable, do not guess display 0.
++    if (getDeviceName() == "sub_touch") {
++        std::optional<DisplayViewport> rear = mConfig.getDisplayViewportByPort(3);
++        if (rear) {
++            return rear;
++        }
++        ALOGI("sub_touch has no rear viewport; refusing primary-display fallback");
++        return std::nullopt;
++    }
++
+     // 5. Fall back to using any appropriate viewport based on the display type
+     //    (internal or external).
+     const ViewportType viewportTypeToUse = mParameters.associatedDisplayIsExternal

@@ -135,6 +135,8 @@
 # ignore IDC: disable mapper, keep EventHub TOUCH so mouse can own the node.
 # Old EventHub-exclude 0191 killed both modes. This one does not.
 0191-inputreader-touchpad-ignore.patch
+# sub_touch must not fall back to the primary internal viewport.
+0192-inputreader-subtouch-no-primary-fallback.patch
 
 # project:frameworks/av
 # MTK getCameraIdList hides HI847S (2) + SAT (3). Probe them when

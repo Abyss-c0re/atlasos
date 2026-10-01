@@ -15,6 +15,8 @@ import android.widget.ScrollView;
 
 import android.widget.TextView;
 
+import com.titanus2.controls.InputSurfaceController;
+import com.titanus2.controls.PadModeController;
 import com.titanus2.controls.ui.UiKit;
 
 /**
@@ -25,7 +27,7 @@ import com.titanus2.controls.ui.UiKit;
  */
 public class SubDisplayActivity extends Activity {
     private TextView state;
-    private final TextView[] modeTiles = new TextView[4];
+    private final TextView[] modeTiles = new TextView[5];
     private LinearLayout options;
     private SubDisplayPrefs.Mode lastBuilt;
     private TextView colorPreview;
@@ -76,6 +78,8 @@ public class SubDisplayActivity extends Activity {
         } else {
             modeTiles[3] = null;
         }
+        LinearLayout r2 = UiKit.row(root);
+        modeTiles[4] = UiKit.flexButton(r2, "HID", () -> setMode(SubDisplayPrefs.Mode.HID));
 
         options = new LinearLayout(this);
         options.setOrientation(LinearLayout.VERTICAL);
@@ -83,8 +87,8 @@ public class SubDisplayActivity extends Activity {
 
         kbHint = UiKit.mono(root);
         kbHint.setText(cubeAvailable
-            ? "0 Off · 1 Face · 2 Apps · 3 Cube · L Open home · Esc"
-            : "0 Off · 1 Face · 2 Apps · L Open home · Esc");
+            ? "0 Off · 1 Face · 2 Apps · 3 Cube · 4 HID · L Open home · Esc"
+            : "0 Off · 1 Face · 2 Apps · 4 HID · L Open home · Esc");
 
         setContentView(sc);
 
@@ -122,8 +126,8 @@ public class SubDisplayActivity extends Activity {
         }
         if (kbHint != null) {
             kbHint.setText(have
-                ? "0 Off · 1 Face · 2 Apps · 3 Cube · L Open home · Esc"
-                : "0 Off · 1 Face · 2 Apps · L Open home · Esc");
+                ? "0 Off · 1 Face · 2 Apps · 3 Cube · 4 HID · L Open home · Esc"
+                : "0 Off · 1 Face · 2 Apps · 4 HID · L Open home · Esc");
         }
         if (!have) {
             String raw = getSharedPreferences(SubDisplayPrefs.PREFS, MODE_PRIVATE)
@@ -197,6 +201,10 @@ public class SubDisplayActivity extends Activity {
                         return true;
                     }
                     break;
+                case KeyEvent.KEYCODE_4:
+                case KeyEvent.KEYCODE_NUMPAD_4:
+                    setMode(SubDisplayPrefs.Mode.HID);
+                    return true;
                 case KeyEvent.KEYCODE_L:
                     // Open rear Apps home (15.6 launcher; not Settings-only blank).
                     if (SubDisplayPrefs.getMode(this) != SubDisplayPrefs.Mode.APPS) {
@@ -246,6 +254,7 @@ public class SubDisplayActivity extends Activity {
             SubDisplayService.launchRearHome(this);
             toast = "Rear apps";
         } else if (mode == SubDisplayPrefs.Mode.CUBE) toast = "Rear cube";
+        else if (mode == SubDisplayPrefs.Mode.HID) toast = "HID mouse";
         else toast = "Rear face";
         UiKit.toast(this, toast);
     }
@@ -260,8 +269,27 @@ public class SubDisplayActivity extends Activity {
         appsNav = null;
         dpiRow = null;
 
-        if (mode == SubDisplayPrefs.Mode.APPS) {
+        if (mode == SubDisplayPrefs.Mode.HID) {
             briAndTimeout();
+            UiKit.section(options, "HID mouse");
+            TextView fact = UiKit.mono(options);
+            fact.setText("Rear touch moves the Android cursor. "
+                + "The keyboard pad keeps its own mouse/trackpad mode. "
+                + "Reverse Y applies to the rear digitizer.");
+            addToggle("Reverse Y", InputSurfaceController.isSubFlipY(this), v -> {
+                InputSurfaceController.setSubFlipY(this, v);
+                paintMode();
+            });
+            UiKit.section(options, "Sleep");
+            addToggle("Show while main off", SubDisplayPrefs.keepRearWhenOff(this), v -> {
+                SubDisplayPrefs.setKeepRearWhenOff(this, v);
+                SubDisplayService.refresh(this);
+            });
+            addDt2wToggle();
+            return;
+        }
+
+        if (mode == SubDisplayPrefs.Mode.APPS) {
             UiKit.section(options, "Apps");
             TextView fact = UiKit.mono(options);
             fact.setText("Rear launcher · pick apps here");
@@ -767,7 +795,14 @@ public class SubDisplayActivity extends Activity {
         if (modeTiles[3] != null) {
             UiKit.setSelected(modeTiles[3], mode == SubDisplayPrefs.Mode.CUBE);
         }
+        if (modeTiles[4] != null) {
+            UiKit.setSelected(modeTiles[4], mode == SubDisplayPrefs.Mode.HID);
+        }
         if (state == null) return;
+        if (mode == SubDisplayPrefs.Mode.HID) {
+            state.setText(hidStatusLine());
+            return;
+        }
         if (mode == SubDisplayPrefs.Mode.OFF) {
             state.setText("Off");
             return;
@@ -797,5 +832,18 @@ public class SubDisplayActivity extends Activity {
         }
         state.setText(sb.toString());
         updateColorPreview();
+    }
+
+    private String hidStatusLine() {
+        String pad = PadModeController.getMode(this);
+        int bri = Math.max(1, SubDisplayPrefs.getBrightnessPct(this));
+        String y = InputSurfaceController.isSubFlipY(this) ? " · Y rev" : "";
+        if (PadModeController.MOUSE.equals(pad)) {
+            return "HID mouse · rear + pad" + y + " · " + bri + "%";
+        }
+        if (PadModeController.TRACKPAD.equals(pad)) {
+            return "HID mouse · rear · trackpad stays a trackpad" + y + " · " + bri + "%";
+        }
+        return "HID mouse · rear" + y + " · " + bri + "%";
     }
 }

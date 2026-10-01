@@ -6,6 +6,15 @@
 # Only inhibit the rear "sub_touch" display. Do NOT inhibit "touchPad" or the
 # main hynitron digitizer (main screen will stop working).
 
+# Staged rear pin must be visible before InputReader opens sub_touch.
+_sub_stage=/data/adb/titan2/idc/sub_touch.idc
+_sub_live=/system/usr/idc/sub_touch.idc
+if [ -f "$_sub_stage" ] && grep -q 'touch.displayId = local:' "$_sub_stage" 2>/dev/null; then
+  if [ ! -f "$_sub_live" ] || ! cmp -s "$_sub_stage" "$_sub_live" 2>/dev/null; then
+    mount --bind "$_sub_stage" "$_sub_live" 2>/dev/null || true
+  fi
+fi
+
 # Inhibit rear sub-display touch by input device name (best-effort, non-fatal)
 for inh in /sys/class/input/input*/inhibited; do
   [ -e "$inh" ] || continue

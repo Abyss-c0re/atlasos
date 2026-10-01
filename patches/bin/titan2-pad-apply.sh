@@ -18,12 +18,20 @@ PAD_STATUS=$ST/titan2_pad_status
 TP_LOG=$ST/titan2_touchpadd.log
 CARET_STATUS=$ST/titan2_caret_status
 APPLY_LAST=$ST/titan2_pad_apply_last
-PAD_APPLY_VER=2.236-no-recenter
+PAD_APPLY_VER=2.237-sub-hid
 
-# Prefer GSI/system binary (Phase 1.5 SoT); tip only for lab iteration.
+# Staged binary that opens sub_touch wins. System binary stays the fallback.
 TOUCHPADD=/system/bin/titan2-touchpadd
-[ -x "$TOUCHPADD" ] || TOUCHPADD=/data/local/tmp/titan2-touchpadd
-[ -x "$TOUCHPADD" ] || TOUCHPADD=/data/adb/modules/titan2_touchpadd/system/bin/titan2-touchpadd
+if [ -x /data/local/tmp/titan2-touchpadd ] \
+    && grep -aqF 'sub_touch HID surface' /data/local/tmp/titan2-touchpadd 2>/dev/null; then
+  TOUCHPADD=/data/local/tmp/titan2-touchpadd
+elif [ -x /system/bin/titan2-touchpadd ]; then
+  TOUCHPADD=/system/bin/titan2-touchpadd
+elif [ -x /data/local/tmp/titan2-touchpadd ]; then
+  TOUCHPADD=/data/local/tmp/titan2-touchpadd
+else
+  TOUCHPADD=/data/adb/modules/titan2_touchpadd/system/bin/titan2-touchpadd
+fi
 
 log() {
   mkdir -p "$ST" 2>/dev/null || true
@@ -105,9 +113,35 @@ read_pad_rotation() {
 read_sub_flip_x() {
   case "`read_first titan2_sub_touch_flip_x`" in 0|false|off|OFF) echo 0;; *) echo 1;; esac
 }
+read_sub_flip_y() {
+  case "`read_first titan2_sub_touch_flip_y`" in 0|false|off|OFF) echo 0;; *) echo 1;; esac
+}
+read_sub_mode() {
+  m=`read_first titan2_sub_mode`
+  m=`echo "$m" | tr 'A-Z' 'a-z' | tr -d '\r\n '`
+  case "$m" in
+    hid|hidmouse|hid_mouse) echo hid; return ;;
+    apps|app|launcher|touch|interactive) echo apps; return ;;
+    cube|lattice|brain|neural) echo cube; return ;;
+    off|0|none) echo off; return ;;
+    face|clock|stock|custom|aod) echo face; return ;;
+  esac
+  echo off
+}
+sub_hid_mouse() {
+  case "`read_sub_mode`" in hid) return 0 ;; esac
+  return 1
+}
 read_pad_surface() {
   s=`read_first titan2_input_surface`
   s=`echo "$s" | tr 'A-Z' 'a-z' | tr -d '\r\n '`
+  if sub_hid_mouse; then
+    case "`read_pad_mode`" in
+      mouse) echo both ;;
+      *) echo sub ;;
+    esac
+    return 0
+  fi
   case "$s" in
     sub|rear|sub_touch|both|all|dual) s=hw ;;
     none|off) s=none ;;
@@ -463,6 +497,60 @@ LAST_SUB_FLIP=""
 LAST_PAD_CLICK=""
 LAST_TOP_ROW_CURSOR=""
 LAST_TOP_ROW_ONLY=""
+
+# Rear sub_touch as the virtual mouse. Does not retarget touchPad IDC.
+ensure_hid_mouse() {
+  sub_hid_mouse || return 0
+  if ! _input_unlocked_ok; then
+    return 0
+  fi
+  surface=`read_pad_surface`
+  flipx=`read_sub_flip_x`
+  flipy=`read_sub_flip_y`
+  flip="${flipx}${flipy}"
+  click=`read_pad_click`
+  [ -x "$TOUCHPADD" ] || {
+    echo "mode=$(read_pad_mode) applied=hid_no_binary surface=$surface" >"$PAD_STATUS"
+    chmod 666 "$PAD_STATUS" 2>/dev/null
+    return 1
+  }
+  if tp_up; then
+    if [ "$surface" != "$LAST_PAD_SURFACE" ] || [ "$flip" != "$LAST_SUB_FLIP" ] \
+        || [ "$click" != "$LAST_PAD_CLICK" ]; then
+      kill_touchpadd
+      TP_PID_CACHE=""
+    fi
+  fi
+  if ! tp_up; then
+    : > "$TP_LOG" 2>/dev/null; chmod 666 "$TP_LOG" 2>/dev/null
+    LOGCAT_OUTPUT=true KEYBOARD_FEATURES=false TAP_TO_CLICK="$click" \
+      TEXT_CARET_NAV=0 TOP_ROW_CURSOR=0 TOP_ROW_ONLY=0 \
+      PAD_SURFACE="$surface" FLIP_X="$flipx" FLIP_Y="$flipy" \
+      "$TOUCHPADD" >>"$TP_LOG" 2>&1 &
+    TP_PID_CACHE=""
+    if command -v usleep >/dev/null 2>&1; then usleep 80000; else sleep 0.08; fi
+  fi
+  if ! tp_up; then
+    echo "mode=$(read_pad_mode) applied=hid_tp_fail surface=$surface" >"$PAD_STATUS"
+    chmod 666 "$PAD_STATUS" 2>/dev/null
+    return 1
+  fi
+  case "`read_pad_mode`" in
+    mouse)
+      if [ "$LAST_IDC_KIND" != "ignore" ]; then
+        set_touchpad_idc ignore
+      fi
+      ;;
+  esac
+  set_pad_inhibited 0
+  LAST_PAD_SURFACE=$surface
+  LAST_SUB_FLIP=$flip
+  LAST_PAD_CLICK=$click
+  echo "mode=$(read_pad_mode) applied=hid_mouse pid=`tp_pid` surface=$surface flipx=$flipx flipy=$flipy" >"$PAD_STATUS"
+  chmod 666 "$PAD_STATUS" 2>/dev/null
+  return 0
+}
+
 start_mouse() {
   if ! _input_unlocked_ok; then
     _lockscreen_park_input
@@ -501,9 +589,19 @@ start_mouse() {
   trc=`read_pad_top_row_cursor`
   case "$trc" in 0|1) ;; *) trc=1 ;; esac
   if [ "$surface" = "none" ]; then
-    surface=hw
+    if sub_hid_mouse; then surface=sub; else surface=hw; fi
   fi
-  flipx=`read_sub_flip_x`
+  case "$surface" in
+    sub|both|rear|sub_touch)
+      flipx=`read_sub_flip_x`
+      flipy=`read_sub_flip_y`
+      ;;
+    *)
+      flipx=0
+      flipy=0
+      ;;
+  esac
+  flip="${flipx}${flipy}"
   # 2.95: stamp status FIRST so UI sees mouse before any idc/sysfs work
   # (trackpad→mouse felt multi-second while set_touchpad_idc remounted).
   echo "mode=mouse applied=starting click=$click trc=$trc follow=$follow surface=$surface flipx=$flipx" > "$PAD_STATUS"
@@ -516,7 +614,7 @@ start_mouse() {
   # 2.161: spawn touchpadd while HW still inhibited, THEN uninhibit.
   # Uninhibit-first left native ABS (trackpad feel) whenever TP was dead.
   if tp_up; then
-    if [ "$surface" != "$LAST_PAD_SURFACE" ] || [ "$flipx" != "$LAST_SUB_FLIP" ] \
+    if [ "$surface" != "$LAST_PAD_SURFACE" ] || [ "$flip" != "$LAST_SUB_FLIP" ] \
         || [ "$click" != "$LAST_PAD_CLICK" ] \
         || [ "${LAST_TOP_ROW_CURSOR:-}" != "$trc" ]; then
       kill_touchpadd
@@ -528,7 +626,7 @@ start_mouse() {
     # TEXT_CARET_NAV mirrors top-row energy when trc=1 (no separate stopper).
     LOGCAT_OUTPUT=true KEYBOARD_FEATURES=false TAP_TO_CLICK="$click" \
       TEXT_CARET_NAV="$trc" TOP_ROW_CURSOR="$trc" TOP_ROW_ONLY=0 \
-      PAD_SURFACE="$surface" FLIP_X="$flipx" \
+      PAD_SURFACE="$surface" FLIP_X="$flipx" FLIP_Y="$flipy" \
       "$TOUCHPADD" >>"$TP_LOG" 2>&1 &
     TP_PID_CACHE=""
     if command -v usleep >/dev/null 2>&1; then usleep 80000; else sleep 0.08; fi
@@ -546,7 +644,7 @@ start_mouse() {
   fi
   set_pad_inhibited 0
   LAST_PAD_SURFACE=$surface
-  LAST_SUB_FLIP=$flipx
+  LAST_SUB_FLIP=$flip
   LAST_PAD_CLICK=$click
   LAST_TOP_ROW_CURSOR=$trc
   LAST_TOP_ROW_ONLY=0
@@ -565,6 +663,7 @@ start_mouse() {
 
 # Text-caret top-row only (pad off): grab pad, KEY_LEFT/RIGHT via titan2-text-nav.
 start_top_row_only() {
+  if sub_hid_mouse; then ensure_hid_mouse; return 0; fi
   trc=`read_pad_top_row_cursor`
   [ "$trc" = "1" ] || trc=1
   [ -x "$TOUCHPADD" ] || {
@@ -601,6 +700,7 @@ start_top_row_only() {
 
 # Trackpad coexistence: no EVIOCGRAB so native ABS stays for Android pointer.
 start_top_row_only_nograb() {
+  if sub_hid_mouse; then ensure_hid_mouse; return 0; fi
   trc=`read_pad_top_row_cursor`
   [ "$trc" = "1" ] || return 0
   [ -x "$TOUCHPADD" ] || return 1
@@ -635,6 +735,12 @@ apply_text_caret_nav() {
   trc=`read_pad_top_row_cursor`
   mode=`read_pad_mode`
   mkdir -p /data/local/tmp 2>/dev/null || true
+  if sub_hid_mouse; then
+    ensure_hid_mouse
+    echo "caret=hid mode=$mode surface=`read_pad_surface`" >"$CARET_STATUS" 2>/dev/null || true
+    chmod 666 "$CARET_STATUS" 2>/dev/null || true
+    return 0
+  fi
 
   if [ "$trc" != "1" ]; then
     # Caret disabled — stop caret-only processes; mouse mode keeps its daemon.
@@ -707,9 +813,13 @@ start_native_trackpad() {
   [ "$LAST_IDC_KIND" != "$want_kind" ] && rebind=1
   echo "mode=trackpad applied=starting idc=$idc_tag follow=$follow rebind=$rebind" >"$PAD_STATUS" 2>/dev/null || true
   chmod 666 "$PAD_STATUS" 2>/dev/null || true
-  # 2.78: always kill touchpadd — trackpad is native ABS sole owner (no dual REL).
-  kill_touchpadd
-  LAST_CARET_KIND=off
+  # HID rear mouse keeps the one virtual-mouse daemon. Native trackpad stays native.
+  if sub_hid_mouse; then
+    ensure_hid_mouse
+  else
+    kill_touchpadd
+    LAST_CARET_KIND=off
+  fi
   if ! _input_unlocked_ok; then
     set_pad_inhibited 1
     echo "mode=trackpad applied=lockpark" >"$PAD_STATUS" 2>/dev/null || true
@@ -728,6 +838,10 @@ start_native_trackpad() {
 }
 
 stop_pad() {
+  if sub_hid_mouse; then
+    ensure_hid_mouse
+    return 0
+  fi
   # Shared driver with USB HID: if a live session needs the virtual mouse,
   # leave touchpadd (and orient-rel when follow is on) running for the bridge.
   # Only park native Android path so local cursor stays off.
@@ -813,18 +927,23 @@ apply_pad() {
       trc_changed=0
       surface=`read_pad_surface`
       flipx=`read_sub_flip_x`
+      flipy=`read_sub_flip_y`
+      flip="${flipx}${flipy}"
       [ "$LAST_PAD" != "mouse" ] && mode_changed=1
       [ "$LAST_CLICK" != "$click" ] && click_changed=1
       [ "$LAST_FOLLOW" != "$follow" ] && follow_changed=1
       [ "$surface" != "$LAST_PAD_SURFACE" ] && surface_changed=1
-      [ "$flipx" != "$LAST_SUB_FLIP" ] && surface_changed=1
+      [ "$flip" != "$LAST_SUB_FLIP" ] && surface_changed=1
       [ "${LAST_TOP_ROW_CURSOR:-}" != "$trc" ] && trc_changed=1
       dead=0
       tp_up || dead=1
       # Live mouse + still mouse: never kill. pad_gate/mtime/apply storms
       # used to SIGKILL+uinput every ~3s and warp the pointer to center.
-      if [ "$LAST_PAD" = "mouse" ] && [ "$dead" != "1" ]; then
+      if [ "$LAST_PAD" = "mouse" ] && [ "$dead" != "1" ] && [ "$surface_changed" != "1" ]; then
         :
+        if sub_hid_mouse && [ "$LAST_IDC_KIND" != "ignore" ]; then
+          set_touchpad_idc ignore
+        fi
         set_pad_inhibited 0
         if [ "$follow" = "1" ]; then
           orient_rel_up || ( ensure_orient_rel ) &
@@ -862,17 +981,33 @@ apply_pad() {
     trackpad)
       # 2.78/2.96: native ABS only — start_native_trackpad stamps status first
       # and async-idc; soft path never re-writes status after (was racing mouse).
+      # HID rear mouse is an extra source: do not kill that daemon to free the pad.
       need=0
       [ "$LAST_PAD" != "trackpad" ] && need=1
       [ "$LAST_FOLLOW" != "$follow" ] && need=1
+      if sub_hid_mouse; then
+        surface=`read_pad_surface`
+        flipx=`read_sub_flip_x`
+        flipy=`read_sub_flip_y`
+        flip="${flipx}${flipy}"
+        [ "$surface" != "$LAST_PAD_SURFACE" ] && need=1
+        [ "$flip" != "$LAST_SUB_FLIP" ] && need=1
+        tp_up || need=1
+      fi
       if [ "$need" = "1" ]; then
         kill_orient_rel
-        kill_touchpadd
-        TP_PID_CACHE=""
-        LAST_CARET_KIND=off
+        if sub_hid_mouse; then
+          :
+        else
+          kill_touchpadd
+          TP_PID_CACHE=""
+          LAST_CARET_KIND=off
+        fi
         start_native_trackpad
       else
-        if tp_up; then
+        if sub_hid_mouse; then
+          ensure_hid_mouse
+        elif tp_up; then
           kill_touchpadd
           TP_PID_CACHE=""
         fi
@@ -885,7 +1020,9 @@ apply_pad() {
       ;;
     *)
       # pad off: park all pad daemons (2.78: no caret keep)
-      if hid_needs_mouse; then
+      if sub_hid_mouse; then
+        ensure_hid_mouse
+      elif hid_needs_mouse; then
         :
       else
         if [ "$LAST_PAD" != "off" ] || tp_up || orient_rel_up; then
@@ -932,8 +1069,13 @@ boot_pad_safe() {
   # KEEP_DATA: drop leftover tip apply if it is not this ROM script.
   if [ -f "$ST/titan2-pad-apply.sh" ]; then
     _tv=`grep -m1 '^PAD_APPLY_VER=' "$ST/titan2-pad-apply.sh" 2>/dev/null`
-    _sv=`grep -m1 '^PAD_APPLY_VER=' /system/bin/titan2-pad-apply.sh 2>/dev/null`
-    [ "$_tv" = "$_sv" ] || rm -f "$ST/titan2-pad-apply.sh" 2>/dev/null || true
+    case "$_tv" in
+      *2.237-sub-hid*) ;;
+      *)
+        _sv=`grep -m1 '^PAD_APPLY_VER=' /system/bin/titan2-pad-apply.sh 2>/dev/null`
+        [ "$_tv" = "$_sv" ] || rm -f "$ST/titan2-pad-apply.sh" 2>/dev/null || true
+        ;;
+    esac
   fi
   _forget_persisted_input_lock
   cur=`read_pad_mode`

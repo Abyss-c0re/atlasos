@@ -106,6 +106,9 @@ public final class SubDisplayPower {
             } else if (m == SubDisplayPrefs.Mode.CUBE) {
                 rearLive = true;
                 modeName = "cube";
+            } else if (m == SubDisplayPrefs.Mode.HID) {
+                rearLive = false;
+                modeName = "hid";
             } else if (m == SubDisplayPrefs.Mode.OFF) {
                 modeName = "off";
             } else {
@@ -134,15 +137,24 @@ public final class SubDisplayPower {
         float bri = Math.max(0f, Math.min(1f, briPct / 100f));
         if (!on) bri = 0f;
 
-        String mode = !on ? "off" : (modeName != null ? modeName : "face");
+        // Power-off must not erase cube/apps. User OFF passes modeName "off".
+        String mode;
+        if ("cube".equals(modeName) || "apps".equals(modeName) || "hid".equals(modeName)) {
+            mode = modeName;
+        } else if (!on) {
+            mode = "off";
+        } else {
+            mode = modeName != null ? modeName : "face";
+        }
         boolean live = rearTouchLive && on;
+        boolean subLive = on && (live || "hid".equals(mode));
         AgentBridge.put(app, AgentBridge.SUBDISPLAY_ON, on ? "1" : "0");
         AgentBridge.put(app, AgentBridge.SUBDISPLAY_BRI,
             String.format(java.util.Locale.US, "%.2f", bri));
         if (on) AgentBridge.put(app, AgentBridge.SUBDISPLAY_ID, "2");
         AgentBridge.put(app, AgentBridge.SUB_MODE, mode);
-        // Face/off: park digitizer. Apps/cube: live + associate rear only.
-        AgentBridge.put(app, AgentBridge.SUBTOUCH_INHIBIT, live ? "0" : "1");
+        // Face/off park. Apps/cube associate. HID mouse uninhibits without associating.
+        AgentBridge.put(app, AgentBridge.SUBTOUCH_INHIBIT, subLive ? "0" : "1");
         // Always bump apply stamp so pad-agent re-ioctls even if On→On same bri.
         AgentBridge.put(app, AgentBridge.SUBDISPLAY_APPLY,
             String.valueOf(System.currentTimeMillis()));
@@ -151,7 +163,7 @@ public final class SubDisplayPower {
                 app.getContentResolver(), "titan2_sub_mode", mode);
             android.provider.Settings.Global.putString(
                 app.getContentResolver(), "titan2_subtouch_inhibit",
-                live ? "0" : "1");
+                subLive ? "0" : "1");
         } catch (Exception ignored) {}
         seedAdbPlane(on ? "1" : "0",
             String.format(java.util.Locale.US, "%.2f", bri), mode);
@@ -161,12 +173,13 @@ public final class SubDisplayPower {
         final boolean fPower = touchPower;
         final boolean fLive = live;
         final String fMode = mode;
+        final boolean fSubLive = subLive;
         EXEC.execute(() -> {
             if (fPower) {
                 lastPower.set(fOn);
                 powerKnown.set(true);
                 Log.i(TAG, "panel request -> " + fOn + " mode=" + fMode
-                    + " digitizer=" + (fLive ? "rear" : "parked"));
+                    + " digitizer=" + (fLive ? "rear" : (fSubLive ? "hid" : "parked")));
             }
             int hw = fOn ? Math.round(fBri * 255f) : 0;
             if (hw < 0) hw = 0;
@@ -176,8 +189,12 @@ public final class SubDisplayPower {
             if (fLive) {
                 String err = SubDisplayInput.associateSubTouchToRear(app);
                 if (err != null) Log.w(TAG, "associate: " + err);
-                // Un-inhibit sub_touch sysfs so InputReader delivers to rear
-                forceLiveSubTouch();
+                // pad-idc uninhibits only after dumpsys shows the rear viewport.
+            } else if ("hid".equals(fMode)) {
+                SubDisplayInput.clearAssociation(app);
+                if (!fOn) forceInhibitSubTouch();
+            } else if ("cube".equals(fMode) || "apps".equals(fMode)) {
+                forceInhibitSubTouch();
             } else {
                 SubDisplayInput.clearAssociation(app);
                 forceInhibitSubTouch();
@@ -473,19 +490,20 @@ public final class SubDisplayPower {
         // Plane stamp only — no framework display APIs. Edge re-assert bumps
         // APPLY so pad-agent edge re-ioctls promptly (dark residual closed).
         if (app != null) {
-            String modeTok = "cube";
+            String modeTok = "face";
             try {
                 SubDisplayPrefs.Mode m = SubDisplayPrefs.getMode(app);
                 if (m == SubDisplayPrefs.Mode.APPS) modeTok = "apps";
-                else if (m == SubDisplayPrefs.Mode.CUSTOM
-                        || m == SubDisplayPrefs.Mode.STOCK) modeTok = "face";
+                else if (m == SubDisplayPrefs.Mode.CUBE) modeTok = "cube";
+                else if (m == SubDisplayPrefs.Mode.HID) modeTok = "hid";
+                else if (m == SubDisplayPrefs.Mode.OFF) modeTok = "off";
             } catch (Exception ignored) {}
             String bri = String.format(Locale.US, "%.2f", hw / 255f);
             AgentBridge.put(app, AgentBridge.SUBDISPLAY_ON, "1");
             AgentBridge.put(app, AgentBridge.SUBDISPLAY_BRI, bri);
             AgentBridge.put(app, AgentBridge.SUB_MODE, modeTok);
-            // Face: park digitizer. Cube/apps: live rear only.
-            boolean live = "cube".equals(modeTok) || "apps".equals(modeTok);
+            boolean live = "cube".equals(modeTok) || "apps".equals(modeTok)
+                || "hid".equals(modeTok);
             AgentBridge.put(app, AgentBridge.SUBTOUCH_INHIBIT, live ? "0" : "1");
             AgentBridge.put(app, AgentBridge.SUBDISPLAY_ID, "2");
             AgentBridge.put(app, AgentBridge.SUBDISPLAY_APPLY,

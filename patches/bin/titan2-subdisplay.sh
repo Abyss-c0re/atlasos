@@ -9,7 +9,7 @@
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 T2=/data/misc/titan2
 ST=/data/local/tmp
-SUB_VER=2.176-ioctl-only
+SUB_VER=2.250-bl-off-sticky
 SUBDISP_BL=/sys/devices/platform/mtk-leds1/leds/lcd-backlight1/brightness
 SUBDISP_BL_MAX=/sys/devices/platform/mtk-leds1/leds/lcd-backlight1/max_brightness
 LAST_FILE=$ST/titan2_subdisplay_last_key
@@ -215,7 +215,7 @@ apply_subdisplay() {
   if [ "$on" = "1" ]; then
     _sm=`read_first titan2_sub_mode`
     case "$_sm" in
-      apps|app|face|clock|off|cube|lattice) ;;
+      apps|app|face|clock|off|cube|lattice|hid|hidmouse) ;;
       *)
         for _d in "$T2" "$ST"; do
           [ -d "$_d" ] || continue
@@ -225,11 +225,19 @@ apply_subdisplay() {
         ;;
     esac
   else
-    for _d in "$T2" "$ST"; do
-      [ -d "$_d" ] || continue
-      printf off >"$_d/titan2_sub_mode" 2>/dev/null || true
-      chmod 666 "$_d/titan2_sub_mode" 2>/dev/null || true
-    done
+    # A dark blink must not erase cube/apps. Stamping off here dropped the
+    # rear association and the unbound digitizer became the primary touchscreen.
+    _sm=`read_first titan2_sub_mode`
+    case "$_sm" in
+      apps|app|launcher|touch|interactive|cube|lattice|brain|neural|hid|hidmouse) ;;
+      *)
+        for _d in "$T2" "$ST"; do
+          [ -d "$_d" ] || continue
+          printf off >"$_d/titan2_sub_mode" 2>/dev/null || true
+          chmod 666 "$_d/titan2_sub_mode" 2>/dev/null || true
+        done
+        ;;
+    esac
   fi
   { echo "on=$on bri=$bri id=$id hw=$hw need=$_need key=$key" >"$STATUS"; } 2>/dev/null || true
   chmod 666 "$STATUS" 2>/dev/null || true

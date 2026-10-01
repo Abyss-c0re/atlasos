@@ -1,19 +1,19 @@
 package com.titanus2.atlas;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 
 import com.titanus2.api.Titan2ApiContract;
 import com.titanus2.api.Titan2Client;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
- * Side keys go through Titan Controls. A short press is the scroll wheel
- * until the user picks something else: top scrolls up, bottom scrolls down.
+ * Side keys are a Titan Controls per-app profile for Atlas.
+ * While the desk is open that profile is pushed as
+ * {@link Titan2ApiContract#LAYER_ATLAS_DESK}. Other apps keep their maps.
  */
 public final class DeskSideKeys {
-    private static final String PREFS = "atlas_side_keys";
-    private static final String DONE = "scroll_defaulted";
-
     public static final String[][] CHOICES = {
         { Titan2ApiContract.ACT_MOUSE_SCROLL_UP, "Scroll up" },
         { Titan2ApiContract.ACT_MOUSE_SCROLL_DOWN, "Scroll down" },
@@ -25,19 +25,40 @@ public final class DeskSideKeys {
 
     private DeskSideKeys() {}
 
+    /** Seed the Atlas profile once. Does not rewrite the global key map. */
     public static void ensureScrollDefault(Context c) {
-        SharedPreferences p = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        if (p.getBoolean(DONE, false)) return;
-        Titan2Client api = new Titan2Client(c);
-        api.setKeyAction(Titan2ApiContract.SLOT_SIDE2_SHORT,
-            Titan2ApiContract.ACT_MOUSE_SCROLL_UP);
-        api.setKeyAction(Titan2ApiContract.SLOT_SIDE_SHORT,
-            Titan2ApiContract.ACT_MOUSE_SCROLL_DOWN);
-        p.edit().putBoolean(DONE, true).apply();
+        Titan2Client api = client(c);
+        api.ensureKeymapProfile(Titan2ApiContract.ATLAS_PKG, "Atlas desk");
+        Map<String, String> have = api.getProfileMap(Titan2ApiContract.ATLAS_PKG);
+        if (!have.containsKey(Titan2ApiContract.SLOT_SIDE2_SHORT)) {
+            api.setKeyAction(Titan2ApiContract.SLOT_SIDE2_SHORT,
+                Titan2ApiContract.ACT_MOUSE_SCROLL_UP, Titan2ApiContract.ATLAS_PKG);
+        }
+        if (!have.containsKey(Titan2ApiContract.SLOT_SIDE_SHORT)) {
+            api.setKeyAction(Titan2ApiContract.SLOT_SIDE_SHORT,
+                Titan2ApiContract.ACT_MOUSE_SCROLL_DOWN, Titan2ApiContract.ATLAS_PKG);
+        }
+    }
+
+    /** Desk is in front. Controls applies the Atlas profile above other apps. */
+    public static void publish(Context c) {
+        ensureScrollDefault(c);
+        Titan2Client api = client(c);
+        Map<String, String> map = new LinkedHashMap<>();
+        map.put(Titan2ApiContract.SLOT_SIDE2_SHORT,
+            action(c, Titan2ApiContract.SLOT_SIDE2_SHORT));
+        map.put(Titan2ApiContract.SLOT_SIDE_SHORT,
+            action(c, Titan2ApiContract.SLOT_SIDE_SHORT));
+        api.pushTempKeyMap(Titan2ApiContract.LAYER_ATLAS_DESK, map);
+    }
+
+    public static void release(Context c) {
+        client(c).popTempKeyMap(Titan2ApiContract.LAYER_ATLAS_DESK);
     }
 
     public static String action(Context c, String slot) {
-        String v = new Titan2Client(c).getKeyAction(slot);
+        Map<String, String> map = client(c).getProfileMap(Titan2ApiContract.ATLAS_PKG);
+        String v = map.get(slot);
         if (v == null || v.isEmpty() || "default".equals(v)) {
             if (Titan2ApiContract.SLOT_SIDE2_SHORT.equals(slot)) {
                 return Titan2ApiContract.ACT_MOUSE_SCROLL_UP;
@@ -50,8 +71,10 @@ public final class DeskSideKeys {
         return v;
     }
 
-    public static void set(Context c, String slot, String action) {
-        new Titan2Client(c).setKeyAction(slot, action);
+    public static boolean set(Context c, String slot, String action) {
+        Titan2Client api = client(c);
+        api.ensureKeymapProfile(Titan2ApiContract.ATLAS_PKG, "Atlas desk");
+        return api.setKeyAction(slot, action, Titan2ApiContract.ATLAS_PKG);
     }
 
     public static String label(String action) {
@@ -70,5 +93,9 @@ public final class DeskSideKeys {
             }
         }
         return CHOICES[(i + 1) % CHOICES.length][0];
+    }
+
+    private static Titan2Client client(Context c) {
+        return new Titan2Client(c);
     }
 }

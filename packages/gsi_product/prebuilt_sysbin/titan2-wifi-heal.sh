@@ -9,9 +9,10 @@ export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 ST=/data/local/tmp
 T2=/data/misc/titan2
 LOG=$ST/titan2-wifi-heal.log
-VER=1.2-watch-sae-off
+VER=1.3-store-lock
 WPA="wpa_cli -i wlan0 -p /data/vendor/wifi/wpa/sockets"
 STORE=/data/misc/apexdata/com.android.wifi/WifiConfigStore.xml
+LOCK=$ST/titan2-wifi-heal.lock
 
 log() {
   mkdir -p "$ST" 2>/dev/null || true
@@ -75,35 +76,86 @@ sanitize_supplicant() {
   return 0
 }
 
-# Drop SecurityType 4 (SAE auto-upgrade) from the XML store. Wifi off first.
+store_xml() {
+  [ -s "$1" ] && grep -q 'WifiConfigStoreData' "$1" 2>/dev/null
+}
+
+psk_count() {
+  grep -a -o 'name="PreSharedKey"' "$1" 2>/dev/null | wc -l | tr -d ' '
+}
+
+wifi_back_on() {
+  cmd wifi set-wifi-enabled enabled >/dev/null 2>&1 || true
+}
+
+# Drop SecurityType 4 (SAE auto-upgrade) from the XML store.
+# Never open the live file with truncation. A crash after O_TRUNC left a
+# 9756-byte zero file, and a userdebug build then refuses every save
+# ("Cannot save to store before store is read") until the file parses again.
 strip_store_sae() {
   [ -f "$STORE" ] || return 0
-  grep -q 'SecurityType" value="4"' "$STORE" 2>/dev/null || return 0
-  wifi_on && cmd wifi set-wifi-enabled disabled >/dev/null 2>&1
-  sleep 2
-  tmp=$ST/WifiConfigStore.heal.xml
-  # Remove each SAE SecurityParams block (type 4).
-  awk '
-    BEGIN { skip=0 }
-    /<SecurityParams>/ { buf=$0 ORS; inblk=1; next }
-    inblk {
-      buf=buf $0 ORS
-      if (/<\/SecurityParams>/) {
-        if (buf !~ /SecurityType" value="4"/) printf "%s", buf
-        buf=""; inblk=0
-      }
-      next
-    }
-    { print }
-  ' "$STORE" >"$tmp" 2>/dev/null || return 0
-  if [ -s "$tmp" ] && grep -q 'WifiConfigStoreData' "$tmp"; then
-    cat "$tmp" >"$STORE"
-    chown system:system "$STORE" 2>/dev/null || true
-    chmod 600 "$STORE" 2>/dev/null || true
-    log "stripped SAE SecurityType 4 from WifiConfigStore"
+  if ! store_xml "$STORE"; then
+    log "store not xml — skip strip"
+    return 0
   fi
-  rm -f "$tmp"
-  cmd wifi set-wifi-enabled enabled >/dev/null 2>&1 || true
+  grep -q 'SecurityType" value="4"' "$STORE" 2>/dev/null || return 0
+  mkdir -p "$ST" 2>/dev/null || true
+  # Lock drops when the subshell exits, so a later SAE stamp can still be stripped.
+  (
+    flock -n 9 || { log "strip already running"; exit 0; }
+    wifi_on && cmd wifi set-wifi-enabled disabled >/dev/null 2>&1
+    sleep 1
+    if ! store_xml "$STORE" || ! grep -q 'SecurityType" value="4"' "$STORE" 2>/dev/null; then
+      wifi_back_on
+      exit 0
+    fi
+    tmp=$ST/WifiConfigStore.heal.xml
+    # Remove each SAE SecurityParams block (type 4).
+    awk '
+      BEGIN { skip=0 }
+      /<SecurityParams>/ { buf=$0 ORS; inblk=1; next }
+      inblk {
+        buf=buf $0 ORS
+        if (/<\/SecurityParams>/) {
+          if (buf !~ /SecurityType" value="4"/) printf "%s", buf
+          buf=""; inblk=0
+        }
+        next
+      }
+      { print }
+    ' "$STORE" >"$tmp" 2>/dev/null || {
+      rm -f "$tmp"
+      wifi_back_on
+      exit 0
+    }
+    oldc=$(psk_count "$STORE")
+    newc=$(psk_count "$tmp")
+    if ! store_xml "$tmp" || [ "$newc" -lt "$oldc" ]; then
+      log "strip output refused — store left untouched"
+      rm -f "$tmp"
+      wifi_back_on
+      exit 0
+    fi
+    dir=$(dirname "$STORE")
+    newf=$dir/WifiConfigStore.heal.new
+    rm -f "$newf"
+    if ! cp "$tmp" "$newf"; then
+      rm -f "$tmp" "$newf"
+      wifi_back_on
+      exit 0
+    fi
+    chown system:system "$newf" 2>/dev/null || true
+    chmod 600 "$newf" 2>/dev/null || true
+    chcon u:object_r:apex_system_server_data_file:s0 "$newf" 2>/dev/null || true
+    if mv -f "$newf" "$STORE"; then
+      log "stripped SAE SecurityType 4 from WifiConfigStore"
+    else
+      log "store replace failed"
+      rm -f "$newf"
+    fi
+    rm -f "$tmp"
+    wifi_back_on
+  ) 9>"$LOCK"
 }
 
 prefer_24() {
@@ -166,10 +218,17 @@ do_watch() {
       prefer_24
       fail=$((fail + 1))
       # Re-enable a temp-disabled WPA2 net after a few misses.
+      # Leave an in-progress handshake alone.
       if [ $fail -eq 3 ]; then
-        $WPA enable_network 0 >/dev/null 2>&1 || true
-        $WPA enable_network 1 >/dev/null 2>&1 || true
-        $WPA reassociate >/dev/null 2>&1 || true
+        st=$($WPA status 2>/dev/null | sed -n 's/^wpa_state=//p' | tr -d '\r')
+        case "$st" in
+          ASSOCIATING|ASSOCIATED|4WAY_HANDSHAKE|GROUP_HANDSHAKE|COMPLETED) ;;
+          *)
+            $WPA enable_network 0 >/dev/null 2>&1 || true
+            $WPA enable_network 1 >/dev/null 2>&1 || true
+            $WPA reassociate >/dev/null 2>&1 || true
+            ;;
+        esac
       fi
       sleep 2
     else

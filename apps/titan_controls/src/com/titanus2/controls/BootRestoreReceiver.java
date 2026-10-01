@@ -110,14 +110,17 @@ public class BootRestoreReceiver extends BroadcastReceiver {
                 KeyMapPrefs kmm = new KeyMapPrefs(context);
                 kmm.migrateSideDefaultsNone();
             } catch (Exception ignored) {}
-            // 15.0: rear is display-only always (no opt-in trackpad — dual-cursor residual).
+            boolean hidMouse = false;
+            try { hidMouse = SubDisplayPrefs.isHidMouse(context); } catch (Exception ignored) {}
+            if (hidMouse) {
+                try { InputSurfaceController.apply(context); } catch (Exception ignored) {}
+            } else {
             AgentBridge.put(context, AgentBridge.SUBTOUCH_INHIBIT, "1");
             try {
                 android.provider.Settings.Global.putString(
                     context.getContentResolver(), "titan2_subtouch_inhibit", "1");
             } catch (Exception ignored) {}
             try {
-                // Collapse stale surface=sub|both left from pre-15.0 cool land.
                 String surf = AgentBridge.get(context, "titan2_input_surface", null);
                 if (surf != null) {
                     String n = InputSurfaceController.normalize(surf);
@@ -126,6 +129,7 @@ public class BootRestoreReceiver extends BroadcastReceiver {
                         context.getContentResolver(), "titan2_input_surface", n);
                 }
             } catch (Exception ignored) {}
+            }
             NotifLedController.publishConfig(context);
             // Key remaps + screen-off tick for pad-agent privileged path
             try {

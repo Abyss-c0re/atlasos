@@ -10,49 +10,7 @@ public final class AtlasKeyMap {
 
     /** @return {linuxCode, shift} or null when the character has no US key. */
     public static int[] glyph(char c) {
-        if (c >= 'a' && c <= 'z') return new int[]{30 + (c - 'a'), 0};
-        if (c >= 'A' && c <= 'Z') return new int[]{30 + (c - 'A'), 1};
-        if (c >= '1' && c <= '9') return new int[]{2 + (c - '1'), 0};
-        if (c == '0') return new int[]{11, 0};
-        switch (c) {
-            case ' ': return new int[]{57, 0};
-            case '\n':
-            case '\r': return new int[]{28, 0};
-            case '\t': return new int[]{15, 0};
-            case '-': return new int[]{12, 0};
-            case '=': return new int[]{13, 0};
-            case '[': return new int[]{26, 0};
-            case ']': return new int[]{27, 0};
-            case '\\': return new int[]{43, 0};
-            case ';': return new int[]{39, 0};
-            case '\'': return new int[]{40, 0};
-            case '`': return new int[]{41, 0};
-            case ',': return new int[]{51, 0};
-            case '.': return new int[]{52, 0};
-            case '/': return new int[]{53, 0};
-            case '!': return new int[]{2, 1};
-            case '@': return new int[]{3, 1};
-            case '#': return new int[]{4, 1};
-            case '$': return new int[]{5, 1};
-            case '%': return new int[]{6, 1};
-            case '^': return new int[]{7, 1};
-            case '&': return new int[]{8, 1};
-            case '*': return new int[]{9, 1};
-            case '(': return new int[]{10, 1};
-            case ')': return new int[]{11, 1};
-            case '_': return new int[]{12, 1};
-            case '+': return new int[]{13, 1};
-            case '{': return new int[]{26, 1};
-            case '}': return new int[]{27, 1};
-            case '|': return new int[]{43, 1};
-            case ':': return new int[]{39, 1};
-            case '"': return new int[]{40, 1};
-            case '~': return new int[]{41, 1};
-            case '<': return new int[]{51, 1};
-            case '>': return new int[]{52, 1};
-            case '?': return new int[]{53, 1};
-            default: return null;
-        }
+        return com.titanus2.api.KeyGlyphs.linuxFor(c);
     }
 
     /** Named bar keys. 0 means this name is a modifier or a glyph, not a tap. */

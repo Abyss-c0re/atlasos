@@ -42,7 +42,7 @@ TICK_N=0
 # 1.9 residual: under heat (load≥8) 1.5 wrote all-zero cells.bin so CubeContact
 # went pure black while Grok/Atlas/hybrid elevated load — lattice "vanished"
 # without touching cube app code. Hold last good frame; ambient only if none.
-KCUBE_TIP_VER=1.9-heat-hold-frame
+KCUBE_TIP_VER=1.10-cubalc-hold-real
 _stamp_tip_ver() {
   echo "$KCUBE_TIP_VER" > /data/local/tmp/titan2_kernel_cube_tip_ver 2>/dev/null || true
   chmod 666 /data/local/tmp/titan2_kernel_cube_tip_ver 2>/dev/null || true
@@ -282,9 +282,9 @@ while true; do
   # 1.4 cube-load-deep-park: under load≥8 do NOT run light sample + full 512-cell
   # awk catalog/dig (1.3 residual reheated tip at ~7–11% CPU). Long sleep continue.
   # 1.5 cube-load-deep-zero: wrote 512 zero cells — killed visual cube under heat.
-  # 1.9 heat-hold-frame: keep last good cells.bin (mtime heartbeat only). If no
-  # prior frame, soft ambient 1–3 (never pure black void). densify in app is
-  # backup; zeroing the feed was product-wrong while Grok/Atlas raised load.
+  # 1.9 heat-hold-frame: keep last good cells.bin (mtime heartbeat only).
+  # 1.10: the 1+(i%3) stripe was synthetic mass (heat-hold-ambient). CubalC
+  # quiet zeros are state. Hold a real frame only. Never invent a lattice.
   # 1.6: stamp every loop (cool + heat) so land/mtime prove tip alive even if
   # cool sample hangs mid-tick or heat path is skipped.
   _stamp_tip_ver
@@ -303,21 +303,14 @@ while true; do
       case "$nz" in ''|*[!0-9]*) nz=0;; esac
       [ "$nz" -eq 0 ] && allz=1
     fi
-    if [ "$csz" -gt 16 ] && [ "$allz" -eq 0 ]; then
+    # Stripe writer tagged itself. That frame is not a matrix to hold.
+    ambient=0
+    if [ "$csz" -gt 16 ]; then
+      tail -c 220 "$CELLS" 2>/dev/null | grep -q 'source=heat-hold-ambient' && ambient=1
+    fi
+    if [ "$csz" -gt 16 ] && [ "$allz" -eq 0 ] && [ "$ambient" -eq 0 ]; then
       # Hold frame — only touch for mtime so CubeContact reload stays warm
       touch "$CELLS" 2>/dev/null || true
-      chmod 666 "$CELLS" 2>/dev/null || true
-    else
-      # No usable prior lattice: soft ambient (not zero park).
-      # One awk pass — never 512× nested printf (kills tip under load).
-      {
-        awk -v n="$NEED" 'BEGIN {
-          printf "%c", 8
-          for (i = 0; i < n; i++) printf "%c", 1 + (i % 3)
-        }'
-        printf 'digit=1 pick=1 ticks=%s source=heat-hold-ambient load=%s\n' "$tick" "$li"
-      } > "$CELLS.tmp" 2>/dev/null || true
-      mv "$CELLS.tmp" "$CELLS" 2>/dev/null || true
       chmod 666 "$CELLS" 2>/dev/null || true
     fi
     sleep_ms=$HEAT_INTERVAL_MS

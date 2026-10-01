@@ -153,6 +153,8 @@ public final class BluetoothHidClient {
     private String connectingMac = "";
     private boolean receiverRegistered;
     private final KeyState keyState = new KeyState();
+    /** One keyboard state. USB report snapshots and soft inject share it. */
+    private final Object kbdLock = new Object();
     private int mouseButtons;
     /**
      * some host SoCs: never queue motion across threads.
@@ -1696,6 +1698,12 @@ public final class BluetoothHidClient {
     }
 
     private void applyKey(byte mod, int usage, boolean press) {
+        synchronized (kbdLock) {
+        if (usage == 0 && !press) {
+            keyState.mods = mod;
+            for (int i = 0; i < 6; i++) keyState.keys[i] = 0;
+            return;
+        }
         if (usage >= 0xe0 && usage <= 0xe7) {
             int bit = 1 << (usage - 0xe0);
             if (press) keyState.mods |= bit;
@@ -1725,6 +1733,7 @@ public final class BluetoothHidClient {
                 }
             }
         }
+        }
     }
 
     /**
@@ -1733,8 +1742,10 @@ public final class BluetoothHidClient {
      * under congestion; hosts latch Shift/Alt until a successful empty lands).
      */
     public void releaseAllKeys() {
-        for (int i = 0; i < 6; i++) keyState.keys[i] = 0;
-        keyState.mods = 0;
+        synchronized (kbdLock) {
+            for (int i = 0; i < 6; i++) keyState.keys[i] = 0;
+            keyState.mods = 0;
+        }
         try {
             if (!sendKbd()) {
                 try {
@@ -1747,13 +1758,36 @@ public final class BluetoothHidClient {
         } catch (Exception ignored) {}
     }
 
-    private boolean sendKbd() {
-        if (hid == null || host == null) return false;
+    /**
+     * USB boot report, unchanged: mods, reserved 0, six usages.
+     * This is the only physical-key path onto the BT host.
+     */
+    public boolean submitReport(byte[] in) {
+        if (in == null || in.length < 8 || hid == null || host == null) return false;
         byte[] r = new byte[]{
-            keyState.mods, 0,
-            keyState.keys[0], keyState.keys[1], keyState.keys[2],
-            keyState.keys[3], keyState.keys[4], keyState.keys[5]
+            in[0], 0, in[2], in[3], in[4], in[5], in[6], in[7]
         };
+        synchronized (kbdLock) {
+            keyState.mods = r[0];
+            System.arraycopy(r, 2, keyState.keys, 0, 6);
+        }
+        return sendKbdBytes(r);
+    }
+
+    private boolean sendKbd() {
+        byte[] r;
+        synchronized (kbdLock) {
+            r = new byte[]{
+                keyState.mods, 0,
+                keyState.keys[0], keyState.keys[1], keyState.keys[2],
+                keyState.keys[3], keyState.keys[4], keyState.keys[5]
+            };
+        }
+        return sendKbdBytes(r);
+    }
+
+    private boolean sendKbdBytes(byte[] r) {
+        if (hid == null || host == null) return false;
         try {
             boolean ok = hid.sendReport(host, ID_KBD, r);
             // Hot path: never Log.i — every keystroke on Snapdragon hosts

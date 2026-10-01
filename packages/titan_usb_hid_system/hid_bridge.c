@@ -10,11 +10,15 @@
  *                         samples TitanKey. Ignored under --grab.
  *   --sock PATH           unix DGRAM for app inject (default /data/local/tmp/titan2_hid.sock)
  *
- * Socket packets (little-endian):
+ * Socket packets (little-endian), inject only:
  *   [0]=0x01 key:  [1]=mod [2]=hid_usage [3]=1 press / 0 release
  *   [0]=0x02 mouse:[1]=dx(int8) [2]=dy(int8) [3]=buttons
  *   [0]=0x03 btn:  [1]=buttons absolute
  *   [0]=0x04 wheel:[1]=wheel(int8)
+ *
+ * USB and BT keyboards are one report. send_kbd writes the 8-byte boot
+ * report to hidg and, when BT is on, the same bytes to @titan2_bt_kbd.
+ * There is no second BT keymap and no sleep on this thread.
  *
  * Also reads /data/local/tmp/titan2_hid.inj (app su fallback, 4-byte packets).
  */
@@ -1049,7 +1053,7 @@ static void open_hw_out(void) {
         fprintf(stderr, "hw_out open fail\n");
 }
 
-static void hw_out4(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
+static void __attribute__((unused)) hw_out4(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
     if (!want_hw_out && !no_hidg)
         return;
     uint8_t r[4] = { a, b, c, d };
@@ -1114,13 +1118,30 @@ static void mouse_sock_init(void) {
     mouse_sock_ready = 1;
 }
 
+
+/* 1 if the app's BT mouse socket is bound. Unbound abstract DGRAM is
+ * ECONNREFUSED — USB-only then must not stall the pad thread. */
+static int bt_mouse_listener_up(void) {
+    uint8_t b = 0;
+    ssize_t n;
+    socklen_t alen;
+    mouse_sock_init();
+    if (!mouse_sock_ready || mouse_sock < 0) return 0;
+    alen = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + 1 + 15);
+    n = sendto(mouse_sock, &b, 1, MSG_DONTWAIT,
+               (struct sockaddr *)&mouse_sock_addr, alen);
+    if (n >= 0) return 1;
+    if (errno == EAGAIN || errno == EWOULDBLOCK) return 1;
+    return 0;
+}
+
 /*
  * 1.96 B6: accumulate from the same slot Java zeros after take (app-private).
  * Pre-1.96 read /data/misc only while Java zeroed only app-private → already-sent
  * motion was re-added every flush (rubber-band / Snapdragon lag residual).
  */
 static int mbx_read_slot(int fd, int32_t *odx, int32_t *ody, int16_t *owh,
-                         uint8_t *seq) {
+                         uint8_t *seq, uint8_t *obtn) {
     uint8_t buf[16];
     if (fd < 0) return 0;
     if (lseek(fd, 0, SEEK_SET) < 0) return 0;
@@ -1131,10 +1152,41 @@ static int mbx_read_slot(int fd, int32_t *odx, int32_t *ody, int16_t *owh,
     memcpy(ody, buf + 8, 4);
     memcpy(owh, buf + 12, 2);
     *seq = buf[15];
+    if (obtn) *obtn = buf[14];
     return 1;
 }
 
+/* Button-up must not overwrite an unconsumed down. It also must not sleep:
+ * this thread is the keyboard reader. The release sits here until the poll
+ * loop sees the down consumed, then it is written. */
+static int btn_rel_pending = 0;
+static int btn_rel_dx, btn_rel_dy, btn_rel_wh;
+static uint8_t btn_rel_btn;
+static uint8_t btn_rel_seq;
+static int tap_up_pending = 0;
+static long long tap_up_at_ms = 0;
+
+static int bt_slot_btn_idle(uint8_t seq) {
+    int32_t dx = 0, dy = 0;
+    int16_t wh = 0;
+    uint8_t s = 0, b = 0xff;
+    int got = 0;
+    if (mouse_mbx2_fd >= 0)
+        got = mbx_read_slot(mouse_mbx2_fd, &dx, &dy, &wh, &s, &b);
+    if (!got && mouse_mbx_fd >= 0)
+        got = mbx_read_slot(mouse_mbx_fd, &dx, &dy, &wh, &s, &b);
+    if (!got) return 1;
+    return s == seq && (b & 0x07) == 0;
+}
+
 static void bt_mouse_mailbox_add(int dx, int dy, int wheel, uint8_t buttons) {
+    if (btn_rel_pending) {
+        btn_rel_dx += dx;
+        btn_rel_dy += dy;
+        btn_rel_wh += wheel;
+        btn_rel_btn = buttons;
+        return;
+    }
     if (mouse_mbx_fd < 0) {
         mkdir("/data/misc/titan2", 0777);
         chmod("/data/misc/titan2", 0777);
@@ -1156,12 +1208,25 @@ static void bt_mouse_mailbox_add(int dx, int dy, int wheel, uint8_t buttons) {
     }
     int32_t odx = 0, ody = 0;
     int16_t owh = 0;
-    uint8_t seq = 0;
+    uint8_t seq = 0, prev_btn = 0;
     uint8_t buf[16];
     memset(buf, 0, sizeof buf);
     /* Prefer app-private (Java zeros after take). Misc is mirror only. */
-    if (!mbx_read_slot(mouse_mbx2_fd, &odx, &ody, &owh, &seq)) {
-        (void)mbx_read_slot(mouse_mbx_fd, &odx, &ody, &owh, &seq);
+    if (!mbx_read_slot(mouse_mbx2_fd, &odx, &ody, &owh, &seq, &prev_btn)) {
+        prev_btn = 0;
+        (void)mbx_read_slot(mouse_mbx_fd, &odx, &ody, &owh, &seq, &prev_btn);
+    }
+    /* Falling edge still in the slot: keep the down, remember the up.
+     * Do not sleep — TitanKey is read on this same thread. */
+    if (((prev_btn & 0x07) & ~(buttons & 0x07)) != 0 && bt_mouse_listener_up()
+            && !bt_slot_btn_idle(seq)) {
+        btn_rel_pending = 1;
+        btn_rel_dx = dx;
+        btn_rel_dy = dy;
+        btn_rel_wh = wheel;
+        btn_rel_btn = buttons;
+        btn_rel_seq = seq;
+        return;
     }
     odx += dx;
     ody += dy;
@@ -1212,6 +1277,19 @@ static void bt_mouse_mailbox_add(int dx, int dy, int wheel, uint8_t buttons) {
     }
 }
 
+static void bt_flush_deferred_btn(void) {
+    int dx, dy, wh;
+    uint8_t btn;
+    if (!btn_rel_pending) return;
+    if (bt_mouse_listener_up() && !bt_slot_btn_idle(btn_rel_seq)) return;
+    dx = btn_rel_dx;
+    dy = btn_rel_dy;
+    wh = btn_rel_wh;
+    btn = btn_rel_btn;
+    btn_rel_pending = 0;
+    bt_mouse_mailbox_add(dx, dy, wh, btn);
+}
+
 /* Flush pending BT mouse: mailbox only (no hw.out FIFO for motion). */
 static void bt_mouse_flush(int force) {
     long long n = now_ms();
@@ -1256,29 +1334,128 @@ static void bt_mouse_queue(uint8_t buttons, int dx, int dy, int wheel) {
 static int hidg_fail_streak = 0;
 static int grab_released_for_host = 0;
 
-static int send_kbd(int fd, uint8_t mods, const uint8_t keys[6]) {
-    int ok = 0;
-    if (fd >= 0) {
-        uint8_t r[8] = { mods, 0, keys[0], keys[1], keys[2], keys[3], keys[4], keys[5] };
-        ssize_t w = write(fd, r, 8);
-        if (w != 8) {
-            usleep(1000);
-            w = write(fd, r, 8);
+/* Same 8 bytes USB hidg writes. Java sendReport uses them unchanged. */
+#define BT_KBD_NAME "titan2_bt_kbd"
+#define KBD_BACKLOG 32
+static int kbd_sock = -1;
+static struct sockaddr_un kbd_sock_addr;
+static int kbd_sock_ready = 0;
+static int kbd_peer_up = 0;
+static uint8_t kbd_backlog[KBD_BACKLOG][8];
+static int kbd_bq_r, kbd_bq_w, kbd_bq_n;
+
+static void kbd_sock_init(void) {
+    if (kbd_sock >= 0) return;
+    kbd_sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    if (kbd_sock < 0) return;
+    memset(&kbd_sock_addr, 0, sizeof kbd_sock_addr);
+    kbd_sock_addr.sun_family = AF_UNIX;
+    kbd_sock_addr.sun_path[0] = '\0';
+    memcpy(kbd_sock_addr.sun_path + 1, BT_KBD_NAME, sizeof(BT_KBD_NAME) - 1);
+    kbd_sock_ready = 1;
+}
+
+static int kbd_send_one(const uint8_t r[8]) {
+    ssize_t n;
+    socklen_t alen;
+    kbd_sock_init();
+    if (!kbd_sock_ready || kbd_sock < 0) return 0;
+    alen = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + 1
+        + (sizeof(BT_KBD_NAME) - 1));
+    n = sendto(kbd_sock, r, 8, MSG_DONTWAIT,
+               (struct sockaddr *)&kbd_sock_addr, alen);
+    if (n == 8) return 1;
+    if (errno == ECONNREFUSED || errno == ENOENT) kbd_peer_up = 0;
+    return 0;
+}
+
+static void bt_kbd_flush(void) {
+    while (kbd_bq_n > 0) {
+        if (!kbd_send_one(kbd_backlog[kbd_bq_r])) return;
+        kbd_bq_r = (kbd_bq_r + 1) % KBD_BACKLOG;
+        kbd_bq_n--;
+    }
+}
+
+/* Peer down: one latest report. Peer up: ordered snapshots, never a sleep. */
+static void bt_kbd_publish(const uint8_t r[8]) {
+    if (!want_hw_out && !no_hidg) return;
+    if (!kbd_peer_up) {
+        if (kbd_send_one(r)) {
+            kbd_peer_up = 1;
+            kbd_bq_n = 0;
+            return;
         }
+        memcpy(kbd_backlog[0], r, 8);
+        kbd_bq_r = 0;
+        kbd_bq_w = 0;
+        kbd_bq_n = 1;
+        return;
+    }
+    bt_kbd_flush();
+    if (kbd_bq_n == 0 && kbd_send_one(r)) return;
+    if (!kbd_peer_up) {
+        memcpy(kbd_backlog[0], r, 8);
+        kbd_bq_r = 0;
+        kbd_bq_w = 0;
+        kbd_bq_n = 1;
+        return;
+    }
+    if (kbd_bq_n == KBD_BACKLOG) {
+        kbd_bq_r = (kbd_bq_r + 1) % KBD_BACKLOG;
+        kbd_bq_n--;
+    }
+    memcpy(kbd_backlog[kbd_bq_w], r, 8);
+    kbd_bq_w = (kbd_bq_w + 1) % KBD_BACKLOG;
+    kbd_bq_n++;
+}
+
+static void bt_kbd_pump(void) {
+    if ((!want_hw_out && !no_hidg) || kbd_bq_n == 0) return;
+    if (!kbd_peer_up && kbd_bq_n == 1) {
+        if (kbd_send_one(kbd_backlog[0])) {
+            kbd_peer_up = 1;
+            kbd_bq_n = 0;
+        }
+        return;
+    }
+    bt_kbd_flush();
+}
+
+static void drop_stale_kbd_fifo(void) {
+    static const char *paths[] = {
+        "/data/local/tmp/titan2_hid_hw.out",
+        "/data/user/0/com.titanus2.usbhid/files/titan2_hid_hw.out",
+        "/data/data/com.titanus2.usbhid/files/titan2_hid_hw.out",
+        NULL
+    };
+    int i;
+    for (i = 0; paths[i]; i++) {
+        int fd = open(paths[i], O_WRONLY | O_CLOEXEC);
+        if (fd < 0) continue;
+        (void)ftruncate(fd, 0);
+        close(fd);
+    }
+}
+
+static int send_kbd(int fd, uint8_t mods, const uint8_t keys[6]) {
+    uint8_t r[8] = { mods, 0, keys[0], keys[1], keys[2], keys[3], keys[4], keys[5] };
+    int ok = 0;
+    bt_kbd_publish(r);
+    if (fd >= 0) {
+        ssize_t w = write(fd, r, 8);
+        if (w != 8)
+            w = write(fd, r, 8);
         if (w == 8) {
             ok = 1;
             hidg_fail_streak = 0;
         } else {
             hidg_fail_streak++;
         }
+        return ok ? 0 : -1;
     }
-    /* Soft inject / socket path must not fake success without writing USB. */
-    if (fd < 0 && hw_out_fd < 0 && hw_out_fd_app < 0) return -1;
-    if (fd < 0 && (hw_out_fd >= 0 || hw_out_fd_app >= 0)) {
-        /* nohidg BT-only: caller should also hw_out4 per-key; mark ok if open */
-        ok = 1;
-    }
-    return ok ? 0 : -1;
+    if (want_hw_out || no_hidg) return 0;
+    return -1;
 }
 
 /* Open / close TitanKey. Grab is a live ioctl — do not close to switch owners. */
@@ -1323,8 +1500,7 @@ static void flush_guest_kbd(int hid_k, uint8_t *mods, uint8_t keys[6]) {
     if (keys) memset(keys, 0, 6);
     {
         uint8_t z6[6] = {0};
-        if (hid_k >= 0) send_kbd(hid_k, 0, z6);
-        hw_out4(0x01, 0, 0, 0);
+        send_kbd(hid_k, 0, z6);
     }
 }
 
@@ -1655,10 +1831,6 @@ static int drain_inj_one(const char *path, int hid_k, int hid_m,
         case 0x01:
             apply_key(mods, keys, p[1], p[2], p[3]);
             send_kbd(hid_k, *mods, keys);
-            /* Mirror to BT only when there is no USB hidg — app already
-             * handlePacket()s BT when Link has BT, and double-feed races case. */
-            if (no_hidg || hid_k < 0)
-                hw_out4(0x01, p[1], p[2], p[3]);
             if (p[3]) {
                 note_typing();
                 /* Activity stamp only — light_keyled throttled inside bump */
@@ -1731,6 +1903,8 @@ int main(int argc, char **argv) {
     if (typing_guard_ms > 5000) typing_guard_ms = 5000;
     fprintf(stderr, "typing_guard_ms=%d speed=%d%% accel=%d follow=%d rot=%d\n",
             typing_guard_ms, mouse_speed_pct, mouse_accel, follow_orient, display_rotation);
+    fprintf(stderr, "bt kbd shares usb report\n");
+    if (want_hw_out || no_hidg) drop_stale_kbd_fifo();
 
     signal(SIGINT, on_sig);
     signal(SIGTERM, on_sig);
@@ -1847,7 +2021,7 @@ int main(int argc, char **argv) {
         return 2;
     }
     if (hid_k < 0 && no_hidg)
-        fprintf(stderr, "nohidg mode — physical → hw_out/BT only\n");
+        fprintf(stderr, "nohidg mode — BT gets the usb keyboard report\n");
 
     int sfd = setup_sock_fs(sock_path);
     if (sfd >= 0) fprintf(stderr, "sock=%s\n", sock_path);
@@ -1900,13 +2074,23 @@ int main(int argc, char **argv) {
         if (sfd_abs >= 0) { i_sa = np; pf[np].fd = sfd_abs; pf[np].events = POLLIN; np++; }
         int poll_ms = 8;
         if (!mouse_on && !keys_on) poll_ms = 250;
+        if (tap_up_pending) {
+            long long left = tap_up_at_ms - now_ms();
+            if (left < 0) left = 0;
+            if (left < (long long)poll_ms) poll_ms = (int)left;
+        }
         int pr = poll(pf, np, poll_ms);
         if (pr < 0) {
             if (errno == EINTR) continue;
             break;
         }
-        /* Always flush pending BT mouse on poll tick (~8ms) so Snapdragon
-         * hosts see a steady ~125 Hz stream, never a multi-second backlog. */
+        if (tap_up_pending && now_ms() >= tap_up_at_ms) {
+            tap_up_pending = 0;
+            emit_mouse(hid_m >= 0 ? hid_m : -1, 0, 0, 0, 0, 0);
+        }
+        bt_flush_deferred_btn();
+        bt_kbd_pump();
+        /* Mouse coalescing stays on the poll tick. Do not sleep here. */
         bt_mouse_flush(0);
 
         /* Typing edge: freeze host mouse + cancel right-click hold immediately
@@ -1991,12 +2175,8 @@ int main(int argc, char **argv) {
                         if (bit) specials_mod_mask &= ~bit;
                         else specials_mod_mask = 0;
                         if (!specials_mod_mask) {
-                            /* clear any stuck shift from specials chords */
-                            if (hid_k >= 0 || hw_out_fd >= 0 || hw_out_fd_app >= 0) {
-                                uint8_t empty[6] = {0};
-                                hw_out4(0x01, 0, 0, 0);
-                                if (hid_k >= 0) send_kbd(hid_k, 0, empty);
-                            }
+                            uint8_t empty[6] = {0};
+                            send_kbd(hid_k, 0, empty);
                             fprintf(stderr, "sym layer off\n");
                             fflush(stderr);
                         }
@@ -2010,12 +2190,9 @@ int main(int argc, char **argv) {
                         uint8_t report_mods = (uint8_t)(mods | sm);
                         uint8_t k6[6] = {0};
                         if (ev.value == 1) k6[0] = su;
-                        hw_out4(0x01, report_mods, su, ev.value ? 1 : 0);
-                        if (hid_k >= 0) {
-                            if (send_kbd(hid_k, report_mods, k6) != 0) {
-                                hid_k = reopen_hidg(hid_k, 0);
-                                if (hid_k >= 0) send_kbd(hid_k, report_mods, k6);
-                            }
+                        if (send_kbd(hid_k, report_mods, k6) != 0 && hid_k >= 0) {
+                            hid_k = reopen_hidg(hid_k, 0);
+                            if (hid_k >= 0) send_kbd(hid_k, report_mods, k6);
                         }
                         if (ev.value == 1) {
                             fprintf(stderr,
@@ -2023,11 +2200,12 @@ int main(int argc, char **argv) {
                                 ev.code, su, report_mods);
                             fflush(stderr);
                         }
-                        /* do not leave host with sticky Shift from specials */
                         if (ev.value == 0 && sm) {
                             uint8_t empty[6] = {0};
-                            hw_out4(0x01, mods, 0, 0);
-                            if (hid_k >= 0) send_kbd(hid_k, mods, empty);
+                            if (send_kbd(hid_k, mods, empty) != 0 && hid_k >= 0) {
+                                hid_k = reopen_hidg(hid_k, 0);
+                                if (hid_k >= 0) send_kbd(hid_k, mods, empty);
+                            }
                         }
                         continue;
                     }
@@ -2047,9 +2225,6 @@ int main(int argc, char **argv) {
                         keys[5] = 0; break;
                     }
                 }
-                /* physical key → BT mirror (per-event). Carry live mod mask so
-                 * hosts get Ctrl/Alt/Shift+letter even if e0–e7 ordering races. */
-                hw_out4(0x01, mods, hid, ev.value ? 1 : 0);
                 if (send_kbd(hid_k, mods, keys) != 0) {
                     if (!no_hidg) {
                         hid_k = reopen_hidg(hid_k, 0);
@@ -2106,9 +2281,13 @@ int main(int argc, char **argv) {
                                 if (ms > 0 && ms < 280) {
                                     /* Raw-pad tap → host click only; no key_activity
                                      * stamp (would cancel touchpadd left latch). */
+                                    if (tap_up_pending) {
+                                        tap_up_pending = 0;
+                                        emit_mouse(hid_m >= 0 ? hid_m : -1, 0, 0, 0, 0, 0);
+                                    }
                                     emit_mouse(hid_m >= 0 ? hid_m : -1, 0x01, 0, 0, 0, 0);
-                                    usleep(30000);
-                                    emit_mouse(hid_m >= 0 ? hid_m : -1, 0, 0, 0, 0, 0);
+                                    tap_up_pending = 1;
+                                    tap_up_at_ms = now_ms() + 30;
                                 }
                             }
                             contact = 0; last_x = last_y = -1;
@@ -2393,9 +2572,6 @@ int main(int argc, char **argv) {
                         uint8_t m = buf[1], h = buf[2], press = buf[3];
                         apply_key(&mods, keys, m, h, press);
                         send_kbd(hid_k, mods, keys);
-                        /* Soft inject: app dual-sends BT; only mirror if BT-only */
-                        if (no_hidg || hid_k < 0)
-                            hw_out4(0x01, m, h, press);
                         if (press) {
                             note_typing();
                             bump_key_activity();
@@ -2428,8 +2604,7 @@ int main(int argc, char **argv) {
     /* Empty keyboard + mouse reports before ungrab/close (sticky mods on host). */
     {
         uint8_t z6[6] = {0};
-        if (hid_k >= 0) send_kbd(hid_k, 0, z6);
-        hw_out4(0x01, 0, 0, 0);
+        send_kbd(hid_k, 0, z6);
         if (hid_m >= 0 || hw_out_fd >= 0 || hw_out_fd_app >= 0)
             emit_mouse(hid_m >= 0 ? hid_m : -1, 0, 0, 0, 0, 0);
     }

@@ -317,6 +317,32 @@ public class SettingsActivity extends Activity {
             AtlasPrefs.setDeskCompose(this, on);
             toast(on ? "GPU compose on next Desk" : "compose off next Desk");
         });
+        UiKit.section(root, "Keys");
+        UiKit.note(root,
+            "Same symbols in the shell, the desk, and the HID pad. "
+                + "Cells share the screen width. Groups apply when you return.");
+        UiKit.toggle(root, "Arrows and navigation", AtlasPrefs.keysNav(this), on ->
+            AtlasPrefs.setKeysNav(this, on));
+        UiKit.toggle(root, "Ctrl Alt Shift", AtlasPrefs.keysMods(this), on ->
+            AtlasPrefs.setKeysMods(this, on));
+        UiKit.toggle(root, "Function keys", AtlasPrefs.keysFn(this), on ->
+            AtlasPrefs.setKeysFn(this, on));
+        UiKit.toggle(root, "Edit and symbols", AtlasPrefs.keysEdit(this), on ->
+            AtlasPrefs.setKeysEdit(this, on));
+        UiKit.section(root, "Side keys");
+        UiKit.note(root,
+            "Atlas desk profile in Titan Controls. Top is the upper side key, "
+                + "bottom is the lower one. Other apps keep their own maps. "
+                + "The desk uses this profile only while it is open.");
+        TextView sideLab = UiKit.mono(root);
+        sideLab.setText("…");
+        runIo(() -> {
+            String s = sideSummary();
+            main.post(() -> sideLab.setText(s));
+        });
+        LinearLayout sideRow = UiKit.row(root);
+        UiKit.flexButton(sideRow, "Top", () -> pickSide(true, sideLab));
+        UiKit.flexButton(sideRow, "Bottom", () -> pickSide(false, sideLab));
         UiKit.note(root,
             "Full screen panel. Keys opens around it and the desktop stays full screen. "
                 + "Style, size, and transparency apply when you return to the desk.");
@@ -770,6 +796,37 @@ public class SettingsActivity extends Activity {
     private String deskSummary() {
         return AtlasPrefs.deskW(this) + "×" + AtlasPrefs.deskH(this)
             + "  scale " + AtlasPrefs.deskScaleLabel(this);
+    }
+
+    private String sideSummary() {
+        return "Top " + DeskSideKeys.label(DeskSideKeys.action(this,
+                com.titanus2.api.Titan2ApiContract.SLOT_SIDE2_SHORT))
+            + "  ·  Bottom " + DeskSideKeys.label(DeskSideKeys.action(this,
+                com.titanus2.api.Titan2ApiContract.SLOT_SIDE_SHORT));
+    }
+
+    /** Controls lookup is slow. Read the labels off the UI thread. */
+    private void pickSide(boolean top, TextView lab) {
+        String slot = top
+            ? com.titanus2.api.Titan2ApiContract.SLOT_SIDE2_SHORT
+            : com.titanus2.api.Titan2ApiContract.SLOT_SIDE_SHORT;
+        String[] labels = new String[DeskSideKeys.CHOICES.length];
+        for (int i = 0; i < labels.length; i++) labels[i] = DeskSideKeys.CHOICES[i][1];
+        new android.app.AlertDialog.Builder(this)
+            .setTitle(top ? "Top side key" : "Bottom side key")
+            .setItems(labels, (d, which) -> {
+                String action = DeskSideKeys.CHOICES[which][0];
+                runIo(() -> {
+                    boolean ok = DeskSideKeys.set(this, slot, action);
+                    String s = sideSummary();
+                    main.post(() -> {
+                        toast(ok ? DeskSideKeys.label(action) : "Controls did not take the map");
+                        lab.setText(s);
+                    });
+                });
+            })
+            .setNegativeButton("Close", null)
+            .show();
     }
 
     private String orbSummary() {

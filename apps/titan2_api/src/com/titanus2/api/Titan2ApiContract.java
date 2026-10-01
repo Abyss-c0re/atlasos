@@ -230,6 +230,11 @@ public final class Titan2ApiContract {
     /** Canonical HID host temp layer (API + Controls profile SoT). */
     public static final String LAYER_HID_HOST = "hid_host";
     /**
+     * Temp layer while the Atlas desk is open. Slots come from the
+     * {@link #ATLAS_PKG} Controls profile, so other apps keep their own maps.
+     */
+    public static final String LAYER_ATLAS_DESK = "atlas_desk";
+    /**
      * Package owning the permanent HID host profile in Controls
      * ({@code KeyMapProfiles}). Edits in Controls or via
      * {@link #MSG_SET_KEY_ACTION}+{@link #KEY_PKG} stay visible there.

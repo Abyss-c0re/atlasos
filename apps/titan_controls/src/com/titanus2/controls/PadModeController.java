@@ -8,6 +8,8 @@ import android.view.Surface;
 import android.view.WindowManager;
 import java.io.File;
 
+import com.titanus2.controls.subdisplay.SubDisplayPrefs;
+
 /**
  * Shared pad mode: off | trackpad | mouse + follow-orientation.
  * Control plane is shared with Titan USB HID ({@code /data/misc/titan2}
@@ -54,6 +56,10 @@ public final class PadModeController {
     public static void stampPadSurfacePlane(Context ctx, boolean modOn) {
         if (ctx == null) return;
         try {
+            if (SubDisplayPrefs.isHidMouse(ctx)) {
+                InputSurfaceController.apply(ctx);
+                return;
+            }
             if (modOn) {
                 AgentBridge.put(ctx, "titan2_hw_pad_inhibit", "0");
                 AgentBridge.put(ctx, "titan2_input_surface", "hw");
@@ -163,6 +169,19 @@ public final class PadModeController {
         try {
             if (HostLayoutController.isHidExclusiveLiveFast(ctx)) return;
         } catch (Exception ignored) {}
+        String surface = "hw";
+        String flipX = "0";
+        String flipY = "0";
+        try {
+            if (SubDisplayPrefs.isHidMouse(ctx)) {
+                surface = InputSurfaceController.hidSurface(ctx);
+                flipX = InputSurfaceController.isSubFlipX(ctx) ? "1" : "0";
+                flipY = InputSurfaceController.isSubFlipY(ctx) ? "1" : "0";
+            }
+        } catch (Exception ignored) {}
+        final String spawnSurface = surface;
+        final String spawnFlipX = flipX;
+        final String spawnFlipY = flipY;
         try {
             // Prefer Magisk module binary (B8 pack) over hybrid /system/bin;
             // 12.53: also /data/local/tmp staged binary (rootless land path).
@@ -187,7 +206,8 @@ public final class PadModeController {
                     + "  if [ -x \"$TP\" ]; then "
                     + "    LOGCAT_OUTPUT=true KEYBOARD_FEATURES=false "
                     + "    TAP_TO_CLICK=\"$CLICK\" TEXT_CARET_NAV=0 TOP_ROW_CURSOR=0 TOP_ROW_ONLY=0 "
-                    + "    PAD_SURFACE=hw "
+                    + "    PAD_SURFACE=" + spawnSurface
+                    + " FLIP_X=" + spawnFlipX + " FLIP_Y=" + spawnFlipY + " "
                     + "    \"$TP\" >>/data/local/tmp/titan2_touchpadd.log 2>&1 & "
                     + "  fi; "
                     + "  start titan2-touchpadd 2>/dev/null; "
@@ -212,6 +232,9 @@ public final class PadModeController {
     public static void stopTouchpaddProcess(Context ctx) {
         try {
             if (HostLayoutController.isHidExclusiveLiveFast(ctx)) return;
+        } catch (Exception ignored) {}
+        try {
+            if (SubDisplayPrefs.isHidMouse(ctx)) return;
         } catch (Exception ignored) {}
         try {
             // B8 11.92: su only on ALLOW_ROOT lab builds. Release must never

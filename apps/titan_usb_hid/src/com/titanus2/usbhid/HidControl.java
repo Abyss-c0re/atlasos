@@ -1343,11 +1343,17 @@ public final class HidControl {
         if (packet == null || packet.length < 1) return false;
         byte[] rec = new byte[4];
         System.arraycopy(packet, 0, rec, 0, Math.min(4, packet.length));
+        // Keyboard has one owner: hid_bridge. It emits one 8-byte report to
+        // USB and the same bytes to BT. A second handlePacket fights that.
+        if ((rec[0] & 0xff) == 0x01) {
+            if (sendSock(rec)) return true;
+            if (useBt()) return BluetoothHidClient.get().handlePacket(rec);
+            return sendAppInj(rec);
+        }
         boolean ok = false;
         boolean bt = useBt();
         boolean usb = useUsb();
-        // 1.68: never both transports on one send — dual host glyphs (user 1:N).
-        // Drain paths already pick one; hot keyTap/send must match.
+        // Mouse still picks one transport. Keyboard does not (handled above).
         if (bt && usb) {
             if (planeOnTmp(SESSION) || planeOnTmp("titan2_usb_hid_grab") || planeOnTmp(USB_EN)) {
                 bt = false;
@@ -1636,17 +1642,39 @@ public final class HidControl {
         };
         // 1.67: first non-empty only + clear siblings (was: emit every path →
         // multi-glyph when fan-out leftovers or dual writers hit tmp+CE).
+        // Keyboard edges in this fifo are not a second layout.
         for (File f : paths) {
             byte[] all = readAndClearQueueFile(f);
             if (all == null || all.length < 4) continue;
-            if (bt) emitQueueRecordsBt(all);
-            else if (usb) emitQueueRecordsUsb(all);
+            all = stripKbdEdges(all);
+            if (all.length >= 4) {
+                if (bt) emitQueueRecordsBt(all);
+                else if (usb) emitQueueRecordsUsb(all);
+            }
             for (File g : paths) {
                 if (g.equals(f)) continue;
                 try { readAndClearQueueFile(g); } catch (Exception ignored) {}
             }
             break;
         }
+    }
+
+    /** Drop 4-byte keyboard edges. The usb 8-byte report is the keyboard. */
+    private static byte[] stripKbdEdges(byte[] all) {
+        if (all == null) return new byte[0];
+        int keep = 0;
+        for (int off = 0; off + 4 <= all.length; off += 4) {
+            if ((all[off] & 0xff) != 0x01) keep += 4;
+        }
+        if (keep == all.length) return all;
+        byte[] out = new byte[keep];
+        int w = 0;
+        for (int off = 0; off + 4 <= all.length; off += 4) {
+            if ((all[off] & 0xff) == 0x01) continue;
+            System.arraycopy(all, off, out, w, 4);
+            w += 4;
+        }
+        return out;
     }
 
     /** @deprecated use {@link #drainHwOut} — kept for call sites / Magisk notes */
@@ -1750,6 +1778,10 @@ public final class HidControl {
                 if (t == 0x02 || t == 0x04) continue;
                 byte[] rec = new byte[4];
                 System.arraycopy(all, off, rec, 0, 4);
+                if (t == 0x01) {
+                    send(rec);
+                    continue;
+                }
                 bt.handlePacket(rec);
             }
         } catch (Exception e) {
@@ -1848,6 +1880,10 @@ public final class HidControl {
                 if (t == 0x02 || t == 0x04) continue;
                 byte[] rec = new byte[4];
                 System.arraycopy(all, off, rec, 0, 4);
+                if (t == 0x01) {
+                    send(rec);
+                    continue;
+                }
                 bt.handlePacket(rec);
             }
         } catch (Exception e) {
@@ -2194,49 +2230,7 @@ public final class HidControl {
      * mod bit1 = Left Shift.
      */
     public static int[] charToKey(char c) {
-        final int SH = 0x02;
-        if (c >= 'a' && c <= 'z') return new int[]{0, 0x04 + (c - 'a')};
-        if (c >= 'A' && c <= 'Z') return new int[]{SH, 0x04 + (c - 'A')};
-        if (c >= '1' && c <= '9') return new int[]{0, 0x1e + (c - '1')};
-        if (c == '0') return new int[]{0, 0x27};
-        switch (c) {
-            case ' ': return new int[]{0, 0x2c};
-            case '\n': case '\r': return new int[]{0, 0x28};
-            case '\t': return new int[]{0, 0x2b};
-            case '-': return new int[]{0, 0x2d};
-            case '=': return new int[]{0, 0x2e};
-            case '[': return new int[]{0, 0x2f};
-            case ']': return new int[]{0, 0x30};
-            case '\\': return new int[]{0, 0x31};
-            case ';': return new int[]{0, 0x33};
-            case '\'': return new int[]{0, 0x34};
-            case '`': return new int[]{0, 0x35};
-            case ',': return new int[]{0, 0x36};
-            case '.': return new int[]{0, 0x37};
-            case '/': return new int[]{0, 0x38};
-            case '!': return new int[]{SH, 0x1e};
-            case '@': return new int[]{SH, 0x1f};
-            case '#': return new int[]{SH, 0x20};
-            case '$': return new int[]{SH, 0x21};
-            case '%': return new int[]{SH, 0x22};
-            case '^': return new int[]{SH, 0x23};
-            case '&': return new int[]{SH, 0x24};
-            case '*': return new int[]{SH, 0x25};
-            case '(': return new int[]{SH, 0x26};
-            case ')': return new int[]{SH, 0x27};
-            case '_': return new int[]{SH, 0x2d};
-            case '+': return new int[]{SH, 0x2e};
-            case '{': return new int[]{SH, 0x2f};
-            case '}': return new int[]{SH, 0x30};
-            case '|': return new int[]{SH, 0x31};
-            case ':': return new int[]{SH, 0x33};
-            case '"': return new int[]{SH, 0x34};
-            case '~': return new int[]{SH, 0x35};
-            case '<': return new int[]{SH, 0x36};
-            case '>': return new int[]{SH, 0x37};
-            case '?': return new int[]{SH, 0x38};
-            default: return null;
-        }
+        return com.titanus2.api.KeyGlyphs.hidFor(c);
     }
 
     public static boolean mouseMove(int dx, int dy, int buttons) {

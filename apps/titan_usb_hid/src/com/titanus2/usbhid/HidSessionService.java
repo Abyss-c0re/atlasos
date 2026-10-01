@@ -93,6 +93,7 @@ public class HidSessionService extends Service {
     private Handler drainHandler;
     /** Immediate mouse path from hid_bridge (abstract DGRAM). */
     private BtMouseSock mouseSock;
+    private BtKbdSock kbdSock;
     /**
      * True while exclusive keys were forced off for host-layout (not soft Type).
      * Drain loop heals keys back on when layout plane goes off — report 17.05
@@ -898,6 +899,8 @@ public class HidSessionService extends Service {
         }
         boolean usb = (transport & HidControl.TRANSPORT_USB) != 0;
         boolean bt = (transport & HidControl.TRANSPORT_BT) != 0;
+        if (kbdSock == null) kbdSock = new BtKbdSock();
+        kbdSock.start();
         if (bt && phys) {
             if (mouseSock == null) mouseSock = new BtMouseSock();
             mouseSock.start();
@@ -1079,6 +1082,10 @@ public class HidSessionService extends Service {
             try { mouseSock.stop(); } catch (Exception ignored) {}
             mouseSock = null;
         }
+        if (kbdSock != null) {
+            try { kbdSock.stop(); } catch (Exception ignored) {}
+            kbdSock = null;
+        }
         h.removeCallbacks(notifTick);
         h.removeCallbacks(localInputTick);
         try { HidKeyMapSession.onSessionStop(this); } catch (Exception ignored) {}
@@ -1121,6 +1128,10 @@ public class HidSessionService extends Service {
         if (mouseSock != null) {
             try { mouseSock.stop(); } catch (Exception ignored) {}
             mouseSock = null;
+        }
+        if (kbdSock != null) {
+            try { kbdSock.stop(); } catch (Exception ignored) {}
+            kbdSock = null;
         }
         h.removeCallbacks(notifTick);
         h.removeCallbacks(localInputTick);

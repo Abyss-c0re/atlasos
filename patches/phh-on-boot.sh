@@ -50,6 +50,16 @@ do
   [ -e "$led" ] && echo 3 > "$led" 2>/dev/null
 done
 
+# Rear digitizer IDC. InputReader latches touch.displayId when the device opens.
+# Bind a staged pin before that open. pad-idc rebinds later if this was too late.
+_sub_stage=/data/adb/titan2/idc/sub_touch.idc
+_sub_live=/system/usr/idc/sub_touch.idc
+if [ -f "$_sub_stage" ] && grep -q 'touch.displayId = local:' "$_sub_stage" 2>/dev/null; then
+  if [ ! -f "$_sub_live" ] || ! cmp -s "$_sub_stage" "$_sub_live" 2>/dev/null; then
+    mount --bind "$_sub_stage" "$_sub_live" 2>/dev/null || true
+  fi
+fi
+
 # Default pad OFF until pad-agent / Titan Controls apply user mode.
 # Fresh install used to force Agui trackpad on + uninhibit touchPad, so the
 # hardware pad was live while the QS/UI still showed Off and could not turn it off.

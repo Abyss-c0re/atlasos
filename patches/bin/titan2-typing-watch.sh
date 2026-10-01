@@ -10,7 +10,7 @@ PAD_STATUS=$ST/titan2_pad_status
 ACTIVITY=$ST/titan2_key_activity
 TP_LOG=$ST/titan2_touchpadd.log
 AGENT_LOCKDIR=$T2/pad-agent.lockdir
-TW_VER=2.169-typing-watch-plane
+TW_VER=2.170-typing-watch-nofork
 
 echo "typing-watch pid=$$ parent=$PPID ver=$TW_VER" >"$ST/titan2_typing_watch_status" 2>/dev/null
 chmod 666 "$ST/titan2_typing_watch_status" 2>/dev/null || true
@@ -28,39 +28,82 @@ elif [ -x /data/adb/modules/titan2_touchpadd/system/bin/titan2-touchpadd ]; then
 else
   _TW_TP=/system/bin/titan2-touchpadd
 fi
-_tw_now_ms() {
-  if command -v awk >/dev/null 2>&1; then
-    _m=`awk '{printf "%d\n", $1 * 1000}' /proc/uptime 2>/dev/null`
-    case "$_m" in ''|*[!0-9]*) ;; *) echo "$_m"; return ;; esac
-  fi
-  _line=`cat /proc/uptime 2>/dev/null` || { echo 0; return; }
-  _sec=${_line%% *}; _i=${_sec%%.*}
-  case "$_i" in ''|*[!0-9]*) echo 0 ;; *) echo $((_i * 1000)) ;; esac
+# One line, no fork. Drops CR, space, and tab the way tr -d did.
+_tw_read() {
+  _tw_read_v=
+  [ -r "$1" ] || return 1
+  IFS= read -r _tw_read_v < "$1" || [ -n "$_tw_read_v" ] || return 1
+  _old=$_tw_read_v
+  _tw_read_v=
+  while [ -n "$_old" ]; do
+    _ch=${_old%"${_old#?}"}
+    _old=${_old#?}
+    case "$_ch" in
+      [[:space:]]) ;;
+      *) _tw_read_v=$_tw_read_v$_ch ;;
+    esac
+  done
+  [ -n "$_tw_read_v" ]
 }
-_tw_cool() {
-  _ms=
+_tw_set_now() {
+  # Uptime milliseconds. Do not use _m here; _m is the pad mode.
+  _now=0
+  _up=
+  IFS= read -r _up < /proc/uptime || return 0
+  _sec=${_up%% *}
+  _i=${_sec%%.*}
+  _frac=${_sec#*.}
+  [ "$_frac" = "$_sec" ] && _frac=
+  case "$_i" in ''|*[!0-9]*) return 0 ;; esac
+  _f3=${_frac}000
+  _rest=${_f3#???}
+  _f3=${_f3%"$_rest"}
+  case "$_f3" in ''|*[!0-9]*) _f3=0 ;; esac
+  _now=$((_i * 1000 + 10#$_f3))
+}
+_tw_now_ms() {
+  _tw_set_now
+  echo "$_now"
+}
+_tw_set_cool() {
+  _cool=
   for _f in "$T2/titan2_pad_cursor_cool_ms" "$ST/titan2_pad_cursor_cool_ms" \
       "$T2/titan2_pad_cursor_pause_ms" "$ST/titan2_pad_cursor_pause_ms"; do
     [ -f "$_f" ] || continue
-    _ms=`cat "$_f" 2>/dev/null | tr -d '\r\n \t'`
-    case "$_ms" in ''|0|*[!0-9]*) _ms=; continue ;; *) break ;; esac
+    _tw_read "$_f" || continue
+    case "$_tw_read_v" in ''|0|*[!0-9]*) continue ;; *) _cool=$_tw_read_v; break ;; esac
   done
-  case "$_ms" in ''|*[!0-9]*) _ms=500 ;; esac
-  [ "$_ms" -lt 100 ] 2>/dev/null && _ms=100
-  [ "$_ms" -gt 5000 ] 2>/dev/null && _ms=5000
-  echo "$_ms"
+  case "$_cool" in ''|*[!0-9]*) _cool=500 ;; esac
+  [ "$_cool" -lt 100 ] 2>/dev/null && _cool=100
+  [ "$_cool" -gt 5000 ] 2>/dev/null && _cool=5000
 }
-_tw_pause_on() {
+_tw_cool() {
+  _tw_set_cool
+  echo "$_cool"
+}
+_tw_set_pause() {
+  _pnow=0
   for _f in "$T2/titan2_pad_cursor_pause" "$ST/titan2_pad_cursor_pause"; do
     [ -f "$_f" ] || continue
-    _v=`cat "$_f" 2>/dev/null | tr -d '\r\n \t'`
-    case "$_v" in 1|true|on|yes) return 0 ;; esac
+    _tw_read "$_f" || continue
+    case "$_tw_read_v" in 1|true|on|yes) _pnow=1; return 0 ;; esac
   done
-  return 1
+}
+_tw_pause_on() {
+  _tw_set_pause
+  [ "$_pnow" = 1 ]
+}
+_tw_set_mode() {
+  _m=
+  if _tw_read "$T2/titan2_pad_mode"; then
+    _m=$_tw_read_v
+  fi
+  if [ -z "$_m" ]; then
+    _tw_read "$ST/titan2_pad_mode" && _m=$_tw_read_v
+  fi
 }
 _tw_mode() {
-  _m=`cat "$T2/titan2_pad_mode" 2>/dev/null | tr -d '\r\n \t'`
-  [ -n "$_m" ] || _m=`cat "$ST/titan2_pad_mode" 2>/dev/null | tr -d '\r\n \t'`
+  _tw_set_mode
   echo "$_m"
 }
 _tw_inhibit() {
@@ -161,36 +204,41 @@ _tw_release() {
   _tw_locked=0
   _tw_unlock_ms=0
 }
+_tw_have_usleep=0
+command -v usleep >/dev/null 2>&1 && _tw_have_usleep=1
 while true; do
   # Do not die when adb su parent exits (PPID→1). Only exit if pad-agent lock holder gone.
+  # Idle tick must not fork a shell pipeline. cat|tr|awk|date at 20 Hz was ~300 forks/s.
   if [ -f "$AGENT_LOCKDIR/pid" ]; then
-    _ap=`cat "$AGENT_LOCKDIR/pid" 2>/dev/null | tr -d '\r\n '`
+    _ap=
+    _tw_read "$AGENT_LOCKDIR/pid" && _ap=$_tw_read_v
     if [ -n "$_ap" ] && [ ! -d "/proc/$_ap" ]; then
       exit 0
     fi
   fi
-  _m=`_tw_mode`
+  _tw_set_mode
   case "$_m" in
     mouse|trackpad) ;;
     *)
       [ "$_tw_locked" = "1" ] && _tw_release
-      if command -v usleep >/dev/null 2>&1; then usleep 100000; else sleep 0.1; fi
+      if [ "$_tw_have_usleep" = 1 ]; then usleep 100000; else sleep 0.1; fi
       continue
       ;;
   esac
-  _cool=`_tw_cool`
-  _now=`_tw_now_ms`
-  # KEYS ONLY — mtime is 1s resolution; also hash content so same-second keys re-arm.
+  _tw_set_cool
+  _tw_set_now
+  # KEYS ONLY u2014 mtime is 1s resolution; also hash content so same-second keys re-arm.
   # Do not watch pause files (unlock writing pause=0 re-armed thrash).
   # 2.161: body must look like unix seconds/ms (10+ digits). Junk "1" / empty
-  # ops stamps were re-arming hard_park and killing mouse → trackpad residual.
+  # ops stamps were re-arming hard_park and killing mouse u2192 trackpad residual.
   _best_mt=0
   _body=""
   for _f in "$ACTIVITY" "$T2/titan2_key_activity"; do
     [ -f "$_f" ] || continue
-    _mt=`stat -c %Y "$_f" 2>/dev/null` || continue
+    _mt=$(stat -c %Y "$_f" 2>/dev/null) || continue
     case "$_mt" in ''|*[!0-9]*) continue ;; esac
-    _b=`cat "$_f" 2>/dev/null | tr -d '\r\n \t'`
+    _tw_read "$_f" || continue
+    _b=$_tw_read_v
     case "$_b" in
       [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*) ;;
       *) continue ;;
@@ -200,16 +248,14 @@ while true; do
       _body=$_b
     fi
   done
-  _wall=`date +%s 2>/dev/null` || _wall=0
   _sig="${_best_mt}:${_body}"
-  # Key edge → cool-down. 2.161: age from stamp **value** (unix s/ms), NOT file
-  # mtime. Ops/heal writes refresh mtime with old bodies and were hard_park
-  # killing mouse every tip land (user: mouse became trackpad).
+  # Key edge u2192 cool-down. Age comes from the stamp value, not file mtime.
   if [ "$_best_mt" -gt 0 ] 2>/dev/null && [ -n "$_body" ] && [ "$_sig" != "$_tw_last_sig" ]; then
+    _wall=$(date +%s 2>/dev/null) || _wall=0
     _act=$_body
     case "$_act" in
       [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*)
-        _act=`awk -v n="$_act" 'BEGIN{printf "%d\n", n/1000}' 2>/dev/null` || _act=0
+        _act=${_act%???}
         ;;
     esac
     _age=9999
@@ -223,12 +269,11 @@ while true; do
       _tw_unlock_ms=$((_now + _cool)) 2>/dev/null || _tw_unlock_ms=0
     fi
   fi
-  # pause plane rising edge only (never re-arm every tick — multi-sec lock)
-  _pnow=0
-  _tw_pause_on && _pnow=1
+  # pause plane rising edge only (never re-arm every tick u2014 multi-sec lock)
+  _tw_set_pause
   if [ "$_pnow" = "1" ] && [ "${_tw_prev_pause:-0}" != "1" ]; then
     if [ "$_now" -gt 0 ] 2>/dev/null; then
-      _tw_unlock_ms=`expr "$_now" + "$_cool" 2>/dev/null` || _tw_unlock_ms=0
+      _tw_unlock_ms=$((_now + _cool)) 2>/dev/null || _tw_unlock_ms=0
     fi
   fi
   _tw_prev_pause=$_pnow
@@ -243,6 +288,6 @@ while true; do
   elif [ "$_tw_locked" = "1" ]; then
     _tw_release
   fi
-  if command -v usleep >/dev/null 2>&1; then usleep 50000; else sleep 0.05; fi
+  if [ "$_tw_have_usleep" = 1 ]; then usleep 50000; else sleep 0.05; fi
 done
 exit 0

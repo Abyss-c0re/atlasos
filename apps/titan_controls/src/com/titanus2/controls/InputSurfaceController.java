@@ -4,15 +4,16 @@ import android.content.Context;
 import android.provider.Settings;
 import android.util.Log;
 
-import com.titanus2.api.DisplayApi;
 import com.titanus2.controls.subdisplay.SubDisplayPrefs;
 import com.titanus2.controls.subdisplay.SubDisplayService;
 
 /**
- * Pointer surface for Titan 2 — <b>hardware keyboard pad only</b>.
+ * Pointer surface for Titan 2.
  * <p>
- * Sub-display-as-trackpad/mouse abandoned 2026-07-21. Constants SUB/BOTH remain
- * for plane compatibility but always collapse to HW or NONE.
+ * Keyboard pad is {@code hw}. Rear {@code sub_touch} is a pointer only while
+ * sub display mode is HID: the digitizer stays IDC-ignore (not a touchscreen
+ * on the main panel) and titan2-touchpadd turns it into the one virtual mouse.
+ * Outside HID, legacy sub/both still collapse to hw or none.
  */
 public final class InputSurfaceController {
     private static final String TAG = "InputSurface";
@@ -21,9 +22,9 @@ public final class InputSurfaceController {
     public static final String NONE = "none";
     /** main keyboard touchPad only */
     public static final String HW = "hw";
-    /** @deprecated collapsed to HW — rear is not a pointer */
+    /** rear sub_touch only — HID mouse, not a main-display touch */
     public static final String SUB = "sub";
-    /** @deprecated collapsed to HW — rear is not a pointer */
+    /** rear sub_touch plus keyboard pad, one virtual mouse */
     public static final String BOTH = "both";
 
     public static final String PLANE_SURFACE = "titan2_input_surface";
@@ -32,11 +33,46 @@ public final class InputSurfaceController {
 
     private InputSurfaceController() {}
 
+    public static boolean hidMouseLive(Context ctx) {
+        try {
+            return SubDisplayPrefs.isHidMouse(ctx);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Effective daemon surface while sub display HID mouse is on.
+     * Rear + pad shares the keyboard pad only when that pad is already in mouse mode.
+     * Trackpad and off leave the pad alone and use the rear digitizer.
+     */
+    public static String hidSurface(Context ctx) {
+        // Rear HID is always extra. Pad mouse joins the same virtual mouse.
+        // Trackpad/off leave the keyboard pad to its own mode.
+        boolean padMouse = PadModeController.MOUSE.equals(PadModeController.getMode(ctx));
+        if (padMouse) return BOTH;
+        return SUB;
+    }
+
+    /** Collapse legacy rear tokens. HID callers use {@link #normalize(String, boolean)}. */
     public static String normalize(String s) {
-        if (s == null) return NONE;
+        return normalize(s, false);
+    }
+
+    public static String normalize(String s, boolean hidMouse) {
+        if (s == null) return hidMouse ? SUB : NONE;
         s = s.trim().toLowerCase();
-        if (NONE.equals(s) || "off".equals(s) || "0".equals(s)) return NONE;
-        // Anything pointer-ish → HW. Legacy sub/both never mean rear cursor.
+        if (NONE.equals(s) || "off".equals(s) || "0".equals(s)) {
+            return hidMouse ? SUB : NONE;
+        }
+        if (hidMouse) {
+            if (BOTH.equals(s) || "all".equals(s) || "dual".equals(s)) return BOTH;
+            if (SUB.equals(s) || "rear".equals(s) || "sub_touch".equals(s)) return SUB;
+            if (HW.equals(s) || "pad".equals(s) || "trackpad".equals(s) || "mouse".equals(s)) {
+                return HW;
+            }
+            return SUB;
+        }
         if (HW.equals(s) || SUB.equals(s) || BOTH.equals(s)
                 || "pad".equals(s) || "trackpad".equals(s) || "mouse".equals(s)
                 || "rear".equals(s) || "sub_touch".equals(s)
@@ -47,15 +83,21 @@ public final class InputSurfaceController {
     }
 
     public static String label(String surface) {
-        return HW.equals(normalize(surface)) ? "Keyboard pad" : "None";
+        if (surface == null) return "None";
+        String s = surface.trim().toLowerCase();
+        if (BOTH.equals(s) || "all".equals(s) || "dual".equals(s)) return "Rear + pad";
+        if (SUB.equals(s) || "rear".equals(s) || "sub_touch".equals(s)) return "Rear";
+        if (NONE.equals(s) || "off".equals(s) || "0".equals(s)) return "None";
+        return "Keyboard pad";
     }
 
-    /** Pad mode owns the pointer; rear never does. */
+    /** Live pointer surface. HID mouse reads the rear source; otherwise pad mode. */
     public static String getSurface(Context ctx) {
+        if (hidMouseLive(ctx)) return hidSurface(ctx);
         return derive(ctx);
     }
 
-    /** Derive from pad mode only — rear never contributes pointer. */
+    /** Derive from pad mode only — rear contributes only while HID mouse is on. */
     public static String derive(Context ctx) {
         String pad = PadModeController.getMode(ctx);
         if (PadModeController.TRACKPAD.equals(pad)
@@ -71,7 +113,6 @@ public final class InputSurfaceController {
     }
 
     public static boolean isSubFlipX(Context ctx) {
-        // Default ON — rear lid often needs invert X for natural cursor.
         return planeTruthy(AgentBridge.get(ctx, PLANE_SUB_FLIP_X, null), true);
     }
 
@@ -81,7 +122,6 @@ public final class InputSurfaceController {
     }
 
     public static boolean isSubFlipY(Context ctx) {
-        // Default ON — pair with flip X for 180° lid feel; toggle independently.
         return planeTruthy(AgentBridge.get(ctx, PLANE_SUB_FLIP_Y, null), true);
     }
 
@@ -91,11 +131,12 @@ public final class InputSurfaceController {
     }
 
     /**
-     * True when USB HID session needs the HW pad (touchpadd → host mouse).
-     * Surface "None"/"Rear" must not starve exclusive HID.
+     * True when a USB HID session needs the keyboard pad as its mouse.
+     * Rear HID mouse already feeds the virtual mouse, so it does not grab the pad.
      */
     public static boolean hidNeedsHwPad(Context ctx) {
         if (ctx == null) return false;
+        if (hidMouseLive(ctx)) return false;
         try {
             String sess = AgentBridge.get(ctx, "titan2_usb_hid_session", "0");
             if (!"1".equals(sess)) return false;
@@ -111,13 +152,17 @@ public final class InputSurfaceController {
     }
 
     /**
-     * Set which surfaces produce pointer input. Updates pad mode + rear touch prefs
-     * to stay coherent, then publishes plane for pad-agent.
-     * HID exclusive always keeps HW pad available for host mouse.
+     * Set which surfaces produce pointer input.
+     * While sub display HID mouse is on, the rear source owns this plane
+     * and pad mode is left as the user set it.
      */
     public static void setSurface(Context ctx, String surface) {
+        if (hidMouseLive(ctx)) {
+            apply(ctx);
+            Log.i(TAG, "setSurface ignored — sub display HID mouse owns the surface");
+            return;
+        }
         surface = normalize(surface);
-        // Collapse legacy SUB/BOTH: never rear pointer.
         if (SUB.equals(surface) || BOTH.equals(surface)) surface = HW;
         boolean wantHw = HW.equals(surface);
 
@@ -146,55 +191,67 @@ public final class InputSurfaceController {
             }
         }
 
-        // Never couple surface → rear touch / USE_TRACKPAD.
-        if (SubDisplayPrefs.isOn(ctx)) {
-            DisplayApi.setSubUse(ctx, DisplayApi.USE_FACE);
-        } else {
-            DisplayApi.setSubUse(ctx, DisplayApi.USE_OFF);
-        }
-
         apply(ctx);
-        Log.i(TAG, "setSurface=" + surface + " (rear pointer abandoned)");
+        Log.i(TAG, "setSurface=" + surface);
     }
 
-    /**
-     * Call when HID exclusive starts: ensure HW pad is on the surface plane
-     * and uninhibited for touchpadd host mouse.
-     */
+    /** USB HID exclusive: keyboard pad, unless the rear HID mouse is already the source. */
     public static void ensureHwForHid(Context ctx) {
         if (ctx == null) return;
+        if (hidMouseLive(ctx)) {
+            apply(ctx);
+            return;
+        }
         setSurface(ctx, HW);
     }
 
-    /** Publish inhibit planes (rear always inhibited as pointer) and nudge pad-agent. */
+    /** Publish the pointer surface and nudge pad-agent. Does not change pad mode. */
     public static void apply(Context ctx) {
         if (ctx == null) return;
-        String surface = getSurface(ctx);
-        boolean wantHw = HW.equals(surface);
-        if (hidNeedsHwPad(ctx)) {
-            wantHw = true;
-            surface = HW;
+        boolean hid = hidMouseLive(ctx);
+        String surface;
+        if (hid) {
+            surface = hidSurface(ctx);
+        } else {
+            surface = derive(ctx);
+            if (hidNeedsHwPad(ctx) && !HW.equals(surface)) {
+                surface = HW;
+                Log.i(TAG, "HID needs HW pad — surface forced HW");
+            }
+        }
+
+        String pad = PadModeController.getMode(ctx);
+        boolean padMouse = PadModeController.MOUSE.equals(pad);
+        boolean padTrack = PadModeController.TRACKPAD.equals(pad);
+        boolean hwLive;
+        if (padMouse || padTrack) {
+            hwLive = true;
+        } else if (!hid && hidNeedsHwPad(ctx)) {
+            hwLive = true;
+        } else {
+            hwLive = false;
         }
 
         AgentBridge.put(ctx, PLANE_SURFACE, surface);
-        // Rear never pointer — always inhibit sub_touch for pad-agent.
-        AgentBridge.put(ctx, AgentBridge.SUBTOUCH_INHIBIT, "1");
-        AgentBridge.put(ctx, "titan2_hw_pad_inhibit", wantHw ? "0" : "1");
+        AgentBridge.put(ctx, "titan2_hw_pad_inhibit", hwLive ? "0" : "1");
 
         try {
             Settings.Global.putString(ctx.getContentResolver(), PLANE_SURFACE, surface);
             Settings.Global.putString(ctx.getContentResolver(),
-                "titan2_subtouch_inhibit", "1");
-            Settings.Global.putString(ctx.getContentResolver(),
-                "titan2_hw_pad_inhibit", wantHw ? "0" : "1");
+                "titan2_hw_pad_inhibit", hwLive ? "0" : "1");
         } catch (Exception ignored) {}
 
         SubDisplayService.applySubtouchPolicy(ctx);
         AgentBridge.put(ctx, "titan2_input_surface_apply",
             String.valueOf(System.currentTimeMillis()));
+        Log.i(TAG, "apply surface=" + surface + " hid=" + hid + " hwLive=" + hwLive);
     }
 
     public static void cycle(Context ctx) {
+        if (hidMouseLive(ctx)) {
+            apply(ctx);
+            return;
+        }
         setSurface(ctx, NONE.equals(getSurface(ctx)) ? HW : NONE);
     }
 }

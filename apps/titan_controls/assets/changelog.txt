@@ -5,7 +5,30 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.99-hid-pad-free (699) — 2026-09-30T13:46Z
+
+- HID mouse: rear is an extra cursor. Sub display no longer parks the keyboard pad. Reverse Y flips only the rear digitizer.
+
+---
+
+## 16.97-sub-hid-mouse (697) — 2026-09-30T00:41Z
+
+- Sub display HID mouse: rear touch drives the Android cursor through the existing virtual mouse, rear-only or together with the keyboard pad. Pad mode stays independent. Rear touch is not mirrored onto the main screen.
+
+---
+
+## 16.96-subtouch-rear-pin (696) — 2026-09-29T12:21Z
+
+- Rear digitizer is pinned to the sub display, so a dropped binding cannot drive the primary screen. Cube mode survives a rear power blink, and a steady cube no longer rebinds touch every tick.
+
+---
+
 ## 16.95-notif-led (695) — 2026-09-26T17:24Z
+
+### rebuild 2026-09-26T21:27Z · 16.95-notif-led (695)
+
+- Rebuild (ALLOW_ROOT=0)
+
 
 ### rebuild 2026-09-26T17:24Z · 16.95-notif-led (695)
 

@@ -48,13 +48,8 @@ final class PadKeyBar {
     static final int MOD_ALT = 0x04;
     static final int MOD_META = 0x08; /* Left GUI — Win / Super / Cmd */
 
-    /** Titan Alt/specials layer — same glyphs as Controls HostLayoutController. */
-    static final String[] HW_SYMBOLS = {
-        "0", "1", "2", "3", "(", ")", "_", "-", "/", ":",
-        "@", "4", "5", "6", "*", "#", "+", "\"", "'",
-        "!", "7", "8", "9", ".", ",", "?",
-        "`", "~", "[", "]", "{", "}", "\\", "|", ";", "<", ">", "=",
-    };
+    /** Same glyphs as {@link com.titanus2.api.KeyGlyphs}. */
+    static final String[] HW_SYMBOLS = com.titanus2.api.KeyGlyphs.SYMBOLS;
 
     private final Context ctx;
     private final Sink sink;
