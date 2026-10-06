@@ -10,7 +10,7 @@ PAD_STATUS=$ST/titan2_pad_status
 ACTIVITY=$ST/titan2_key_activity
 TP_LOG=$ST/titan2_touchpadd.log
 AGENT_LOCKDIR=$T2/pad-agent.lockdir
-TW_VER=2.170-typing-watch-nofork
+TW_VER=2.251-pad-mode-mtime
 
 echo "typing-watch pid=$$ parent=$PPID ver=$TW_VER" >"$ST/titan2_typing_watch_status" 2>/dev/null
 chmod 666 "$ST/titan2_typing_watch_status" 2>/dev/null || true
@@ -94,13 +94,55 @@ _tw_pause_on() {
   [ "$_pnow" = 1 ]
 }
 _tw_set_mode() {
+  # Newest mtime wins. T2 then ST, >= so a same-second tmp write beats a
+  # stale misc mirror. Preferring T2 unconditionally resurrected mouse
+  # after Off had already landed in /data/local/tmp.
   _m=
-  if _tw_read "$T2/titan2_pad_mode"; then
-    _m=$_tw_read_v
-  fi
-  if [ -z "$_m" ]; then
-    _tw_read "$ST/titan2_pad_mode" && _m=$_tw_read_v
-  fi
+  _best=-1
+  for _f in "$T2/titan2_pad_mode" "$ST/titan2_pad_mode"; do
+    [ -f "$_f" ] || continue
+    _mt=$(stat -c %Y "$_f" 2>/dev/null) || _mt=0
+    case "$_mt" in ''|*[!0-9]*) _mt=0 ;; esac
+    _tw_read "$_f" || continue
+    if [ "$_mt" -ge "$_best" ] 2>/dev/null; then
+      _best=$_mt
+      _m=$_tw_read_v
+    fi
+  done
+  case "$_m" in
+    mouse|MOUSE|1|on|ON|global|GLOBAL) _m=mouse ;;
+    trackpad|TRACKPAD|pad|PAD|native|NATIVE) _m=trackpad ;;
+    off|OFF|0) _m=off ;;
+    "") ;;
+    *) _m=off ;;
+  esac
+}
+# 0 when this mode must not inhibit a HID-owned touchpadd.
+# Trackpad stays native ABS unless the rear sub plane is hid.
+# Off spares the daemon only while a USB HID mouse session is live.
+_tw_hid_spare() {
+  _sub=
+  _tw_read "$ST/titan2_sub_mode" && _sub=$_tw_read_v
+  [ -n "$_sub" ] || { _tw_read "$T2/titan2_sub_mode" && _sub=$_tw_read_v; }
+  case "$_sub" in hid|HID|hidmouse|hid_mouse) return 0 ;; esac
+  case "$_m" in
+    mouse|trackpad) return 1 ;;
+  esac
+  _sess=
+  for _f in "$T2/titan2_usb_hid_session" "$ST/titan2_usb_hid_session"; do
+    _tw_read "$_f" || continue
+    case "$_tw_read_v" in 1|true|on|ON) _sess=1; break ;; esac
+  done
+  [ "$_sess" = "1" ] || return 1
+  for _f in "$T2/titan2_usb_hid_mouse" "$ST/titan2_usb_hid_mouse"; do
+    [ -f "$_f" ] || continue
+    _tw_read "$_f" || continue
+    case "$_tw_read_v" in
+      0|false|off|OFF|no|NO) return 1 ;;
+      1|true|on|ON|yes|YES) return 0 ;;
+    esac
+  done
+  return 0
 }
 _tw_mode() {
   _tw_set_mode
@@ -130,7 +172,7 @@ _tw_park() {
     case "$(_tw_mode)" in
       trackpad) _tw_inhibit 1 ;;
       mouse) ;;
-      *) _tw_inhibit 1 ;;
+      *) _tw_hid_spare || _tw_inhibit 1 ;;
     esac
     echo "mode=$(_tw_mode) typing_lock=1 inproc_park" >"$PAD_STATUS" 2>/dev/null || true
   else
@@ -196,8 +238,15 @@ _tw_release() {
       chmod 666 "$PAD_STATUS" 2>/dev/null || true
       ;;
     *)
-      _tw_inhibit 1
-      echo "mode=${_m:-off} typing_lock=0 unlocked" >"$PAD_STATUS" 2>/dev/null || true
+      # Off must not stamp "mouse" and must not inhibit a live HID pointer.
+      # The agent kills touchpadd when HID does not own it.
+      if _tw_hid_spare; then
+        _tw_inhibit 0
+        echo "mode=off applied=hid_hold typing_lock=0" >"$PAD_STATUS" 2>/dev/null || true
+      else
+        _tw_inhibit 1
+        echo "mode=${_m:-off} typing_lock=0 unlocked" >"$PAD_STATUS" 2>/dev/null || true
+      fi
       chmod 666 "$PAD_STATUS" 2>/dev/null || true
       ;;
   esac

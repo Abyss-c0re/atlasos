@@ -118,12 +118,12 @@ LAST_FN=""; LAST_CHAR_MOD=""; LAST_CHAR_SCAN=""; LAST_HOST_LAYOUT=""
 LAST_CM_MT=""; LAST_SC_MT=""; LAST_FN_MT=""; LAST_HL_MT=""; LAST_SM_MT=""
 LAST_IDC_KIND=""; LAST_PAD_MT=0; LAST_CLICK_MT=0; LAST_FOLLOW_MT=0; LAST_LOCK_MT=0; LAST_GATE_MT=0; LAST_CE=""
 # peels 2.160–2.212: see OPTIMIZE_SOURCE_PRODUCT.md
-AGENT_VER="${AGENT_VER:-2.250-heat-park-idle}"
+AGENT_VER="${AGENT_VER:-2.251-heat-pad-switch}"
 # Force pin: refuse non-2.x garbage + force upgrade sticky env older than 2.160
 # (lab residual: sticky 2.6x/2.12x never picked tip peels). hot_reload still 2.NN*.
 case "$AGENT_VER" in
   2.20[0-9]*|2.21[0-9]*|2.22[0-9]*|2.23[0-9]*|2.24[0-9]*|2.25[0-9]*|2.19[0-9]*|2.18[0-9]*|2.17[0-9]*|2.16[0-9]*) ;;
-  *) AGENT_VER="2.250-heat-park-idle" ;;
+  *) AGENT_VER="2.251-heat-pad-switch" ;;
 esac
 log() { echo "pad-agent $AGENT_VER live $1" > "$AGENT_STATUS" 2>/dev/null; chmod 666 "$AGENT_STATUS" 2>/dev/null; }
 # Lightweight status stamp (no chmod every tick — 2.34+ heartbeat path).
@@ -139,6 +139,7 @@ _usleep_us() {
     50000) sleep 0.05 ;;
     100000) sleep 0.1 ;;
     1000000) sleep 1 ;;
+    500000) sleep 0.5 ;;
     2000000) sleep 2 ;;
     3000000) sleep 3 ;;
     4000000) sleep 4 ;;
@@ -1869,6 +1870,35 @@ _pad_edge_quick() {
 
 _ensure_typing_watch() {
   # 2.167/2.203: any live typing-watch (not only $$); peel spawn via ensure.
+  # 2.251: an older watch prefers /data/misc mode and can stamp "mouse" or
+  # spawn touchpadd after Off. Replace it once when TW_VER moved.
+  _tip=`_sysbin titan2-typing-watch.sh 2>/dev/null` || _tip=
+  _tip_ver=
+  if [ -n "$_tip" ]; then
+    _tip_ver=`grep -m1 '^TW_VER=' "$_tip" 2>/dev/null | sed 's/^TW_VER=//; s/[[:space:]].*//'`
+  fi
+  if _typing_watch_live && [ -n "$_tip_ver" ]; then
+    _run_line=
+    _read_line_file "$ST/titan2_typing_watch_status" >/dev/null || true
+    _run_line=$v
+    case "$_run_line" in
+      *"ver=${_tip_ver}"*) ;;
+      *)
+        log "typing_watch tip ver=$_tip_ver run=[$_run_line]"
+        _wp=`cat "$ST/titan2_typing_watch.pid" 2>/dev/null | tr -d '\r\n '`
+        if [ -n "$_wp" ] && [ -d "/proc/$_wp" ]; then
+          kill -9 "$_wp" 2>/dev/null || true
+        fi
+        for _wp in `pgrep -f 'titan2-typing-watch' 2>/dev/null`; do
+          case "$_wp" in ''|*[!0-9]*) continue ;; esac
+          [ "$_wp" = "$$" ] && continue
+          _cmdline_has "$_wp" "titan2-typing-watch" || continue
+          kill -9 "$_wp" 2>/dev/null || true
+        done
+        rm -f "$ST/titan2_typing_watch.pid" 2>/dev/null || true
+        ;;
+    esac
+  fi
   if _typing_watch_live; then
     return 0
   fi
@@ -1961,6 +1991,8 @@ _pad_edge_sample() {
     mode_now=`read_pad_mode`
     [ "$mode_now" != "$LAST_PAD" ] && pad_dirty=1
     [ $((loop_n % 25)) -eq 0 ] && _pad_tp_down_dirty && pad_dirty=1
+    # Off/trackpad + a live daemon HID does not own. Mouse-down is the other edge.
+    _pad_up_mismatch && pad_dirty=1
   fi
 }
 
@@ -1979,11 +2011,153 @@ _pad_edge_micro_loop() {
   apply_led
 }
 
-# 2.250 heat park: in-shell only. Zero forks per tick while load >= HEAT_LOAD_GE.
-# No grep/stat/pidof/settings/date/getevent/chmod/background subshell.
-# Sleep lengthens while heat stays high. Never re-exec for missing getevent.
+# 2.251: who may keep titan2-touchpadd.
+#   mouse            — pad-agent owns it
+#   trackpad         — native ABS, unless rear sub mode is hid
+#   off + USB mouse  — HID temporary host pointer (do not kill)
+#   off otherwise    — daemon must die
+# File reads only. Same rule as titan2-pad-apply.sh hid_needs_mouse / sub_hid_mouse.
+_pad_usb_hid_mouse() {
+  _sess=0
+  for _f in "$T2/titan2_usb_hid_session" "$ST/titan2_usb_hid_session" \
+      /data/adb/titan2/titan2_usb_hid_session; do
+    _ctrl_line "$_f"
+    case "$v" in 1|true|on|ON) _sess=1; break ;; esac
+  done
+  [ "$_sess" = "1" ] || return 1
+  for _f in "$T2/titan2_usb_hid_mouse" "$ST/titan2_usb_hid_mouse" \
+      /data/adb/titan2/titan2_usb_hid_mouse; do
+    [ -f "$_f" ] || continue
+    _ctrl_line "$_f"
+    case "$v" in
+      0|false|off|OFF|no|NO) return 1 ;;
+      1|true|on|ON|yes|YES) return 0 ;;
+    esac
+  done
+  return 0
+}
+_pad_sub_hid() {
+  _ctrl_line "$ST/titan2_sub_mode"
+  [ -n "$v" ] || _ctrl_line "$T2/titan2_sub_mode"
+  case "$v" in hid|HID|hidmouse|hid_mouse) return 0 ;; esac
+  return 1
+}
+# 0 = leave a running touchpadd alone for this mode.
+_pad_spare_daemon() {
+  case "${mode_now:-off}" in
+    mouse) return 0 ;;
+    trackpad)
+      _pad_sub_hid && return 0
+      return 1
+      ;;
+    *)
+      _pad_sub_hid && return 0
+      _pad_usb_hid_mouse && return 0
+      return 1
+      ;;
+  esac
+}
+_pad_touchpadd_live() {
+  if [ -n "${TP_PID_CACHE:-}" ] && [ -d "/proc/$TP_PID_CACHE" ]; then
+    TP_ABSENT=0
+    return 0
+  fi
+  if [ "${TP_ABSENT:-0}" = "1" ] && [ "${1:-0}" != "force" ]; then
+    return 1
+  fi
+  TP_PID_CACHE=`pidof titan2-touchpadd 2>/dev/null` || TP_PID_CACHE=
+  TP_PID_CACHE=${TP_PID_CACHE%% *}
+  case "$TP_PID_CACHE" in
+    ''|*[!0-9]*)
+      TP_PID_CACHE=
+      TP_ABSENT=1
+      return 1
+      ;;
+  esac
+  TP_ABSENT=0
+  return 0
+}
+# 0 = Off/Trackpad and the daemon is up and neither USB HID nor rear-hid owns it.
+# Caps repeats so a kill that does not stick cannot fork-storm the heat loop.
+_pad_up_mismatch() {
+  case "${mode_now:-off}" in mouse) return 1 ;; esac
+  _pad_spare_daemon && return 1
+  # Known dead: one pidof every 8 loops. A live pid probes until three
+  # kills fail, then the same cadence, so a stuck daemon cannot fork-storm.
+  _probe=0
+  if [ "${TP_ABSENT:-0}" != "1" ] && [ "${_PAD_MISMATCH_N:-0}" -lt 3 ] 2>/dev/null; then
+    _probe=1
+  fi
+  [ $((loop_n % 8)) -eq 0 ] && _probe=1
+  [ "$_probe" = "1" ] || return 1
+  if _pad_touchpadd_live force; then
+    _PAD_MISMATCH_N=$((${_PAD_MISMATCH_N:-0} + 1))
+    [ "${_PAD_MISMATCH_N}" -le 3 ] 2>/dev/null && return 0
+    [ $((loop_n % 8)) -eq 0 ]
+    return $?
+  fi
+  _PAD_MISMATCH_N=0
+  return 1
+}
+# One apply on a real edge. HID session/mouse/sub edges included so a session
+# end reaps the daemon HID refused to kill, and a session start does not.
+_heat_pad_switch() {
+  _HEAT_PAD_APPLIED=0
+  _set_pad_mode_now
+  _need=0
+  [ "$mode_now" != "${LAST_PAD:-}" ] && _need=1
+  _ctrl_sig titan2_usb_hid_session
+  _hs=$_sig
+  _ctrl_sig titan2_usb_hid_mouse
+  _hm=$_sig
+  _ctrl_sig titan2_sub_mode
+  _hsub=$_sig
+  if [ -n "${LAST_HID_SESS_SIG+x}" ]; then
+    [ "$_hs" != "$LAST_HID_SESS_SIG" ] && _need=1
+    [ "$_hm" != "${LAST_HID_MOUSE_SIG:-}" ] && _need=1
+    [ "$_hsub" != "${LAST_SUB_MODE_SIG:-}" ] && _need=1
+  fi
+  LAST_HID_SESS_SIG=$_hs
+  LAST_HID_MOUSE_SIG=$_hm
+  LAST_SUB_MODE_SIG=$_hsub
+  _ctrl_line "$ST/titan2_pad_wake"
+  case "$v" in
+    '' ) ;;
+    *) _need=1 ;;
+  esac
+  if [ "$mode_now" = "mouse" ]; then
+    if [ "$_need" != "1" ] && [ $((loop_n % 4)) -eq 0 ]; then
+      _pad_touchpadd_live force || _need=1
+    fi
+  else
+    _pad_up_mismatch && _need=1
+  fi
+  [ "$_need" = "1" ] || return 1
+  apply_pad
+  _HEAT_PAD_APPLIED=1
+  _set_pad_mode_now
+  TP_PID_CACHE=
+  if [ "$mode_now" = "mouse" ] || _pad_spare_daemon; then
+    TP_ABSENT=0
+    _PAD_MISMATCH_N=0
+  elif _pad_touchpadd_live force; then
+    TP_ABSENT=0
+  else
+    TP_ABSENT=1
+    _PAD_MISMATCH_N=0
+  fi
+  return 0
+}
+
+# 2.250 heat park: no settings/getevent/key-watch while load >= HEAT_LOAD_GE.
+# 2.251: a pad or HID ownership edge still applies once (that fork is the switch).
 _heat_thin_body() {
-  _log_hb "ok i=$loop_n pad=${LAST_PAD:-?} heat=park sleep=${_HEAT_SLEEP_S:-2}s"
+  if [ "${_HEAT_PAD_APPLIED:-0}" = "1" ]; then
+    _log_hb "ok i=$loop_n pad=${LAST_PAD:-?} heat=pad mode=${mode_now:-?} sleep=${_HEAT_SLEEP_S:-2}s"
+    _HEAT_PAD_APPLIED=0
+  else
+    _log_hb "ok i=$loop_n pad=${LAST_PAD:-?} heat=park sleep=${_HEAT_SLEEP_S:-2}s"
+  fi
   _heat_idle_sleep
 }
 
@@ -2055,14 +2229,19 @@ _subdisplay_edge_tick() {
 
 # Heat idle sleep (typing hot / pointer / deep). Shared heat thin + cool heat park.
 _heat_idle_sleep() {
-  # 2.250: zero forks. wake=human short; else lengthen 2->3->4s.
-  if [ -e "$ST/titan2_pad_wake" ]; then
-    : >"$ST/titan2_pad_wake" 2>/dev/null || true
-    _HEAT_SLEEP_S=2
-    _HEAT_STREAK=0
-    _usleep_us "${HEAT_IDLE_HUMAN_US:-15000}"
-    return 0
-  fi
+  # Wake file is a timestamp. Truncating it used to leave the inode, and
+  # `[ -e ]` then treated every later tick as a human wake.
+  _ctrl_line "$ST/titan2_pad_wake"
+  case "$v" in
+    '' ) ;;
+    *)
+      : >"$ST/titan2_pad_wake" 2>/dev/null || true
+      _HEAT_SLEEP_S=2
+      _HEAT_STREAK=0
+      _usleep_us "${HEAT_IDLE_HUMAN_US:-15000}"
+      return 0
+      ;;
+  esac
   case "${_HEAT_STREAK:-0}" in ''|*[!0-9]*) _HEAT_STREAK=0 ;; esac
   _HEAT_STREAK=$((_HEAT_STREAK + 1))
   if [ "$_HEAT_STREAK" -ge 6 ] 2>/dev/null; then
@@ -2072,11 +2251,26 @@ _heat_idle_sleep() {
   else
     _HEAT_SLEEP_S=${HEAT_PARK_SLEEP_S:-2}
   fi
+  # Slice the long park so Off/Trackpad/Mouse is noticed within ~500ms.
+  # Each slice is one usleep. Mode and wake are in-shell reads.
   case "$_HEAT_SLEEP_S" in
-    4) _usleep_us 4000000 ;;
-    3) _usleep_us 3000000 ;;
-    *) _usleep_us "${HEAT_IDLE_US:-2000000}" ;;
+    4) _slices=8 ;;
+    3) _slices=6 ;;
+    *) _slices=4 ;;
   esac
+  _si=0
+  while [ "$_si" -lt "$_slices" ]; do
+    _usleep_us 500000
+    _si=$((_si + 1))
+    _ctrl_line "$ST/titan2_pad_wake"
+    case "$v" in
+      '' ) ;;
+      *) return 0 ;;
+    esac
+    _sleep_mode=$mode_now
+    _set_pad_mode_now
+    [ "$mode_now" != "$_sleep_mode" ] && return 0
+  done
 }
 
 
@@ -2109,11 +2303,13 @@ while true; do
   loop_n=$((loop_n + 1))
 
   # Keep peeled watch alive (crash / pure-exec); park logic is not main-path SoT.
-  # 2.250: heat gate FIRST — if hot, park in-shell only (zero forks) and continue.
-  # No settings/dev/fw/icon/pad-edge/getevent/key-watch while load>=8.
+  # 2.250: heat gate FIRST — no settings/dev/fw/icon/getevent/key-watch while load>=8.
+  # 2.251: still apply a pad-mode or HID-ownership edge. Off must stop
+  # touchpadd here. A live USB/sub HID mouse session is spared inside apply.
   HEAT_PARK=0
   if _cube_heat_park; then
     HEAT_PARK=1
+    _heat_pad_switch
     _heat_thin_body
     continue
   fi

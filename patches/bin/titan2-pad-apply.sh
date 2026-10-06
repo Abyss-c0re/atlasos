@@ -18,6 +18,9 @@ PAD_STATUS=$ST/titan2_pad_status
 TP_LOG=$ST/titan2_touchpadd.log
 CARET_STATUS=$ST/titan2_caret_status
 APPLY_LAST=$ST/titan2_pad_apply_last
+# 2.251 pad-switch keeps this token: the agent only stages an apply that
+# still contains 2.237-sub-hid. Off is not swallowed by typing lock, and a
+# lock screen does not kill a HID-owned touchpadd.
 PAD_APPLY_VER=2.237-sub-hid
 
 # Staged binary that opens sub_touch wins. System binary stays the fallback.
@@ -865,22 +868,67 @@ stop_pad() {
     return 0
   fi
   # 2.83: kill + sysfs inhibit only — never idc remount on Off (was multi-sec).
+  # Stamp before inhibit. idc/sysfs can block; the status must not keep saying mouse.
   kill_touchpadd
-  set_pad_inhibited 1
   echo "mode=off applied=off" > "$PAD_STATUS"
   chmod 666 "$PAD_STATUS" 2>/dev/null
+  set_pad_inhibited 1
 }
 
 apply_pad() {
+  # Off first, from the mode files only. _input_unlocked_ok calls settings and
+  # that binder stalls the agent under load, so a hot Off never reached kill.
+  # USB HID mouse and rear-hid still own the daemon (stop_pad spares them).
+  _mode_early=`read_pad_mode`
+  case "$_mode_early" in
+    mouse|trackpad) ;;
+    *)
+      if sub_hid_mouse; then
+        ensure_hid_mouse
+      elif hid_needs_mouse; then
+        stop_pad
+      else
+        stop_pad
+        if tp_up; then
+          kill_touchpadd
+          TP_PID_CACHE=""
+          echo "mode=off applied=off" > "$PAD_STATUS"
+          chmod 666 "$PAD_STATUS" 2>/dev/null
+        fi
+      fi
+      now=`read_pad_mode`
+      if [ "$now" != "$_mode_early" ]; then
+        log "apply stale want=$_mode_early now=$now — do not LAST_PAD, caller reapplies"
+        return 2
+      fi
+      LAST_PAD=$now
+      LAST_CLICK=`read_pad_click`
+      LAST_FOLLOW=`read_pad_follow_orient`
+      return 0
+      ;;
+  esac
   # 2.79: lock / pre-CE — never touchpadd or native pad as pointer for password.
+  # 2.251: USB HID mouse and rear-hid keep their daemon across the lock screen.
   if ! _input_unlocked_ok; then
+    if sub_hid_mouse || hid_needs_mouse; then
+      echo "mode=$(read_pad_mode) applied=hid_hold lock=1" >"$PAD_STATUS" 2>/dev/null || true
+      chmod 666 "$PAD_STATUS" 2>/dev/null || true
+      return 0
+    fi
     _lockscreen_park_input
     LAST_PAD=lockpark
     return 0
   fi
+  # Off is a real mode. Typing lock must not keep titan2-touchpadd after the
+  # user shut the pad down. Mouse and trackpad still honor the typing gate.
+  _mode_early=`read_pad_mode`
+  case "$_mode_early" in
+    mouse|trackpad) _pad_typing_gate=1 ;;
+    *) _pad_typing_gate=0 ;;
+  esac
   # 2.151/2.160: typing-watch owns lock while LIVE. Sticky typing_lock=1 with a
   # dead watch must not block mouse forever (user: mode=mouse but trackpad feel).
-  if [ -f "$PAD_STATUS" ] && grep -q 'typing_lock=1' "$PAD_STATUS" 2>/dev/null; then
+  if [ "$_pad_typing_gate" = "1" ] && [ -f "$PAD_STATUS" ] && grep -q 'typing_lock=1' "$PAD_STATUS" 2>/dev/null; then
     if _typing_watch_live; then
       LAST_CURSOR_PAUSE=1
       return 0
@@ -900,7 +948,8 @@ apply_pad() {
     chmod 666 "$PAD_STATUS" 2>/dev/null || true
   fi
   # Soft park only when watch is NOT live (watch owns park/unlock when present).
-  if ! _typing_watch_live; then
+  # Off skipped this gate above so shutdown is not refused mid-word.
+  if [ "${_pad_typing_gate:-1}" = "1" ] && ! _typing_watch_live; then
     if _typing_should_park; then
       kill_touchpadd
       set_pad_inhibited 1 force
@@ -1023,7 +1072,9 @@ apply_pad() {
       if sub_hid_mouse; then
         ensure_hid_mouse
       elif hid_needs_mouse; then
-        :
+        # Session still wants the host pointer. stop_pad stamps hid_hold
+        # and does not kill. Do not race-start — HID owns that spawn.
+        stop_pad
       else
         if [ "$LAST_PAD" != "off" ] || tp_up || orient_rel_up; then
           stop_pad
