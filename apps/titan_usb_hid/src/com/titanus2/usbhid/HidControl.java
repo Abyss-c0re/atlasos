@@ -1345,9 +1345,20 @@ public final class HidControl {
         System.arraycopy(packet, 0, rec, 0, Math.min(4, packet.length));
         // Keyboard has one owner: hid_bridge. It emits one 8-byte report to
         // USB and the same bytes to BT. A second handlePacket fights that.
+        // When BT is on, the bridge mirror hits submitReport, which diverts
+        // to the neckband. USB-only has no mirror, so offer the record here.
         if ((rec[0] & 0xff) == 0x01) {
-            if (sendSock(rec)) return true;
+            boolean sock = sendSock(rec);
+            if (sock) {
+                if (!useBt()) {
+                    try { NeckbandLink.offerPacket(rec); } catch (Throwable ignored) {}
+                }
+                return true;
+            }
             if (useBt()) return BluetoothHidClient.get().handlePacket(rec);
+            try {
+                if (NeckbandLink.offerPacket(rec)) return true;
+            } catch (Throwable ignored) {}
             return sendAppInj(rec);
         }
         boolean ok = false;
@@ -1364,20 +1375,38 @@ public final class HidControl {
         if (bt) {
             if (BluetoothHidClient.get().handlePacket(rec)) ok = true;
         }
-        // Soft pad/keys → hid_bridge. Hot path must NEVER su or fsync — that
+        // Soft pad → hid_bridge. Hot path must NEVER su or fsync — that
         // froze Type/soft-pad (1s+ frame skips) when HID session was live.
         // Socket first; app-private inject file only; async root mirror rare.
         //
         // Only inject USB when Link has USB. Forcing softCompose → USB always
         // double-fed BT (app handlePacket + bridge hw.out) and flipped case.
+        // A successful inject also lands in the mouse mailbox, and the sock
+        // offers it once when the neckband is capturing. Offer here only when
+        // that mirror will not happen.
         if (usb) {
-            if (sendSock(rec)) ok = true;
-            else if (sendAppInj(rec)) ok = true;
+            boolean injected = false;
+            if (sendSock(rec)) injected = true;
+            else if (sendAppInj(rec)) injected = true;
+            if (injected) ok = true;
+            else {
+                try {
+                    if (NeckbandLink.offerPacket(rec)) ok = true;
+                } catch (Throwable ignored) {}
+            }
             // Do not call sendSuInj here — blocks up to 3s on su waitFor.
-        } else if (!bt && (softCompose || isSessionLikelyOn())) {
-            // No Link transport bits? last-resort inject for lab.
-            if (sendSock(rec)) ok = true;
-            else if (sendAppInj(rec)) ok = true;
+        } else if (!bt) {
+            boolean injected = false;
+            if (softCompose || isSessionLikelyOn()) {
+                if (sendSock(rec)) injected = true;
+                else if (sendAppInj(rec)) injected = true;
+            }
+            if (injected) ok = true;
+            else {
+                try {
+                    if (NeckbandLink.offerPacket(rec)) ok = true;
+                } catch (Throwable ignored) {}
+            }
         }
         return ok;
     }
@@ -2203,6 +2232,10 @@ public final class HidControl {
      */
     public static int typeText(String text) {
         if (text == null || text.isEmpty()) return 0;
+        if (NeckbandLink.captures()) {
+            int n = NeckbandLink.sendText(text);
+            if (n >= 0) return n;
+        }
         boolean prevSoft = softCompose;
         try {
             setSoftCompose(true);

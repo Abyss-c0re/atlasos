@@ -1579,7 +1579,13 @@ public final class BluetoothHidClient {
     }
 
     public boolean handlePacket(byte[] p) {
-        if (p == null || p.length < 1 || !ready.get() || hid == null || host == null) return false;
+        if (p == null || p.length < 1) return false;
+        // Neckband sink consumes the record. Classic HID is unchanged when
+        // the link is not capturing, or when the native codec is missing.
+        try {
+            if (NeckbandLink.offerPacket(p)) return true;
+        } catch (Throwable ignored) {}
+        if (!ready.get() || hid == null || host == null) return false;
         try {
             switch (p[0] & 0xff) {
                 case 0x01:
@@ -1611,7 +1617,27 @@ public final class BluetoothHidClient {
      * residual is preserved across immediate reflush packets when BT is healthy.
      */
     public boolean queueHostMouse(int buttons, int dx, int dy, int wheel) {
+        try {
+            if (NeckbandLink.captures()) {
+                return NeckbandLink.offerMouse(buttons, dx, dy, wheel);
+            }
+        } catch (Throwable ignored) {}
+        // Sock can run before a classic host exists. Banking that motion
+        // replays as a jump when a host appears. The neckband codec caps
+        // its own residual.
+        if (!ready.get() || hid == null || host == null) return false;
         return queueMouse(buttons, dx, dy, wheel);
+    }
+
+    /** Drop banked motion so a new sink does not replay it. */
+    public void forgetPendingMouse() {
+        synchronized (mouseLock) {
+            pendDx = 0;
+            pendDy = 0;
+            pendWheel = 0;
+            pendButtons = 0;
+            mousePending = false;
+        }
     }
 
     /**
@@ -1742,6 +1768,7 @@ public final class BluetoothHidClient {
      * under congestion; hosts latch Shift/Alt until a successful empty lands).
      */
     public void releaseAllKeys() {
+        try { NeckbandLink.releaseKeys(); } catch (Throwable ignored) {}
         synchronized (kbdLock) {
             for (int i = 0; i < 6; i++) keyState.keys[i] = 0;
             keyState.mods = 0;
@@ -1763,7 +1790,17 @@ public final class BluetoothHidClient {
      * This is the only physical-key path onto the BT host.
      */
     public boolean submitReport(byte[] in) {
-        if (in == null || in.length < 8 || hid == null || host == null) return false;
+        if (in == null || in.length < 8) return false;
+        try {
+            if (NeckbandLink.offerKbd(in)) {
+                synchronized (kbdLock) {
+                    keyState.mods = in[0];
+                    System.arraycopy(in, 2, keyState.keys, 0, 6);
+                }
+                return true;
+            }
+        } catch (Throwable ignored) {}
+        if (hid == null || host == null) return false;
         byte[] r = new byte[]{
             in[0], 0, in[2], in[3], in[4], in[5], in[6], in[7]
         };

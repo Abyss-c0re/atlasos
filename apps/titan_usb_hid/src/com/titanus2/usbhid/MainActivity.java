@@ -101,6 +101,11 @@ public class MainActivity extends Activity {
     private TextView bUsb;
     private TextView bBt;
     private TextView bBoth;
+    private TextView bNbOff;
+    private TextView bNbAuto;
+    private TextView bNbOn;
+    private TextView nbStatusLbl;
+    private UiKit.Step nbGainStep;
     private UiKit.Toggle screenOffToggle;
     private TextView btStatusLbl;
     private LinearLayout btHostList;
@@ -135,6 +140,16 @@ public class MainActivity extends Activity {
     private int lastMainMode = MODE_PAD;
     private SharedPreferences prefs;
     private final Handler h = new Handler(Looper.getMainLooper());
+    private final NeckbandLink.Listener nbListener = new NeckbandLink.Listener() {
+        @Override public void onLinkChanged() {
+            h.post(() -> refreshState());
+        }
+        @Override public void onTextWanted() {
+            h.post(() -> {
+                if (screenMode == MODE_PAD || screenMode == MODE_KEYS) setMode(MODE_TYPE);
+            });
+        }
+    };
     private final BluetoothHidClient.Listener btListener = new BluetoothHidClient.Listener() {
         @Override public void onBtStatus(String status) {
             h.post(() -> refreshState());
@@ -216,6 +231,8 @@ public class MainActivity extends Activity {
         HidControl.setTypeSpeedPct(typeSpeedPct);
         BluetoothHidClient.get().loadPreferred(this);
         BluetoothHidClient.get().addListener(btListener);
+        NeckbandLink.ensure(this);
+        NeckbandLink.addListener(nbListener);
         KeyLedClient.ensureDefaults(this);
         session = HidSessionService.isRunning() || HidControl.isSessionOn(this);
         if (session) exclusive = HidControl.isGrabOn(this);
@@ -592,6 +609,7 @@ public class MainActivity extends Activity {
         bUsb = UiKit.flexButton(link, "USB", () -> setTransport(HidControl.TRANSPORT_USB));
         bBt = UiKit.flexButton(link, "BT", () -> setTransport(HidControl.TRANSPORT_BT));
         bBoth = UiKit.flexButton(link, "Both", () -> setTransport(HidControl.TRANSPORT_BOTH));
+        buildNeckband(setRoot);
 
         btPanel = new LinearLayout(this);
         btPanel.setOrientation(LinearLayout.VERTICAL);
@@ -1666,6 +1684,38 @@ public class MainActivity extends Activity {
         }, "hid-open-profile").start();
     }
 
+    private void buildNeckband(LinearLayout setRoot) {
+        UiKit.section(setRoot, "Neckband");
+        UiKit.note(setRoot, "Fast link for the neckband. Pad, trackpad, and keys stay on this stack. Auto and On hold them while the neckband is connected. Off gives them back.");
+        UiKit.note(setRoot, "Esc and right-click are Back. Home and middle-click open Home. A tap clicks.");
+        nbStatusLbl = UiKit.sliderLabel(setRoot, NeckbandLink.status());
+        LinearLayout row = UiKit.row(setRoot);
+        bNbOff = UiKit.flexButton(row, "Off", () -> setNeckbandMode(NeckbandLink.MODE_OFF));
+        bNbAuto = UiKit.flexButton(row, "Auto", () -> setNeckbandMode(NeckbandLink.MODE_AUTO));
+        bNbOn = UiKit.flexButton(row, "On", () -> setNeckbandMode(NeckbandLink.MODE_ON));
+        int g = NeckbandLink.gainPercent();
+        int prog = gainProg(g);
+        nbGainStep = UiKit.step(setRoot, "Cursor", 0, 6, prog, p -> {
+            int pct = 50 + p * 25;
+            NeckbandLink.setGain(this, pct);
+            if (nbGainStep != null) nbGainStep.setDisplay(pct + "%");
+        });
+        if (nbGainStep != null) nbGainStep.setDisplay(g + "%");
+    }
+
+    private void setNeckbandMode(int mode) {
+        NeckbandLink.setMode(this, mode);
+        if (mode != NeckbandLink.MODE_OFF && !hasBtPerms()) maybeRequestBtPerms();
+        refreshState();
+    }
+
+    private static int gainProg(int pct) {
+        int p = (pct - 50) / 25;
+        if (p < 0) p = 0;
+        if (p > 6) p = 6;
+        return p;
+    }
+
     private void savePrefs() {
         if (prefs == null) return;
         prefs.edit()
@@ -2097,6 +2147,13 @@ public class MainActivity extends Activity {
         if ((transport & HidControl.TRANSPORT_BT) != 0) {
             btBit = BluetoothHidClient.get().isReady() ? " · bt:live" : " · bt:…";
         }
+        String nbBit = "";
+        int nbMode = NeckbandLink.mode();
+        if (nbMode != NeckbandLink.MODE_OFF) {
+            if (NeckbandLink.captures()) nbBit = " · nb";
+            else if (NeckbandLink.held()) nbBit = " · nb:hold";
+            else nbBit = " · nb:…";
+        }
         String pause = "";
         if (session && !typeSoftOnly && HidControl.isLocalInputPaused(this)) {
             pause = " · local";
@@ -2116,6 +2173,7 @@ public class MainActivity extends Activity {
             + " · " + transportLabel()
             + " · " + route
             + btBit
+            + nbBit
             + usbBit
             + pause
             + so
@@ -2135,6 +2193,24 @@ public class MainActivity extends Activity {
         if (bUsb != null) UiKit.setSelected(bUsb, transport == HidControl.TRANSPORT_USB);
         if (bBt != null) UiKit.setSelected(bBt, transport == HidControl.TRANSPORT_BT);
         if (bBoth != null) UiKit.setSelected(bBoth, transport == HidControl.TRANSPORT_BOTH);
+        int nbNow = NeckbandLink.mode();
+        if (bNbOff != null) UiKit.setSelected(bNbOff, nbNow == NeckbandLink.MODE_OFF);
+        if (bNbAuto != null) UiKit.setSelected(bNbAuto, nbNow == NeckbandLink.MODE_AUTO);
+        if (bNbOn != null) UiKit.setSelected(bNbOn, nbNow == NeckbandLink.MODE_ON);
+        if (nbStatusLbl != null) {
+            String st = NeckbandLink.status();
+            nbStatusLbl.setText(st);
+            int c = UiKit.mutedColor(this);
+            if (NeckbandLink.captures()) c = UiKit.OK;
+            else if ("need permission".equals(st) || "driver missing".equals(st)
+                    || "bluetooth off".equals(st)) c = UiKit.WARN;
+            nbStatusLbl.setTextColor(c);
+        }
+        if (nbGainStep != null) {
+            int g = NeckbandLink.gainPercent();
+            nbGainStep.setValue(gainProg(g));
+            nbGainStep.setDisplay(g + "%");
+        }
         if (screenOffToggle != null) screenOffToggle.setChecked(screenOff);
         boolean wantBt = (transport & HidControl.TRANSPORT_BT) != 0;
         if (btPanel != null) btPanel.setVisibility(wantBt ? View.VISIBLE : View.GONE);
@@ -2215,6 +2291,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        NeckbandLink.ensure(this);
+        if (NeckbandLink.mode() != NeckbandLink.MODE_OFF && !hasBtPerms()) {
+            maybeRequestBtPerms();
+        }
         applyKeepScreenFlag();
         session = HidSessionService.isRunning() || HidControl.isSessionOn(this);
         if (PadModeClient.isFollowOrient(this)) {
@@ -2249,6 +2329,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         BluetoothHidClient.get().removeListener(btListener);
+        NeckbandLink.removeListener(nbListener);
         // B2 1.32: UI gone without FGS — clear Type softCompose and idle phys plane
         // so Controls heal does not see ghost exclusive after force-stop / crash.
         try { HidControl.setSoftCompose(false); } catch (Exception ignored) {}

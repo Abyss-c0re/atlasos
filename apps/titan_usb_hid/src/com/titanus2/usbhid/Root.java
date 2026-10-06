@@ -153,11 +153,19 @@ public final class Root {
         return linked;
     }
 
-    private static boolean probeUsbHostLinked() {
+    /**
+     * Cable is enumerated right now. Unknown (sysfs denied) is false.
+     * {@link #usbHostLinked()} stays optimistic so Start is not stuck red.
+     * The neckband Auto mode must not treat "cannot tell" as a PC session.
+     */
+    public static boolean usbCableUp() {
+        return probeUsbCable() == 1;
+    }
+
+    /** 1 = host enumerated, 0 = seen disconnected, -1 = unreadable. */
+    private static int probeUsbCable() {
         // Never call available()/su from the UI path — that blocked the main
         // thread (~800ms) and looked like HID "crashing" under Magisk.
-        // Prefer best-effort sysfs; SELinux may deny — then assume linked when
-        // gadget stack exists so Start is not permanently red-flagged.
         String[] states = {
             "/sys/class/android_usb/android0/state",
             "/sys/devices/virtual/android_usb/android0/state",
@@ -170,11 +178,10 @@ public final class Root {
                 String s = readFileTrim(st);
                 if (s == null) continue;
                 if ("CONNECTED".equalsIgnoreCase(s) || "CONFIGURED".equalsIgnoreCase(s))
-                    return true;
+                    return 1;
                 if ("DISCONNECTED".equalsIgnoreCase(s)) sawDisconnected = true;
             } catch (Exception ignored) {}
         }
-        if (sawDisconnected) return false;
         // UDC state (gadget bound + host enumerated)
         try {
             java.io.File udcDir = new java.io.File("/sys/class/udc");
@@ -185,7 +192,7 @@ public final class Root {
                     if (!st.canRead()) continue;
                     String s = readFileTrim(st);
                     if (s != null && s.toLowerCase(java.util.Locale.US).contains("configured"))
-                        return true;
+                        return 1;
                 }
             }
         } catch (Exception ignored) {}
@@ -195,10 +202,18 @@ public final class Root {
             if (udc.canRead()) {
                 String s = readFileTrim(udc);
                 if (s != null && !s.isEmpty() && !"none".equalsIgnoreCase(s)) {
-                    return true;
+                    return 1;
                 }
             }
         } catch (Exception ignored) {}
+        if (sawDisconnected) return 0;
+        return -1;
+    }
+
+    private static boolean probeUsbHostLinked() {
+        int cable = probeUsbCable();
+        if (cable == 1) return true;
+        if (cable == 0) return false;
         // Unreadable (priv_app SELinux on sysfs/configfs): if hybrid stack is
         // present, assume host can be linked — do not ANR on su probes.
         if (systemUsbStack() || usbGadgetAvailable()) return true;

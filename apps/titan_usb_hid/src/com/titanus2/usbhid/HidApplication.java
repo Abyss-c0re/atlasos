@@ -17,6 +17,7 @@ public class HidApplication extends Application {
         // B2 rootless: specials queues must exist before first exclusive Start
         // (Controls hostRemoteOnly / pad-agent may not have created them yet).
         try { HidControl.ensureSpecialsQueues(this); } catch (Exception ignored) {}
+        try { NeckbandLink.ensure(this); } catch (Throwable ignored) {}
         try {
             if (!HidSessionService.isRunning()) {
                 // Always clear ghost exclusive + restore USB (not only when sess=0).

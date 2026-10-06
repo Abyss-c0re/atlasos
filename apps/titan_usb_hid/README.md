@@ -28,6 +28,12 @@ Settings: Link/target first; mouse/session under progressive disclosure.
 
 Default transport is **BT+USB** when the stack is present. Magisk module remains an optional override.
 
+## Neckband
+
+Snapdragon `BluetoothHidDevice` hosts add cursor lag. A neckband takes a short BLE write and moves the pointer locally. `native/nb_remote.c` is the original codec for that link (20-byte frames, Android keycodes). The app loads `libnbremote.so`.
+
+Settings → Neckband: **Off** / **Auto** / **On**, plus a cursor gain. Auto and On hold the pad, trackpad, and keyboard on the link the moment a neckband is connected, and they stay there until Off or the link drops. Off leaves classic HID unchanged. On that link, Esc and right-click are Back, Home and middle-click are the Android home key, and a trackpad tap is a click. The USB gadget write itself is unchanged.
+
 ## Build
 
 ```bash

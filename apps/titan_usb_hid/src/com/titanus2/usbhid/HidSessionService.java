@@ -57,6 +57,8 @@ public class HidSessionService extends Service {
     private PowerManager.WakeLock wake;
     private static volatile boolean running;
     private static volatile boolean ending;
+    /** Live service, so the neckband link can start input socks. */
+    private static volatile HidSessionService current;
     /** Last applied redirect plane — skip no-op UPDATE (Type open jank). */
     private static volatile boolean appliedMouse = true;
     private static volatile boolean appliedGrab = true;
@@ -383,6 +385,13 @@ public class HidSessionService extends Service {
 
     public static boolean isRunning() { return running && !ending; }
 
+    /** Re-bind keyboard and trackpad sockets after the neckband sink changes. */
+    public static void kickInputSocks() {
+        HidSessionService s = current;
+        if (s == null || !running || ending) return;
+        s.h.post(s::bindInputSocks);
+    }
+
     /** Share hub: session live, not exclusive, phys pad/keys (not Type soft). */
     public static boolean isShareRouting() {
         return running && !ending && !appliedGrab && (appliedKeys || appliedMouse);
@@ -510,6 +519,8 @@ public class HidSessionService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        current = this;
+        try { NeckbandLink.ensure(this); } catch (Throwable ignored) {}
         String act = intent != null ? intent.getAction() : null;
         if (act == null) {
             // System restart after START_STICKY / process death. Do not bring
@@ -899,14 +910,7 @@ public class HidSessionService extends Service {
         }
         boolean usb = (transport & HidControl.TRANSPORT_USB) != 0;
         boolean bt = (transport & HidControl.TRANSPORT_BT) != 0;
-        if (kbdSock == null) kbdSock = new BtKbdSock();
-        kbdSock.start();
-        if (bt && phys) {
-            if (mouseSock == null) mouseSock = new BtMouseSock();
-            mouseSock.start();
-        } else if (mouseSock != null) {
-            mouseSock.stop();
-        }
+        bindInputSocks();
         // Pad prepare / orient / keymap off hot path — was main/FGS jank + USB flap.
         final boolean doMouse = mouseMode && phys;
         final boolean doStartKm = starting && phys && (keysMode || mouseMode);
@@ -1218,8 +1222,26 @@ public class HidSessionService extends Service {
         super.onTaskRemoved(rootIntent);
     }
 
+    private void bindInputSocks() {
+        if (kbdSock == null) kbdSock = new BtKbdSock();
+        kbdSock.start();
+        boolean phys = grabMode || mouseMode || keysMode;
+        boolean bt = (transport & HidControl.TRANSPORT_BT) != 0;
+        boolean nb = false;
+        try { nb = NeckbandLink.mode() != NeckbandLink.MODE_OFF; } catch (Throwable ignored) {}
+        // Trackpad mailbox is only drained while a sock is running. Auto/On
+        // keeps that sock up even before a classic BT host exists.
+        if (phys && (bt || nb)) {
+            if (mouseSock == null) mouseSock = new BtMouseSock();
+            mouseSock.start();
+        } else if (mouseSock != null) {
+            mouseSock.stop();
+        }
+    }
+
     @Override
     public void onDestroy() {
+        if (current == this) current = null;
         stopDrainLoop();
         unregisterScreenReceiver();
         h.removeCallbacks(notifTick);
