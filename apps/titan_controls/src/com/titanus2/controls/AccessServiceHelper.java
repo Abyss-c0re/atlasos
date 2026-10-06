@@ -309,7 +309,7 @@ public final class AccessServiceHelper {
         // B8 11.96: pad mode gate on every a11y ensure (start if wanted, stop orphan)
         try {
             String pm = PadModeController.getMode(ctx);
-            if (PadModeController.MOUSE.equals(pm) || PadModeController.TRACKPAD.equals(pm)) {
+            if (PadModeController.MOUSE.equals(pm)) {
                 PadModeController.ensureTouchpaddProcess();
             } else {
                 PadModeController.stopTouchpaddProcess();
@@ -354,8 +354,7 @@ public final class AccessServiceHelper {
                         try { ImeHwPrefs.applyStored(app); } catch (Exception ignored) {}
                         try {
                             String pm = PadModeController.getMode(app);
-                            if (PadModeController.MOUSE.equals(pm)
-                                    || PadModeController.TRACKPAD.equals(pm)) {
+                            if (PadModeController.MOUSE.equals(pm)) {
                                 PadModeController.ensureTouchpaddProcess();
                             } else {
                                 PadModeController.stopTouchpaddProcess();

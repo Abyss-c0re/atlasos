@@ -1016,8 +1016,7 @@ public class TrackpadAccessService extends AccessibilityService {
                 try {
                     if (!HostLayoutController.isHidExclusiveLiveFast(this)) {
                         String pm = PadModeController.getMode(this);
-                        if (PadModeController.MOUSE.equals(pm)
-                                || PadModeController.TRACKPAD.equals(pm)) {
+                        if (PadModeController.MOUSE.equals(pm)) {
                             PadModeController.ensureTouchpaddProcess();
                         } else {
                             PadModeController.stopTouchpaddProcess();
@@ -1057,11 +1056,11 @@ public class TrackpadAccessService extends AccessibilityService {
                     try { HostLayoutController.healStaleHidPlane(self); } catch (Exception ignored) {}
                     try { TypingCursorLock.clear(self); } catch (Exception ignored) {}
                     try { KeyActions.clearAgentKeyQueue(self); } catch (Exception ignored) {}
-                    // B8: pad off while dozing — kill orphan touchpadd (heat)
+                    // Trackpad and Off must not keep the relative daemon while dozing.
+                    // stop spares a live USB HID mouse session and rear sub-hid.
                     try {
                         String pm = PadModeController.getMode(self);
-                        if (!PadModeController.MOUSE.equals(pm)
-                                && !PadModeController.TRACKPAD.equals(pm)) {
+                        if (!PadModeController.MOUSE.equals(pm)) {
                             PadModeController.stopTouchpaddProcess();
                         }
                     } catch (Exception ignored) {}
@@ -1093,8 +1092,7 @@ public class TrackpadAccessService extends AccessibilityService {
                         // 13.51: exclusive HID owns touchpadd — do not restart/kill
                         if (!HostLayoutController.isHidExclusiveLiveFast(self)) {
                             String pm = PadModeController.getMode(self);
-                            if (PadModeController.MOUSE.equals(pm)
-                                    || PadModeController.TRACKPAD.equals(pm)) {
+                            if (PadModeController.MOUSE.equals(pm)) {
                                 PadModeController.ensureTouchpaddProcess();
                             } else {
                                 PadModeController.stopTouchpaddProcess();

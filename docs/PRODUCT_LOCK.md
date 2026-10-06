@@ -42,6 +42,8 @@ The pain map lives in the sibling tree: `titanus2` `docs/project/rd/LOGIC_FLOW_M
 
 Load at or above 8 does not skip a mode change. Trackpad is native ABS. Mouse is the relative daemon. Those two do not run together.
 
+Controls starts `titan2-touchpadd` only for mouse, or for rear sub-hid. Trackpad does not. Off does not kill a daemon that a live USB HID mouse session still owns. A same-mode exclusive grab does not start or restart it. HID `prepareDriverPad` does not start a second daemon while the pad-agent lock is live.
+
 ## Cube-certified gates (all required)
 
 A device is **Cube-certified AtlasOS** only when every line is proven on that image, after a **userdata wipe**, with no modules:

@@ -246,7 +246,7 @@ public class BootRestoreReceiver extends BroadcastReceiver {
             String pm = PadModeController.getMode(app);
             if (credentialLockShowing(app)) {
                 PadModeController.stopTouchpaddProcess();
-            } else if (PadModeController.MOUSE.equals(pm) || PadModeController.TRACKPAD.equals(pm)) {
+            } else if (PadModeController.MOUSE.equals(pm)) {
                 PadModeController.ensureTouchpaddProcess();
             } else {
                 PadModeController.stopTouchpaddProcess();
@@ -296,8 +296,7 @@ public class BootRestoreReceiver extends BroadcastReceiver {
                             String pm = PadModeController.getMode(app);
                             if (credentialLockShowing(app)) {
                                 PadModeController.stopTouchpaddProcess();
-                            } else if (PadModeController.MOUSE.equals(pm)
-                                    || PadModeController.TRACKPAD.equals(pm)) {
+                            } else if (PadModeController.MOUSE.equals(pm)) {
                                 PadModeController.ensureTouchpaddProcess();
                             } else {
                                 PadModeController.stopTouchpaddProcess();

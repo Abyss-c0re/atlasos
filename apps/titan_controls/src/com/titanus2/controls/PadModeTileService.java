@@ -59,11 +59,13 @@ public class PadModeTileService extends TileService {
             } catch (Exception ignored) {}
         }
         refresh();
-        // B8 11.59: QS listen after exclusive thrash — resurrect touchpadd if mode mouse
+        // C7: resurrect the daemon only for mouse. Trackpad must not start it.
         try {
             String m = PadModeController.getMode(this);
-            if (PadModeController.MOUSE.equals(m) || PadModeController.TRACKPAD.equals(m)) {
+            if (PadModeController.MOUSE.equals(m)) {
                 PadModeController.ensureTouchpaddProcess();
+            } else if (PadModeController.TRACKPAD.equals(m)) {
+                PadModeController.stopTouchpaddProcess();
             }
         } catch (Exception ignored) {}
         try { TaskbarPin.pinOff(this); } catch (Exception ignored) {}
@@ -84,12 +86,13 @@ public class PadModeTileService extends TileService {
     @Override public void onClick() {
         super.onClick();
         PadModeController.cycle(this);
-        // B8 11.81: QS cycle into mouse/trackpad after exclusive thrash — resurrect
+        // C7: mouse may resurrect the daemon. Trackpad kills it.
         try {
             String m = PadModeController.getMode(this);
-            if (PadModeController.MOUSE.equals(m)
-                    || PadModeController.TRACKPAD.equals(m)) {
+            if (PadModeController.MOUSE.equals(m)) {
                 PadModeController.ensureTouchpaddProcess();
+            } else if (PadModeController.TRACKPAD.equals(m)) {
+                PadModeController.stopTouchpaddProcess();
             }
         } catch (Exception ignored) {}
         refresh();

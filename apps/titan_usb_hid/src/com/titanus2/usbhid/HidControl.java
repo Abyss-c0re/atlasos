@@ -821,13 +821,17 @@ public final class HidControl {
         // the pad and Android does not. Skipping Off left Titan's cursor live.
         String raw = null;
         try { raw = readPlaneAny(ctx, "titan2_pad_mode"); } catch (Exception ignored) {}
+        String mode = "";
         if (raw != null && !raw.trim().isEmpty()) {
-            String mode = PadModeClient.normalize(raw);
+            mode = PadModeClient.normalize(raw);
             if (PadModeClient.TRACKPAD.equals(mode)) {
                 return;
             }
             android.util.Log.i("TitanUsbHid", "prepareDriverPad HID_OWN_PAD");
         }
+        // S-PAD-02: pad-agent.lockdir owns the mouse daemon. Off may start one
+        // temporary daemon (S-PAD-01). An unreadable mode must not start one.
+        final String spawn = touchpaddSpawnClause(mode);
         try {
             // Already mouse: keep surface/inhibit coherent. Do not restamp mode.
             String surf = readPlaneAny(ctx, "titan2_input_surface");
@@ -871,17 +875,35 @@ public final class HidControl {
             "  cp \"$SRC\" \"$IDC\" 2>/dev/null || " +
             "    mount --bind /data/local/tmp/titan2_idc/touchPad.idc \"$IDC\" 2>/dev/null; " +
             "fi; " +
-            // B8 1.13: prefer Magisk module touchpadd (same as Controls 11.59)
-            "if ! pidof titan2-touchpadd >/dev/null 2>&1; then " +
-            "  TP=/system/bin/titan2-touchpadd; " +
-            "  [ -x /data/adb/modules/titan2_touchpadd/system/bin/titan2-touchpadd ] && " +
-            "    TP=/data/adb/modules/titan2_touchpadd/system/bin/titan2-touchpadd; " +
-            "  if [ -x \"$TP\" ]; then " +
-            "    LOGCAT_OUTPUT=true KEYBOARD_FEATURES=false TAP_TO_CLICK=1 " +
-            "      \"$TP\" >>/data/local/tmp/titan2_touchpadd.log 2>&1 & " +
-            "  fi; " +
-            "fi; true"
+            spawn
         );
+    }
+
+    /**
+     * S-PAD-02: pad-agent.lockdir owns the mouse daemon while that lock is live.
+     * S-PAD-01: off may start one temporary daemon. Any other mode starts none.
+     */
+    private static String touchpaddSpawnClause(String mode) {
+        if (PadModeClient.OFF.equals(mode)) return touchpaddStartIfDown(false);
+        if (PadModeClient.MOUSE.equals(mode)) return touchpaddStartIfDown(true);
+        return "true";
+    }
+
+    private static String touchpaddStartIfDown(boolean agentOwnsMouse) {
+        String head = agentOwnsMouse
+            ? "_ag=$(cat /data/misc/titan2/pad-agent.lockdir/pid 2>/dev/null | tr -d '\\r\\n '); "
+                + "if [ -n \"$_ag\" ] && [ -d \"/proc/$_ag\" ]; then true; elif "
+            : "if ";
+        return head
+            + "! pidof titan2-touchpadd >/dev/null 2>&1; then "
+            + "  TP=/system/bin/titan2-touchpadd; "
+            + "  [ -x /data/adb/modules/titan2_touchpadd/system/bin/titan2-touchpadd ] && "
+            + "    TP=/data/adb/modules/titan2_touchpadd/system/bin/titan2-touchpadd; "
+            + "  if [ -x \"$TP\" ]; then "
+            + "    LOGCAT_OUTPUT=true KEYBOARD_FEATURES=false TAP_TO_CLICK=1 "
+            + "      \"$TP\" >>/data/local/tmp/titan2_touchpadd.log 2>&1 & "
+            + "  fi; "
+            + "fi; true";
     }
 
     /** @deprecated use {@link #prepareDriverPad} */

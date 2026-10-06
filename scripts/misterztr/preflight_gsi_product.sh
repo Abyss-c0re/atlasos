@@ -171,6 +171,20 @@ if grep -A20 'void endSessionAndRestore' "$HC" 2>/dev/null | grep -q 'ensureTouc
 else
   ok "HID restore leaves touchpadd to pad-agent"
 fi
+PC="${ROOT}/apps/titan_controls/src/com/titanus2/controls/PadModeController.java"
+if grep -q 'C7 mouse-only touchpadd' "$PC" 2>/dev/null \
+    && grep -q 'S-PAD-01 spare' "$PC" 2>/dev/null \
+    && grep -A30 'void ensureTouchpaddProcess(Context' "$PC" 2>/dev/null \
+        | grep -q 'MOUSE.equals'; then
+  ok "Controls starts touchpadd only for mouse"
+else
+  bad "Controls starts touchpadd on trackpad (C7)"
+fi
+if grep -A40 'void prepareDriverPad' "$HC" 2>/dev/null | grep -q 'pad-agent.lockdir'; then
+  ok "HID does not start touchpadd while pad-agent owns mouse"
+else
+  bad "HID starts touchpadd while pad-agent is live (S-PAD-02)"
+fi
 [ -f "${ROOT}/packages/gsi_product/prebuilt_touchpadd/titan2-virtual-mouse.idc" ] \
   && ok "titan2-virtual-mouse.idc present" \
   || bad "missing titan2-virtual-mouse.idc"

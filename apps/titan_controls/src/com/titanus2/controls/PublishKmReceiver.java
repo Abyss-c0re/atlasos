@@ -94,7 +94,7 @@ public class PublishKmReceiver extends BroadcastReceiver {
         // 12.44: also stop orphan when pad is off (install/heal PUBLISH_KM).
         try {
             String pm = PadModeController.getMode(app);
-            if (PadModeController.MOUSE.equals(pm) || PadModeController.TRACKPAD.equals(pm)) {
+            if (PadModeController.MOUSE.equals(pm)) {
                 PadModeController.ensureTouchpaddProcess();
             } else {
                 PadModeController.stopTouchpaddProcess();

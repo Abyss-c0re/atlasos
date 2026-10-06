@@ -104,10 +104,15 @@ public final class PadModeController {
                 AgentBridge.put(ctx, AgentBridge.PAD_TOP_ROW_CURSOR, "0");
                 AgentBridge.put(ctx, AgentBridge.PAD_TOP_ROW_ONLY, "0");
             } catch (Exception ignored) {}
-            if (modOn) {
+            // C7: a restamp must not start titan2-touchpadd on trackpad.
+            // The real mode-change branch below already starts it only for mouse.
+            if (MOUSE.equals(mode)) {
                 try { publishRotation(ctx); } catch (Exception ignored) {}
                 ensureTouchpaddProcess(ctx);
             } else {
+                if (TRACKPAD.equals(mode)) {
+                    try { publishRotation(ctx); } catch (Exception ignored) {}
+                }
                 stopTouchpaddProcess(ctx);
             }
             // HID writes the plane first, then SET. Without this, QS stays
@@ -164,11 +169,18 @@ public final class PadModeController {
      * <p>
      * 13.51: while exclusive HID is live, <b>do not</b> start/restart touchpadd
      * from Controls — HID owns the process; dual start fights hid_bridge.
+     * C7 mouse-only touchpadd: trackpad is native ABS (S-PAD-03). Off is the
+     * agent's kill. Rear sub-hid may keep one daemon (pad mode stays as set).
      */
     public static void ensureTouchpaddProcess(Context ctx) {
         try {
             if (HostLayoutController.isHidExclusiveLiveFast(ctx)) return;
         } catch (Exception ignored) {}
+        boolean rearHid = false;
+        try { rearHid = SubDisplayPrefs.isHidMouse(ctx); } catch (Exception ignored) {}
+        String mode = OFF;
+        try { mode = getMode(ctx); } catch (Exception ignored) {}
+        if (!MOUSE.equals(mode) && !rearHid) return;
         String surface = "hw";
         String flipX = "0";
         String flipY = "0";
@@ -228,6 +240,8 @@ public final class PadModeController {
     /**
      * B8 11.91: stop orphan titan2-touchpadd when pad mode is off.
      * 13.51: never kill while exclusive HID is live — HID owns the pad process.
+     * S-PAD-01 spare: Off leaves the one temporary daemon a live USB HID mouse
+     * session owns. Trackpad still kills (S-PAD-03).
      */
     public static void stopTouchpaddProcess(Context ctx) {
         try {
@@ -235,6 +249,10 @@ public final class PadModeController {
         } catch (Exception ignored) {}
         try {
             if (SubDisplayPrefs.isHidMouse(ctx)) return;
+        } catch (Exception ignored) {}
+        try {
+            String mode = getMode(ctx);
+            if (!MOUSE.equals(mode) && !TRACKPAD.equals(mode) && usbHidMouseLive()) return;
         } catch (Exception ignored) {}
         try {
             // B8 11.92: su only on ALLOW_ROOT lab builds. Release must never
@@ -459,12 +477,12 @@ public final class PadModeController {
             if (HostLayoutController.isHidExclusiveLiveFast(ctx)) return;
         } catch (Exception ignored) {}
         String mode = getMode(ctx);
-        // Mouse always wants daemon; Off/Trackpad want it when text-caret nav is on
-        boolean wantDaemon = MOUSE.equals(mode)
-            || isTopRowCursor(ctx)
-            || isTopRowOnly(ctx);
+        // C5: caret planes stay off. A stale top-row flag must not spawn the daemon.
+        boolean rearHid = false;
+        try { rearHid = SubDisplayPrefs.isHidMouse(ctx); } catch (Exception ignored) {}
+        boolean wantDaemon = MOUSE.equals(mode) || rearHid;
         if (!wantDaemon) {
-            if (OFF.equals(mode)) stopTouchpaddProcess(ctx);
+            stopTouchpaddProcess(ctx);
             return;
         }
         stopTouchpaddProcess(ctx);
@@ -517,6 +535,53 @@ public final class PadModeController {
             //noinspection ResultOfMethodCallIgnored
             tmp.setWritable(true, false);
         } catch (Exception ignored) {}
+    }
+
+    /**
+     * S-PAD-01 file plane only. Session on, and the mouse file is not an
+     * explicit 0. No Settings read. First decisive mouse file wins.
+     */
+    private static boolean usbHidMouseLive() {
+        if (!hidPlaneOn("titan2_usb_hid_session")) return false;
+        return !hidMouseExplicitOff("titan2_usb_hid_mouse");
+    }
+
+    private static boolean hidPlaneOn(String name) {
+        for (String root : hidPlaneRoots()) {
+            String v = AgentBridge.readLine(root + "/" + name);
+            if (v == null) continue;
+            v = v.trim();
+            if ("1".equals(v) || "true".equalsIgnoreCase(v) || "on".equalsIgnoreCase(v)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hidMouseExplicitOff(String name) {
+        for (String root : hidPlaneRoots()) {
+            String path = root + "/" + name;
+            if (!new File(path).isFile()) continue;
+            String v = AgentBridge.readLine(path);
+            if (v == null) continue;
+            v = v.trim().toLowerCase();
+            if (v.isEmpty()) continue;
+            if ("0".equals(v) || "false".equals(v) || "off".equals(v) || "no".equals(v)) {
+                return true;
+            }
+            if ("1".equals(v) || "true".equals(v) || "on".equals(v) || "yes".equals(v)) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private static String[] hidPlaneRoots() {
+        return new String[] {
+            AgentBridge.OS_CTRL,
+            "/data/local/tmp",
+            "/data/adb/titan2"
+        };
     }
 
     /** Cycle off → trackpad → mouse → off. Returns new mode. */

@@ -380,8 +380,8 @@ public class MainActivity extends Activity {
             try { HostLayoutController.healStaleHidPlane(this); } catch (Exception ignored) {}
             try {
                 String pm = PadModeController.getMode(this);
-                if (PadModeController.MOUSE.equals(pm)
-                        || PadModeController.TRACKPAD.equals(pm)) {
+                // C7: trackpad is native ABS. Only mouse asks for the daemon.
+                if (PadModeController.MOUSE.equals(pm)) {
                     PadModeController.ensureTouchpaddProcess();
                 } else {
                     PadModeController.stopTouchpaddProcess();
@@ -466,8 +466,9 @@ public class MainActivity extends Activity {
             AgentBridge.put(this, AgentBridge.PAD_MODE, PadModeController.OFF);
         if (AgentBridge.get(this, AgentBridge.PAD_CLICK, null) == null)
             AgentBridge.put(this, AgentBridge.PAD_CLICK, "1");
+        // C5: caret plane stays off. Seeding 1 made a later heal spawn touchpadd.
         if (AgentBridge.get(this, AgentBridge.PAD_TOP_ROW_CURSOR, null) == null)
-            AgentBridge.put(this, AgentBridge.PAD_TOP_ROW_CURSOR, "1");
+            AgentBridge.put(this, AgentBridge.PAD_TOP_ROW_CURSOR, "0");
         if (AgentBridge.get(this, AgentBridge.PAD_TOP_ROW_ONLY, null) == null)
             AgentBridge.put(this, AgentBridge.PAD_TOP_ROW_ONLY, "0");
         if (AgentBridge.get(this, AgentBridge.PAD_FOLLOW_ORIENT, null) == null) {
