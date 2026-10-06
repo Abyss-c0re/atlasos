@@ -29,6 +29,19 @@ No Magisk/KSU modules as the product path. No `/data/local/tmp` as the ship path
 | Rear lattice | Cube Contact ← on-device nanobot `:8787` | hardcoded lab IP |
 | Flash | human + HOLD_FLASH | remote exclusive HID flash |
 
+## Pad and HID
+
+The pain map lives in the sibling tree: `titanus2` `docs/project/rd/LOGIC_FLOW_MAP.md` (S-PAD-01..04b) and `PAD_CONFLICT_MAP.md` (C2, C6, C7, C14). This image packs `patches/bin/titan2-pad-agent.sh`, `titan2-pad-apply.sh`, and `titan2-typing-watch.sh`. A `/data/local/tmp` copy is a boot reload only. The GSI preflight rejects a cook that drops the hot mode edge.
+
+| Mode | Who owns `titan2-touchpadd` | HID |
+|------|-----------------------------|-----|
+| off | pad-agent kills it | may keep one temporary daemon only while the USB session mouse plane is on (S-PAD-01) |
+| trackpad | pad-agent kills it | must not start it (S-PAD-03) |
+| mouse | pad-agent starts it | does not start a second one while the agent is live (S-PAD-02) |
+| exclusive grab, same mode | nobody restarts it | a same-mode write does not bump epoch or start the daemon (S-PAD-04b) |
+
+Load at or above 8 does not skip a mode change. Trackpad is native ABS. Mouse is the relative daemon. Those two do not run together.
+
 ## Cube-certified gates (all required)
 
 A device is **Cube-certified AtlasOS** only when every line is proven on that image, after a **userdata wipe**, with no modules:

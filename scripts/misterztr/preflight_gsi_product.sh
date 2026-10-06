@@ -136,13 +136,40 @@ fi
 
 # --- pad-apply / peels ---
 PA="${ROOT}/patches/bin/titan2-pad-apply.sh"
+AG="${ROOT}/patches/bin/titan2-pad-agent.sh"
+TW="${ROOT}/patches/bin/titan2-typing-watch.sh"
 # 2.215-rot-0-3 landed; tip is 2.234-login-gate (pad off until login).
+# 2.251 keeps the 2.237-sub-hid token so the agent still selects this apply.
 if grep -qE 'PAD_APPLY_VER=2\.(21[5-9]|22[0-9]|23[0-9])' "$PA" 2>/dev/null \
     || grep -q '2.215-rot-0-3' "$PA" 2>/dev/null \
     || grep -q '2.234-login-gate' "$PA" 2>/dev/null; then
   ok "pad-apply tip $(grep -m1 '^PAD_APPLY_VER=' "$PA" | cut -d= -f2-)"
 else
   bad "pad-apply missing 2.215+ / 2.234-login-gate marker"
+fi
+if grep -q 'PAD_APPLY_VER=2.237-sub-hid' "$PA" 2>/dev/null \
+    && grep -q 'Off first' "$PA" 2>/dev/null; then
+  ok "pad-apply Off is applied before settings"
+else
+  bad "pad-apply can swallow Off (need 2.237-sub-hid and Off-first)"
+fi
+if grep -q '2.251-heat-pad-switch' "$AG" 2>/dev/null \
+    && grep -q '_heat_pad_switch' "$AG" 2>/dev/null \
+    && grep -q '_pad_spare_daemon' "$AG" 2>/dev/null; then
+  ok "pad-agent applies a mode edge while hot"
+else
+  bad "pad-agent heat path skips Off/Trackpad/Mouse"
+fi
+if grep -q 'TW_VER=2.251-pad-mode-mtime' "$TW" 2>/dev/null; then
+  ok "typing-watch follows the newest pad mode file"
+else
+  bad "typing-watch can stamp mouse over a newer Off"
+fi
+HC="${ROOT}/apps/titan_usb_hid/src/com/titanus2/usbhid/HidControl.java"
+if grep -A20 'void endSessionAndRestore' "$HC" 2>/dev/null | grep -q 'ensureTouchpaddAlive'; then
+  bad "HID restore starts touchpadd (trackpad must stay native)"
+else
+  ok "HID restore leaves touchpadd to pad-agent"
 fi
 [ -f "${ROOT}/packages/gsi_product/prebuilt_touchpadd/titan2-virtual-mouse.idc" ] \
   && ok "titan2-virtual-mouse.idc present" \

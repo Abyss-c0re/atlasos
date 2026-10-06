@@ -744,14 +744,10 @@ public final class HidControl {
         String restore = takePadRestore(ctx);
         if (restore != null) {
             PadModeClient.set(ctx, restore);
-            // B8 1.26/1.41: exclusive often kills touchpadd — resurrect only if
-            // restored mode wants pad; stop orphan if restore is off.
-            String m = PadModeClient.normalize(restore);
-            if (PadModeClient.MOUSE.equals(m) || PadModeClient.TRACKPAD.equals(m)) {
-                // INPROC_PARK: plane write is enough. Never killall/restart.
-                try { ensureTouchpaddAlive(); } catch (Exception ignored) {}
-            }
-            // off: leave daemon up; it parks. Kill is heresy (ABS residual + delay).
+            // S-PAD-02/03: pad-agent owns titan2-touchpadd. A trackpad restore
+            // must not start it (native ABS). Mouse start is the agent's.
+            // Off is the agent's kill, unless a live USB HID mouse session
+            // still owns the temporary daemon (S-PAD-01).
         }
         // Missing restore: leave system pad mode alone. Forcing off here
         // painted QS Off while INPROC_PARK touchpadd was still mouse.
@@ -891,25 +887,6 @@ public final class HidControl {
     /** @deprecated use {@link #prepareDriverPad} */
     public static void assertExclusivePad(Context ctx) {
         prepareDriverPad(ctx);
-    }
-
-    /**
-     * B8 1.26: resurrect titan2-touchpadd after exclusive thrash without
-     * forcing pad mode to mouse (trackpad restore path).
-     */
-    public static void ensureTouchpaddAlive() {
-        if (!Root.available()) return;
-        Root.runSu(
-            "if ! pidof titan2-touchpadd >/dev/null 2>&1; then " +
-            "  TP=/system/bin/titan2-touchpadd; " +
-            "  [ -x /data/adb/modules/titan2_touchpadd/system/bin/titan2-touchpadd ] && " +
-            "    TP=/data/adb/modules/titan2_touchpadd/system/bin/titan2-touchpadd; " +
-            "  if [ -x \"$TP\" ]; then " +
-            "    LOGCAT_OUTPUT=true KEYBOARD_FEATURES=false TAP_TO_CLICK=1 " +
-            "      \"$TP\" >>/data/local/tmp/titan2_touchpadd.log 2>&1 & " +
-            "  fi; " +
-            "fi; true"
-        );
     }
 
     public static void endSession(Context ctx) {
