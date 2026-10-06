@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.titanus2.overlay.imenavbar"
+    android:versionCode="1"
+    android:versionName="1.0-no-ime-navbar">
+    <uses-sdk android:minSdkVersion="34" android:targetSdkVersion="36"/>
+    <!--
+      This panel is sw914dp, so the gestural overlay turns on
+      config_imeDrawsImeNavBar. InputMethodService then draws an 89px
+      bar with a zero navigation inset and apps lay out under it.
+      On the running GSI that overlay is already priority 2147483647.
+      Match it. com.titanus2 sorts after com.android.internal, so a tie
+      applies this bool last. Hardware Back is key 158.
+    -->
+    <overlay
+        android:targetPackage="android"
+        android:priority="2147483647"
+        android:isStatic="true"/>
+    <application
+        android:hasCode="false"
+        android:label="Titan IME nav bar"/>
+</manifest>

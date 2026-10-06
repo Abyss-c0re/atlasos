@@ -216,6 +216,7 @@ titan2-dt2w.sh
 titan2-sub-dt2w.c
 titan2-pad-idc.sh
 titan2-plane-heal.sh
+titan2-ime-bar.sh
 titan2-cube-load-land.sh
 titan2-cool-park.sh
 titan2-ui-plane.sh

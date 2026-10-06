@@ -212,6 +212,7 @@ public class BootRestoreReceiver extends BroadcastReceiver {
         try {
             ImeHwPrefs.applyStored(app);
         } catch (Exception ignored) {}
+        try { ImeBarPrefs.applyStored(app); } catch (Exception ignored) {}
         // 12.16/12.97: short HW taps must not open accent/language letter menus.
         try { ImeHwPrefs.applyHwTypingPolish(app); } catch (Exception ignored) {}
         // Theme seed-once only if Wallpaper & style is empty (wipe). Never restamp.
@@ -281,6 +282,7 @@ public class BootRestoreReceiver extends BroadcastReceiver {
                         try { SetupWizardHeal.heal(app); } catch (Exception ignored) {}
                         try { PadQsDefaults.ensureDefaultTile(app); } catch (Exception ignored) {}
                         try { ImeHwPrefs.applyStored(app); } catch (Exception ignored) {}
+                        try { ImeBarPrefs.applyStored(app); } catch (Exception ignored) {}
                         // 11.94: boot retries also B1 side heal + pad mode gate
                         try {
                             KeyMapPrefs km = new KeyMapPrefs(app);

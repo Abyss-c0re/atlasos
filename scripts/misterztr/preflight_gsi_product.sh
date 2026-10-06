@@ -116,6 +116,16 @@ if grep -q 'PWM TitanNavKeyRule owns factory' "$A11Y" 2>/dev/null \
 else
   ok "a11y owns Home/Recents (no PWM yield)"
 fi
+if grep -q 'Hide IME' "${ROOT}/apps/titan_controls/src/com/titanus2/controls/MainActivity.java" \
+    && grep -q 'Hide IME' "${ROOT}/apps/titan_controls/src/com/titanus2/controls/NetworkActivity.java" \
+    && grep -q 'titan2-ime-bar.sh' "${ROOT}/patches/bin/titan2-pad-agent.sh" \
+    && grep -q 'titan2-ime-bar.sh' "${ROOT}/packages/gsi_product/titanus2.mk" \
+    && grep -q 'want_hide' "${ROOT}/patches/bin/titan2-ime-bar.sh" \
+    && grep -q 'config_imeDrawsImeNavBar">false' "${ROOT}/packages/gsi_product/overlays/TitanImeNavBarOverlay/res/values/config.xml"; then
+  ok "Hide IME toggle drives the nav-bar overlay"
+else
+  bad "Hide IME toggle is not wired to the overlay"
+fi
 KL="${ROOT}/patches/keylayout/TitanKey.kl"
 if grep -qE '^key 580[[:space:]]+F24' "$KL" 2>/dev/null \
     && grep -qE '^key 158[[:space:]]+BACK' "$KL" 2>/dev/null; then

@@ -91,6 +91,7 @@ PRODUCT_PACKAGES += \
     titan2-sub-dt2w \
     titan2-pad-idc.sh \
     titan2-plane-heal.sh \
+    titan2-ime-bar.sh \
     titan2-cube-load-land.sh \
     titan2-cube-icons.sh \
     titan2-cool-park.sh \
@@ -134,6 +135,7 @@ PRODUCT_PACKAGES += \
     TitanThemeChrome \
     TitanThemeSystemUI \
     TitanSensorPrivacyOverlay \
+    TitanImeNavBarOverlay \
     TitanCubeIcon_settings \
     TitanCubeIcon_com_android_calculator2 \
     TitanCubeIcon_com_android_contacts \

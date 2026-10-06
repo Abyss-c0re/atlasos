@@ -130,6 +130,12 @@ public class MainActivity extends Activity {
         UiKit.toggle(sectionPad, "Letter variations",
             LetterVariationsPrefs.isEnabled(this),
             on -> LetterVariationsPrefs.setEnabled(this, on));
+        UiKit.toggle(sectionPad, "Hide IME",
+            ImeBarPrefs.hide(this),
+            on -> {
+                ImeBarPrefs.setHide(this, on);
+                UiKit.toast(this, on ? "IME bar hidden" : "IME bar shown");
+            });
 
         // Text caret product-off (plane forced 0 by pad-agent). No UI thrash.
 

@@ -187,11 +187,20 @@ heal_soft_ime() {
 }
 
 # IME selection is the user's. Never ime set / never wipe enabled_input_methods.
+# Hide IME follows the Controls switch (titan2-ime-bar.sh).
+_heal_ime_bar() {
+  _s=/system/bin/titan2-ime-bar.sh
+  [ -f /data/local/tmp/titan2-ime-bar.sh ] && _s=/data/local/tmp/titan2-ime-bar.sh
+  [ -f "$_s" ] || return 0
+  /system/bin/sh "$_s" apply >/dev/null 2>&1 || true
+}
+
 heal_default_ime() {
   settings put system show_key_presses 0 2>/dev/null || true
   settings put secure show_key_presses 0 2>/dev/null || true
   heal_soft_ime
   heal_long_press
+  _heal_ime_bar
   return 0
 }
 

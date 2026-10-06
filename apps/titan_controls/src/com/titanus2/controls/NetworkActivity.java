@@ -5,7 +5,6 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.Settings;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.widget.LinearLayout;
@@ -21,10 +20,6 @@ import com.titanus2.controls.ui.UiKit;
  * TrebleApp stays a hidden extra for vendor quirks, not the call heal path.
  */
 public class NetworkActivity extends Activity {
-    private static final String PREFS_TWEAKS = "titan2_tweaks";
-    private static final String KEY_IME_BACKUP = "enabled_imes_backup";
-    private static final String KEY_SWITCHER_HIDDEN = "ime_switcher_hidden";
-
     private final Handler h = new Handler(Looper.getMainLooper());
 
     private TextView trebleStatus;
@@ -143,15 +138,15 @@ public class NetworkActivity extends Activity {
         tSoftIme = UiKit.toggle(root, "Soft keyboard",
             ImeHwPrefs.softImeWithHw(this),
             on -> ImeHwPrefs.setSoftImeWithHw(this, on));
-        boolean hidden = getSharedPreferences(PREFS_TWEAKS, MODE_PRIVATE)
-            .getBoolean(KEY_SWITCHER_HIDDEN, false);
-        tImeSwitcher = UiKit.toggle(root, "Hide keyboard switcher", hidden, on -> {
-            if (on) hideKeyboardSwitcher();
-            else showKeyboardSwitcher();
-        });
+        tImeSwitcher = UiKit.toggle(root, "Hide IME",
+            ImeBarPrefs.hide(this),
+            on -> {
+                ImeBarPrefs.setHide(this, on);
+                UiKit.toast(this, on ? "IME bar hidden" : "IME bar shown");
+            });
 
         TextView kbHint = UiKit.mono(root);
-        kbHint.setText("A dpi · C Calls · T Treble · V VPN · W soft KB · K switcher · R · Esc");
+        kbHint.setText("A dpi · C Calls · T Treble · V VPN · W soft KB · K IME · R · Esc");
 
         setContentView(sc);
         TrebleAppBridge.hideFromSettings(this);
@@ -173,6 +168,10 @@ public class NetworkActivity extends Activity {
         refreshIms();
         refreshVpnHotspotStatus();
         if (!dpiDragging) refreshDpi();
+        if (tImeSwitcher != null) {
+            boolean hide = ImeBarPrefs.hide(this);
+            if (tImeSwitcher.isChecked() != hide) tImeSwitcher.setChecked(hide);
+        }
     }
 
     @Override
@@ -229,8 +228,8 @@ public class NetworkActivity extends Activity {
                 if (tImeSwitcher == null) return true;
                 boolean next = !tImeSwitcher.isChecked();
                 tImeSwitcher.setChecked(next);
-                if (next) hideKeyboardSwitcher();
-                else showKeyboardSwitcher();
+                ImeBarPrefs.setHide(this, next);
+                UiKit.toast(this, next ? "IME bar hidden" : "IME bar shown");
                 return true;
             }
         }
@@ -319,75 +318,4 @@ public class NetworkActivity extends Activity {
         }
     }
 
-    private void hideKeyboardSwitcher() {
-        try {
-            String enabled = Settings.Secure.getString(getContentResolver(),
-                Settings.Secure.ENABLED_INPUT_METHODS);
-            String def = Settings.Secure.getString(getContentResolver(),
-                Settings.Secure.DEFAULT_INPUT_METHOD);
-            if (enabled == null || enabled.isEmpty()) {
-                UiKit.toast(this, "No keyboards configured");
-                if (tImeSwitcher != null) tImeSwitcher.setChecked(false);
-                return;
-            }
-            if (def == null || def.isEmpty()) {
-                def = enabled.split(":")[0].split(";")[0];
-            }
-            String imeId = def.split(";")[0];
-            String single = oneImeOneSubtype(enabled, imeId);
-
-            getSharedPreferences(PREFS_TWEAKS, MODE_PRIVATE).edit()
-                .putString(KEY_IME_BACKUP, enabled)
-                .putBoolean(KEY_SWITCHER_HIDDEN, true)
-                .apply();
-
-            Settings.Secure.putString(getContentResolver(),
-                Settings.Secure.ENABLED_INPUT_METHODS, single);
-            Settings.Secure.putString(getContentResolver(),
-                Settings.Secure.DEFAULT_INPUT_METHOD, imeId);
-            Settings.Secure.putInt(getContentResolver(),
-                "input_method_selector_visibility", 2);
-            try {
-                Settings.System.putInt(getContentResolver(),
-                    "status_bar_ime_switcher", 0);
-            } catch (Exception ignored) {}
-            UiKit.toast(this, "Switcher hidden");
-        } catch (Exception e) {
-            UiKit.toast(this, "Failed: " + e.getMessage());
-            if (tImeSwitcher != null) tImeSwitcher.setChecked(false);
-        }
-    }
-
-    private static String oneImeOneSubtype(String enabled, String imeId) {
-        for (String entry : enabled.split(":")) {
-            if (entry == null || entry.isEmpty()) continue;
-            String[] parts = entry.split(";");
-            if (parts.length == 0) continue;
-            if (!imeId.equals(parts[0])) continue;
-            if (parts.length >= 2 && parts[1] != null && !parts[1].isEmpty()) {
-                return imeId + ";" + parts[1];
-            }
-            return imeId;
-        }
-        return imeId;
-    }
-
-    private void showKeyboardSwitcher() {
-        try {
-            String backup = getSharedPreferences(PREFS_TWEAKS, MODE_PRIVATE)
-                .getString(KEY_IME_BACKUP, null);
-            if (backup != null && !backup.isEmpty()) {
-                Settings.Secure.putString(getContentResolver(),
-                    Settings.Secure.ENABLED_INPUT_METHODS, backup);
-            }
-            Settings.Secure.putInt(getContentResolver(),
-                "input_method_selector_visibility", 0);
-            getSharedPreferences(PREFS_TWEAKS, MODE_PRIVATE).edit()
-                .putBoolean(KEY_SWITCHER_HIDDEN, false)
-                .apply();
-            UiKit.toast(this, "Switcher restored");
-        } catch (Exception e) {
-            UiKit.toast(this, "Failed: " + e.getMessage());
-        }
-    }
 }
