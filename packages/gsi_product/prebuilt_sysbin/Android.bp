@@ -221,6 +221,15 @@ cc_prebuilt_binary {
     stem: "openwrt-lpctl",
 }
 
+cc_prebuilt_binary {
+    name: "titan_dhcp_gw",
+    srcs: ["titan_dhcp_gw"],
+    compile_multilib: "64",
+    check_elf_files: false,
+    system_shared_libs: [],
+    stem: "titan_dhcp_gw",
+}
+
 prebuilt_etc {
     name: "titan2-openwrt.rc",
     src: "titan2-openwrt.rc",

@@ -45,7 +45,12 @@ find_downstreams() {
 }
 
 find_ap() {
-  # first downstream (status); LAN iface is $BR when present
+  # Android SoftAP bridge. The router address must not land on ap0/ap1.
+  if [ -d /sys/class/net/ap_br_ap0 ]; then
+    BR=ap_br_ap0
+    echo "$BR"
+    return 0
+  fi
   if [ -d "/sys/class/net/$BR" ]; then
     echo "$BR"
     return 0
@@ -144,8 +149,15 @@ stop_daemons() {
   kill_pidf "$AP_PID"
   kill_pidf "$UB_PID"
   kill_pidf "$DNS_PID"
-  killall uhttpd ubusd rpcd netifd 2>/dev/null || true
+  killall uhttpd ubusd rpcd netifd titan_dhcp_gw 2>/dev/null || true
   # do not kill Android dnsmasq
+}
+
+# Drop every copy of the network_stack DHCP mute.
+unmask_android_dhcp() {
+  while iptables -D OUTPUT -p udp --sport 67 -m owner --uid-owner "$NS_UID" -j DROP 2>/dev/null; do
+    :
+  done
 }
 
 # LuCI writes UCI. This copies the control plane onto the LP and
@@ -306,13 +318,87 @@ ban_netaddr() {
   done
 }
 
+# Android's sticky downstream is a random host (not .1) on a random
+# prefix. IpServer then offers that prefix, and Tailscale rule 13000
+# returns EPERM for the UDP/67 reply. The product LAN is the only IPv4
+# that may stay on the downstream.
+foreign_seen=""
+purge_foreign_v4() {
+  dev=$1
+  [ -n "$dev" ] && [ -d "/sys/class/net/$dev" ] || return 0
+  cidrs=$(ip -o -4 addr show dev "$dev" 2>/dev/null | awk '{print $4}')
+  for cidr in $cidrs; do
+    [ "$cidr" = "$LAN/$PFX" ] && continue
+    ip addr del "$cidr" dev "$dev" 2>/dev/null || true
+    case " $foreign_seen " in
+      *" $cidr "*) ;;
+      *)
+        foreign_seen="$foreign_seen $cidr"
+        log "dropped foreign $cidr on $dev"
+        ;;
+    esac
+  done
+  ip addr add "$LAN/$PFX" broadcast "$BCAST" dev "$dev" 2>/dev/null || true
+}
+
 ensure_router_ip() {
   load_lan
   ban_netaddr
   ap=$(find_ap || true)
   [ -n "$ap" ] && [ -d "/sys/class/net/$ap" ] || return 0
   ip addr add "$LAN/$PFX" broadcast "$BCAST" dev "$ap" 2>/dev/null || true
+  purge_foreign_v4 "$ap"
   ban_netaddr
+}
+
+pick_dhcp_gw() {
+  DHCP_GW=""
+  for c in /system/bin/titan_dhcp_gw /data/local/tmp/titan_dhcp_gw; do
+    if [ -x "$c" ]; then
+      DHCP_GW=$c
+      return 0
+    fi
+  done
+  return 1
+}
+
+mute_android_dhcp() {
+  iptables -C OUTPUT -p udp --sport 67 -m owner --uid-owner "$NS_UID" -j DROP 2>/dev/null \
+    || iptables -I OUTPUT -p udp --sport 67 -m owner --uid-owner "$NS_UID" -j DROP 2>/dev/null || true
+}
+
+# dhcp_idx is the bridge ifindex titan_dhcp_gw bound. A same-name
+# recreate (new ap_br_ap0) leaves that AF_PACKET socket dead while
+# Android UDP/67 stays muted.
+dhcp_pid=""
+dhcp_idx=""
+dhcp_ap=""
+ensure_dhcp_gw() {
+  ap=$1
+  [ -n "$ap" ] && [ -d "/sys/class/net/$ap" ] || return 0
+  idx=$(cat "/sys/class/net/$ap/ifindex" 2>/dev/null || echo 0)
+  if ! pick_dhcp_gw; then
+    if [ "$dhcp_ap" != "missing" ]; then
+      unmask_android_dhcp
+      dhcp_pid=""
+      dhcp_idx=""
+      dhcp_ap="missing"
+      log "no titan_dhcp_gw — Android DHCP not muted"
+    fi
+    return 0
+  fi
+  pid=$(pidof titan_dhcp_gw 2>/dev/null | awk '{print $1}')
+  if [ -n "$pid" ] && [ -d "/proc/$pid" ] && [ "$idx" = "$dhcp_idx" ] && [ "$ap" = "$dhcp_ap" ]; then
+    mute_android_dhcp
+    return 0
+  fi
+  mute_android_dhcp
+  killall titan_dhcp_gw 2>/dev/null || true
+  "$DHCP_GW" "$ap" "$LAN/$PFX" >>"$LOGDIR/titan_dhcp_gw.log" 2>&1 &
+  dhcp_pid=$!
+  dhcp_idx=$idx
+  dhcp_ap=$ap
+  log "dhcp $DHCP_GW $ap $LAN/$PFX ifindex=$idx"
 }
 
 start_applyd() {
@@ -320,7 +406,9 @@ start_applyd() {
     return 0
   fi
   (
-    last=""
+    # cfg_sig, not last. load_lan stores the host octet in last, which
+    # used to clobber this signature and re-run apply_lan every 2s.
+    cfg_sig=""
     last_ds=""
     while [ -d "$MNT/etc/config" ]; do
       load_lan
@@ -328,10 +416,15 @@ start_applyd() {
       ds=$(find_downstreams | tr '\n' ',')
       now=$(cat "$MNT/etc/config/network" "$MNT/etc/config/firewall" "$MNT/etc/config/dhcp" "$MNT/tmp/need-apply" 2>/dev/null | md5sum)
       sync_leases
-      if [ "$ds" != "$last_ds" ] || [ "$now" != "$last" ]; then
-        last=$now
+      if [ "$ds" != "$last_ds" ] || [ "$now" != "$cfg_sig" ]; then
+        cfg_sig=$now
         last_ds=$ds
         apply_lan
+      else
+        ap=$(find_ap || true)
+        if [ -n "$ap" ]; then
+          ensure_dhcp_gw "$ap"
+        fi
       fi
       sleep 2
     done
@@ -405,6 +498,14 @@ apply_lan() {
   ban_netaddr
   ds=$(find_downstreams | tr '\n' ' ')
   if [ -z "$ds" ]; then
+    if pidof titan_dhcp_gw >/dev/null 2>&1; then
+      killall titan_dhcp_gw 2>/dev/null || true
+      unmask_android_dhcp
+      dhcp_pid=""
+      dhcp_idx=""
+      dhcp_ap=""
+      log "dhcp stopped — no downstream"
+    fi
     log "no tether downstream yet (start Wi-Fi/USB/Ethernet tethering)"
     return 0
   fi
@@ -421,6 +522,7 @@ apply_lan() {
     [ "$n" = "$ap" ] || ip addr flush dev "$n" 2>/dev/null || true
   done
   ip addr add "$LAN/$PFX" broadcast "$BCAST" dev "$ap" 2>/dev/null || true
+  purge_foreign_v4 "$ap"
   ip link set "$ap" mtu 1280 2>/dev/null || true
   echo 0 >/proc/sys/net/ipv4/conf/"$ap"/rp_filter 2>/dev/null || true
   echo 1 >/proc/sys/net/ipv4/conf/"$ap"/forwarding 2>/dev/null || true
@@ -490,15 +592,12 @@ apply_lan() {
     fi
   fi
 
-  # Android IpServer advertises the iface address as router. It uses .0.
-  # Mute only network_stack DHCP replies; we answer with gw=.1.
-  iptables -C OUTPUT -p udp --sport 67 -m owner --uid-owner "$NS_UID" -j DROP 2>/dev/null \
-    || iptables -I OUTPUT -p udp --sport 67 -m owner --uid-owner "$NS_UID" -j DROP 2>/dev/null || true
+  # Android IpServer answers on UDP/67 from whichever address it picked
+  # (often not $LAN, and the gateway octet is .0). Tailscale rule 13000 then
+  # returns EPERM for that send, so the client never sees an offer.
+  # Mute those replies only while titan_dhcp_gw is injecting L2 offers for $LAN.
   # no blanket INPUT DROP — that killed our own DHCP too
-  if [ -x /data/local/tmp/titan_dhcp_gw ]; then
-    killall titan_dhcp_gw 2>/dev/null || true
-    /data/local/tmp/titan_dhcp_gw "$ap" >/data/local/tmp/titan_dhcp_gw.log 2>&1 &
-  fi
+  ensure_dhcp_gw "$ap"
   # LAN DNS: DHCP option 6 is $LAN. Android does not serve :53.
   iptables -t nat -C PREROUTING -i "$ap" -p udp --dport 53 -j DNAT --to-destination 8.8.8.8:53 2>/dev/null \
     || iptables -t nat -I PREROUTING -i "$ap" -p udp --dport 53 -j DNAT --to-destination 8.8.8.8:53
@@ -534,6 +633,7 @@ do_start() {
 
 do_stop() {
   stop_daemons
+  unmask_android_dhcp
   iptables -F titan2_ow_fwd 2>/dev/null || true
   iptables -t nat -F titan2_ow_nat 2>/dev/null || true
   log "stopped daemons (LP stays mounted)"
@@ -601,6 +701,7 @@ do_status() {
   echo "downstreams=$(find_downstreams | tr '\n' ',' | sed 's/,$//')"
   echo "ap=$ap tun=$tun uplink=$up"
   echo "uhttpd=$(pgrep -x uhttpd >/dev/null && echo up || echo down)"
+  echo "dhcp=$(pgrep -x titan_dhcp_gw >/dev/null && echo up || echo down)"
   echo "clients=$(ip neigh show 2>/dev/null | grep -c lladdr || echo 0)"
   [ -x "$LPCTL" ] && "$LPCTL" status 2>/dev/null || true
 }

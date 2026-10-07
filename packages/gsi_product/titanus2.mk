@@ -118,6 +118,7 @@ PRODUCT_PACKAGES += \
     titan2-openwrt-boot.sh \
     titan2-openwrt.rc \
     openwrt-lpctl \
+    titan_dhcp_gw \
     titan2-pad-agent.rc \
     titan2-ims.rc \
     titan2-sensor-privacy.rc \

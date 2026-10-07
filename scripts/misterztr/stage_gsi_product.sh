@@ -265,6 +265,7 @@ refresh_sot "$ROOT/packages/titan_openwrt/titan2-openwrt.sh" "$SRC_SYS/titan2-op
 refresh_sot "$ROOT/packages/titan_openwrt/titan2-openwrt-boot.sh" "$SRC_SYS/titan2-openwrt-boot.sh"
 refresh_sot "$ROOT/packages/titan_openwrt/titan2-openwrt.rc" "$SRC_SYS/titan2-openwrt.rc"
 refresh_sot "$ROOT/packages/titan_openwrt/openwrt-lpctl" "$SRC_SYS/openwrt-lpctl"
+refresh_sot "$ROOT/packages/titan_openwrt/titan_dhcp_gw" "$SRC_SYS/titan_dhcp_gw"
 [ -f "$SRC_SYS/titan2-netfw.rc" ] || die "missing titan2-netfw.rc (firewall init)"
 [ -f "$SRC_SYS/titan2-fw-observe" ] || die "missing titan2-fw-observe ELF"
 # Guard: ims-setup must not force location_mode
@@ -284,7 +285,7 @@ fi
 stage_file "$SRC_SYS/Android.bp" "$DEST_SYS/Android.bp"
 for f in $_SYSBIN_SOT titan2-ims-setup.sh titan2-sensor-privacy.sh \
   titan2-pad-agent.rc titan2-ims.rc titan2-sensor-privacy.rc titan2-netfw.rc \
-  titan2-openwrt.sh titan2-openwrt-boot.sh titan2-openwrt.rc openwrt-lpctl \
+  titan2-openwrt.sh titan2-openwrt-boot.sh titan2-openwrt.rc openwrt-lpctl titan_dhcp_gw \
   titan2-bind-mtk-privacy-overlay.sh titan2-privacy-overlay.rc FrameworkResOverlay.apk \
   titan2-analog-acc.sh titan2-analog-acc.rc titan2-analog-acc.dex \
   titan2-wifi-heal.sh titan2-wifi.rc titan2_usb_audio_policy_configuration.xml; do

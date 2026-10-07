@@ -1,20 +1,23 @@
 diff --git a/staticlibs/device/com/android/net/module/util/PrivateAddressCoordinator.java b/staticlibs/device/com/android/net/module/util/PrivateAddressCoordinator.java
 --- a/staticlibs/device/com/android/net/module/util/PrivateAddressCoordinator.java
 +++ b/staticlibs/device/com/android/net/module/util/PrivateAddressCoordinator.java
-@@ -35,6 +35,7 @@ import android.net.Network;
+@@ -34,6 +34,7 @@
+ import android.net.Network;
  import android.net.NetworkCapabilities;
  import android.os.RemoteException;
 +import android.os.SystemProperties;
  import android.provider.DeviceConfig;
  import android.util.ArrayMap;
  
-@@ -209,6 +210,22 @@ public class PrivateAddressCoordinator {
-         }
+@@ -209,6 +210,23 @@
+         mUpstreamPrefixMap.removeAll(toBeRemoved);
      }
  
 +    /**
-+     * Titan 2: persist.sys.titan2.tether_ipv4 = "10.191.207.1/24" pins gateway
-+     * for every tethering type (wifi/usb/ethernet). Empty = AOSP random sticky.
++     * Titan 2: persist.sys.titan2.tether_ipv4 = "192.168.6.1/24" is the product
++     * LAN for wifi, USB and Ethernet. The pin wins even when an upstream prefix
++     * overlaps it (a cell /8 must not move this gateway). VPN is not an upstream.
++     * Empty leaves the AOSP random sticky address.
 +     */
 +    @Nullable
 +    private LinkAddress titan2PinnedDownstream() {
@@ -30,13 +33,12 @@ diff --git a/staticlibs/device/com/android/net/module/util/PrivateAddressCoordin
      // TODO: There needs to be a reserveDownstreamAddress() method for the cases where
      // TetheringRequest has been set a static IPv4 address.
  
-@@ -224,6 +241,12 @@ public class PrivateAddressCoordinator {
-     public LinkAddress requestStickyDownstreamAddress(int interfaceType, final int scope,
+@@ -224,6 +242,12 @@
              IIpv4PrefixRequest request) {
          final Ipv4PrefixRequest wrappedRequest = new Ipv4PrefixRequest(request);
          final AddressKey addrKey = new AddressKey(interfaceType, scope);
 +        final LinkAddress pinned = titan2PinnedDownstream();
-+        if (pinned != null && !isConflictWithUpstream(asIpPrefix(pinned))) {
++        if (pinned != null) {
 +            mCachedAddresses.put(addrKey, pinned);
 +            mDownstreams.put(wrappedRequest, pinned);
 +            return pinned;
@@ -44,3 +46,15 @@ diff --git a/staticlibs/device/com/android/net/module/util/PrivateAddressCoordin
          // This ensures that tethering isn't started on 2 different interfaces with the same type.
          // Once tethering could support multiple interface with the same type,
          // TetheringSoftApCallback would need to handle it among others.
+@@ -247,6 +271,11 @@
+     @Nullable
+     public LinkAddress requestDownstreamAddress(IIpv4PrefixRequest request) {
+         final Ipv4PrefixRequest wrappedRequest = new Ipv4PrefixRequest(request);
++        final LinkAddress pinned = titan2PinnedDownstream();
++        if (pinned != null) {
++            mDownstreams.put(wrappedRequest, pinned);
++            return pinned;
++        }
+         final int prefixIndex = getRandomPrefixIndex();
+         for (int i = 0; i < mTetheringPrefixes.size(); i++) {
+             final IpPrefix prefixRange = mTetheringPrefixes.get(
