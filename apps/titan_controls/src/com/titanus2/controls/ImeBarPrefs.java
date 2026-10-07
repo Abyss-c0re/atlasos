@@ -2,8 +2,8 @@ package com.titanus2.controls;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.om.OverlayIdentifier;
 import android.content.om.OverlayManager;
+import android.os.Process;
 import android.os.UserHandle;
 import android.provider.Settings;
 
@@ -64,21 +64,27 @@ public final class ImeBarPrefs {
         try {
             OverlayManager om = ctx.getSystemService(OverlayManager.class);
             if (om == null) return;
-            int user = UserHandle.myUserId();
-            setOne(om, STATIC_OVERLAY, hide, user);
+            UserHandle user = UserHandle.getUserHandleForUid(Process.myUid());
+            setEnabled(om, STATIC_OVERLAY, hide, user);
             int colon = LIVE_OVERLAY.indexOf(':');
             if (colon > 0) {
-                om.setEnabled(new OverlayIdentifier(
+                Class<?> idClass = Class.forName("android.content.om.OverlayIdentifier");
+                Object id = idClass.getConstructor(String.class, String.class).newInstance(
                         LIVE_OVERLAY.substring(0, colon),
-                        LIVE_OVERLAY.substring(colon + 1)),
-                    hide, user);
+                        LIVE_OVERLAY.substring(colon + 1));
+                om.getClass()
+                        .getMethod("setEnabled", idClass, boolean.class, UserHandle.class)
+                        .invoke(om, id, hide, user);
             }
         } catch (Throwable ignored) {}
     }
 
-    private static void setOne(OverlayManager om, String name, boolean hide, int user) {
+    /** setEnabled is a hidden platform method. The shell helper is the fallback. */
+    private static void setEnabled(OverlayManager om, String name, boolean hide, UserHandle user) {
         try {
-            om.setEnabled(name, hide, user);
+            om.getClass()
+                    .getMethod("setEnabled", String.class, boolean.class, UserHandle.class)
+                    .invoke(om, name, hide, user);
         } catch (Throwable ignored) {}
     }
 }

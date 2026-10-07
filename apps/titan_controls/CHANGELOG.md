@@ -13,6 +13,21 @@ Do not ship without a matching build entry.
 
 ## 16.99-hid-pad-free (699) — 2026-09-30T13:46Z
 
+### rebuild 2026-10-06T18:37Z · 16.99-hid-pad-free (699)
+
+- Install the IME nav-bar switch on the Titan. It hides the bar and leaves the keyboards in place.
+
+
+### rebuild 2026-10-06T18:36Z · 16.99-hid-pad-free (699)
+
+- Install the IME nav-bar switch on the Titan. It hides the bar and leaves the keyboards in place.
+
+
+### rebuild 2026-10-06T18:35Z · 16.99-hid-pad-free (699)
+
+- Install the IME nav-bar switch on the Titan. It hides the bar and leaves the keyboards in place.
+
+
 - HID mouse: rear is an extra cursor. Sub display no longer parks the keyboard pad. Reverse Y flips only the rear digitizer.
 - Hide IME on the main page and in Tweaks. It hides the IME nav bar and does not remove keyboards.
 

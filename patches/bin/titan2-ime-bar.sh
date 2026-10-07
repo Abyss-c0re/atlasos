@@ -129,19 +129,11 @@ apply() {
   _b=`boot_id`
   _prev=`cat "$WANT" 2>/dev/null | tr -d '\r\n'`
   [ "$_prev" = "$_b $_w" ] && return 0
-  if [ "$_w" = 1 ]; then
-    lookup_hidden && _now=1 || _now=0
-  else
-    lookup_hidden && _now=0 || _now=1
-  fi
+  if lookup_hidden; then _now=1; else _now=0; fi
   if [ "$_now" != "$_w" ]; then
     set_overlays "$_w"
-    if [ "$_w" = 1 ]; then
-      lookup_hidden && _ok=1 || _ok=0
-    else
-      lookup_hidden && _ok=0 || _ok=1
-    fi
-    if [ "$_ok" != 1 ]; then
+    if lookup_hidden; then _ok=1; else _ok=0; fi
+    if [ "$_ok" != "$_w" ]; then
       log "overlay unchanged hide=$_w"
       return 0
     fi
