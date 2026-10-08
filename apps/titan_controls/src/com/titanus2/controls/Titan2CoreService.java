@@ -57,13 +57,26 @@ public class Titan2CoreService extends Service {
     public IBinder onBind(Intent intent) {
         // Enforce framework permission for external binds (component is exported
         // without android:permission so same-UID startService always works).
+        // Moonlight is a user app and cannot hold signature|privileged
+        // USE_TITAN2_API. The installed package name is the allowlist.
+        int uid = android.os.Binder.getCallingUid();
         if (checkCallingOrSelfPermission(Titan2ApiContract.PERMISSION_USE)
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                != android.content.pm.PackageManager.PERMISSION_GRANTED
+                && !isMoonlightUid(uid)) {
             Log.w(TAG, "bind denied: missing " + Titan2ApiContract.PERMISSION_USE
-                + " uid=" + android.os.Binder.getCallingUid());
+                + " uid=" + uid);
             return null;
         }
         return messenger.getBinder();
+    }
+
+    private boolean isMoonlightUid(int uid) {
+        String[] pkgs = getPackageManager().getPackagesForUid(uid);
+        if (pkgs == null) return false;
+        for (String pkg : pkgs) {
+            if (pkg != null && pkg.startsWith("com.limelight")) return true;
+        }
+        return false;
     }
 
     @Override

@@ -183,6 +183,13 @@ public final class Titan2ApiContract {
     public static final String LAYER_HID_SESSION = "hid_session";
 
     /**
+     * Temp layer while a Moonlight stream is open. Computer actions on this
+     * layer are delivered to the Moonlight process as {@link #ACTION_REMOTE_INPUT}
+     * instead of a phone inject or an accessibility swipe.
+     */
+    public static final String LAYER_MOONLIGHT_STREAM = "moonlight_stream";
+
+    /**
      * Universal remote/computer input event (not HID-specific).
      * Any app with {@link #PERMISSION_USE} may register a receiver.
      * Consumers: Titan USB HID, future remote-desktop bridges, etc.

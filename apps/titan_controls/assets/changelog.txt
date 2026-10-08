@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.100-stream-wheel (700) — 2026-10-08T01:00Z
+
+- Deliver Moonlight stream side-key scroll and host chords to the foreground client.
+
+---
+
 ## 16.99-hid-pad-free (699) — 2026-09-30T13:46Z
 
 - HID mouse: rear is an extra cursor. Sub display no longer parks the keyboard pad. Reverse Y flips only the rear digitizer.

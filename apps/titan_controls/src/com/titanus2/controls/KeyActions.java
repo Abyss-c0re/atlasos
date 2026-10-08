@@ -363,6 +363,9 @@ public final class KeyActions {
      */
     private static void computerInput(Context ctx, String action) {
         if (action == null) return;
+        // Moonlight owns the PC pointer while its stream layer is up. A phone
+        // wheel swipe never becomes a host scroll on the stream surface.
+        if (deliverToMoonlight(ctx, action)) return;
         // Exclusive / live HID owns host keyboard — never inject+broadcast both.
         if (HostLayoutController.isHidSessionLive(ctx) && KeyMapPrefs.isHostAction(action)) {
             hostRemoteOnly(ctx, action);
@@ -953,6 +956,9 @@ public final class KeyActions {
                 case "cmd":
                     meta |= KeyEvent.META_META_ON | KeyEvent.META_META_LEFT_ON;
                     break;
+                case "super":
+                    keyCode = KeyEvent.KEYCODE_META_LEFT;
+                    break;
                 case "esc":
                 case "escape":
                     keyCode = KeyEvent.KEYCODE_ESCAPE;
@@ -1144,6 +1150,13 @@ public final class KeyActions {
         if (!KeyMapPrefs.isMouseButtonAction(action)) return;
         int buttons = mouseButtonsFromAction(action);
         if (buttons == 0) return;
+        if (moonlightOwnsComputerInput(ctx)) {
+            broadcastToPackage(ctx, TrackpadAccessService.foregroundPkg(), action,
+                com.titanus2.api.Titan2ApiContract.KIND_MOUSE,
+                pressed ? buttons : 0, false, 0, 0, 0, 0);
+            stampRemote(ctx, action);
+            return;
+        }
         if (HostLayoutController.isHidSessionLive(ctx)) {
             broadcastRemote(ctx, action,
                 com.titanus2.api.Titan2ApiContract.KIND_MOUSE,
@@ -1379,6 +1392,82 @@ public final class KeyActions {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /**
+     * Moonlight's stream layer is the computer client. Phone inject and the
+     * accessibility swipe do not become a host wheel on that surface.
+     */
+    private static boolean moonlightOwnsComputerInput(Context ctx) {
+        try {
+            if (!new TempKeyMapStack(ctx).hasLayer(
+                    com.titanus2.api.Titan2ApiContract.LAYER_MOONLIGHT_STREAM)) {
+                return false;
+            }
+        } catch (Exception e) {
+            return false;
+        }
+        String fg = TrackpadAccessService.foregroundPkg();
+        return fg != null && fg.startsWith("com.limelight");
+    }
+
+    /** @return true when the action was handed to Moonlight and must not also hit the phone. */
+    private static boolean deliverToMoonlight(Context ctx, String action) {
+        if (!moonlightOwnsComputerInput(ctx)) return false;
+        String pkg = TrackpadAccessService.foregroundPkg();
+        int wheel = mouseWheelFromAction(action);
+        if (wheel != 0) {
+            broadcastToPackage(ctx, pkg, action,
+                com.titanus2.api.Titan2ApiContract.KIND_MOUSE,
+                0, false, 0, 0, 0, wheel);
+            stampRemote(ctx, action);
+            return true;
+        }
+        if (KeyMapPrefs.isMouseAction(action)) {
+            broadcastToPackage(ctx, pkg, action,
+                com.titanus2.api.Titan2ApiContract.KIND_MOUSE,
+                mouseButtonsFromAction(action), true, 0, 0, 0, 0);
+            stampRemote(ctx, action);
+            return true;
+        }
+        if (KeyMapPrefs.isHostAction(action)) {
+            String spec = action.substring(KeyMapPrefs.ACT_HOST_PREFIX.length()).trim();
+            HostChord chord = parseHostChord(spec);
+            if (chord == null) return false;
+            broadcastToPackage(ctx, pkg, action,
+                com.titanus2.api.Titan2ApiContract.KIND_KEY,
+                0, false, chord.meta, chord.keyCode, chord.hidUsage, 0);
+            stampRemote(ctx, action);
+            return true;
+        }
+        return false;
+    }
+
+    private static void broadcastToPackage(Context ctx, String pkg, String action, String kind,
+                                           int buttons, boolean tap,
+                                           int meta, int keyCode, int hidUsage, int wheel) {
+        if (pkg == null || pkg.isEmpty()) return;
+        Intent i = new Intent(com.titanus2.api.Titan2ApiContract.ACTION_REMOTE_INPUT);
+        i.setPackage(pkg);
+        i.putExtra(com.titanus2.api.Titan2ApiContract.EXTRA_REMOTE_ACTION, action);
+        i.putExtra(com.titanus2.api.Titan2ApiContract.EXTRA_KIND, kind);
+        i.putExtra(com.titanus2.api.Titan2ApiContract.EXTRA_MOUSE_BUTTONS, buttons);
+        i.putExtra(com.titanus2.api.Titan2ApiContract.EXTRA_MOUSE_TAP, tap);
+        i.putExtra(com.titanus2.api.Titan2ApiContract.EXTRA_MOUSE_WHEEL, wheel);
+        int mods = 0;
+        if ((meta & KeyEvent.META_CTRL_ON) != 0) mods |= 1;
+        if ((meta & KeyEvent.META_SHIFT_ON) != 0) mods |= 2;
+        if ((meta & KeyEvent.META_ALT_ON) != 0) mods |= 4;
+        if ((meta & KeyEvent.META_META_ON) != 0) mods |= 8;
+        i.putExtra(com.titanus2.api.Titan2ApiContract.EXTRA_MODIFIERS, mods);
+        i.putExtra(com.titanus2.api.Titan2ApiContract.EXTRA_KEYCODE, keyCode);
+        i.putExtra(com.titanus2.api.Titan2ApiContract.EXTRA_HID_USAGE, hidUsage);
+        // setPackage already limits delivery. Requiring the receiver to hold
+        // USE_TITAN2_API drops Moonlight: that permission is signature|privileged.
+        // Moonlight's receiver requires the sender to hold it instead.
+        try {
+            ctx.sendBroadcast(i);
+        } catch (Exception ignored) {}
     }
 
     /** Wheel and other host events for the desk. HID is not the sink while Atlas is in front. */

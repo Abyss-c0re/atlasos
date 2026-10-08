@@ -37,6 +37,10 @@ public class TrackpadAccessService extends AccessibilityService {
     private final Map<Integer, Boolean> longFired = new HashMap<>();
     private final Map<Integer, Runnable> longTasks = new HashMap<>();
     private final Map<Integer, Runnable> shortPending = new HashMap<>();
+    /** Side-key scroll repeat while a Moonlight stream layer is up. */
+    private final Map<Integer, Runnable> wheelTasks = new HashMap<>();
+    private static final long WHEEL_REPEAT_MS = 80L;
+    private static final long WHEEL_HOLD_CAP_MS = 12_000L;
     private final Map<Integer, Long> lastShortUp = new HashMap<>();
     private static final long LONG_MS = 550;
     /** Layout hold acts as a true modifier — arm quickly, not after 550ms. */
@@ -926,6 +930,10 @@ public class TrackpadAccessService extends AccessibilityService {
             if (r != null) h.removeCallbacks(r);
         }
         longTasks.clear();
+        for (Runnable r : wheelTasks.values()) {
+            if (r != null) h.removeCallbacks(r);
+        }
+        wheelTasks.clear();
         for (Runnable r : shortPending.values()) {
             if (r != null) h.removeCallbacks(r);
         }
@@ -941,6 +949,71 @@ public class TrackpadAccessService extends AccessibilityService {
         pairConsumed.clear();
         pairSwallowed.clear();
         releaseHeldMouseButtons();
+    }
+
+    /**
+     * Hold-to-scroll only while Moonlight's stream layer is up, and only when
+     * tap and hold are the same wheel (or hold is unset). A different hold
+     * or a real double-tap action keeps the normal short/long split.
+     */
+    private boolean wheelHoldWanted(TempKeyMapStack stack, int scan,
+                                    KeyMapPrefs prefs, String shortAct) {
+        if (!isScrollAction(shortAct)) return false;
+        if (stack == null || !stack.hasLayer(
+                com.titanus2.api.Titan2ApiContract.LAYER_MOONLIGHT_STREAM)) {
+            return false;
+        }
+        KeyMapPrefs.Slot dbl = KeyMapPrefs.slotByScan(scan, KeyMapPrefs.Press.DOUBLE);
+        if (dbl != null) {
+            String da = sideSafeAction(scan, effectiveAction(prefs, dbl.id));
+            if (da != null && !KeyMapPrefs.ACT_DEFAULT.equals(da)
+                    && !KeyMapPrefs.ACT_NONE.equals(da)) {
+                return false;
+            }
+        }
+        KeyMapPrefs.Slot lo = KeyMapPrefs.slotByScan(scan, KeyMapPrefs.Press.LONG);
+        if (lo == null) return true;
+        String la = sideSafeAction(scan, effectiveAction(prefs, lo.id));
+        if (la == null || KeyMapPrefs.ACT_DEFAULT.equals(la)
+                || KeyMapPrefs.ACT_NONE.equals(la)) {
+            return true;
+        }
+        return shortAct.equals(la);
+    }
+
+    private static boolean isScrollAction(String action) {
+        return "mouse:scroll_up".equals(action) || "mouse:scroll_down".equals(action);
+    }
+
+    private void beginWheelHold(int scan, String action) {
+        Runnable old = longTasks.remove(scan);
+        if (old != null) h.removeCallbacks(old);
+        stopWheelHold(scan);
+        downAt.put(scan, SystemClock.uptimeMillis());
+        longFired.put(scan, true);
+        KeyActions.run(this, action);
+        final int sc = scan;
+        final String act = action;
+        final long started = SystemClock.uptimeMillis();
+        Runnable tick = new Runnable() {
+            @Override public void run() {
+                if (wheelTasks.get(sc) != this) return;
+                if (!downAt.containsKey(sc)
+                        || SystemClock.uptimeMillis() - started > WHEEL_HOLD_CAP_MS) {
+                    stopWheelHold(sc);
+                    return;
+                }
+                KeyActions.run(TrackpadAccessService.this, act);
+                h.postDelayed(this, WHEEL_REPEAT_MS);
+            }
+        };
+        wheelTasks.put(sc, tick);
+        h.postDelayed(tick, WHEEL_REPEAT_MS);
+    }
+
+    private void stopWheelHold(int scan) {
+        Runnable r = wheelTasks.remove(scan);
+        if (r != null) h.removeCallbacks(r);
     }
 
     private String shortActionForScan(KeyMapPrefs prefs, int scan) {
@@ -1563,6 +1636,10 @@ public class TrackpadAccessService extends AccessibilityService {
             }
 
             String shortActNow = shortActionForScan(prefs, scan);
+            if (wheelHoldWanted(stack, scan, prefs, shortActNow)) {
+                beginWheelHold(scan, shortActNow);
+                return true;
+            }
             if (KeyMapPrefs.isActAsKeyAction(shortActNow)) {
                 downAt.put(scan, now);
                 longFired.put(scan, true);
@@ -1608,6 +1685,12 @@ public class TrackpadAccessService extends AccessibilityService {
         }
 
         if (action == KeyEvent.ACTION_UP) {
+            if (wheelTasks.containsKey(scan)) {
+                stopWheelHold(scan);
+                downAt.remove(scan);
+                longFired.remove(scan);
+                return true;
+            }
             if (mouseBtnHeld.remove(scan)) {
                 Runnable heldTask = longTasks.remove(scan);
                 if (heldTask != null) h.removeCallbacks(heldTask);
