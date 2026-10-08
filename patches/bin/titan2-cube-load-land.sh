@@ -231,6 +231,24 @@ _land_cube_load_park_tip() {
             ;;
         esac
       fi
+      # 1.10: keypad must go dark with the panel. hw_want follow left it at 3.
+      # Stamp survives reboot while the system binary does not, so a matching
+      # stamp must not leave the old cube running. Force until a live process
+      # is the tip (or a bind-mounted system script that already has the token).
+      if grep -a -F -q '1.10-keyled-screen-off' "$_lt" 2>/dev/null; then
+        _k_fixed=0
+        if _pgrep_real_has "$_lt"; then
+          _k_fixed=1
+        elif [ -r "$_lm" ] && grep -a -F -q '1.10-keyled-screen-off' "$_lm" 2>/dev/null \
+            && _pgrep_real_has "$_lm"; then
+          _k_fixed=1
+        fi
+        if [ "$_k_fixed" != 1 ]; then
+          _FORCE_KCUBE_KEYLED=1
+          echo "upgrade kernel_cube tip keyled-screen-off live=old ts=`date +%s`" \
+            >> "$ST/titan2_cube_load_tip_land.log" 2>/dev/null || true
+        fi
+      fi
       ;;
     sensor_privacy)
       _verf="$ST/titan2_sensor_privacy_tip_ver"

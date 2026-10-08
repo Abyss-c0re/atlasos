@@ -276,6 +276,11 @@ if [ -x "$ROOT/packages/titan_usb_hid_system/hid_bridge" ] \
 else
   bad "missing hid_bridge (packages/titan_usb_hid_system or magisk_titan2_usb_hid)"
 fi
+if [ -x "$ROOT/packages/titan_usb_hid_system/titan2-keys" ]; then
+  ok "titan2-keys prebuilt present"
+else
+  bad "missing titan2-keys (packages/titan_usb_hid_system)"
+fi
 
 echo "---"
 if [ "$ec" -eq 0 ]; then

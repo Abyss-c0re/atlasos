@@ -182,15 +182,17 @@ HID_SYS="$ROOT/packages/titan_usb_hid_system"
 HID_BRIDGE="$ROOT/packages/magisk_titan2_usb_hid/hid_bridge"
 [ -x "$HID_SYS/hid_bridge" ] && HID_BRIDGE="$HID_SYS/hid_bridge"
 [ -x "$HID_BRIDGE" ] || die "missing hid_bridge: $HID_BRIDGE"
+[ -x "$HID_SYS/titan2-keys" ] || die "missing titan2-keys: $HID_SYS/titan2-keys"
 [ -f "$SRC_HID/Android.bp" ] || die "missing $SRC_HID/Android.bp"
 DEST_HID="$MISTERZTR_TREE/vendor/titanus2/prebuilts/usb_hid"
 stage_file "$SRC_HID/Android.bp" "$DEST_HID/Android.bp"
 stage_file "$HID_BRIDGE" "$DEST_HID/hid_bridge"
+stage_file "$HID_SYS/titan2-keys" "$DEST_HID/titan2-keys"
 stage_file "$HID_SYS/enable_hid.sh" "$DEST_HID/enable_hid.sh"
 stage_file "$HID_SYS/service.sh" "$DEST_HID/service.sh"
 stage_file "$HID_SYS/titan2-usb-hid-service.sh" "$DEST_HID/titan2-usb-hid-service.sh"
 stage_file "$HID_SYS/titan2-usb-hid.rc" "$DEST_HID/titan2-usb-hid.rc"
-chmod 755 "$DEST_HID/hid_bridge" "$DEST_HID/enable_hid.sh" "$DEST_HID/service.sh" \
+chmod 755 "$DEST_HID/hid_bridge" "$DEST_HID/titan2-keys" "$DEST_HID/enable_hid.sh" "$DEST_HID/service.sh" \
   "$DEST_HID/titan2-usb-hid-service.sh" 2>/dev/null || true
 info "staged USB HID stack → $DEST_HID"
 
@@ -218,6 +220,7 @@ titan2-pad-idc.sh
 titan2-plane-heal.sh
 titan2-ime-bar.sh
 titan2-cube-load-land.sh
+titan2-kernel-cube.sh
 titan2-cool-park.sh
 titan2-ui-plane.sh
 titan2-pad-apply.sh
@@ -254,6 +257,7 @@ done
 
 refresh_sot "$ROOT/packages/titan_ims/bin/titan2-ims-setup.sh" "$SRC_SYS/titan2-ims-setup.sh"
 refresh_sot "$ROOT/patches/init/titan2-pad-agent.rc" "$SRC_SYS/titan2-pad-agent.rc"
+refresh_sot "$ROOT/patches/init/titan2-kernel-cube.rc" "$SRC_SYS/titan2-kernel-cube.rc"
 refresh_sot "$ROOT/packages/titan_ims/init/titan2-ims.rc" "$SRC_SYS/titan2-ims.rc"
 refresh_sot "$ROOT/patches/init/titan2-sensor-privacy.rc" "$SRC_SYS/titan2-sensor-privacy.rc"
 refresh_sot "$ROOT/patches/init/titan2-privacy-overlay.rc" "$SRC_SYS/titan2-privacy-overlay.rc"
@@ -284,7 +288,7 @@ if ! grep -q 'v35-aux-hold' "$SRC_SYS/titan2-sensor-privacy.sh" 2>/dev/null; the
 fi
 stage_file "$SRC_SYS/Android.bp" "$DEST_SYS/Android.bp"
 for f in $_SYSBIN_SOT titan2-ims-setup.sh titan2-sensor-privacy.sh \
-  titan2-pad-agent.rc titan2-ims.rc titan2-sensor-privacy.rc titan2-netfw.rc \
+  titan2-pad-agent.rc titan2-kernel-cube.rc titan2-ims.rc titan2-sensor-privacy.rc titan2-netfw.rc \
   titan2-openwrt.sh titan2-openwrt-boot.sh titan2-openwrt.rc openwrt-lpctl titan_dhcp_gw \
   titan2-bind-mtk-privacy-overlay.sh titan2-privacy-overlay.rc FrameworkResOverlay.apk \
   titan2-analog-acc.sh titan2-analog-acc.rc titan2-analog-acc.dex \

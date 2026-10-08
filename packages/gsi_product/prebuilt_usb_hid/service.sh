@@ -128,6 +128,24 @@ _stage_product_bridge_tmp() {
 _stage_product_bridge_tmp
 BR="$(_pick_bridge "$BR")"
 
+# Keyboard map daemon. One process. It does not open the pad or TitanKey.
+# Apps use the in-process table when this socket is down.
+ensure_keys_daemon() {
+  if pidof titan2-keys >/dev/null 2>&1; then
+    return 0
+  fi
+  _k=""
+  if [ -x /data/local/tmp/titan2-keys ]; then
+    _k=/data/local/tmp/titan2-keys
+  elif [ -x /system/bin/titan2-keys ]; then
+    _k=/system/bin/titan2-keys
+  fi
+  [ -n "$_k" ] || return 0
+  "$_k" serve >>/data/local/tmp/titan2-keys.log 2>&1 &
+  log "titan2-keys $_k"
+}
+ensure_keys_daemon
+
 # Single instance. Do NOT exit 0 when a peer is live — init has no oneshot, so
 # exit makes init.svc=restarting forever (Magisk module + in-ROM dual stack).
 if [ -f "$PIDF" ]; then

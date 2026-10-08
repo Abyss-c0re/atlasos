@@ -438,13 +438,11 @@ final class PadKeyBar {
                 int[] ku = HidControl.charToKey(glyph.charAt(0));
                 if (ku != null) {
                     markModsUsed();
-                    final int extra = ku[0];
+                    final int mod = ku[0];
                     final int usage = ku[1];
                     new Thread(() -> {
-                        if (extra != 0) HidControl.keyDown(extra == 0x02 ? 0xe1 : extra);
-                        HidControl.keyTapKeepMods(usage);
-                        if (extra != 0 && (currentMod() & extra) == 0)
-                            HidControl.keyUp(extra == 0x02 ? 0xe1 : extra);
+                        /* The glyph is the character. Latched Shift must not change it. */
+                        HidControl.keyTapAbsolute(mod, usage);
                         KeyLedClient.bumpActivity();
                     }).start();
                 }

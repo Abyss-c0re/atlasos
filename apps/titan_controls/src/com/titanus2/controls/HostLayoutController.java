@@ -1687,36 +1687,7 @@ public final class HostLayoutController {
                 return o;
             }
         }
-        switch (keyCode) {
-            case KeyEvent.KEYCODE_Q: return "0";
-            case KeyEvent.KEYCODE_W: return "1";
-            case KeyEvent.KEYCODE_E: return "2";
-            case KeyEvent.KEYCODE_R: return "3";
-            case KeyEvent.KEYCODE_T: return "(";
-            case KeyEvent.KEYCODE_Y: return ")";
-            // Product map: U = underscore (was bare "-"; I keeps hyphen)
-            case KeyEvent.KEYCODE_U: return "_";
-            case KeyEvent.KEYCODE_I: return "-";
-            case KeyEvent.KEYCODE_O: return "/";
-            case KeyEvent.KEYCODE_P: return ":";
-            case KeyEvent.KEYCODE_A: return "@";
-            case KeyEvent.KEYCODE_S: return "4";
-            case KeyEvent.KEYCODE_D: return "5";
-            case KeyEvent.KEYCODE_F: return "6";
-            case KeyEvent.KEYCODE_G: return "*";
-            case KeyEvent.KEYCODE_H: return "#";
-            case KeyEvent.KEYCODE_J: return "+";
-            case KeyEvent.KEYCODE_K: return "\"";
-            case KeyEvent.KEYCODE_L: return "'";
-            case KeyEvent.KEYCODE_Z: return "!";
-            case KeyEvent.KEYCODE_X: return "7";
-            case KeyEvent.KEYCODE_C: return "8";
-            case KeyEvent.KEYCODE_V: return "9";
-            case KeyEvent.KEYCODE_B: return ".";
-            case KeyEvent.KEYCODE_N: return ",";
-            case KeyEvent.KEYCODE_M: return "?";
-            default: return null;
-        }
+        return com.titanus2.api.KeyGlyphs.specialForAndroidKey(keyCode);
     }
 
     /** Single BMP printable glyph for specials emit; reject multi-char / hex junk. */

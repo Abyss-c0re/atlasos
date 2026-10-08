@@ -94,6 +94,9 @@ if [ -n "${CHANGELOG_NOTE:-}" ]; then
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${CHANGELOG_NOTE}" >> "$CL"
   echo "CHANGELOG: $CHANGELOG_NOTE"
 fi
-unzip -l "$ROOT/TitanUsbHid.apk" | grep -q 'lib/arm64-v8a/libnbremote.so' \
+# grep -q closes the pipe early. With pipefail, unzip's SIGPIPE then
+# looks like a missing library even when aapt stored libnbremote.so.
+unzip -l "$ROOT/TitanUsbHid.apk" >"$BUILD/apk.list"
+grep -q 'lib/arm64-v8a/libnbremote.so' "$BUILD/apk.list" \
   || { echo "build.sh: libnbremote.so missing from apk" >&2; exit 1; }
 echo "OK $ROOT/TitanUsbHid.apk ($(stat -c%s "$ROOT/TitanUsbHid.apk") bytes) ALLOW_ROOT=$ALLOW_ROOT"

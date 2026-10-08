@@ -60,6 +60,9 @@ typedef struct NbPointer {
 typedef struct NbKbd {
     uint8_t mods;
     uint8_t keys[6];
+    /* Mods before an absolute glyph. Shift in that glyph does not stick. */
+    uint8_t base_mods;
+    uint8_t abs_hold;
 } NbKbd;
 
 void nb_pointer_init(NbPointer *p);
@@ -88,6 +91,8 @@ int nb_hid_to_android(int usage);
 /* Boot report (8 bytes) -> key frames. Updates *st. Returns frame count. */
 int nb_kbd_diff(NbKbd *st, const uint8_t report[8], uint8_t *out, int cap);
 int nb_kbd_edge(NbKbd *st, int mod, int usage, int press, uint8_t *out, int cap);
+/* Glyph chord. Shift in mod replaces held Shift for this key only. */
+int nb_kbd_absolute(NbKbd *st, int mod, int usage, int press, uint8_t *out, int cap);
 int nb_kbd_release(NbKbd *st, uint8_t *out, int cap);
 
 /* UTF-8 text. Always ends on a COMPLETE chunk. Returns frame count, or -1. */

@@ -671,21 +671,8 @@ def child_run(spec, root, uid, gid, release_r, programs):
     spec["env"]["PWD"] = os.getcwd()
     if spec["new_session"]:
         os.setsid()
-    keep = {spec["sync_fd"]} if spec["sync_fd"] is not None else set()
-    try:
-        names = os.listdir("/proc/self/fd")
-    except OSError:
-        names = []
-    for name in names:
-        try:
-            num = int(name)
-        except ValueError:
-            continue
-        if num > 2 and num not in keep:
-            try:
-                os.close(num)
-            except OSError:
-                pass
+    # Leave Flatpak's fds open. xdg-dbus-proxy is started as
+    # `bwrap --args N -- xdg-dbus-proxy --args=M` and dies if M is closed.
     cmd = spec["command"]
     argv0 = spec["argv0"] or cmd[0]
     try:

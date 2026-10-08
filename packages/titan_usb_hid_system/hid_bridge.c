@@ -12,6 +12,9 @@
  *
  * Socket packets (little-endian), inject only:
  *   [0]=0x01 key:  [1]=mod [2]=hid_usage [3]=1 press / 0 release
+ *   [0]=0x05 chord:[1]=mod [2]=hid_usage [3]=press
+ *                 absolute glyph. Shift in [1] replaces held Shift.
+ *                 Ctrl/Alt/Meta already held stay. Release restores them.
  *   [0]=0x02 mouse:[1]=dx(int8) [2]=dy(int8) [3]=buttons
  *   [0]=0x03 btn:  [1]=buttons absolute
  *   [0]=0x04 wheel:[1]=wheel(int8)
@@ -22,6 +25,7 @@
  *
  * Also reads /data/local/tmp/titan2_hid.inj (app su fallback, 4-byte packets).
  */
+
 #define INJ_PATH "/data/local/tmp/titan2_hid.inj"
 #define KEY_ACT_PATH "/data/local/tmp/titan2_key_activity"
 #define KEYLED_WANT "/data/misc/titan2/titan2_keyled_brightness"
@@ -92,6 +96,7 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include "titan_keys.h"
 #include <time.h>
 
 /* Product upper-row nav (TitanKey) — must stay on phone in exclusive grab. */
@@ -464,49 +469,7 @@ static int sym_layer_held(void) {
     return specials_mod_mask != 0;
 }
 
-/*
- * Host HID specials (share + exclusive): map Titan printed specials layer
- * → US HID usages (host always sees boot-protocol US keyboard, NOT TitanKey.kcm).
- * Product map matches HostLayoutController.specialsChar (C→8, A→@, …).
- * Returns 1 if code is a specials-layer letter; *out_mod = LShift (0x02) or 0;
- * *out_usage = HID keyboard usage.
- */
-static int titan_specials_layer_hid(unsigned code, uint8_t *out_mod, uint8_t *out_usage) {
-    uint8_t m = 0, u = 0;
-    /* Linux KEY_* for QWERTY body (input-event-codes) */
-    switch (code) {
-    case KEY_Q: u = 0x27; break;              /* 0 */
-    case KEY_W: u = 0x1e; break;              /* 1 */
-    case KEY_E: u = 0x1f; break;              /* 2 */
-    case KEY_R: u = 0x20; break;              /* 3 */
-    case KEY_T: m = 0x02; u = 0x26; break;    /* ( */
-    case KEY_Y: m = 0x02; u = 0x27; break;    /* ) */
-    case KEY_U: m = 0x02; u = 0x2d; break;    /* _  product inject map */
-    case KEY_I: u = 0x2d; break;              /* - */
-    case KEY_O: u = 0x38; break;              /* / */
-    case KEY_P: m = 0x02; u = 0x33; break;    /* : */
-    case KEY_A: m = 0x02; u = 0x1f; break;    /* @ */
-    case KEY_S: u = 0x21; break;              /* 4 */
-    case KEY_D: u = 0x22; break;              /* 5 */
-    case KEY_F: u = 0x23; break;              /* 6 */
-    case KEY_G: m = 0x02; u = 0x25; break;    /* * */
-    case KEY_H: m = 0x02; u = 0x20; break;    /* # */
-    case KEY_J: m = 0x02; u = 0x2e; break;    /* + */
-    case KEY_K: m = 0x02; u = 0x34; break;    /* " */
-    case KEY_L: u = 0x34; break;              /* ' */
-    case KEY_Z: m = 0x02; u = 0x1e; break;    /* ! */
-    case KEY_X: u = 0x24; break;              /* 7 */
-    case KEY_C: u = 0x25; break;              /* 8 */
-    case KEY_V: u = 0x26; break;              /* 9 */
-    case KEY_B: u = 0x37; break;              /* . */
-    case KEY_N: u = 0x36; break;              /* , */
-    case KEY_M: m = 0x02; u = 0x38; break;    /* ? */
-    default: return 0;
-    }
-    if (out_mod) *out_mod = m;
-    if (out_usage) *out_usage = u;
-    return 1;
-}
+
 
 /* Map body-fixed pad deltas → screen axes when follow_orient is on.
  * Surface.ROTATION_*: 0=0°, 1=90°CCW, 2=180°, 3=270°CCW.
@@ -1799,6 +1762,30 @@ static void apply_key(uint8_t *mods, uint8_t keys[6], uint8_t m, uint8_t h, uint
         *mods |= m;
 }
 
+/* Absolute glyph. Shift bits in m replace held Shift for this report only.
+ * *mods is unchanged, so a later release restores the real Shift/Ctrl/Alt. */
+static void emit_abs_key(int hid_k, uint8_t *mods, uint8_t keys[6],
+                         uint8_t m, uint8_t h, uint8_t press) {
+    int i;
+    uint8_t report_mods;
+    if (!mods || !keys || !h) return;
+    if (press) {
+        int have = 0;
+        for (i = 0; i < 6; i++) if (keys[i] == h) have = 1;
+        if (!have) for (i = 0; i < 6; i++) if (!keys[i]) { keys[i] = h; break; }
+        report_mods = titan_specials_report_mods(*mods, m);
+        send_kbd(hid_k, report_mods, keys);
+        return;
+    }
+    for (i = 0; i < 6; i++) if (keys[i] == h) {
+        int j;
+        for (j = i; j < 5; j++) keys[j] = keys[j + 1];
+        keys[5] = 0;
+        break;
+    }
+    send_kbd(hid_k, *mods, keys);
+}
+
 static const char *inj_paths[] = {
     /* OS control plane first, then app-owned, then legacy */
     "/data/misc/titan2/titan2_hid.inj",
@@ -1831,6 +1818,14 @@ static int drain_inj_one(const char *path, int hid_k, int hid_m,
         case 0x01:
             apply_key(mods, keys, p[1], p[2], p[3]);
             send_kbd(hid_k, *mods, keys);
+            if (p[3]) {
+                note_typing();
+                bump_key_activity();
+            }
+            handled++;
+            break;
+        case 0x05:
+            emit_abs_key(hid_k, mods, keys, p[1], p[2], p[3]);
             if (p[3]) {
                 note_typing();
                 /* Activity stamp only — light_keyled throttled inside bump */
@@ -2186,25 +2181,26 @@ int main(int argc, char **argv) {
                 /* Sym held: letter → Titan specials glyph as US HID */
                 if (sym_layer_held() && ev.value != 2) {
                     uint8_t sm = 0, su = 0;
-                    if (titan_specials_layer_hid(ev.code, &sm, &su)) {
-                        uint8_t report_mods = (uint8_t)(mods | sm);
-                        uint8_t k6[6] = {0};
-                        if (ev.value == 1) k6[0] = su;
-                        if (send_kbd(hid_k, report_mods, k6) != 0 && hid_k >= 0) {
-                            hid_k = reopen_hidg(hid_k, 0);
-                            if (hid_k >= 0) send_kbd(hid_k, report_mods, k6);
-                        }
+                    if (titan_specials_linux(ev.code, &sm, &su)) {
+                        /* Glyph shift only. Held Shift must not turn 8 into *.
+                         * mods and keys[] stay the real chord. Press is a
+                         * one-report substitute. Release puts that chord back. */
                         if (ev.value == 1) {
+                            uint8_t report_mods = titan_specials_report_mods(mods, sm);
+                            uint8_t k6[6] = {0};
+                            k6[0] = su;
+                            if (send_kbd(hid_k, report_mods, k6) != 0 && hid_k >= 0) {
+                                hid_k = reopen_hidg(hid_k, 0);
+                                if (hid_k >= 0) send_kbd(hid_k, report_mods, k6);
+                            }
                             fprintf(stderr,
                                 "specials map code=%u → hid=0x%02x mod=0x%02x\n",
                                 ev.code, su, report_mods);
                             fflush(stderr);
-                        }
-                        if (ev.value == 0 && sm) {
-                            uint8_t empty[6] = {0};
-                            if (send_kbd(hid_k, mods, empty) != 0 && hid_k >= 0) {
+                        } else if (ev.value == 0) {
+                            if (send_kbd(hid_k, mods, keys) != 0 && hid_k >= 0) {
                                 hid_k = reopen_hidg(hid_k, 0);
-                                if (hid_k >= 0) send_kbd(hid_k, mods, empty);
+                                if (hid_k >= 0) send_kbd(hid_k, mods, keys);
                             }
                         }
                         continue;
@@ -2576,6 +2572,14 @@ int main(int argc, char **argv) {
                             note_typing();
                             bump_key_activity();
                         }
+                    }
+                    break;
+                case 0x05: /* absolute glyph: shift replaces, does not stack */
+                    if (n < 4) break;
+                    emit_abs_key(hid_k, &mods, keys, buf[1], buf[2], buf[3]);
+                    if (buf[3]) {
+                        note_typing();
+                        bump_key_activity();
                     }
                     break;
                 case 0x02: /* mouse move */

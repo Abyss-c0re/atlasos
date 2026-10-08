@@ -147,6 +147,19 @@ Java_com_titanus2_usbhid_NeckbandNative_keyEdge(JNIEnv *env, jclass cls,
 }
 
 JNIEXPORT jbyteArray JNICALL
+Java_com_titanus2_usbhid_NeckbandNative_keyAbsolute(JNIEnv *env, jclass cls,
+        jint mod, jint usage, jboolean press) {
+    uint8_t buf[24 * NB_FRAME];
+    int n;
+    (void)cls;
+    pthread_mutex_lock(&g_mu);
+    ensure_init();
+    n = nb_kbd_absolute(&g_kbd, (int)mod, (int)usage, press == JNI_TRUE, buf, (int)sizeof(buf));
+    pthread_mutex_unlock(&g_mu);
+    return frames_or_null(env, buf, n);
+}
+
+JNIEXPORT jbyteArray JNICALL
 Java_com_titanus2_usbhid_NeckbandNative_kbdReport(JNIEnv *env, jclass cls, jbyteArray report) {
     uint8_t raw[8];
     uint8_t buf[24 * NB_FRAME];

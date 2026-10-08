@@ -150,7 +150,14 @@ _cp "$ROOT/native/x11/atlas-bwrap-install.sh" "$APP_ASSETS/atlas-bwrap-install.s
 chmod 755 "$APP_ASSETS/atlas-bwrap.py" "$APP_ASSETS/atlas-bwrap-install.sh"
 chmod 755 "$APP_ASSETS/atlas-desk-session" "$APP_ASSETS/atlas-desk-install"
 if [ -f "$ROOT/native/x11/atlas-desk-keys.c" ]; then
-  build_one atlas-desk-keys "$ROOT/native/x11/atlas-desk-keys.c" "1.0.103-seat"
+  DK_OUT="$OUT_DIR/atlas-desk-keys"
+  KEYS_C="$ROOT/../titan_usb_hid_system/titan_keys.c"
+  "$CC" -O2 -fPIE -pie -Wall -Wextra -D_GNU_SOURCE \
+    -I"$ROOT/native" -I"$ROOT/../titan_usb_hid_system" \
+    -o "$DK_OUT" "$ROOT/native/x11/atlas-desk-keys.c" "$KEYS_C" -llog
+  chmod 755 "$DK_OUT"
+  _cp "$DK_OUT" "$APP_ASSETS/atlas-desk-keys"
+  echo "OK $DK_OUT ($(stat -c%s "$DK_OUT") bytes) → assets/bin/atlas-desk-keys"
 fi
 if [ -f "$ROOT/native/x11/atlas-desk-pad.c" ]; then
   build_one atlas-desk-pad "$ROOT/native/x11/atlas-desk-pad.c" "1.0.103-seat"

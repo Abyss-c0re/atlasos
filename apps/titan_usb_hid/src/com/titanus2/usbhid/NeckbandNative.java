@@ -28,6 +28,8 @@ public final class NeckbandNative {
     public static native byte[] scrollEnd();
     public static native byte[] cancel();
     public static native byte[] keyEdge(int mod, int usage, boolean press);
+    /** Glyph chord. Shift in mod replaces a held Shift for this key only. */
+    public static native byte[] keyAbsolute(int mod, int usage, boolean press);
     public static native byte[] kbdReport(byte[] report);
     public static native byte[] releaseKeys();
     public static native byte[] text(byte[] utf8);

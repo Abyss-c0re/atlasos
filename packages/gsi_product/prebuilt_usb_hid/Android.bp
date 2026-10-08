@@ -6,6 +6,7 @@
 //
 // Layout (GSI):
 //   /system/bin/titan2-hid-bridge
+//   /system/bin/titan2-keys          (keyboard map; not the trackpad)
 //   /system/bin/titan2-usb-hid-service.sh
 //   /system/etc/titan2_usb_hid/{enable_hid.sh,service.sh}
 //   /system/etc/init/titan2-usb-hid.rc
@@ -18,6 +19,15 @@ cc_prebuilt_binary {
     check_elf_files: false,
     system_shared_libs: [],
     stem: "titan2-hid-bridge",
+}
+
+cc_prebuilt_binary {
+    name: "titan2-keys",
+    srcs: ["titan2-keys"],
+    compile_multilib: "64",
+    check_elf_files: false,
+    system_shared_libs: [],
+    stem: "titan2-keys",
 }
 
 sh_binary {

@@ -24,6 +24,7 @@
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
+#include "titan_keys.h"
 
 #define MAGIC_INP 0x4e495641u
 #define MAGIC_CTL 0x4c544341u
@@ -145,6 +146,7 @@ static int send_key(uint32_t code, int down) {
  * Free Alt (scan 100) is Left Alt. Fn is Left Ctrl. */
 static unsigned sym_mask;
 static unsigned char synth_shift[KEY_TRACK];
+static unsigned char synth_unshift[KEY_TRACK];
 static unsigned short mapped_key[KEY_TRACK];
 static int keys_held;
 static long long mono_ms(void);
@@ -177,41 +179,15 @@ static int hid_to_linux(unsigned usage) {
     }
 }
 
-/* hid_bridge titan_specials_layer_hid — printed Sym glyphs as US keys. */
+/* Printed Sym glyphs. The bytes live in titan_keys.c. */
 static int specials_layer(unsigned code, int *shift, int *linux_key) {
-    unsigned usage = 0;
-    int sh = 0;
-    switch (code) {
-    case 16: usage = 0x27; break;             /* Q → 0 */
-    case 17: usage = 0x1e; break;             /* W → 1 */
-    case 18: usage = 0x1f; break;             /* E → 2 */
-    case 19: usage = 0x20; break;             /* R → 3 */
-    case 20: sh = 1; usage = 0x26; break;     /* T → ( */
-    case 21: sh = 1; usage = 0x27; break;     /* Y → ) */
-    case 22: sh = 1; usage = 0x2d; break;     /* U → _ */
-    case 23: usage = 0x2d; break;             /* I → - */
-    case 24: usage = 0x38; break;             /* O → / */
-    case 25: sh = 1; usage = 0x33; break;     /* P → : */
-    case 30: sh = 1; usage = 0x1f; break;     /* A → @ */
-    case 31: usage = 0x21; break;             /* S → 4 */
-    case 32: usage = 0x22; break;             /* D → 5 */
-    case 33: usage = 0x23; break;             /* F → 6 */
-    case 34: sh = 1; usage = 0x25; break;     /* G → * */
-    case 35: sh = 1; usage = 0x20; break;     /* H → # */
-    case 36: sh = 1; usage = 0x2e; break;     /* J → + */
-    case 37: sh = 1; usage = 0x34; break;     /* K → " */
-    case 38: usage = 0x34; break;             /* L → ' */
-    case 44: sh = 1; usage = 0x1e; break;     /* Z → ! */
-    case 45: usage = 0x24; break;             /* X → 7 */
-    case 46: usage = 0x25; break;             /* C → 8 */
-    case 47: usage = 0x26; break;             /* V → 9 */
-    case 48: usage = 0x37; break;             /* B → . */
-    case 49: usage = 0x36; break;             /* N → , */
-    case 50: sh = 1; usage = 0x38; break;     /* M → ? */
-    default: return 0;
-    }
-    if (shift) *shift = sh;
-    if (linux_key) *linux_key = hid_to_linux(usage);
+    uint8_t mod = 0, usage = 0;
+    int lk;
+    if (!titan_specials_linux(code, &mod, &usage)) return 0;
+    lk = hid_to_linux(usage);
+    if (lk <= 0) return 0;
+    if (shift) *shift = (mod & 0x02) ? 1 : 0;
+    if (linux_key) *linux_key = lk;
     return 1;
 }
 
@@ -472,6 +448,7 @@ static void drop_grab(void) {
     keys_held = 0;
     sym_mask = 0;
     memset(synth_shift, 0, sizeof(synth_shift));
+    memset(synth_unshift, 0, sizeof(synth_unshift));
     memset(mapped_key, 0, sizeof(mapped_key));
     memset(phys_down, 0, sizeof(phys_down));
     write_held();
@@ -590,9 +567,13 @@ int main(int argc, char **argv) {
         if (sym_mask) {
             int sh = 0, lk = 0;
             if (specials_layer(ev.code, &sh, &lk) && lk > 0) {
+                int phys_shift = phys_down[42] || phys_down[54];
                 mapped = (uint32_t)lk;
-                if (ev.value == 1 && sh && !phys_down[42] && !phys_down[54])
+                /* Glyph shift replaces held Shift. Sym+Shift+C stays 8. */
+                if (ev.value == 1 && sh && !phys_shift)
                     synth_shift[ev.code] = 1;
+                if (ev.value == 1 && !sh && phys_shift)
+                    synth_unshift[ev.code] = 1;
             }
         }
         if (ev.value == 1) {
@@ -603,6 +584,7 @@ int main(int argc, char **argv) {
             }
             phys_down[ev.code] = 1;
             mapped_key[ev.code] = (unsigned short)mapped;
+            if (synth_unshift[ev.code]) send_key(42, 0);
             if (synth_shift[ev.code]) send_key(42, 1);
             send_key(mapped, 1);
         } else if (ev.value == 0) {
@@ -618,6 +600,10 @@ int main(int argc, char **argv) {
             if (synth_shift[ev.code]) {
                 synth_shift[ev.code] = 0;
                 send_key(42, 0);
+            }
+            if (synth_unshift[ev.code]) {
+                synth_unshift[ev.code] = 0;
+                if (phys_down[42] || phys_down[54]) send_key(42, 1);
             }
         }
     }

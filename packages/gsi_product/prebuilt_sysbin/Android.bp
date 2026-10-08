@@ -96,6 +96,18 @@ sh_binary {
 }
 
 sh_binary {
+    name: "titan2-kernel-cube.sh",
+    src: "titan2-kernel-cube.sh",
+}
+
+prebuilt_etc {
+    name: "titan2-kernel-cube.rc",
+    src: "titan2-kernel-cube.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}
+
+sh_binary {
     name: "titan2-cube-icons.sh",
     src: "titan2-cube-icons.sh",
 }

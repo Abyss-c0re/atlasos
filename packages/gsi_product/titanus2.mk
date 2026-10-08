@@ -66,6 +66,7 @@ PRODUCT_PACKAGES += \
 # WITH_USB_HID_STACK=1 (default). REG 20260806: stack must never couple to APK=0.
 PRODUCT_PACKAGES += \
     titan2-hid-bridge \
+    titan2-keys \
     titan2-usb-hid-service.sh \
     titan2_usb_hid_enable_hid.sh \
     titan2_usb_hid_service.sh \
@@ -93,6 +94,8 @@ PRODUCT_PACKAGES += \
     titan2-plane-heal.sh \
     titan2-ime-bar.sh \
     titan2-cube-load-land.sh \
+    titan2-kernel-cube.sh \
+    titan2-kernel-cube.rc \
     titan2-cube-icons.sh \
     titan2-cool-park.sh \
     titan2-ui-plane.sh \

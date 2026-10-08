@@ -292,6 +292,8 @@ int nb_kbd_diff(NbKbd *st, const uint8_t report[8], uint8_t *out, int cap) {
     }
     st->mods = nmods;
     memcpy(st->keys, nkeys, 6);
+    st->base_mods = nmods;
+    st->abs_hold = 0;
     return frames;
 }
 
@@ -338,6 +340,45 @@ int nb_kbd_edge(NbKbd *st, int mod, int usage, int press, uint8_t *out, int cap)
     report[0] = next.mods;
     memcpy(report + 2, next.keys, 6);
     return nb_kbd_diff(st, report, out, cap);
+}
+
+int nb_kbd_absolute(NbKbd *st, int mod, int usage, int press, uint8_t *out, int cap) {
+    NbKbd next;
+    uint8_t report[8];
+    uint8_t base;
+    int n;
+    if (st == NULL) return 0;
+    usage &= 0xff;
+    mod &= 0xff;
+    if (usage == 0) return 0;
+    if (st->abs_hold == 0) st->base_mods = st->mods;
+    base = st->base_mods;
+    next = *st;
+    if (press) {
+        next.mods = (uint8_t)((base & (uint8_t)~0x22) | (uint8_t)mod);
+        next.abs_hold = (uint8_t)(st->abs_hold + 1);
+        if (!has_key(next.keys, usage)) {
+            int i;
+            for (i = 0; i < 6; i++) {
+                if (next.keys[i] == 0) {
+                    next.keys[i] = (uint8_t)usage;
+                    break;
+                }
+            }
+        }
+    } else {
+        compact_remove(next.keys, usage);
+        next.abs_hold = st->abs_hold > 0 ? (uint8_t)(st->abs_hold - 1) : 0;
+        next.mods = next.abs_hold ? (uint8_t)((base & (uint8_t)~0x22) | (uint8_t)mod) : base;
+    }
+    next.base_mods = base;
+    memset(report, 0, sizeof(report));
+    report[0] = next.mods;
+    memcpy(report + 2, next.keys, 6);
+    n = nb_kbd_diff(st, report, out, cap);
+    st->base_mods = base;
+    st->abs_hold = next.abs_hold;
+    return n;
 }
 
 int nb_kbd_release(NbKbd *st, uint8_t *out, int cap) {

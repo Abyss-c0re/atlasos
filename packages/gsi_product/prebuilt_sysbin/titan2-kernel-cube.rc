@@ -1,0 +1,13 @@
+# Real-time kernel(+virtual) sensor lattice for Neural Cube / cube_gl dump.
+# Writes /data/local/tmp/cubebrain_viz/{cells.bin,nodes.tsv,catalog.tsv,virtual.tsv}.
+# ROM-native root service. Lab tip: same script under /data/local/tmp without reflash.
+service titan2-kernel-cube /system/bin/titan2-kernel-cube.sh
+    class late_start
+    user root
+    group root system
+    disabled
+
+on property:sys.boot_completed=1
+    mkdir /data/local/tmp/cubebrain_viz 0777 system system
+    chmod 0777 /data/local/tmp/cubebrain_viz
+    start titan2-kernel-cube

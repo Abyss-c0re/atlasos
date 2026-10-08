@@ -153,6 +153,9 @@ public final class BluetoothHidClient {
     private String connectingMac = "";
     private boolean receiverRegistered;
     private final KeyState keyState = new KeyState();
+    /** Mods before an absolute glyph. Shift in the glyph does not stick. */
+    private int absHold;
+    private byte absBase;
     /** One keyboard state. USB report snapshots and soft inject share it. */
     private final Object kbdLock = new Object();
     private int mouseButtons;
@@ -1593,6 +1596,11 @@ public final class BluetoothHidClient {
                     flushMouseNow();
                     applyKey(p[1], p[2] & 0xff, p[3] != 0);
                     return sendKbd();
+                case 0x05:
+                    if (p.length < 4) return false;
+                    flushMouseNow();
+                    applyKeyAbsolute(p[1] & 0xff, p[2] & 0xff, p[3] != 0);
+                    return sendKbd();
                 case 0x02:
                     if (p.length < 4) return false;
                     return queueMouse(p[3] & 0xff, (int) p[1], (int) p[2], 0);
@@ -1763,6 +1771,43 @@ public final class BluetoothHidClient {
     }
 
     /**
+     * One glyph. Shift in {@code mod} replaces held Shift for this report.
+     * Release puts the previous Shift back. Same rule as hid_bridge 0x05.
+     */
+    private void applyKeyAbsolute(int mod, int usage, boolean press) {
+        synchronized (kbdLock) {
+            if (usage == 0) return;
+            if (absHold == 0) absBase = keyState.mods;
+            int base = absBase & 0xff;
+            if (press) {
+                keyState.mods = (byte) ((base & ~0x22) | (mod & 0xff));
+                absHold++;
+                for (int i = 0; i < 6; i++) {
+                    if ((keyState.keys[i] & 0xff) == usage) return;
+                }
+                for (int i = 0; i < 6; i++) {
+                    if (keyState.keys[i] == 0) {
+                        keyState.keys[i] = (byte) usage;
+                        return;
+                    }
+                }
+                return;
+            }
+            for (int i = 0; i < 6; i++) {
+                if ((keyState.keys[i] & 0xff) == usage) {
+                    for (int j = i; j < 5; j++) keyState.keys[j] = keyState.keys[j + 1];
+                    keyState.keys[5] = 0;
+                    break;
+                }
+            }
+            if (absHold > 0) absHold--;
+            keyState.mods = absHold == 0
+                ? absBase
+                : (byte) ((base & ~0x22) | (mod & 0xff));
+        }
+    }
+
+    /**
      * Empty keyboard report — clears sticky mods/keys after Type inject / Stop.
      * B6 2.09: retry once on sendReport=false (AOSP interrupt channel can drop
      * under congestion; hosts latch Shift/Alt until a successful empty lands).
@@ -1772,6 +1817,8 @@ public final class BluetoothHidClient {
         synchronized (kbdLock) {
             for (int i = 0; i < 6; i++) keyState.keys[i] = 0;
             keyState.mods = 0;
+            absHold = 0;
+            absBase = 0;
         }
         try {
             if (!sendKbd()) {
@@ -1796,6 +1843,7 @@ public final class BluetoothHidClient {
                 synchronized (kbdLock) {
                     keyState.mods = in[0];
                     System.arraycopy(in, 2, keyState.keys, 0, 6);
+                    absHold = 0;
                 }
                 return true;
             }
@@ -1807,6 +1855,7 @@ public final class BluetoothHidClient {
         synchronized (kbdLock) {
             keyState.mods = r[0];
             System.arraycopy(r, 2, keyState.keys, 0, 6);
+            absHold = 0;
         }
         return sendKbdBytes(r);
     }

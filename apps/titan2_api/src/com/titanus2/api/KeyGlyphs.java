@@ -69,8 +69,59 @@ public final class KeyGlyphs {
         }
     }
 
+    /**
+     * Printed Sym glyph for an Android keycode, or null when that key is
+     * not on the Titan layer. The daemon is the source. This table is the
+     * same list, used only while {@code titan2-keys} is not answering.
+     */
+    public static String specialForAndroidKey(int keyCode) {
+        String live = TitanKeys.androidGlyph(keyCode);
+        if (live != null) return live.isEmpty() ? null : live;
+        return specialTable(keyCode);
+    }
+
+    /** Same pairs as titan_keys.c SPECIALS. */
+    private static String specialTable(int keyCode) {
+        switch (keyCode) {
+            case 45: return "0"; /* Q */
+            case 51: return "1"; /* W */
+            case 33: return "2"; /* E */
+            case 46: return "3"; /* R */
+            case 48: return "("; /* T */
+            case 53: return ")"; /* Y */
+            case 49: return "_"; /* U */
+            case 37: return "-"; /* I */
+            case 43: return "/"; /* O */
+            case 44: return ":"; /* P */
+            case 29: return "@"; /* A */
+            case 47: return "4"; /* S */
+            case 32: return "5"; /* D */
+            case 34: return "6"; /* F */
+            case 35: return "*"; /* G */
+            case 36: return "#"; /* H */
+            case 38: return "+"; /* J */
+            case 39: return "\""; /* K */
+            case 40: return "'"; /* L */
+            case 54: return "!"; /* Z */
+            case 52: return "7"; /* X */
+            case 31: return "8"; /* C */
+            case 50: return "9"; /* V */
+            case 30: return "."; /* B */
+            case 42: return ","; /* N */
+            case 41: return "?"; /* M */
+            default: return null;
+        }
+    }
+
     /** @return {hidModifier, hidUsage}. Modifier 0x02 is Shift. */
     public static int[] hidFor(char c) {
+        int[] live = TitanKeys.glyphHid(c);
+        if (live != null) return TitanKeys.isMiss(live) ? null : live;
+        return hidForTable(c);
+    }
+
+    /** Same chords as titan_glyph_hid(). */
+    private static int[] hidForTable(char c) {
         final int sh = 0x02;
         if (c >= 'a' && c <= 'z') return new int[]{0, 0x04 + (c - 'a')};
         if (c >= 'A' && c <= 'Z') return new int[]{sh, 0x04 + (c - 'A')};

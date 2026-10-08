@@ -14,7 +14,7 @@ LAST_FILE=$ST/titan2_keyled_last_written
 ACTIVITY=$ST/titan2_key_activity
 DEFAULT_LED=3
 DEFAULT_TO=30
-KEYLED_VER=2.198-evdev-activity
+KEYLED_VER=2.199-screen-off-panel
 
 _read_line_file() {
   f="$1"
@@ -133,11 +133,25 @@ persist_timeout() {
   fi
 }
 
+# Main panel only. 0 means the screen is dark even if screen_state stuck at 2.
+panel_backlight_off() {
+  bl=/sys/class/leds/lcd-backlight/brightness
+  [ -r "$bl" ] || return 1
+  bv=`cat "$bl" 2>/dev/null | tr -d '\r\n \t'`
+  case "$bv" in
+    0) return 0 ;;
+  esac
+  return 1
+}
+
 screen_is_on() {
   s=`getprop debug.tracing.screen_state 2>/dev/null | tr -d '\r\n \t'`
   case "$s" in
-    2|6) return 0 ;;
     1|3|4) return 1 ;;
+  esac
+  panel_backlight_off && return 1
+  case "$s" in
+    2|6) return 0 ;;
   esac
   for bl in /sys/class/leds/lcd-backlight/brightness \
             /sys/devices/platform/leds-mtk/leds/lcd-backlight/brightness \
@@ -258,6 +272,8 @@ apply_led() {
     1|3|4) _scr_on=0 ;;
     *) screen_is_on && _scr_on=1 || _scr_on=0 ;;
   esac
+  # Power-button sleep can leave screen_state at 2. Dark main panel wins.
+  panel_backlight_off && _scr_on=0
   if [ "$_hid" != "1" ] && [ "$_scr_on" != "1" ]; then
     case "$_scr" in
       1|3|4)

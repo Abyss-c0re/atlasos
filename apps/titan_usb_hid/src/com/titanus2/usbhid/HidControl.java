@@ -1346,7 +1346,7 @@ public final class HidControl {
         // USB and the same bytes to BT. A second handlePacket fights that.
         // When BT is on, the bridge mirror hits submitReport, which diverts
         // to the neckband. USB-only has no mirror, so offer the record here.
-        if ((rec[0] & 0xff) == 0x01) {
+        if ((rec[0] & 0xff) == 0x01 || (rec[0] & 0xff) == 0x05) {
             boolean sock = sendSock(rec);
             if (sock) {
                 if (!useBt()) {
@@ -2120,6 +2120,46 @@ public final class HidControl {
         return a && b;
     }
 
+    /**
+     * One glyph. The modifier byte is the whole chord: its Shift replaces a
+     * held Shift instead of stacking, so Sym "8" stays 8 while Shift is down.
+     * Release restores the held modifiers. BT and USB both take this record.
+     */
+    public static boolean keyTapAbsolute(int mod, int hidUsage) {
+        int hold = Math.max(8, keyHoldMs());
+        int gap = Math.max(3, keyGapMs());
+        final int m = mod & 0xff;
+        boolean a = keyAbsolute(m, hidUsage, true);
+        try { Thread.sleep(hold); } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+        boolean b = keyAbsolute(m, hidUsage, false);
+        try { Thread.sleep(gap); } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+        return a && b;
+    }
+
+    private static boolean keyAbsolute(int mod, int hidUsage, boolean press) {
+        byte[] rec = new byte[]{
+            0x05,
+            (byte) (mod & 0xff),
+            (byte) (hidUsage & 0xff),
+            (byte) (press ? 1 : 0)
+        };
+        boolean ok = send(rec);
+        if (!ok) {
+            boolean live = softCompose
+                || isSessionLikelyOn()
+                || HidSessionService.isRunning();
+            if (live) {
+                enqueueKeyRecord(rec);
+                ok = true;
+            }
+        }
+        return ok;
+    }
+
     public static boolean keyTap(int mod, int hidUsage) {
         // 1.86: do NOT clear softCompose here. typeText/keyTap is the Type inject
         // path — clearing softCompose mid-payload let FGS reassert keys=1 and
@@ -2243,7 +2283,7 @@ public final class HidControl {
                 char c = text.charAt(i);
                 int[] ku = charToKey(c);
                 if (ku == null) continue;
-                if (keyTap(ku[0], ku[1])) {
+                if (keyTapAbsolute(ku[0], ku[1])) {
                     n++;
                     // Keep keyboard backlight alive during long payloads
                     if ((n % 3) == 0) KeyLedClient.bumpActivity();

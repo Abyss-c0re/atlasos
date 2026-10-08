@@ -14,24 +14,33 @@ fi
 chown root:root "$PY"
 chmod 755 "$PY"
 mkdir -p /usr/local/libexec
-cat > /usr/local/libexec/atlas-bwrap-run << 'EOF'
-#!/bin/sh
-exec /usr/bin/sudo.real -n --preserve-env -C 1024 \
-    /usr/bin/python3 -I /usr/local/libexec/atlas-bwrap.py "$@"
-EOF
-if [ ! -x /usr/bin/sudo.real ]; then
-    sed -i 's#/usr/bin/sudo.real#/usr/bin/sudo#' /usr/local/libexec/atlas-bwrap-run
-fi
-chown root:root /usr/local/libexec/atlas-bwrap-run
-chmod 755 /usr/local/libexec/atlas-bwrap-run
-if [ -x /usr/bin/bwrap ] && [ ! -e /usr/bin/bwrap.upstream ]; then
-    if ! grep -q atlas-bwrap.py /usr/bin/bwrap 2>/dev/null; then
-        mv /usr/bin/bwrap /usr/bin/bwrap.upstream
+# sudo closes Flatpak's --args fd. A setuid helper keeps every descriptor.
+BIN=""
+for c in /usr/local/libexec/atlas-bwrap-bin \
+         "$(dirname "$0")/atlas-bwrap-bin"; do
+    if [ -f "$c" ]; then
+        BIN=$c
+        break
     fi
+done
+if [ -n "$BIN" ]; then
+    if [ "$BIN" != /usr/local/libexec/atlas-bwrap-bin ]; then
+        cp -f "$BIN" /usr/local/libexec/atlas-bwrap-bin
+    fi
+    chown root:root /usr/local/libexec/atlas-bwrap-bin
+    chmod 4755 /usr/local/libexec/atlas-bwrap-bin
+    if [ -x /usr/bin/bwrap ] && [ ! -e /usr/bin/bwrap.upstream ]; then
+        if ! grep -q atlas-bwrap.py /usr/bin/bwrap 2>/dev/null; then
+            mv /usr/bin/bwrap /usr/bin/bwrap.upstream 2>/dev/null || true
+        fi
+    fi
+    cp -f /usr/local/libexec/atlas-bwrap-bin /usr/bin/bwrap
+    chown root:root /usr/bin/bwrap
+    chmod 4755 /usr/bin/bwrap
+else
+    echo "atlas-bwrap: setuid helper missing"
+    exit 1
 fi
-cp -f /usr/local/libexec/atlas-bwrap-run /usr/bin/bwrap
-chown root:root /usr/bin/bwrap
-chmod 755 /usr/bin/bwrap
 if ! grep -q "$MARK" /etc/sudoers 2>/dev/null; then
     tmp=$(mktemp)
     cp /etc/sudoers "$tmp"

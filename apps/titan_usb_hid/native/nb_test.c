@@ -122,6 +122,20 @@ static void test_keys(void) {
     expect(n == 1 && buf[3] == 59, "modifier usage");
     n = nb_kbd_release(&k, buf, (int)sizeof(buf));
     expect(n == 1 && buf[2] == 1, "release held shift");
+
+    memset(&k, 0, sizeof(k));
+    n = nb_kbd_edge(&k, 0, 0xe1, 1, buf, (int)sizeof(buf));
+    expect(n == 1 && k.mods == 0x02, "shift held");
+    n = nb_kbd_absolute(&k, 0, 0x25, 1, buf, (int)sizeof(buf));
+    expect(n == 2, "shift up then 8");
+    expect(buf[2] == 1 && buf[3] == 59, "shift released for the glyph");
+    expect(buf[NB_FRAME + 2] == 0 && buf[NB_FRAME + 3] == 15, "digit 8 down");
+    expect(k.abs_hold == 1 && k.base_mods == 0x02, "physical shift remembered");
+    n = nb_kbd_absolute(&k, 0, 0x25, 0, buf, (int)sizeof(buf));
+    expect(n == 2, "8 up then shift back");
+    expect(buf[2] == 1 && buf[3] == 15, "8 up");
+    expect(buf[NB_FRAME + 2] == 0 && buf[NB_FRAME + 3] == 59, "shift restored");
+    expect(k.mods == 0x02 && k.abs_hold == 0, "shift still held");
 }
 
 static void test_text(void) {

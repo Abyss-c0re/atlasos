@@ -42,6 +42,8 @@ The pain map lives in the sibling tree: `titanus2` `docs/project/rd/LOGIC_FLOW_M
 
 Load at or above 8 does not skip a mode change. Trackpad is native ABS. Mouse is the relative daemon. Those two do not run together.
 
+The hardware keyboard map is `titan2-keys` (`packages/titan_usb_hid_system/titan_keys.c`). `hid_bridge` links that file, so USB `hidg` and Bluetooth `@titan2_bt_kbd` send one 8-byte report. Android, the HID pad, and Moonlight query `@titan2_keys` and use the same table when the socket is down. A specials glyph already includes its own Shift. Held Shift does not change it. `titan2-keys` does not open the trackpad or TitanKey. The trackpad owner stays the table above.
+
 Controls starts `titan2-touchpadd` only for mouse, or for rear sub-hid. Trackpad does not. Off does not kill a daemon that a live USB HID mouse session still owns. A same-mode exclusive grab does not start or restart it. HID `prepareDriverPad` does not start a second daemon while the pad-agent lock is live.
 
 ## Cube-certified gates (all required)

@@ -648,10 +648,14 @@ read_pad_surface() {
   s=`echo "$s" | tr 'A-Z' 'a-z' | tr -d '\r\n '`
   case "`read_sub_mode`" in
     hid)
-      case "`read_pad_mode`" in
-        mouse) echo both ;;
-        *) echo sub ;;
+      case "$s" in
+        both|all|dual) s=both ;;
+        *) s=sub ;;
       esac
+      if [ "$s" = "both" ]; then
+        case "`read_pad_mode`" in mouse) ;; *) s=sub ;; esac
+      fi
+      echo "$s"
       return 0
       ;;
   esac

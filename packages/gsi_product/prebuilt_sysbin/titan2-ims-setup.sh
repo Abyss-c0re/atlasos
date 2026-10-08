@@ -12,24 +12,18 @@ export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 
 logt() { log -t titan2-ims "$1" 2>/dev/null || echo "titan2-ims: $1"; }
 
-STAMP=/data/local/tmp/titan2_ims_setup.stamp
-# Re-run at most every 120s if invoked multiple times (init races)
-if [ -f "$STAMP" ]; then
-  now=$(date +%s 2>/dev/null || echo 0)
-  prev=$(cat "$STAMP" 2>/dev/null || echo 0)
-  case "$now" in ''|*[!0-9]*) now=0;; esac
-  case "$prev" in ''|*[!0-9]*) prev=0;; esac
-  if [ "$now" -gt 0 ] && [ "$prev" -gt 0 ]; then
-    delta=$((now - prev))
-    if [ "$delta" -ge 0 ] && [ "$delta" -lt 120 ]; then
-      logt "skip (ran ${delta}s ago)"
-      exit 0
-    fi
-  fi
+# Once per boot after a SIM is present. Concurrent init starts share one lock.
+BOOTSTAMP=/dev/titan2_ims_setup.done
+if [ -f "$BOOTSTAMP" ]; then
+  logt "skip (already ran this boot)"
+  exit 0
 fi
-# Stamp deferred until end when SIM known; early stamp still set so concurrent
-# starts coalesce, but cleared if no SIM so a later pad-agent/heal re-run works.
-echo "${now:-0}" > "$STAMP" 2>/dev/null || true
+if ! mkdir /dev/titan2_ims_setup.lock 2>/dev/null; then
+  logt "skip (another setup running)"
+  exit 0
+fi
+STAMP=/data/local/tmp/titan2_ims_setup.stamp
+echo "$(date +%s 2>/dev/null || echo 1)" >"$STAMP" 2>/dev/null || true
 chmod 666 "$STAMP" 2>/dev/null || true
 
 # Wait for phone service (bounded)
@@ -47,7 +41,11 @@ sleep 3
 # Pixel IMS step 1 in ImsManager.isVolteEnabledByPlatform: dbg overrides short-circuit true.
 setprop persist.sys.phh.ims.mtk true 2>/dev/null || true
 setprop persist.dbg.volte_avail_ovr 1 2>/dev/null || true
-setprop persist.dbg.vt_avail_ovr 1 2>/dev/null || true
+# VT .so is not on the GSI priv-app lib path. ImsCallSessionProxy
+# constructs ImsVTProvider when vilte_support=1 → incoming UnsatisfiedLinkError.
+setprop persist.dbg.vt_avail_ovr 0 2>/dev/null || true
+setprop persist.vendor.vilte_support 0 2>/dev/null || true
+setprop persist.vendor.viwifi_support 0 2>/dev/null || true
 setprop persist.dbg.wfc_avail_ovr 1 2>/dev/null || true
 setprop persist.dbg.allow_ims_off 1 2>/dev/null || true
 setprop persist.sys.phh.allow_binder_thread_on_incoming_calls 1 2>/dev/null || true
@@ -86,6 +84,8 @@ pm uninstall dev.bluehouse.enablevolte 2>/dev/null || true
 
 settings put global enhanced_4g_mode_enabled 1 2>/dev/null || true
 settings put global volte_vt_enabled 1 2>/dev/null || true
+settings put global volte_subscription0 1 2>/dev/null || true
+settings put global volte_subscription1 1 2>/dev/null || true
 settings put global mobile_data 1 2>/dev/null || true
 # LTE/NR hybrid (11) — not "GSM only"; 9=LTE/GSM/WCDMA also ok
 settings put global preferred_network_mode 11 2>/dev/null || true
@@ -173,9 +173,9 @@ ims_align_simswitch() {
   mkdir -p /data/misc/titan2 2>/dev/null || true
   echo "$_want" > /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
   chmod 666 /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
-  mkdir -p /data/unencrypted 2>/dev/null || true
-  echo "$_want" > /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
-  chmod 644 /data/unencrypted/titan2_tel_simswitch 2>/dev/null || true
+  mkdir -p /data/misc/titan2 2>/dev/null || true
+  echo "$_want" > /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
+  chmod 666 /data/misc/titan2/titan2_tel_simswitch 2>/dev/null || true
 }
 
 # Settings → SIMs → Calls is the only voice pin. Never invent a subId.
@@ -234,8 +234,9 @@ ims_bind_slot() {
   cmd phone ims enable -s "$_s" 2>/dev/null || true
 }
 
-# OEM mims_support=2: two IMS registrations. Bind every present tray at boot.
-# Never ims disable. UICC must not re-run set-ims-service (that steals IMS).
+# OEM mims_support=2: two IMS registrations. Bind every present tray.
+# Never ims disable. Never collapse to Settings Calls — incoming must
+# land on both SIMs after a physical swap without a human.
 ims_bind_target_slots() {
   _w=$1
   case "$_w" in
@@ -245,11 +246,6 @@ ims_bind_target_slots() {
     2)
       if ! ims_slot_absent 1; then echo 1; return 0; fi
       ;;
-  esac
-  # Stale 1/2 after a physical swap: follow Settings Calls, else every present tray.
-  _as=`ims_active_slot`
-  case "$_as" in
-    0|1) echo "$_as"; return 0 ;;
   esac
   for _s in 0 1; do
     ims_slot_absent "$_s" || echo "$_s"
@@ -312,10 +308,9 @@ ims_restart_registration() {
     logt "ims restart skip absent slot=$_s"
     return 0
   fi
-  # Never `ims disable`. That tears down MT registration on this SoC
-  # (UICC toggle on the other tray + disable on Calls = incoming never RINGING).
+  # enable only. set-ims-service here unbinds a live MmTel (first incoming
+  # after boot missed; second worked).
   cmd phone ims enable -s "$_s" 2>/dev/null || true
-  ims_bind_slot "$_s"
 }
 
 # Bind MMTEL on the trays Controls asked for (1 | 2 | both).
@@ -409,7 +404,11 @@ settings put global restricted_networking_mode 0 2>/dev/null || true
 setprop persist.vendor.radio.sim.mode 3 2>/dev/null || true
 setprop persist.vendor.radio.force_on 1 2>/dev/null || true
 setprop persist.dbg.volte_avail_ovr 1 2>/dev/null || true
-setprop persist.dbg.vt_avail_ovr 1 2>/dev/null || true
+# VT .so is not on the GSI priv-app lib path. ImsCallSessionProxy
+# constructs ImsVTProvider when vilte_support=1 → incoming UnsatisfiedLinkError.
+setprop persist.dbg.vt_avail_ovr 0 2>/dev/null || true
+setprop persist.vendor.vilte_support 0 2>/dev/null || true
+setprop persist.vendor.viwifi_support 0 2>/dev/null || true
 setprop persist.dbg.wfc_avail_ovr 1 2>/dev/null || true
 setprop persist.dbg.allow_ims_off 1 2>/dev/null || true
 setprop persist.dbg.ims_volte_enable 1 2>/dev/null || true
@@ -512,7 +511,15 @@ fi
 # If no SIM yet, clear stamp so pad-agent heal / next trigger can re-run fully
 if [ -z "$NUM" ]; then
   rm -f "$STAMP" 2>/dev/null || true
-  logt "no SIM — stamp cleared for later re-run"
+  rmdir /dev/titan2_ims_setup.lock 2>/dev/null || true
+  logt "no SIM — will run again when a tray is present"
+else
+  echo 1 >"$BOOTSTAMP" 2>/dev/null || true
 fi
+
+# Do not kill ImsService here. setup + rearm both used to SIGKILL it
+# (twice at 16:17) and the next incoming after the first ring died.
+# titan2-ims-rearm.sh kills at most once, and only if ImsService
+# started before the volte UA socket.
 
 logt "done slot=$ASLOT sub=$SUB num=$NUM mtk=$(getprop persist.sys.phh.ims.mtk) multi=$(settings get global multi_sim_voice_call) d=$(cmd phone ims get-ims-service -s $ASLOT -d 2>/dev/null)"

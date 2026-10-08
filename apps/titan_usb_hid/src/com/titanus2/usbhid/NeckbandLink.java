@@ -230,6 +230,12 @@ public final class NeckbandLink {
                 if (frames != null) l.postUrgent(frames);
                 return true;
             }
+            case 0x05: {
+                if (rec.length < 4) return false;
+                byte[] frames = l.nativeAbsolute(rec[1] & 0xff, rec[2] & 0xff, rec[3] != 0);
+                if (frames != null) l.postUrgent(frames);
+                return true;
+            }
             case 0x02: {
                 if (rec.length < 4) return false;
                 return l.offerMotion(rec[3] & 0xff, rec[1], rec[2], 0);
@@ -300,6 +306,15 @@ public final class NeckbandLink {
     private byte[] nativeKey(int mod, int usage, boolean press) {
         try {
             return NeckbandNative.keyEdge(mod, usage, press);
+        } catch (Throwable t) {
+            Log.w(TAG, "key", t);
+            return null;
+        }
+    }
+
+    private byte[] nativeAbsolute(int mod, int usage, boolean press) {
+        try {
+            return NeckbandNative.keyAbsolute(mod, usage, press);
         } catch (Throwable t) {
             Log.w(TAG, "key", t);
             return null;

@@ -81,10 +81,12 @@ grep -qF 'CubeContact' "$DEST_MK" 2>/dev/null && ok "PRODUCT_PACKAGES lists Cube
 DEST_HID="$MISTERZTR_TREE/vendor/titanus2/prebuilts/usb_hid"
 [ -f "$DEST_HID/Android.bp" ] && ok "staged usb_hid Android.bp" || bad "missing usb_hid Android.bp (stage_gsi_product)"
 [ -x "$DEST_HID/hid_bridge" ] && ok "staged hid_bridge" || bad "missing staged hid_bridge"
+[ -x "$DEST_HID/titan2-keys" ] && ok "staged titan2-keys" || bad "missing staged titan2-keys"
 [ -f "$DEST_HID/enable_hid.sh" ] && ok "staged enable_hid.sh" || bad "missing enable_hid.sh"
 [ -f "$DEST_HID/service.sh" ] && ok "staged service.sh" || bad "missing service.sh"
 [ -f "$DEST_HID/titan2-usb-hid.rc" ] && ok "staged titan2-usb-hid.rc" || bad "missing usb-hid rc"
 grep -qF 'titan2-hid-bridge' "$DEST_MK" 2>/dev/null && ok "PRODUCT_PACKAGES lists titan2-hid-bridge" || bad "mk missing titan2-hid-bridge"
+grep -qF 'titan2-keys' "$DEST_MK" 2>/dev/null && ok "PRODUCT_PACKAGES lists titan2-keys" || bad "mk missing titan2-keys"
 grep -qF 'titan2-usb-hid.rc' "$DEST_MK" 2>/dev/null && ok "PRODUCT_PACKAGES lists titan2-usb-hid.rc" || bad "mk missing titan2-usb-hid.rc"
 # Product sysbins (peels + ims-setup privacy)
 DEST_SYS="$MISTERZTR_TREE/vendor/titanus2/prebuilts/sysbin"

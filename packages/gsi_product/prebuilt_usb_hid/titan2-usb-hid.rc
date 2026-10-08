@@ -7,5 +7,13 @@ service titan2-usb-hid /system/bin/titan2-usb-hid-service.sh
     group root system
     disabled
 
+# Keyboard map. Does not open the trackpad or TitanKey.
+service titan2-keys /system/bin/titan2-keys serve
+    class late_start
+    user root
+    group root system
+    disabled
+
 on property:sys.boot_completed=1
     start titan2-usb-hid
+    start titan2-keys
