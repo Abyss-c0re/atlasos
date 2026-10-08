@@ -23,7 +23,11 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.InputStream;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.nio.charset.StandardCharsets;
+import java.util.Enumeration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -202,6 +206,9 @@ final class RemoteAdbUi {
         if (resultCode != Activity.RESULT_OK) {
             optimisticOn = null;
             pairAbort = false;
+            if (!"on".equals(readDesire())) {
+                writeOptimisticStatus("off");
+            }
             finishWork(readStatus(), "bio denied");
             UiKit.toast(act, "biometrics denied");
             return true;
@@ -284,7 +291,8 @@ final class RemoteAdbUi {
         beginWork(Work.BIO_ON);
         snapToggle(true);
         paintOptimisticOn();
-        writeOptimisticStatus("on " + guessEndpoint());
+        // Do not persist "on 127.0.0.1" before the engine proves a listen.
+        writeOptimisticStatus("busy on");
         setWorking(true);
         launchBio(REQ_BIO_ON, "Remote ADB · TCP :" + PORT);
     }
@@ -328,7 +336,7 @@ final class RemoteAdbUi {
         optimisticOn = keepOn;
         if (keepOn) {
             paintOptimisticOn();
-            writeOptimisticStatus("on " + guessEndpoint());
+            writeOptimisticStatus("busy on");
         } else {
             paintOptimisticOff();
             writeOptimisticStatus("off");
@@ -340,8 +348,13 @@ final class RemoteAdbUi {
     /** Instant ON chrome (full green — no "wait" theater). */
     private void paintOptimisticOn() {
         String ep = guessEndpoint();
-        showBanner("ON\n" + ep, 0xFFE8F5E9, 0xFF1B5E20);
-        showDetail("adb connect " + ep);
+        if (ep.isEmpty()) {
+            showBanner("ON\nno address yet", 0xFFE8F5E9, 0xFF1B5E20);
+            showDetail("no routable address");
+        } else {
+            showBanner("ON\n" + ep, 0xFFE8F5E9, 0xFF1B5E20);
+            showDetail("adb connect " + ep);
+        }
         hidePin();
     }
 
@@ -351,11 +364,16 @@ final class RemoteAdbUi {
         hidePin();
     }
 
+    /** Connect address for the banner. Never 127.0.0.1 — that hits the PC. */
     private String guessEndpoint() {
         String st = readStatus();
-        if (statusIsOn(st) && st.length() > 3) return st.substring(3).trim();
-        // Prefer last known / loopback until engine fills real IP
-        return "127.0.0.1:" + PORT;
+        if (statusIsOn(st) && st.length() > 3) {
+            String ep = firstToken(st.substring(3).trim());
+            if (!isLoopbackEndpoint(ep)) return ep;
+        }
+        String live = routableIpv4();
+        if (live != null) return live + ":" + PORT;
+        return "";
     }
 
     /** Best-effort status file so tick/other readers see the mask (tmp is world-writable). */
@@ -581,7 +599,8 @@ final class RemoteAdbUi {
         String st = status != null ? status : readStatus();
         // Stale "pairing …" after cancel must not win paint
         if (statusIsPairing(st) && ("cancelled".equals(readPairState()) || pairAbort)) {
-            st = "on".equals(readDesire()) ? ("on " + guessEndpoint()) : "off";
+            String ep = guessEndpoint();
+            st = ("on".equals(readDesire()) && !ep.isEmpty()) ? ("on " + ep) : "off";
         }
         paintFromStatus(st, true);
         if (reason != null) Log.i(TAG, "finishWork " + reason + " st=" + st);
@@ -657,10 +676,27 @@ final class RemoteAdbUi {
             return;
         }
         if (on) {
-            String ep = st.length() > 3 ? st.substring(3).trim() : "";
-            showBanner(ep.isEmpty() ? "ON" : ("ON\n" + ep), 0xFFE8F5E9, 0xFF1B5E20);
-            showDetail(ep.isEmpty() ? "ON" : ("adb connect " + ep));
-        } else if (err) {
+            String ep = st.length() > 3 ? firstToken(st.substring(3).trim()) : "";
+            if (isLoopbackEndpoint(ep)) {
+                // Stale "on 127.0.0.1:5555" is not a reachable server.
+                if (!"on".equals(readDesire())) {
+                    on = false;
+                    if (work == Work.IDLE && optimisticOn == null && toggle != null) {
+                        toggle.setChecked(false);
+                    }
+                } else {
+                    String live = routableIpv4();
+                    ep = live != null ? (live + ":" + PORT) : "";
+                }
+            }
+            if (on) {
+                showBanner(ep.isEmpty() ? "ON\nno address yet" : ("ON\n" + ep),
+                    0xFFE8F5E9, 0xFF1B5E20);
+                showDetail(ep.isEmpty() ? "no routable address" : ("adb connect " + ep));
+                return;
+            }
+        }
+        if (err) {
             showBanner(st, 0xFFFFEBEE, 0xFFB71C1C);
             showDetail(st);
         } else {
@@ -720,6 +756,61 @@ final class RemoteAdbUi {
         return st != null && st.startsWith("on");
     }
 
+    private static String firstToken(String s) {
+        if (s == null) return "";
+        String t = s.trim();
+        int sp = t.indexOf(' ');
+        return sp > 0 ? t.substring(0, sp) : t;
+    }
+
+    /** 127.0.0.1, localhost, and an empty host are not a phone a PC can reach. */
+    private static boolean isLoopbackEndpoint(String ep) {
+        if (ep == null) return true;
+        String host = ep.trim();
+        int colon = host.lastIndexOf(':');
+        if (colon > 0) host = host.substring(0, colon);
+        if (host.startsWith("[") && host.endsWith("]")) {
+            host = host.substring(1, host.length() - 1);
+        }
+        return host.isEmpty()
+            || "127.0.0.1".equals(host)
+            || "localhost".equals(host)
+            || "::1".equals(host)
+            || "0.0.0.0".equals(host)
+            || "*".equals(host);
+    }
+
+    /** Tailscale, then wifi/ethernet. Null when the phone has no routable IPv4. */
+    private static String routableIpv4() {
+        try {
+            String wifi = null;
+            String other = null;
+            Enumeration<NetworkInterface> ifs = NetworkInterface.getNetworkInterfaces();
+            if (ifs == null) return null;
+            while (ifs.hasMoreElements()) {
+                NetworkInterface nif = ifs.nextElement();
+                if (!nif.isUp() || nif.isLoopback()) continue;
+                String name = nif.getName() != null ? nif.getName() : "";
+                Enumeration<InetAddress> addrs = nif.getInetAddresses();
+                while (addrs.hasMoreElements()) {
+                    InetAddress a = addrs.nextElement();
+                    if (!(a instanceof Inet4Address)) continue;
+                    String h = a.getHostAddress();
+                    if (h == null || h.startsWith("127.") || h.startsWith("169.254.")) continue;
+                    if (h.startsWith("100.")) return h;
+                    if (name.startsWith("wlan") || name.startsWith("eth")) {
+                        if (wifi == null) wifi = h;
+                    } else if (other == null) {
+                        other = h;
+                    }
+                }
+            }
+            return wifi != null ? wifi : other;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static boolean statusIsPairing(String st) {
         return st != null && st.startsWith("pairing");
     }
@@ -750,7 +841,12 @@ final class RemoteAdbUi {
                 ? ("adb pair " + bits[1] + " " + bits[0])
                 : st;
         } else if (statusIsOn(st) && st.length() > 3) {
-            clip = "adb connect " + st.substring(3).trim();
+            String ep = firstToken(st.substring(3).trim());
+            if (isLoopbackEndpoint(ep)) {
+                String live = routableIpv4();
+                ep = ("on".equals(readDesire()) && live != null) ? (live + ":" + PORT) : "";
+            }
+            clip = ep.isEmpty() ? "Remote ADB is OFF" : ("adb connect " + ep);
         } else {
             clip = "Remote ADB is OFF";
         }

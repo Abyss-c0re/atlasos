@@ -124,26 +124,57 @@ remote_adb_lock() {
 
 # Prefer Tailscale / VPN / LTE / Wi‑Fi — NOT wifi-only. Human arms when they want
 # remote adb (e.g. Tailscale over LTE); never auto from boot services.
+# Empty when nothing routable is up. Never print 127.0.0.1 (REMOTE_ADB_ADDR=lan).
+IPBIN=/system/bin/ip
+[ -x "$IPBIN" ] || IPBIN=ip
 best_ipv4() {
-  # Prefer reachable uplinks that a host can actually use for adb connect.
-  # 1) Tailscale CGNAT 100.x (only if iface up)
-  v=$(ip -4 -o addr show up 2>/dev/null | awk '/ tailscale|ts-/{print $4}' | cut -d/ -f1 | head -1)
+  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '/ tailscale| ts-/{print $4}' | cut -d/ -f1 | head -1)
   if [ -n "$v" ]; then echo "$v"; return 0; fi
-  v=$(ip -4 -o addr show up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | grep -E '^100\.' | head -1)
+  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | grep -E '^100\.' | head -1)
   if [ -n "$v" ]; then echo "$v"; return 0; fi
-  # 2) Wi‑Fi
   for ifc in wlan0 wlan1 eth0; do
-    v=$(ip -4 -o addr show "$ifc" up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+    v=$("$IPBIN" -4 -o addr show "$ifc" up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+    case "$v" in 127.*|169.254.*) v= ;; esac
     if [ -n "$v" ]; then echo "$v"; return 0; fi
   done
-  # 3) Cellular / USB net (ccmni / rmnet) — only if default route uses it
-  def_if=$(ip route 2>/dev/null | awk '/^default/{print $5; exit}')
+  def_if=$("$IPBIN" route 2>/dev/null | awk '/^default/{print $5; exit}')
   if [ -n "$def_if" ]; then
-    v=$(ip -4 -o addr show "$def_if" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
-    if [ -n "$v" ] && [ "$v" != "127.0.0.1" ]; then echo "$v"; return 0; fi
+    v=$("$IPBIN" -4 -o addr show "$def_if" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+    case "$v" in 127.*|169.254.*|"") ;; *) echo "$v"; return 0 ;; esac
   fi
-  # 4) Any non-loopback non-link-local UP
-  ip -4 -o addr show up 2>/dev/null | awk '!/ lo / && $4 !~ /^127\./ && $4 !~ /^169\.254\./ {print $4; exit}' | cut -d/ -f1
+  "$IPBIN" -4 -o addr show up 2>/dev/null | awk '!/ lo / && $4 !~ /^127\./ && $4 !~ /^169\.254\./ {print $4; exit}' | cut -d/ -f1
+}
+
+# True when port is LISTEN on a wildcard address, not 127.0.0.1 only.
+port_listen_any() {
+  _p="$1"
+  [ -n "$_p" ] || return 1
+  ss -ltn 2>/dev/null | awk -v p="$_p" '
+    $1 ~ /LISTEN/ {
+      n = split($4, a, ":")
+      if (a[n] != p) next
+      addr = $4
+      sub(/:[0-9]+$/, "", addr)
+      if (addr == "*" || addr == "0.0.0.0" || addr == "[::]" || addr == "::" || addr == "[*]")
+        found = 1
+    }
+    END { exit !found }
+  '
+}
+
+write_on_endpoint() {
+  _port="$1"
+  if ! port_listen_any "$_port"; then
+    write_wireless_adb_status "fail on-no-listen"
+    return 1
+  fi
+  _ip=$(best_ipv4)
+  if [ -z "$_ip" ]; then
+    write_wireless_adb_status "fail no-ip"
+    return 1
+  fi
+  write_wireless_adb_status "on ${_ip}:${_port}"
+  return 0
 }
 
 # Atlas Authentication Agent (product OS service) — biometrics for Remote ADB.
@@ -216,9 +247,6 @@ _arm_wireless_adb_body() {
   mkdir -p /data/misc/titan2 2>/dev/null || true
   echo "on" >"$WIRELESS_ADB_WANT" 2>/dev/null || true
   chmod 644 "$WIRELESS_ADB_WANT" 2>/dev/null || true
-  ip=$(best_ipv4)
-  [ -n "$ip" ] || ip="127.0.0.1"
-  write_wireless_adb_status "on ${ip}:${port}"
   _usb=$(getprop sys.usb.config 2>/dev/null | tr -d '\r')
   [ -n "$_usb" ] || _usb="mtp,adb"
   case "$_usb" in *adb*) ;; *) _usb="mtp,adb" ;; esac
@@ -229,12 +257,10 @@ _arm_wireless_adb_body() {
     resetprop service.adb.tcp.port "$port" 2>/dev/null || true
     resetprop persist.adb.tcp.port "$port" 2>/dev/null || true
   fi
-  # Already listening on this port → no bounce (keep USB)
-  if ss -ltn 2>/dev/null | grep -qE "[:.]${port} |:${port}\$"; then
-    ip=$(best_ipv4)
-    [ -n "$ip" ] || ip="127.0.0.1"
-    write_wireless_adb_status "on ${ip}:${port} · also 127.0.0.1:${port}"
-    log "remote_adb ON (already) ${ip}:${port}"
+  # Already listening on all interfaces → no bounce (keep USB).
+  # A 127.0.0.1 socket is not success: a PC cannot connect to it.
+  if port_listen_any "$port" && write_on_endpoint "$port"; then
+    log "remote_adb ON (already) $(best_ipv4):${port}"
     return 0
   fi
   # Open TCP on all ifaces via ctl.restart (stop/start hangs on this stack)
@@ -243,10 +269,11 @@ _arm_wireless_adb_body() {
     log "remote_adb ON FAIL no listen :$port"
     return 1
   fi
-  ip=$(best_ipv4)
-  [ -n "$ip" ] || ip="127.0.0.1"
-  write_wireless_adb_status "on ${ip}:${port} · also 127.0.0.1:${port}"
-  log "remote_adb ON ${ip}:${port} tcp=$(getprop service.adb.tcp.port) listen=$(ss -ltn 2>/dev/null | grep -E \":${port}\" || echo none)"
+  if ! write_on_endpoint "$port"; then
+    log "remote_adb ON FAIL endpoint :$port"
+    return 1
+  fi
+  log "remote_adb ON $(best_ipv4):${port} tcp=$(getprop service.adb.tcp.port) listen=$(ss -ltn 2>/dev/null | grep -E \":${port}\" || echo none)"
   return 0
 }
 
@@ -351,10 +378,13 @@ cancel_pair_remote_adb() {
   case "$_st" in
     pairing*|pair*)
       if [ -f "$WIRELESS_ADB_WANT" ]; then
-        ip=$(best_ipv4)
-        [ -n "$ip" ] || ip="127.0.0.1"
         p=`read_remote_adb_port`
-        write_wireless_adb_status "on ${ip}:${p}"
+        ip=$(best_ipv4)
+        if [ -n "$ip" ]; then
+          write_wireless_adb_status "on ${ip}:${p}"
+        else
+          write_wireless_adb_status "fail no-ip"
+        fi
       else
         write_wireless_adb_status "off"
       fi

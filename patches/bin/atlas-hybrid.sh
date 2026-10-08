@@ -270,6 +270,35 @@ bring_up_from_lp() {
 # LAW: Deb installers use ~/ and /home/atlas. Real home lives on Android
 # /data/local/atlas-home/atlas (wipe with userdata). LP stub /home/atlas is
 # empty system:system — bind real home there or curl|bash / cargo / npm mkdir fail.
+# A mount whose source was unlinked (atlas-home.migrate) is not a home.
+deb_bind_ok() {
+  mp=$1
+  src=$2
+  is_mounted "$mp" || return 1
+  if awk -v m="$mp" '$5==m && index($4,"deleted"){bad=1} END{exit !bad}' \
+      /proc/self/mountinfo 2>/dev/null; then
+    return 1
+  fi
+  sd=$(stat -c %d "$src" 2>/dev/null) || return 1
+  md=$(stat -c %d "$mp" 2>/dev/null) || return 1
+  [ -n "$sd" ] && [ "$sd" = "$md" ]
+}
+
+rebind_deb_path() {
+  src=$1
+  dst=$2
+  [ -d "$src" ] || return 1
+  if deb_bind_ok "$dst" "$src"; then
+    return 0
+  fi
+  if is_mounted "$dst"; then
+    umount "$dst" 2>/dev/null || umount -l "$dst" 2>/dev/null || true
+  fi
+  mkdir -p "$dst" 2>/dev/null || true
+  mount --bind "$src" "$dst" 2>/dev/null \
+    || mount -o bind "$src" "$dst" 2>/dev/null
+}
+
 bind_linux_home() {
   need_root || return 1
   for _hs in /system/bin/atlas-home-img.sh \
@@ -292,18 +321,14 @@ bind_linux_home() {
       "$ATLAS_LINUX_HOME/.local" "$ATLAS_LINUX_HOME/.local/bin" 2>/dev/null || true
   fi
   # Bind into every Deb view of /home/atlas (LP direct + merge bind).
+  # An existing mount is not enough: a bind of atlas-home.migrate stays after
+  # that directory is deleted, and bash getcwd then returns ENOENT.
   for root in "$MERGE" "$LP_MNT" "$LOWER"; do
-    [ -n "$root" ] && [ -d "$root" ] || continue
-    mkdir -p "$root/home/atlas" 2>/dev/null || true
-    if ! is_mounted "$root/home/atlas"; then
-      mount --bind "$ATLAS_LINUX_HOME" "$root/home/atlas" 2>/dev/null \
-        || mount -o bind "$ATLAS_LINUX_HOME" "$root/home/atlas" 2>/dev/null || true
-    fi
-    # Path used when HOME is still absolute Android path after chroot
-    mkdir -p "$root/data/local/atlas-home" 2>/dev/null || true
-    if [ -d /data/local/atlas-home ] && ! is_mounted "$root/data/local/atlas-home"; then
-      mount --bind /data/local/atlas-home "$root/data/local/atlas-home" 2>/dev/null \
-        || mount -o bind /data/local/atlas-home "$root/data/local/atlas-home" 2>/dev/null || true
+    [ -n "$root" ] && [ -d "$root/etc" ] || continue
+    mkdir -p "$root/home/atlas" "$root/data/local/atlas-home" 2>/dev/null || true
+    rebind_deb_path "$ATLAS_LINUX_HOME" "$root/home/atlas"
+    if [ -d /data/local/atlas-home ]; then
+      rebind_deb_path /data/local/atlas-home "$root/data/local/atlas-home"
     fi
   done
   # Install scripts (root or drop-uid) must create dirs under home

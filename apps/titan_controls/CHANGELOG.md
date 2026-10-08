@@ -5,6 +5,12 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.101-remote-adb (701) — 2026-10-08T22:04Z
+
+- Remote ADB shows the phone LAN address. It no longer publishes 127.0.0.1.
+
+---
+
 ## 16.100-stream-wheel (700) — 2026-10-08T01:00Z
 
 - Deliver Moonlight stream side-key scroll and host chords to the foreground client.

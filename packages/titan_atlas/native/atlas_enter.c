@@ -132,7 +132,10 @@ static int local_root_enter(uid_t drop, const char *home, int do_ensure) {
   chdir("/");
   {
     const char *h = home;
-    if (!h || !h[0] || access(h, X_OK) != 0) {
+    /* Deb home is /home/atlas. The Android path is only a bind source. */
+    if (access("/home/atlas", X_OK) == 0)
+      h = "/home/atlas";
+    else if (!h || !h[0] || access(h, X_OK) != 0) {
       if (access("/data/local/atlas-home/atlas", X_OK) == 0)
         h = "/data/local/atlas-home/atlas";
       else
@@ -140,7 +143,15 @@ static int local_root_enter(uid_t drop, const char *home, int do_ensure) {
     }
     setenv("HOME", h, 1);
     setenv("ATLAS_HOME", h, 1);
-    (void)chdir(h);
+    {
+      char cwd[512];
+      if (chdir(h) != 0 || getcwd(cwd, sizeof(cwd)) == NULL) {
+        h = "/tmp";
+        setenv("HOME", h, 1);
+        setenv("ATLAS_HOME", h, 1);
+        (void)chdir(h);
+      }
+    }
   }
   setenv("ATLAS_HYBRID", "1", 1);
   setenv("ATLAS_PLANE", "hybrid", 1);

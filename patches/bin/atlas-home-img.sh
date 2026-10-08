@@ -66,6 +66,68 @@ is_mounted() {
     awk -v m="$1" '$2==m {found=1} END{exit !found}' /proc/mounts
 }
 
+# A bind is good only when it is the live home image and its source still exists.
+# atlas-home.migrate was removed after the first image copy. Those binds stayed
+# as "//deleted" and Deb bash then fails getcwd with ENOENT.
+deb_view_ok() {
+    mp=$1
+    src=$2
+    is_mounted "$mp" || return 1
+    if awk -v m="$mp" '$5==m && index($4,"deleted"){bad=1} END{exit !bad}' \
+        /proc/self/mountinfo 2>/dev/null; then
+        return 1
+    fi
+    sd=$(stat -c %d "$src" 2>/dev/null) || return 1
+    md=$(stat -c %d "$mp" 2>/dev/null) || return 1
+    [ -n "$sd" ] && [ "$sd" = "$md" ]
+}
+
+rebind_one() {
+    src=$1
+    dst=$2
+    [ -d "$src" ] || return 1
+    if deb_view_ok "$dst" "$src"; then
+        return 0
+    fi
+    if is_mounted "$dst"; then
+        umount "$dst" 2>/dev/null || umount -l "$dst" 2>/dev/null || true
+    fi
+    mkdir -p "$dst" 2>/dev/null || true
+    mount --bind "$src" "$dst" 2>/dev/null \
+        || mount -o bind "$src" "$dst" 2>/dev/null
+}
+
+# Drop Deb binds before the directory they point at is renamed or deleted.
+detach_deb_home_views() {
+    for mp in \
+        /data/local/atlas-linux/home/atlas \
+        /data/local/atlas-hybrid/merge/home/atlas \
+        /data/local/atlas-hybrid/lower/home/atlas \
+        /data/local/atlas-linux/data/local/atlas-home \
+        /data/local/atlas-hybrid/merge/data/local/atlas-home \
+        /data/local/atlas-hybrid/lower/data/local/atlas-home
+    do
+        is_mounted "$mp" || continue
+        umount "$mp" 2>/dev/null || umount -l "$mp" 2>/dev/null || true
+    done
+}
+
+# Debian /home/atlas and /data/local/atlas-home follow the mounted image.
+rebind_deb_views() {
+    src_home="$MNT/atlas"
+    [ -d "$MNT" ] && [ -d "$src_home" ] || return 1
+    is_mounted "$MNT" || return 1
+    for root in /data/local/atlas-hybrid/merge \
+        /data/local/atlas-linux \
+        /data/local/atlas-hybrid/lower; do
+        [ -d "$root/etc" ] || continue
+        mkdir -p "$root/home" "$root/data/local" 2>/dev/null || true
+        rebind_one "$src_home" "$root/home/atlas" || true
+        rebind_one "$MNT" "$root/data/local/atlas-home" || true
+    done
+    return 0
+}
+
 detach_loops() {
     img=$1
     losetup 2>/dev/null | while read -r line; do
@@ -81,18 +143,19 @@ detach_loops() {
 do_mount() {
     img=$1
     mkdir -p "$MNT"
-    if is_mounted "$MNT"; then
-        return 0
+    if ! is_mounted "$MNT"; then
+        if ! mount -o loop "$img" "$MNT" 2>/dev/null; then
+            loop=$(losetup -f 2>/dev/null) || return 1
+            losetup "$loop" "$img" || return 1
+            mount "$loop" "$MNT" || return 1
+        fi
     fi
-    if mount -o loop "$img" "$MNT" 2>/dev/null; then
-        return 0
-    fi
-    loop=$(losetup -f 2>/dev/null) || return 1
-    losetup "$loop" "$img" || return 1
-    mount "$loop" "$MNT"
+    rebind_deb_views || true
+    return 0
 }
 
 do_umount() {
+    detach_deb_home_views
     if is_mounted "$MNT"; then
         umount "$MNT" 2>/dev/null || umount -l "$MNT" 2>/dev/null || return 1
     fi
@@ -171,7 +234,10 @@ migrate_dir() {
         return 0
     }
     cp -a "$src/." "$MNT/" || return 1
+    # Binds of this tree must be gone before unlink, or Deb cwd stays "(deleted)".
+    detach_deb_home_views
     rm -rf "$src"
+    rebind_deb_views || true
 }
 
 cmd_ensure() {
@@ -185,6 +251,7 @@ cmd_ensure() {
         if ! is_mounted "$MNT" && [ -d "$MNT" ] \
             && [ -n "$(ls -A "$MNT" 2>/dev/null)" ]; then
             old="${MNT}.migrate"
+            detach_deb_home_views
             mv "$MNT" "$old" || return 1
         fi
         if ! make_sparse "$img" "$mib"; then
@@ -358,13 +425,14 @@ cmd_status() {
 }
 
 usage() {
-    echo "usage: atlas-home-img.sh ensure|grow [MiB]|recreate [MiB]|export [dest]|load <img>|sdcard|status"
+    echo "usage: atlas-home-img.sh ensure|rebind|grow [MiB]|recreate [MiB]|export [dest]|load <img>|sdcard|status"
     exit 2
 }
 
 cmd=${1:-status}
 case "$cmd" in
     ensure) cmd_ensure ;;
+    rebind) rebind_deb_views ;;
     grow) cmd_grow "${2:-}" ;;
     recreate) cmd_recreate "${2:-}" ;;
     export) cmd_export "${2:-}" ;;

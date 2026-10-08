@@ -93,6 +93,61 @@ static void path_add_user_installs(char *path, size_t sz, const char *home) {
   closedir(d);
 }
 
+static void logf2(const char *a, const char *b);
+
+static int dir_dev(const char *path, dev_t *dev) {
+  struct stat st;
+  if (!path || stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) return -1;
+  *dev = st.st_dev;
+  return 0;
+}
+
+/* mountinfo root of a deleted bind contains "deleted" (atlas-home.migrate). */
+static int mount_deleted(const char *tgt) {
+  FILE *f;
+  char line[1024];
+  int bad = 0;
+  if (!tgt || !tgt[0]) return 0;
+  f = fopen("/proc/self/mountinfo", "r");
+  if (!f) return 0;
+  while (fgets(line, sizeof(line), f)) {
+    char *p = line;
+    char *root = NULL;
+    char *mp = NULL;
+    int field = 0;
+    while (*p && field < 5) {
+      while (*p == ' ') p++;
+      if (!*p) break;
+      field++;
+      if (field == 4) root = p;
+      if (field == 5) mp = p;
+      while (*p && *p != ' ') p++;
+      if (*p) {
+        *p = '\0';
+        p++;
+      }
+    }
+    if (mp && root && strcmp(mp, tgt) == 0 && strstr(root, "deleted")) {
+      bad = 1;
+      break;
+    }
+  }
+  fclose(f);
+  return bad;
+}
+
+/* Bind src over tgt. A different filesystem, or a deleted source, is replaced.
+ * "st_dev != merge" is not proof the home image is mounted: the migrate
+ * directory was unlinked and that bind still looks like a mount. */
+static void bind_dir(const char *src, const char *tgt) {
+  dev_t ds, dt;
+  if (dir_dev(src, &ds) != 0 || !tgt || !tgt[0]) return;
+  if (dir_dev(tgt, &dt) == 0 && ds == dt && !mount_deleted(tgt)) return;
+  (void)umount2(tgt, MNT_DETACH);
+  if (mount(src, tgt, NULL, MS_BIND, NULL) != 0)
+    logf2("bind fail", tgt);
+}
+
 /* Bind Android linux home into Deb merge before chroot (survives only while mounted). */
 static void ensure_home_bind(const char *merge) {
   char tgt[512];
@@ -102,32 +157,17 @@ static void ensure_home_bind(const char *merge) {
   if (stat(LINUX_HOME_HOST, &st) != 0 || !S_ISDIR(st.st_mode)) return;
   (void)mkdir("/data/local/atlas-home", 0755);
   (void)mkdir(LINUX_HOME_HOST, 0755);
-  snprintf(tgt, sizeof(tgt), "%s/home/atlas", merge);
   snprintf(tgt_parent, sizeof(tgt_parent), "%s/home", merge);
+  snprintf(tgt, sizeof(tgt), "%s/home/atlas", merge);
   (void)mkdir(tgt_parent, 0755);
   (void)mkdir(tgt, 0755);
-  /* already a mount? cheap check: different dev from merge root */
-  {
-    struct stat sm, st2;
-    if (stat(merge, &sm) == 0 && stat(tgt, &st2) == 0 && sm.st_dev != st2.st_dev) {
-      /* likely already bound */
-    } else {
-      if (mount(LINUX_HOME_HOST, tgt, NULL, MS_BIND, NULL) != 0) {
-        /* ignore — may already be bound or RO */
-      }
-    }
-  }
+  bind_dir(LINUX_HOME_HOST, tgt);
   /* also expose host path inside chroot for absolute ATLAS_LINUX_HOME */
-  snprintf(tgt, sizeof(tgt), "%s/data/local/atlas-home", merge);
   snprintf(tgt_parent, sizeof(tgt_parent), "%s/data/local", merge);
+  snprintf(tgt, sizeof(tgt), "%s/data/local/atlas-home", merge);
   (void)mkdir(tgt_parent, 0755);
   (void)mkdir(tgt, 0755);
-  {
-    struct stat sm, st2;
-    if (!(stat(merge, &sm) == 0 && stat(tgt, &st2) == 0 && sm.st_dev != st2.st_dev)) {
-      (void)mount("/data/local/atlas-home", tgt, NULL, MS_BIND, NULL);
-    }
-  }
+  bind_dir("/data/local/atlas-home", tgt);
 }
 
 /* Extra Deb login: host /data/local/atlas-home/$login → merge /home/$login. */
@@ -146,12 +186,7 @@ static void ensure_login_home_bind(const char *merge, const char *login) {
   snprintf(tgt, sizeof(tgt), "%s/home/%s", merge, login);
   (void)mkdir(tgt_parent, 0755);
   (void)mkdir(tgt, 0755);
-  {
-    struct stat sm, st2;
-    if (!(stat(merge, &sm) == 0 && stat(tgt, &st2) == 0 && sm.st_dev != st2.st_dev)) {
-      (void)mount(host, tgt, NULL, MS_BIND, NULL);
-    }
-  }
+  bind_dir(host, tgt);
 }
 #define ATLAS_PKG_USER "/data/user/0/com.titanus2.atlas"
 #define LOG_PATH "/data/local/tmp/atlas-enterd.log"
@@ -819,7 +854,16 @@ static void handle_client(int csock, uid_t peer) {
       setenv("HOME", h, 1);
       setenv("ATLAS_HOME", h, 1);
       setenv("ATLAS_LINUX_HOME", "/data/local/atlas-home/atlas", 1);
-      (void)chdir(h);
+      {
+        char cwd[512];
+        /* chdir onto a deleted bind succeeds; getcwd then returns ENOENT. */
+        if (chdir(h) != 0 || getcwd(cwd, sizeof(cwd)) == NULL) {
+          h = "/tmp";
+          setenv("HOME", h, 1);
+          setenv("ATLAS_HOME", h, 1);
+          (void)chdir(h);
+        }
+      }
     }
     setenv("ATLAS_HYBRID", "1", 1);
     setenv("ATLAS_COMBINED", "1", 1);

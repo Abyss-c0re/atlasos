@@ -46,7 +46,8 @@ DENY_FILE=$T2/remote_adb.deny
 WATCH_PID=$ST/titan2_remote_adb_clients.pid
 WATCH_SH=$ST/titan2_remote_adb_clients.sh
 AUTH_DIR=/data/local/atlas-linux/var/lib/atlas-auth
-VER=3.4-clients
+VER=3.5-lan-ip
+# REMOTE_ADB_ADDR=lan — never publish 127.0.0.1 as the connect address.
 
 log() {
   mkdir -p "$ST" 2>/dev/null || true
@@ -117,23 +118,61 @@ write_port() {
   echo "$p"
 }
 
+# One IPv4 a remote host can adb-connect to. Empty when the phone has no uplink.
+# Never 127.0.0.0/8 — that connect string hits the PC, not the phone.
+IPBIN=/system/bin/ip
+[ -x "$IPBIN" ] || IPBIN=ip
 best_ip() {
-  v=$(ip -4 -o addr show up 2>/dev/null | awk '/ tailscale|ts-/{print $4}' | cut -d/ -f1 | head -1)
+  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '/ tailscale| ts-/{print $4}' | cut -d/ -f1 | head -1)
   [ -n "$v" ] && { echo "$v"; return 0; }
-  v=$(ip -4 -o addr show up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | grep -E '^100\.' | head -1)
+  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | grep -E '^100\.' | head -1)
   [ -n "$v" ] && { echo "$v"; return 0; }
   for ifc in wlan0 wlan1 eth0; do
-    v=$(ip -4 -o addr show "$ifc" up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+    v=$("$IPBIN" -4 -o addr show "$ifc" up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+    case "$v" in 127.*|169.254.*) v= ;; esac
     [ -n "$v" ] && { echo "$v"; return 0; }
   done
-  def_if=$(ip route 2>/dev/null | awk '/^default/{print $5; exit}')
+  def_if=$("$IPBIN" route 2>/dev/null | awk '/^default/{print $5; exit}')
   if [ -n "$def_if" ]; then
-    v=$(ip -4 -o addr show "$def_if" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
-    [ -n "$v" ] && [ "$v" != "127.0.0.1" ] && { echo "$v"; return 0; }
+    v=$("$IPBIN" -4 -o addr show "$def_if" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+    case "$v" in 127.*|169.254.*|"") ;; *) echo "$v"; return 0 ;; esac
   fi
-  v=$(ip -4 -o addr show up 2>/dev/null | awk '!/ lo / && $4 !~ /^127\./ && $4 !~ /^169\.254\./ {print $4; exit}' | cut -d/ -f1)
+  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '!/ lo / && $4 !~ /^127\./ && $4 !~ /^169\.254\./ {print $4; exit}' | cut -d/ -f1)
   [ -n "$v" ] && { echo "$v"; return 0; }
-  echo "127.0.0.1"
+  return 1
+}
+
+# LISTEN on a wildcard address. 127.0.0.1:port is not Remote ADB.
+port_listen_any() {
+  p="$1"
+  [ -n "$p" ] || return 1
+  ss -ltn 2>/dev/null | awk -v p="$p" '
+    $1 ~ /LISTEN/ {
+      n = split($4, a, ":")
+      if (a[n] != p) next
+      addr = $4
+      sub(/:[0-9]+$/, "", addr)
+      if (addr == "*" || addr == "0.0.0.0" || addr == "[::]" || addr == "::" || addr == "[*]")
+        found = 1
+    }
+    END { exit !found }
+  '
+}
+
+# Status "on" only after a wildcard listen and a real address.
+publish_on() {
+  p="$1"
+  if ! port_listen_any "$p"; then
+    set_status "error on-no-listen"
+    return 1
+  fi
+  ip=$(best_ip) || true
+  if [ -z "$ip" ]; then
+    set_status "error no-ip"
+    return 1
+  fi
+  set_status "on ${ip}:${p}"
+  return 0
 }
 
 port_listen() {
@@ -546,21 +585,20 @@ apply() {
   esac
   case "$d" in
     on)
-      if port_listen "$p"; then
-        ip=`best_ip`
-        set_status "on ${ip}:${p}"
+      if port_listen_any "$p"; then
+        publish_on "$p" || return 1
         start_clients_watch
         return 0
       fi
       set_status "busy on"
-      if bounce_tcp "$p"; then
-        ip=`best_ip`
-        set_status "on ${ip}:${p}"
+      if bounce_tcp "$p" && publish_on "$p"; then
         start_clients_watch
-        log "apply ON ok ${ip}:${p}"
+        log "apply ON ok $(best_ip):${p}"
         return 0
       fi
-      set_status "error on-no-listen"
+      if ! port_listen_any "$p"; then
+        set_status "error on-no-listen"
+      fi
       log "apply ON fail"
       return 1
       ;;
@@ -660,7 +698,13 @@ cmd_pair() {
     ;;
   esac
 
-  ip=`best_ip`
+  ip=`best_ip` || true
+  if [ -z "$ip" ]; then
+    set_status "error no-ip"
+    _write "$PAIR_STATE" "fail"
+    log "pair no routable ip"
+    return 1
+  fi
   if [ -z "$pin" ] || [ -z "$pport" ]; then
     set_status "error pair-no-pin"
     _write "$PAIR_STATE" "fail"
@@ -712,12 +756,20 @@ set_desire_on() {
   _write "$WANT_LEGACY" "on"
 }
 best_ip() {
-  v=$(ip -4 -o addr show up 2>/dev/null | awk '/ tailscale|ts-/{print $4}' | cut -d/ -f1 | head -1)
-  [ -n "$v" ] && { echo "$v"; return; }
-  v=$(ip -4 -o addr show up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | grep -E '^100\.' | head -1)
-  [ -n "$v" ] && { echo "$v"; return; }
-  ip -4 -o addr show up 2>/dev/null | awk '!/ lo / && $4 !~ /^127\./ {print $4; exit}' | cut -d/ -f1
-  [ -n "$(ip -4 -o addr show up 2>/dev/null | head -1)" ] || echo 127.0.0.1
+  IPBIN=/system/bin/ip
+  [ -x "$IPBIN" ] || IPBIN=ip
+  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '/ tailscale| ts-/{print $4}' | cut -d/ -f1 | head -1)
+  [ -n "$v" ] && { echo "$v"; return 0; }
+  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | grep -E '^100\.' | head -1)
+  [ -n "$v" ] && { echo "$v"; return 0; }
+  for ifc in wlan0 wlan1 eth0; do
+    v=$("$IPBIN" -4 -o addr show "$ifc" up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+    case "$v" in 127.*|169.254.*) v= ;; esac
+    [ -n "$v" ] && { echo "$v"; return 0; }
+  done
+  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '!/ lo / && $4 !~ /^127\./ && $4 !~ /^169\.254\./ {print $4; exit}' | cut -d/ -f1)
+  [ -n "$v" ] && { echo "$v"; return 0; }
+  return 1
 }
 port_listen() { ss -ltn 2>/dev/null | grep -qE "[:*]${1}([[:space:]]|$)"; }
 # Call system remote-adb on for TCP (reuse bounce)
@@ -754,11 +806,19 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     _write "$PAIR_STATE" "paired"
     set_desire_on
     # Status FIRST so UI leaves pairing immediately
-    ip2=$(best_ip); [ -n "$ip2" ] || ip2=127.0.0.1
-    set_status "on ${ip2}:${PORT}"
+    ip2=$(best_ip) || true
+    if [ -z "$ip2" ]; then
+      set_status "error no-ip"
+    else
+      set_status "on ${ip2}:${PORT}"
+    fi
     arm_tcp || true
-    ip2=$(best_ip); [ -n "$ip2" ] || ip2=127.0.0.1
-    set_status "on ${ip2}:${PORT}"
+    ip2=$(best_ip) || true
+    if [ -z "$ip2" ]; then
+      set_status "error no-ip"
+    else
+      set_status "on ${ip2}:${PORT}"
+    fi
     log "pair success → on ${ip2}:${PORT}"
     exit 0
   fi
@@ -798,9 +858,9 @@ cmd_pair_cancel() {
   _write "$PAIR_STATE" "cancelled"
   d=`get_desire`
   p=`read_port`
-  ip=`best_ip`
+  ip=`best_ip` || true
   if [ "$d" = "on" ]; then
-    set_status "on ${ip}:${p}"
+    if [ -n "$ip" ]; then set_status "on ${ip}:${p}"; else set_status "error no-ip"; fi
   else
     set_status "off"
   fi
@@ -825,9 +885,9 @@ cmd_pair_cancel() {
   rm -f "$PAIR_FILE" "$PAIR_PIN" "$PAIR_HOST" "$PAIR_CMD" 2>/dev/null || true
   d=`get_desire`
   p=`read_port`
-  ip=`best_ip`
+  ip=`best_ip` || true
   if [ "$d" = "on" ]; then
-    set_status "on ${ip}:${p}"
+    if [ -n "$ip" ]; then set_status "on ${ip}:${p}"; else set_status "error no-ip"; fi
   else
     set_status "off"
   fi
