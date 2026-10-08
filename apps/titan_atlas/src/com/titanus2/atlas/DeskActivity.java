@@ -1407,40 +1407,16 @@ public class DeskActivity extends Activity {
         }
     }
 
-    /** Printed Sym glyphs as US linux keys. {key, shift}. Null if not a glyph. */
+    /**
+     * Printed Sym glyphs as US linux keys. {key, shift}.
+     * titan2-keys is the map. This runs only while atlas-desk-keys is down.
+     */
     private static int[] specialsLayer(int code) {
-        int shift = 0;
-        int linux;
-        switch (code) {
-            case 16: linux = 11; break;                 /* Q → 0 */
-            case 17: linux = 2; break;                  /* W → 1 */
-            case 18: linux = 3; break;                  /* E → 2 */
-            case 19: linux = 4; break;                  /* R → 3 */
-            case 20: shift = 1; linux = 10; break;      /* T → ( */
-            case 21: shift = 1; linux = 11; break;      /* Y → ) */
-            case 22: shift = 1; linux = 12; break;      /* U → _ */
-            case 23: linux = 12; break;                 /* I → - */
-            case 24: linux = 53; break;                 /* O → / */
-            case 25: shift = 1; linux = 39; break;      /* P → : */
-            case 30: shift = 1; linux = 3; break;       /* A → @ */
-            case 31: linux = 5; break;                  /* S → 4 */
-            case 32: linux = 6; break;                  /* D → 5 */
-            case 33: linux = 7; break;                  /* F → 6 */
-            case 34: shift = 1; linux = 9; break;       /* G → * */
-            case 35: shift = 1; linux = 4; break;       /* H → # */
-            case 36: shift = 1; linux = 13; break;      /* J → + */
-            case 37: shift = 1; linux = 40; break;      /* K → " */
-            case 38: linux = 40; break;                 /* L → ' */
-            case 44: shift = 1; linux = 2; break;       /* Z → ! */
-            case 45: linux = 8; break;                  /* X → 7 */
-            case 46: linux = 9; break;                  /* C → 8 */
-            case 47: linux = 10; break;                 /* V → 9 */
-            case 48: linux = 52; break;                 /* B → . */
-            case 49: linux = 51; break;                 /* N → , */
-            case 50: shift = 1; linux = 53; break;      /* M → ? */
-            default: return null;
-        }
-        return new int[] { linux, shift };
+        int android = com.titanus2.api.KeyGlyphs.androidLetterForLinuxScan(code);
+        if (android <= 0) return null;
+        String g = com.titanus2.api.KeyGlyphs.specialForAndroidKey(android);
+        if (g == null || g.length() != 1) return null;
+        return com.titanus2.api.KeyGlyphs.linuxFor(g.charAt(0));
     }
 
     private static boolean modifierScan(int scan) {

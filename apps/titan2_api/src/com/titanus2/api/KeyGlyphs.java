@@ -70,6 +70,20 @@ public final class KeyGlyphs {
     }
 
     /**
+     * Evdev {@code KEY_Q}..{@code KEY_M} to the Android letter keycode.
+     * This is the physical key, not the Sym glyph.
+     */
+    public static int androidLetterForLinuxScan(int scan) {
+        final int[] q = {45, 51, 33, 46, 48, 53, 49, 37, 43, 44};
+        final int[] a = {29, 47, 32, 34, 35, 36, 38, 39, 40};
+        final int[] z = {54, 52, 31, 50, 30, 42, 41};
+        if (scan >= 16 && scan <= 25) return q[scan - 16];
+        if (scan >= 30 && scan <= 38) return a[scan - 30];
+        if (scan >= 44 && scan <= 50) return z[scan - 44];
+        return 0;
+    }
+
+    /**
      * Printed Sym glyph for an Android keycode, or null when that key is
      * not on the Titan layer. The daemon is the source. This table is the
      * same list, used only while {@code titan2-keys} is not answering.

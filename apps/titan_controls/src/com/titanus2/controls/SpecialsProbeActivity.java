@@ -203,35 +203,13 @@ public final class SpecialsProbeActivity extends Activity {
         return got != 0 && got == want;
     }
 
+    /** Same glyphs as titan2-keys. The probe fails when the KCM drifts. */
     private static Map<Integer, Character> expectMap() {
         Map<Integer, Character> m = new LinkedHashMap<>();
-        m.put(KeyEvent.KEYCODE_A, '@');
-        m.put(KeyEvent.KEYCODE_B, '.');
-        m.put(KeyEvent.KEYCODE_C, '8');
-        m.put(KeyEvent.KEYCODE_D, '5');
-        m.put(KeyEvent.KEYCODE_E, '2');
-        m.put(KeyEvent.KEYCODE_F, '6');
-        m.put(KeyEvent.KEYCODE_G, '*');
-        m.put(KeyEvent.KEYCODE_H, '#');
-        // Product map: U=_ I=- (was inverted pre-10.92)
-        m.put(KeyEvent.KEYCODE_I, '-');
-        m.put(KeyEvent.KEYCODE_J, '+');
-        m.put(KeyEvent.KEYCODE_K, '"');
-        m.put(KeyEvent.KEYCODE_L, '\'');
-        m.put(KeyEvent.KEYCODE_M, '?');
-        m.put(KeyEvent.KEYCODE_N, ',');
-        m.put(KeyEvent.KEYCODE_O, '/');
-        m.put(KeyEvent.KEYCODE_P, ':');
-        m.put(KeyEvent.KEYCODE_Q, '0');
-        m.put(KeyEvent.KEYCODE_R, '3');
-        m.put(KeyEvent.KEYCODE_S, '4');
-        m.put(KeyEvent.KEYCODE_T, '(');
-        m.put(KeyEvent.KEYCODE_U, '_');
-        m.put(KeyEvent.KEYCODE_V, '9');
-        m.put(KeyEvent.KEYCODE_W, '1');
-        m.put(KeyEvent.KEYCODE_X, '7');
-        m.put(KeyEvent.KEYCODE_Y, ')');
-        m.put(KeyEvent.KEYCODE_Z, '!');
+        for (Map.Entry<Integer, String> e : HostLayoutController.defaultSpecialsMap().entrySet()) {
+            String g = e.getValue();
+            if (g != null && g.length() == 1) m.put(e.getKey(), g.charAt(0));
+        }
         return m;
     }
 

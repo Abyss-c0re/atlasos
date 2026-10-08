@@ -76,27 +76,10 @@ public final class CustomLayoutStore {
 
     public static Layout builtinArrows() {
         Layout l = new Layout(ID_ARROWS, "Arrows", true);
-        // WASD / IJKL style from HostLayoutController defaults
-        putKey(l, KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_DPAD_UP);
-        putKey(l, KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_DPAD_UP);
-        putKey(l, KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_DPAD_LEFT);
-        putKey(l, KeyEvent.KEYCODE_J, KeyEvent.KEYCODE_DPAD_LEFT);
-        putKey(l, KeyEvent.KEYCODE_S, KeyEvent.KEYCODE_DPAD_DOWN);
-        putKey(l, KeyEvent.KEYCODE_X, KeyEvent.KEYCODE_DPAD_DOWN);
-        putKey(l, KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_DPAD_DOWN);
-        putKey(l, KeyEvent.KEYCODE_K, KeyEvent.KEYCODE_DPAD_DOWN);
-        putKey(l, KeyEvent.KEYCODE_D, KeyEvent.KEYCODE_DPAD_RIGHT);
-        putKey(l, KeyEvent.KEYCODE_L, KeyEvent.KEYCODE_DPAD_RIGHT);
-        putKey(l, KeyEvent.KEYCODE_H, KeyEvent.KEYCODE_MOVE_HOME);
-        putKey(l, KeyEvent.KEYCODE_SEMICOLON, KeyEvent.KEYCODE_MOVE_END);
-        putKey(l, KeyEvent.KEYCODE_U, KeyEvent.KEYCODE_PAGE_UP);
-        putKey(l, KeyEvent.KEYCODE_Q, KeyEvent.KEYCODE_PAGE_UP);
-        putKey(l, KeyEvent.KEYCODE_O, KeyEvent.KEYCODE_PAGE_DOWN);
-        putKey(l, KeyEvent.KEYCODE_E, KeyEvent.KEYCODE_PAGE_DOWN);
-        for (int i = 0; i < 9; i++) {
-            putKey(l, KeyEvent.KEYCODE_1 + i, KeyEvent.KEYCODE_F1 + i);
+        for (int from = 1; from <= 96; from++) {
+            Integer to = HostLayoutController.builtinArrowKey(from);
+            if (to != null) putKey(l, from, to);
         }
-        putKey(l, KeyEvent.KEYCODE_0, KeyEvent.KEYCODE_F10);
         return l;
     }
 

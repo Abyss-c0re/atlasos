@@ -1485,6 +1485,8 @@ public final class HostLayoutController {
      * Covers letters, digits, and common edit keys used by specials/arrows.
      */
     public static int linuxScanToKeyCode(int linuxScan) {
+        int letter = com.titanus2.api.KeyGlyphs.androidLetterForLinuxScan(linuxScan);
+        if (letter > 0) return letter;
         switch (linuxScan) {
             case 1: return KeyEvent.KEYCODE_ESCAPE;
             case 2: return KeyEvent.KEYCODE_1;
@@ -1499,36 +1501,10 @@ public final class HostLayoutController {
             case 11: return KeyEvent.KEYCODE_0;
             case 14: return KeyEvent.KEYCODE_DEL;
             case 15: return KeyEvent.KEYCODE_TAB;
-            case 16: return KeyEvent.KEYCODE_Q;
-            case 17: return KeyEvent.KEYCODE_W;
-            case 18: return KeyEvent.KEYCODE_E;
-            case 19: return KeyEvent.KEYCODE_R;
-            case 20: return KeyEvent.KEYCODE_T;
-            case 21: return KeyEvent.KEYCODE_Y;
-            case 22: return KeyEvent.KEYCODE_U;
-            case 23: return KeyEvent.KEYCODE_I;
-            case 24: return KeyEvent.KEYCODE_O;
-            case 25: return KeyEvent.KEYCODE_P;
             case 28: return KeyEvent.KEYCODE_ENTER;
-            case 30: return KeyEvent.KEYCODE_A;
-            case 31: return KeyEvent.KEYCODE_S;
-            case 32: return KeyEvent.KEYCODE_D;
-            case 33: return KeyEvent.KEYCODE_F;
-            case 34: return KeyEvent.KEYCODE_G;
-            case 35: return KeyEvent.KEYCODE_H;
-            case 36: return KeyEvent.KEYCODE_J;
-            case 37: return KeyEvent.KEYCODE_K;
-            case 38: return KeyEvent.KEYCODE_L;
             case 39: return KeyEvent.KEYCODE_SEMICOLON;
             case 40: return KeyEvent.KEYCODE_APOSTROPHE;
             case 41: return KeyEvent.KEYCODE_GRAVE;
-            case 44: return KeyEvent.KEYCODE_Z;
-            case 45: return KeyEvent.KEYCODE_X;
-            case 46: return KeyEvent.KEYCODE_C;
-            case 47: return KeyEvent.KEYCODE_V;
-            case 48: return KeyEvent.KEYCODE_B;
-            case 49: return KeyEvent.KEYCODE_N;
-            case 50: return KeyEvent.KEYCODE_M;
             case 51: return KeyEvent.KEYCODE_COMMA;
             case 52: return KeyEvent.KEYCODE_PERIOD;
             case 53: return KeyEvent.KEYCODE_SLASH;
@@ -1719,6 +1695,11 @@ public final class HostLayoutController {
                 return o;
             }
         }
+        return builtinArrowKey(keyCode);
+    }
+
+    /** Product arrows layer. Magic-hold uses this same map. */
+    public static Integer builtinArrowKey(int keyCode) {
         switch (keyCode) {
             case KeyEvent.KEYCODE_W:
             case KeyEvent.KEYCODE_I: return KeyEvent.KEYCODE_DPAD_UP;

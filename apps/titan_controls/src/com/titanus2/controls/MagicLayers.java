@@ -5,7 +5,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Hold-magic layers: Titan2 specials (Pastiera/stock Alt map), arrows, system keys.
+ * Hold-magic layers. Specials glyphs come from KeyGlyphs. Arrows use the
+ * product map in HostLayoutController. System keys stay local to this hold.
  * Returns Android keycodes for injection, or a single character for text inject.
  */
 public final class MagicLayers {
@@ -18,8 +19,6 @@ public final class MagicLayers {
         public boolean isChar() { return ch != null && !ch.isEmpty(); }
     }
 
-    private static final Map<Integer, String> LAYOUT = buildLayout();
-    private static final Map<Integer, Integer> ARROWS = buildArrows();
     private static final Map<Integer, Integer> SYSTEM = buildSystem();
 
     private MagicLayers() {}
@@ -27,7 +26,7 @@ public final class MagicLayers {
     public static Out map(String mode, int keyCode) {
         if (keyCode <= 0) return null;
         if (MagicKeyPrefs.MODE_LAYOUT.equals(mode)) {
-            String ch = LAYOUT.get(keyCode);
+            String ch = com.titanus2.api.KeyGlyphs.specialForAndroidKey(keyCode);
             if (ch == null) return null;
             // Prefer real keycodes for digits / common punctuation
             Integer kc = charToKeyCode(ch);
@@ -35,7 +34,10 @@ public final class MagicLayers {
             return new Out(ch);
         }
         if (MagicKeyPrefs.MODE_ARROWS.equals(mode)) {
-            Integer kc = ARROWS.get(keyCode);
+            if (keyCode == KeyEvent.KEYCODE_SPACE) {
+                return new Out(KeyEvent.KEYCODE_DPAD_CENTER);
+            }
+            Integer kc = HostLayoutController.builtinArrowKey(keyCode);
             return kc == null ? null : new Out(kc);
         }
         if (MagicKeyPrefs.MODE_SYSTEM.equals(mode)) {
@@ -43,60 +45,6 @@ public final class MagicLayers {
             return kc == null ? null : new Out(kc);
         }
         return null;
-    }
-
-    /** Titan2 Alt/specials layer (Pastiera titan2/alt_key_mappings.json). */
-    private static Map<Integer, String> buildLayout() {
-        Map<Integer, String> m = new HashMap<>();
-        m.put(KeyEvent.KEYCODE_Q, "0");
-        m.put(KeyEvent.KEYCODE_W, "1");
-        m.put(KeyEvent.KEYCODE_E, "2");
-        m.put(KeyEvent.KEYCODE_R, "3");
-        m.put(KeyEvent.KEYCODE_T, "(");
-        m.put(KeyEvent.KEYCODE_Y, ")");
-        // Product map (match HostLayoutController): U = underscore, I = hyphen
-        m.put(KeyEvent.KEYCODE_U, "_");
-        m.put(KeyEvent.KEYCODE_I, "-");
-        m.put(KeyEvent.KEYCODE_O, "/");
-        m.put(KeyEvent.KEYCODE_P, ":");
-        m.put(KeyEvent.KEYCODE_A, "@");
-        m.put(KeyEvent.KEYCODE_S, "4");
-        m.put(KeyEvent.KEYCODE_D, "5");
-        m.put(KeyEvent.KEYCODE_F, "6");
-        m.put(KeyEvent.KEYCODE_G, "*");
-        m.put(KeyEvent.KEYCODE_H, "#");
-        m.put(KeyEvent.KEYCODE_J, "+");
-        m.put(KeyEvent.KEYCODE_K, "\"");
-        m.put(KeyEvent.KEYCODE_L, "'");
-        m.put(KeyEvent.KEYCODE_Z, "!");
-        m.put(KeyEvent.KEYCODE_X, "7");
-        m.put(KeyEvent.KEYCODE_C, "8");
-        m.put(KeyEvent.KEYCODE_V, "9");
-        m.put(KeyEvent.KEYCODE_B, ".");
-        m.put(KeyEvent.KEYCODE_N, ",");
-        m.put(KeyEvent.KEYCODE_M, "?");
-        return m;
-    }
-
-    /** WASD + IJKL arrows; U/O page; H/L home/end; space center. */
-    private static Map<Integer, Integer> buildArrows() {
-        Map<Integer, Integer> m = new HashMap<>();
-        m.put(KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_DPAD_UP);
-        m.put(KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_DPAD_LEFT);
-        m.put(KeyEvent.KEYCODE_S, KeyEvent.KEYCODE_DPAD_DOWN);
-        m.put(KeyEvent.KEYCODE_D, KeyEvent.KEYCODE_DPAD_RIGHT);
-        m.put(KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_DPAD_UP);
-        m.put(KeyEvent.KEYCODE_J, KeyEvent.KEYCODE_DPAD_LEFT);
-        m.put(KeyEvent.KEYCODE_K, KeyEvent.KEYCODE_DPAD_DOWN);
-        m.put(KeyEvent.KEYCODE_L, KeyEvent.KEYCODE_DPAD_RIGHT);
-        m.put(KeyEvent.KEYCODE_H, KeyEvent.KEYCODE_MOVE_HOME);
-        m.put(KeyEvent.KEYCODE_SEMICOLON, KeyEvent.KEYCODE_MOVE_END);
-        m.put(KeyEvent.KEYCODE_U, KeyEvent.KEYCODE_PAGE_UP);
-        m.put(KeyEvent.KEYCODE_O, KeyEvent.KEYCODE_PAGE_DOWN);
-        m.put(KeyEvent.KEYCODE_Q, KeyEvent.KEYCODE_PAGE_UP);
-        m.put(KeyEvent.KEYCODE_E, KeyEvent.KEYCODE_PAGE_DOWN);
-        m.put(KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_DPAD_CENTER);
-        return m;
     }
 
     /** Letter cluster → common system keys (hidden arrows / desktop). */

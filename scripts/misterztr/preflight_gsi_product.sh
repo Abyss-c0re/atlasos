@@ -281,6 +281,18 @@ if [ -x "$ROOT/packages/titan_usb_hid_system/titan2-keys" ]; then
 else
   bad "missing titan2-keys (packages/titan_usb_hid_system)"
 fi
+if [ -x "$ROOT/packages/titan_usb_hid_system/titan2-keys" ] \
+  && [ -f "$ROOT/packages/gsi_product/prebuilt_usb_hid/titan2-keys" ] \
+  && ! cmp -s "$ROOT/packages/titan_usb_hid_system/titan2-keys" \
+       "$ROOT/packages/gsi_product/prebuilt_usb_hid/titan2-keys"; then
+  bad "titan2-keys system binary differs from prebuilt_usb_hid"
+fi
+if [ -x "$ROOT/packages/titan_usb_hid_system/hid_bridge" ] \
+  && [ -f "$ROOT/packages/gsi_product/prebuilt_usb_hid/hid_bridge" ] \
+  && ! cmp -s "$ROOT/packages/titan_usb_hid_system/hid_bridge" \
+       "$ROOT/packages/gsi_product/prebuilt_usb_hid/hid_bridge"; then
+  bad "hid_bridge system binary differs from the committed prebuilt"
+fi
 
 echo "---"
 if [ "$ec" -eq 0 ]; then
