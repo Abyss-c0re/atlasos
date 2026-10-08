@@ -28,7 +28,29 @@ public final class DeskSession {
     }
 
     public static String start(Context c) {
+        /* The app cannot exec su. A live desk is already up. A dead one
+         * is restarted by the root helper, the same path as Restart. */
+        String phase = readPhase();
+        if (phase != null && (phase.contains("desktop is up")
+                || phase.contains("Plasma shell is up"))) {
+            return "STARTED";
+        }
+        String viaHelper = restart(c);
+        if (viaHelper != null && viaHelper.contains("restarting")) return viaHelper;
         return launch(c, false);
+    }
+
+    private static String readPhase() {
+        try {
+            byte[] buf = java.nio.file.Files.readAllBytes(
+                java.nio.file.Path.of("/data/local/tmp/atlas-virgl/desk-phase"));
+            String s = new String(buf, StandardCharsets.UTF_8);
+            int nl = s.lastIndexOf('\n');
+            if (nl >= 0 && nl + 1 < s.length()) s = s.substring(nl + 1);
+            return s.trim();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

@@ -158,6 +158,10 @@ dedupe_name() {
 }
 dedupe_name /etc/passwd atlas
 dedupe_name /etc/group atlas
+# dbus-run-session runs as atlas. systemd-sysusers keeps the mode it found,
+# and 0600 makes getpwuid return EACCES. Plasma then never starts.
+chmod 644 /etc/passwd /etc/group 2>/dev/null || true
+chmod 640 /etc/shadow /etc/gshadow 2>/dev/null || true
 hn=$(tr -d '[:space:]' </etc/hostname 2>/dev/null || true)
 [ -n "$hn" ] || hn=Titan2
 if [ ! -s /etc/hosts ] || ! grep -q 'localhost' /etc/hosts 2>/dev/null; then
@@ -682,6 +686,9 @@ EOF
             >/tmp/flatpak-appstream.log 2>&1 &
         echo "flatpak appstream refresh"
     fi
+    # apt triggers systemd-sysusers, which preserves a 0600 passwd.
+    chmod 644 /etc/passwd /etc/group 2>/dev/null || true
+    chmod 640 /etc/shadow /etc/gshadow 2>/dev/null || true
     echo "later: done"
 }
 mkdir -p /etc/profile.d
@@ -922,6 +929,8 @@ phase "starting Plasma"
 : >"$DIR/plasma.log"
 chmod 644 "$DIR/plasma.log" 2>/dev/null || true
 echo "plasma log $DIR/plasma.log"
+chmod 644 /etc/passwd /etc/group 2>/dev/null || true
+chmod 640 /etc/shadow /etc/gshadow 2>/dev/null || true
 if id atlas >/dev/null 2>&1 && [ -x /usr/bin/setpriv ]; then
     own_dir /home/atlas/.cache
     own_dir /home/atlas/.config
