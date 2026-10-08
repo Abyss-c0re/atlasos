@@ -426,6 +426,13 @@ if [ -n "$ATLAS_APK" ] && [ -f "$SRC_ATLAS/Android.bp" ]; then
   # Optional essentials rootfs (large) — not required for stage; device may bootstrap later
   ROOTFS_TAR="${ATLAS_ROOTFS_TAR:-$ROOT/out/atlas_rootfs/debian-trixie-arm64-rootfs.tar.gz}"
   if [ -f "$ROOTFS_TAR" ] && [ "$(stat -c%s "$ROOTFS_TAR" 2>/dev/null || echo 0)" -gt 1000000 ]; then
+    # The super LP is unpacked from this tar. Refresh the desk session
+    # before the file is copied into the GSI tree.
+    if [ "$DRY" != "1" ]; then
+      _bake="$ROOT/packages/titan_atlas/scripts/bake_desk_session.sh"
+      [ -x "$_bake" ] || die "missing $_bake"
+      "$_bake" "$ROOTFS_TAR" || die "debian seed missing Plasma passwd guard"
+    fi
     stage_file "$ROOTFS_TAR" "$DEST_ATLAS/debian-trixie-arm64-rootfs.tar.gz"
     # Also stage into tree etc so product can install as /system/etc/atlas/…
     DEST_ATLAS_ETC="$MISTERZTR_TREE/vendor/titanus2/prebuilts/atlas/etc"

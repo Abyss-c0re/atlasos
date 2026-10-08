@@ -93,6 +93,9 @@ docker run --rm -v "$WORK/rootfs":/rootfs -v "$NATIVE":/native:ro debian:trixie-
     chmod 4755 /rootfs/usr/local/libexec/atlas-bwrap-bin
     cp -f /rootfs/usr/local/libexec/atlas-bwrap-bin /rootfs/usr/bin/bwrap
     chmod 4755 /rootfs/usr/bin/bwrap
+    grep -q "chmod 644 /etc/passwd" /rootfs/usr/local/bin/atlas-desk-session
+    chmod 644 /rootfs/etc/passwd /rootfs/etc/group
+    chmod 640 /rootfs/etc/shadow /rootfs/etc/gshadow || true
     printf "%s\n" "export TMPDIR=/tmp" > /rootfs/etc/profile.d/atlas-tmpdir.sh
     for svc in \
       /rootfs/usr/share/dbus-1/system-services/org.freedesktop.PackageKit.service \

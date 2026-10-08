@@ -243,6 +243,12 @@ if ! docker run --rm \
     grep -q 'password prompt' /rootfs/usr/local/bin/sudo
     grep -q 'password prompt' /rootfs/atlas-bin/sudo
     test -u /rootfs/usr/bin/sudo.real
+    cp -f /sudo-src/atlas-desk-session.sh /rootfs/usr/local/bin/atlas-desk-session
+    cp -f /sudo-src/atlas-desk-stop.sh /rootfs/usr/local/libexec/atlas-desk-stop.sh
+    chmod 755 /rootfs/usr/local/bin/atlas-desk-session /rootfs/usr/local/libexec/atlas-desk-stop.sh
+    grep -q 'chmod 644 /etc/passwd' /rootfs/usr/local/bin/atlas-desk-session
+    chmod 644 /rootfs/etc/passwd /rootfs/etc/group 2>/dev/null || true
+    chmod 640 /rootfs/etc/shadow /rootfs/etc/gshadow 2>/dev/null || true
     tar -czf /out/$(basename "$TAR") -C /rootfs .
     chown $(id -u):$(id -g) /out/$(basename "$TAR")"; then
   log "FATAL: docker pack failed"
@@ -252,7 +258,8 @@ fi
 # Re-prove critical paths inside the tar (not just workdir)
 for _rel in usr/bin/curl etc/ssl/certs/ca-certificates.crt etc/sudoers usr/bin/ping \
   usr/local/bin/sudo atlas-bin/sudo usr/local/share/atlas/sudo usr/bin/sudo.real \
-  usr/local/libexec/atlas-sudo-install.sh; do
+  usr/local/libexec/atlas-sudo-install.sh \
+  usr/local/bin/atlas-desk-session usr/local/libexec/atlas-desk-stop.sh; do
   if ! tar -tzf "$TAR" | grep -E -q "(^|./)${_rel}$"; then
     log "FATAL: packed tar missing $_rel"
     exit 1

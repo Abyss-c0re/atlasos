@@ -294,6 +294,30 @@ if [ -x "$ROOT/packages/titan_usb_hid_system/hid_bridge" ] \
   bad "hid_bridge system binary differs from the committed prebuilt"
 fi
 
+# Plasma reads passwd as uid atlas. The seed bake and the LP packer copy
+# this script. A session without the guard, or a desk open that execs su,
+# must not reach stage.
+_desk="$ROOT/packages/titan_atlas/native/x11/atlas-desk-session.sh"
+if grep -q 'chmod 644 /etc/passwd' "$_desk" 2>/dev/null; then
+  ok "desk session restores passwd mode 644"
+else
+  bad "atlas-desk-session.sh lost the passwd mode guard"
+fi
+if cmp -s "$_desk" "$ROOT/apps/titan_atlas/assets/bin/atlas-desk-session" 2>/dev/null; then
+  ok "assets desk session matches native source"
+else
+  bad "assets/bin/atlas-desk-session drifted from native/x11"
+fi
+_start=$(sed -n '/public static String start(Context/,/private static String readPhase/p' \
+  "$ROOT/apps/titan_atlas/src/com/titanus2/atlas/DeskSession.java" 2>/dev/null || true)
+if printf '%s' "$_start" | grep -q 'desktop is up' \
+    && printf '%s' "$_start" | grep -q 'restart(c)' \
+    && ! printf '%s' "$_start" | grep -q '"su"'; then
+  ok "DeskSession.start uses the root helper"
+else
+  bad "DeskSession.start execs su or dropped the live-desk check"
+fi
+
 echo "---"
 if [ "$ec" -eq 0 ]; then
   echo "PREFLIGHT PASS — stage + MisterZtr pipeline safe to proceed"
