@@ -260,6 +260,30 @@ if shx test -x /system/bin/atlas-hybrid.sh; then
   "${ADB[@]}" shell "grep -qF 'Do not invent a Debian uid' /system/bin/atlas-hybrid.sh" \
     && ok "hybrid.sh refuses invented uid" \
     || bad "hybrid.sh missing REG-UID law"
+  "${ADB[@]}" shell "grep -qF publish_account_files /system/bin/atlas-hybrid.sh" \
+    && ok "hybrid publishes account mode" \
+    || bad "hybrid missing publish_account_files"
+fi
+pwmode=$(shx stat -c %a /data/local/atlas-linux/etc/passwd 2>/dev/null || true)
+grmode=$(shx stat -c %a /data/local/atlas-linux/etc/group 2>/dev/null || true)
+[ "$pwmode" = "644" ] && ok "passwd mode 644" || bad "passwd mode=$pwmode"
+[ "$grmode" = "644" ] && ok "group mode 644" || bad "group mode=$grmode"
+if shx test -f /system/bin/titan2-wifi-heal.sh; then
+  if "${ADB[@]}" shell "grep -q prefer_24 /system/bin/titan2-wifi-heal.sh || grep -q connect-network /system/bin/titan2-wifi-heal.sh || grep -q WifiConfigStore /system/bin/titan2-wifi-heal.sh || grep -q fabricate /system/bin/titan2-wifi-heal.sh"; then
+    bad "wifi path still mutates the station"
+  else
+    ok "visible wifi path does not mutate the station"
+  fi
+fi
+if "${ADB[@]}" shell "grep -q titan2-wifi-heal /system/bin/titan2-pad-agent.sh"; then
+  bad "pad-agent still starts wifi heal"
+else
+  ok "pad-agent does not start wifi heal"
+fi
+if shx test -f /system/bin/titan2-remote-adb.sh; then
+  "${ADB[@]}" shell "grep -qF BEST_IP=wlan-first /system/bin/titan2-remote-adb.sh" \
+    && ok "remote adb prefers the station address" \
+    || bad "remote adb missing wlan-first"
 fi
 if "${ADB[@]}" shell "grep -qF ensure-user /system/bin/atlas-hybrid-boot.sh"; then
   ok "hybrid-boot calls ensure-user"

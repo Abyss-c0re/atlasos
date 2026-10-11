@@ -1943,6 +1943,18 @@ unbind_android() {
   done
 }
 
+# passwd and group must stay mode 644. su on Android uses umask 077, and
+# sed -i / awk+mv replace the inode as 0600. getpwuid then fails and ssh
+# says "No user exists for uid". shadow stays 640. Do not chown it.
+publish_account_files() {
+  root=$1
+  [ -d "$root/etc" ] || return 0
+  [ -f "$root/etc/passwd" ] && chmod 644 "$root/etc/passwd" 2>/dev/null || true
+  [ -f "$root/etc/group" ] && chmod 644 "$root/etc/group" 2>/dev/null || true
+  [ -f "$root/etc/shadow" ] && chmod 640 "$root/etc/shadow" 2>/dev/null || true
+  [ -f "$root/etc/gshadow" ] && chmod 640 "$root/etc/gshadow" 2>/dev/null || true
+}
+
 # Map Android app UID → Debian user so ssh/sudo/apt resolve the live PTY uid.
 # Live proof 2026-08-14: session uid 10101 with only admin@10198 →
 #   "No user exists for uid 10101" / sudo hang / apt wrapper fail.
@@ -2026,6 +2038,7 @@ ensure_admin_user() {
       chown 0:0 "$sbin" 2>/dev/null || true
       chmod 4755 "$sbin" 2>/dev/null || true
     done
+    publish_account_files "$root"
   done
   heal_sudo_root_ownership 2>/dev/null || true
 }
@@ -2106,6 +2119,7 @@ cmd_add_user() {
       mount --bind "$home" "$root/home/$name" 2>/dev/null \
         || mount -o bind "$home" "$root/home/$name" 2>/dev/null || true
     fi
+    publish_account_files "$root"
   done
   # Login password optional. Empty/lock → atlas-auth only (no unix secret).
   pass=""
@@ -2254,6 +2268,7 @@ cmd_lock_pass() {
     if grep -q "^${name}:" "$root/etc/shadow"; then
       sed -i "s/^${name}:[^:]*:/${name}:!:/" "$root/etc/shadow"
     fi
+    publish_account_files "$root"
   done
   echo "user=$name pass=lock"
 }
@@ -2286,6 +2301,7 @@ cmd_set_sudo() {
         sed -i "s/,${name}//g; s/:${name},/:/; s/:${name}$/:/" "$root/etc/group" 2>/dev/null || true
       fi
     fi
+    publish_account_files "$root"
   done
   echo "user=$name sudo=$on auth=atlas-auth"
 }
@@ -2309,6 +2325,7 @@ cmd_del_user() {
     [ -f "$root/etc/group" ] && sed -i "/^${name}:/d" "$root/etc/group"
     [ -f "$root/etc/group" ] && sed -i "s/,${name}//g; s/:${name},/:/; s/:${name}$/:/" "$root/etc/group"
     rm -f "$root/etc/sudoers.d/atlas-${name}"
+    publish_account_files "$root"
   done
   if [ "${ATLAS_DEL_HOME:-0}" = "1" ]; then
     rm -rf "/data/local/atlas-home/$name"
@@ -2588,6 +2605,7 @@ cmd_seat_freeze() {
       sed -i "s#^${name}:\\([^:]*\\):\\([^:]*\\):\\([^:]*\\):\\([^:]*\\):\\([^:]*\\):.*#${name}:\\1:\\2:\\3:\\4:\\5:/usr/sbin/nologin#" \
         "$root/etc/passwd"
     fi
+    publish_account_files "$root"
   done
   cmd_lock_pass "$name" >/dev/null
   atlas_seat_write "$name" frozen 1
@@ -2605,6 +2623,7 @@ cmd_seat_thaw() {
       sed -i "s#^${name}:\\([^:]*\\):\\([^:]*\\):\\([^:]*\\):\\([^:]*\\):\\([^:]*\\):.*#${name}:\\1:\\2:\\3:\\4:\\5:/bin/bash#" \
         "$root/etc/passwd"
     fi
+    publish_account_files "$root"
     mkdir -p "$root/home/$name"
     if [ -d "$root/home/$name" ] && ! grep -q " $root/home/$name " /proc/mounts; then
       mount --bind "$home" "$root/home/$name" 2>/dev/null || true

@@ -7,6 +7,7 @@ Built into MisterZtr GSI as `runtime_resource_overlay` + `PRODUCT_PACKAGES`.
 |--------|--------------|------------|
 | TitanCubeIconMask | com.titanus2.overlay.cubemask | static, enabled |
 | TitanSensorPrivacyOverlay | com.titanus2.overlay.sensorprivacy | static, enabled |
+| TitanWifiSaeOverlay | com.titanus2.overlay.wifi | static, SAE upgrade off |
 | TitanCubeIcon_settings | com.titanus2.overlay.cubeicon.settings | static, enabled |
 | TitanCubeIcon_* | com.titanus2.overlay.cubeicon.* | mutable, present |
 

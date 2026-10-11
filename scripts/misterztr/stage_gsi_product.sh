@@ -292,7 +292,7 @@ for f in $_SYSBIN_SOT titan2-ims-setup.sh titan2-sensor-privacy.sh \
   titan2-openwrt.sh titan2-openwrt-boot.sh titan2-openwrt.rc openwrt-lpctl titan_dhcp_gw \
   titan2-bind-mtk-privacy-overlay.sh titan2-privacy-overlay.rc FrameworkResOverlay.apk \
   titan2-analog-acc.sh titan2-analog-acc.rc titan2-analog-acc.dex \
-  titan2-wifi-heal.sh titan2-wifi.rc titan2_usb_audio_policy_configuration.xml; do
+  titan2_usb_audio_policy_configuration.xml; do
   [ -f "$SRC_SYS/$f" ] || continue
   stage_file "$SRC_SYS/$f" "$DEST_SYS/$f"
 done

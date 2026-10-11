@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.titanus2.overlay.wifi"
+    android:versionCode="2"
+    android:versionName="1.1-sae-upgrade-off">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35"/>
+    <!--
+      GSI ServiceWifiResources defaults config_wifiSaeUpgradeEnabled=true.
+      That stamps WPA2-only home APs as wpa3-sae and ieee80211w=3.
+      Same overlayable as vendor WifiResOverlay (WifiCustomization).
+      Priority 2000 beats vendor 45.
+    -->
+    <overlay
+        android:targetPackage="com.android.wifi.resources"
+        android:targetName="WifiCustomization"
+        android:priority="2000"
+        android:isStatic="true"/>
+    <application
+        android:hasCode="false"
+        android:label="Titan Wi-Fi SAE upgrade off"/>
+</manifest>

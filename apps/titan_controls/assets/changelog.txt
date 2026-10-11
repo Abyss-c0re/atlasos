@@ -5,6 +5,13 @@ Do not ship without a matching build entry.
 
 ---
 
+## 16.102-remote-adb-stay (702) — 2026-10-11T15:03Z
+
+- Remote ADB stays as the human left it when the page closes.
+- The banner uses the station address. A switch change that is not a press does not turn it off.
+
+---
+
 ## 16.101-remote-adb (701) — 2026-10-08T22:04Z
 
 - Remote ADB shows the phone LAN address. It no longer publishes 127.0.0.1.

@@ -303,6 +303,48 @@ if grep -q 'chmod 644 /etc/passwd' "$_desk" 2>/dev/null; then
 else
   bad "atlas-desk-session.sh lost the passwd mode guard"
 fi
+_hyb="$ROOT/patches/bin/atlas-hybrid.sh"
+if grep -q 'publish_account_files' "$_hyb" 2>/dev/null \
+    && grep -q 'chmod 644 "$root/etc/passwd"' "$_hyb" 2>/dev/null; then
+  ok "hybrid publishes passwd mode 644"
+else
+  bad "atlas-hybrid.sh can rewrite passwd as mode 600"
+fi
+_ov="$ROOT/packages/gsi_product/overlays/TitanWifiSaeOverlay"
+if grep -q 'android:targetPackage="com.android.wifi.resources"' "$_ov/AndroidManifest.xml" \
+    && grep -q 'android:targetName="WifiCustomization"' "$_ov/AndroidManifest.xml" \
+    && grep -q 'android:isStatic="true"' "$_ov/AndroidManifest.xml" \
+    && grep -q 'config_wifiSaeUpgradeEnabled">false' "$_ov/res/values/config.xml" \
+    && grep -q 'config_wifiSaeUpgradeOffloadEnabled">false' "$_ov/res/values/config.xml" \
+    && grep -q 'TitanWifiSaeOverlay' "$ROOT/packages/gsi_product/titanus2.mk" \
+    && grep -q 'TitanWifiSaeOverlay' "$ROOT/packages/gsi_product/overlays/MODULES"; then
+  ok "SAE upgrade is a static wifi resources overlay"
+else
+  bad "SAE upgrade overlay is not in the product"
+fi
+if [ -e "$ROOT/packages/gsi_product/prebuilt_sysbin/titan2-wifi-heal.sh" ] \
+    || [ -e "$ROOT/packages/gsi_product/prebuilt_sysbin/titan2-wifi.rc" ] \
+    || grep -q 'titan2-wifi-heal' "$ROOT/packages/gsi_product/titanus2.mk" \
+    || grep -q 'titan2-wifi-heal' "$ROOT/packages/gsi_product/prebuilt_sysbin/Android.bp" \
+    || grep -q 'titan2-wifi-heal' "$ROOT/patches/bin/titan2-pad-agent.sh" \
+    || grep -q 'VER=1.4-user-ssid' "$ROOT/patches/bin/84-atlas-home-adb.sh"; then
+  bad "wifi heal script is still packaged"
+else
+  ok "wifi heal script is not in the product"
+fi
+_muzzle="$ROOT/patches/bin/83-atlas-wifi-muzzle.sh"
+if grep -q 'exec /system/bin/sleep 86400' "$_muzzle" \
+    && ! grep -q 'WifiConfigStore\|prefer_24\|connect-network\|fabricate\|wpa_cli' "$_muzzle"; then
+  ok "image-unit muzzle does not touch wifi"
+else
+  bad "83-atlas-wifi-muzzle.sh is missing or mutates wifi"
+fi
+_radb="$ROOT/patches/bin/titan2-remote-adb.sh"
+if grep -q 'BEST_IP=wlan-first' "$_radb" 2>/dev/null; then
+  ok "remote adb prefers the station address"
+else
+  bad "titan2-remote-adb.sh lost wlan-first address"
+fi
 if cmp -s "$_desk" "$ROOT/apps/titan_atlas/assets/bin/atlas-desk-session" 2>/dev/null; then
   ok "assets desk session matches native source"
 else

@@ -1,4 +1,4 @@
-versionName=16.101-remote-adb
-versionCode=701
-built_utc=2026-10-08T22:04Z
+versionName=16.102-remote-adb-stay
+versionCode=702
+built_utc=2026-10-11T15:03Z
 allow_root=1

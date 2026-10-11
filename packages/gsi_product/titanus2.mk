@@ -112,8 +112,6 @@ PRODUCT_PACKAGES += \
     titan2-fw-observe \
     titan2-remote-adb.sh \
     titan2-vpn-hotspot.sh \
-    titan2-wifi-heal.sh \
-    titan2-wifi.rc \
     titan2-netfw.rc \
     TitanNetFw \
     TitanLuci \
@@ -140,6 +138,7 @@ PRODUCT_PACKAGES += \
     TitanThemeSystemUI \
     TitanSensorPrivacyOverlay \
     TitanImeNavBarOverlay \
+    TitanWifiSaeOverlay \
     TitanCubeIcon_settings \
     TitanCubeIcon_com_android_calculator2 \
     TitanCubeIcon_com_android_contacts \

@@ -513,6 +513,8 @@ public final class UiKit {
         public final TextView onTile;
         public final Switch sw;
         public final boolean[] suppress = new boolean[]{false};
+        /** Row click or a finger on the switch. Detach must not look like a user toggle. */
+        public boolean userGesture;
         private boolean checked;
         private BoolListener listener;
 
@@ -608,8 +610,30 @@ public final class UiKit {
         tintSwitchMuted(sw, ctx);
         Toggle tgl = new Toggle(row, tv, sw, initial);
         tgl.listener = listener;
-        sw.setOnCheckedChangeListener((buttonView, isChecked) -> tgl.apply(isChecked));
-        row.setOnClickListener(v -> sw.toggle());
+        sw.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (tgl.suppress[0]) return;
+            boolean gesture = buttonView.isPressed() || tgl.userGesture;
+            tgl.userGesture = false;
+            if (!gesture) {
+                if (buttonView.isChecked() != tgl.checked) {
+                    tgl.suppress[0] = true;
+                    try {
+                        buttonView.setChecked(tgl.checked);
+                    } finally {
+                        tgl.suppress[0] = false;
+                    }
+                }
+                return;
+            }
+            tgl.apply(isChecked);
+        });
+        row.setOnClickListener(v -> {
+            if (!row.isEnabled()) return;
+            tgl.userGesture = true;
+            boolean before = sw.isChecked();
+            sw.toggle();
+            if (sw.isChecked() == before) tgl.userGesture = false;
+        });
 
         row.addView(tv);
         row.addView(sw);

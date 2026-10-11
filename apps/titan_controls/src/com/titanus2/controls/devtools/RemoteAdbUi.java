@@ -628,6 +628,13 @@ final class RemoteAdbUi {
 
     private void paintFromStatus(String st, boolean force) {
         if (st == null || st.isEmpty()) st = "off";
+        // A leftover "busy on" with desire off is the optimistic lie. The
+        // engine never armed. Show OFF. Do not run off — that bounces adbd.
+        if (st.startsWith("busy") && work == Work.IDLE && optimisticOn == null
+                && !"on".equals(readDesire())) {
+            writeOptimisticStatus("off");
+            st = "off";
+        }
         // Optimistic mask wins over stale disk until finishWork clears it
         if (optimisticOn != null && !force) {
             if (optimisticOn) paintOptimisticOn();
@@ -672,7 +679,13 @@ final class RemoteAdbUi {
 
         hidePin();
         if (st.startsWith("busy")) {
-            // Keep intermediate banner if we already set one
+            if ("on".equals(readDesire())) {
+                String live = routableIpv4();
+                if (live != null) {
+                    showBanner("ON\n" + live + ":" + PORT, 0xFFE8F5E9, 0xFF1B5E20);
+                    showDetail("adb connect " + live + ":" + PORT);
+                }
+            }
             return;
         }
         if (on) {
@@ -768,6 +781,7 @@ final class RemoteAdbUi {
         if (ep == null) return true;
         String host = ep.trim();
         int colon = host.lastIndexOf(':');
+        if (colon == 0) return true;
         if (colon > 0) host = host.substring(0, colon);
         if (host.startsWith("[") && host.endsWith("]")) {
             host = host.substring(1, host.length() - 1);
@@ -780,35 +794,69 @@ final class RemoteAdbUi {
             || "*".equals(host);
     }
 
-    /** Tailscale, then wifi/ethernet. Null when the phone has no routable IPv4. */
+    /** Station address, then tailscale, then another uplink. Never 127.0.0.1. */
     private static String routableIpv4() {
+        String wifi = null;
+        String tailscale = null;
+        String other = null;
         try {
-            String wifi = null;
-            String other = null;
             Enumeration<NetworkInterface> ifs = NetworkInterface.getNetworkInterfaces();
             if (ifs == null) return null;
             while (ifs.hasMoreElements()) {
                 NetworkInterface nif = ifs.nextElement();
-                if (!nif.isUp() || nif.isLoopback()) continue;
-                String name = nif.getName() != null ? nif.getName() : "";
-                Enumeration<InetAddress> addrs = nif.getInetAddresses();
-                while (addrs.hasMoreElements()) {
-                    InetAddress a = addrs.nextElement();
-                    if (!(a instanceof Inet4Address)) continue;
-                    String h = a.getHostAddress();
-                    if (h == null || h.startsWith("127.") || h.startsWith("169.254.")) continue;
-                    if (h.startsWith("100.")) return h;
-                    if (name.startsWith("wlan") || name.startsWith("eth")) {
-                        if (wifi == null) wifi = h;
-                    } else if (other == null) {
-                        other = h;
+                try {
+                    if (nif.isLoopback()) continue;
+                    boolean up;
+                    try {
+                        up = nif.isUp();
+                    } catch (Exception e) {
+                        continue;
                     }
+                    if (!up) continue;
+                    String name = nif.getName() != null ? nif.getName() : "";
+                    if (skipIface(name)) continue;
+                    Enumeration<InetAddress> addrs = nif.getInetAddresses();
+                    while (addrs.hasMoreElements()) {
+                        InetAddress a = addrs.nextElement();
+                        if (!(a instanceof Inet4Address)) continue;
+                        String h = a.getHostAddress();
+                        if (h == null || h.startsWith("127.") || h.startsWith("169.254.")
+                                || h.startsWith("0.")) {
+                            continue;
+                        }
+                        if (h.startsWith("100.")) {
+                            if (tailscale == null) tailscale = h;
+                            continue;
+                        }
+                        if (name.startsWith("wlan") || name.startsWith("eth")) {
+                            if (wifi == null) wifi = h;
+                        } else if (other == null) {
+                            other = h;
+                        }
+                    }
+                } catch (Exception ignored) {
                 }
             }
-            return wifi != null ? wifi : other;
         } catch (Exception e) {
             return null;
         }
+        if (wifi != null) return wifi;
+        if (tailscale != null) return tailscale;
+        return other;
+    }
+
+    /** Bridges and virtual links are not the address a PC uses to reach the phone. */
+    private static boolean skipIface(String name) {
+        return name.equals("lo")
+            || name.startsWith("br")
+            || name.startsWith("docker")
+            || name.startsWith("dummy")
+            || name.startsWith("vir")
+            || name.startsWith("tun")
+            || name.startsWith("rmnet")
+            || name.startsWith("p2p")
+            || name.startsWith("ap")
+            || name.startsWith("swlan");
     }
 
     private static boolean statusIsPairing(String st) {

@@ -1,7 +1,10 @@
 #!/system/bin/sh
 # Pre-cook bridge for the live phone. KernelSU service.d.
-# Once /system ships rebind_deb_views and REMOTE_ADB_ADDR=lan, the binds
-# and tmp overrides are removed and this script only rebinds a bad home.
+# Once /system ships rebind_deb_views, publish_account_files,
+# and BEST_IP=wlan-first, those binds are skipped
+# and this script only rebinds a bad home.
+# SAE upgrade is a static overlay. While this image's init unit still
+# names titan2-wifi-heal, 83 binds a sleeper over that path.
 MARK=/data/adb/titan2
 ST=/data/local/tmp
 
@@ -15,14 +18,19 @@ bind_over() {
 if ! grep -q rebind_deb_views /system/bin/atlas-home-img.sh 2>/dev/null; then
   bind_over "$MARK/atlas-home-img.sh" /system/bin/atlas-home-img.sh
 fi
-if ! grep -q rebind_deb_path /system/bin/atlas-hybrid.sh 2>/dev/null; then
+# Image copies predate the account-mode and wlan-first fixes. Bind the
+# userdata copies until a cooked image contains the markers.
+if ! grep -q 'publish_account_files' /system/bin/atlas-hybrid.sh 2>/dev/null; then
   bind_over "$MARK/atlas-hybrid.sh" /system/bin/atlas-hybrid.sh
 fi
-if ! grep -q 'REMOTE_ADB_ADDR=lan' /system/bin/titan2-remote-adb.sh 2>/dev/null; then
+if ! grep -q 'BEST_IP=wlan-first' /system/bin/titan2-remote-adb.sh 2>/dev/null; then
   bind_over "$MARK/titan2-remote-adb.sh" /system/bin/titan2-remote-adb.sh
   [ -f "$MARK/titan2-remote-adb.sh" ] && cp -f "$MARK/titan2-remote-adb.sh" "$ST/titan2-remote-adb.sh" && chmod 755 "$ST/titan2-remote-adb.sh"
 else
   rm -f "$ST/titan2-remote-adb.sh"
+fi
+if [ -x "$MARK/83-atlas-wifi-muzzle.sh" ]; then
+  /system/bin/sh "$MARK/83-atlas-wifi-muzzle.sh"
 fi
 if ! grep -q 'REMOTE_ADB_ADDR=lan' /system/bin/titan2-dev-action.sh 2>/dev/null; then
   bind_over "$MARK/titan2-dev-action.sh" /system/bin/titan2-dev-action.sh

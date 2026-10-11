@@ -46,7 +46,7 @@ DENY_FILE=$T2/remote_adb.deny
 WATCH_PID=$ST/titan2_remote_adb_clients.pid
 WATCH_SH=$ST/titan2_remote_adb_clients.sh
 AUTH_DIR=/data/local/atlas-linux/var/lib/atlas-auth
-VER=3.5-lan-ip
+VER=3.6-wlan-first
 # REMOTE_ADB_ADDR=lan — never publish 127.0.0.1 as the connect address.
 
 log() {
@@ -120,26 +120,39 @@ write_port() {
 
 # One IPv4 a remote host can adb-connect to. Empty when the phone has no uplink.
 # Never 127.0.0.0/8 — that connect string hits the PC, not the phone.
+# BEST_IP=wlan-first: station address wins over tailscale and over br-owrt.
+# A missing default route must not hide wlan0.
 IPBIN=/system/bin/ip
 [ -x "$IPBIN" ] || IPBIN=ip
 best_ip() {
-  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '/ tailscale| ts-/{print $4}' | cut -d/ -f1 | head -1)
-  [ -n "$v" ] && { echo "$v"; return 0; }
-  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | grep -E '^100\.' | head -1)
-  [ -n "$v" ] && { echo "$v"; return 0; }
   for ifc in wlan0 wlan1 eth0; do
-    v=$("$IPBIN" -4 -o addr show "$ifc" up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
-    case "$v" in 127.*|169.254.*) v= ;; esac
-    [ -n "$v" ] && { echo "$v"; return 0; }
+    v=$("$IPBIN" -4 -o addr show "$ifc" up 2>/dev/null | awk '{
+      for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\//) { print $i; exit }
+    }' | cut -d/ -f1)
+    case "$v" in ''|127.*|169.254.*|0.*) continue ;; esac
+    echo "$v"
+    return 0
   done
-  def_if=$("$IPBIN" route 2>/dev/null | awk '/^default/{print $5; exit}')
-  if [ -n "$def_if" ]; then
-    v=$("$IPBIN" -4 -o addr show "$def_if" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
-    case "$v" in 127.*|169.254.*|"") ;; *) echo "$v"; return 0 ;; esac
-  fi
-  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '!/ lo / && $4 !~ /^127\./ && $4 !~ /^169\.254\./ {print $4; exit}' | cut -d/ -f1)
-  [ -n "$v" ] && { echo "$v"; return 0; }
-  return 1
+  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '
+    {
+      addr = ""
+      for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\//) { addr = $i; break }
+      if (addr == "") next
+      ifc = $2
+      if (ifc ~ /^(lo|br-|br[0-9]|docker|dummy|vir|rmnet|p2p|ap[0-9]|swlan)/) next
+      if (addr ~ /^(127\.|169\.254\.|0\.)/) next
+      if (addr ~ /^100\./ || ifc ~ /^(tun|tailscale|ts-)/) {
+        if (ts == "") ts = addr
+        next
+      }
+      print addr
+      exit
+    }
+    END { if (ts != "") print ts }
+  ' | head -1 | cut -d/ -f1)
+  case "$v" in ''|127.*|169.254.*) return 1 ;; esac
+  echo "$v"
+  return 0
 }
 
 # LISTEN on a wildcard address. 127.0.0.1:port is not Remote ADB.
@@ -756,20 +769,37 @@ set_desire_on() {
   _write "$WANT_LEGACY" "on"
 }
 best_ip() {
+  # BEST_IP=wlan-first
   IPBIN=/system/bin/ip
   [ -x "$IPBIN" ] || IPBIN=ip
-  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '/ tailscale| ts-/{print $4}' | cut -d/ -f1 | head -1)
-  [ -n "$v" ] && { echo "$v"; return 0; }
-  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | grep -E '^100\.' | head -1)
-  [ -n "$v" ] && { echo "$v"; return 0; }
   for ifc in wlan0 wlan1 eth0; do
-    v=$("$IPBIN" -4 -o addr show "$ifc" up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
-    case "$v" in 127.*|169.254.*) v= ;; esac
-    [ -n "$v" ] && { echo "$v"; return 0; }
+    v=$("$IPBIN" -4 -o addr show "$ifc" up 2>/dev/null | awk '{
+      for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\//) { print $i; exit }
+    }' | cut -d/ -f1)
+    case "$v" in ''|127.*|169.254.*|0.*) continue ;; esac
+    echo "$v"
+    return 0
   done
-  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '!/ lo / && $4 !~ /^127\./ && $4 !~ /^169\.254\./ {print $4; exit}' | cut -d/ -f1)
-  [ -n "$v" ] && { echo "$v"; return 0; }
-  return 1
+  v=$("$IPBIN" -4 -o addr show up 2>/dev/null | awk '
+    {
+      addr = ""
+      for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\//) { addr = $i; break }
+      if (addr == "") next
+      ifc = $2
+      if (ifc ~ /^(lo|br-|br[0-9]|docker|dummy|vir|rmnet|p2p|ap[0-9]|swlan)/) next
+      if (addr ~ /^(127\.|169\.254\.|0\.)/) next
+      if (addr ~ /^100\./ || ifc ~ /^(tun|tailscale|ts-)/) {
+        if (ts == "") ts = addr
+        next
+      }
+      print addr
+      exit
+    }
+    END { if (ts != "") print ts }
+  ' | head -1 | cut -d/ -f1)
+  case "$v" in ''|127.*|169.254.*) return 1 ;; esac
+  echo "$v"
+  return 0
 }
 port_listen() { ss -ltn 2>/dev/null | grep -qE "[:*]${1}([[:space:]]|$)"; }
 # Call system remote-adb on for TCP (reuse bounce)
