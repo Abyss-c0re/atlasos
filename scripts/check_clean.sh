@@ -25,10 +25,12 @@ if [ -d .git ]; then
 fi
 
 if [ -d .git ]; then
-  if git ls-files --error-unmatch '*.apk' >/dev/null 2>&1; then
+  # Product RROs stay tracked. check_publish.sh uses the same exception.
+  apks=$(git ls-files '*.apk' || true)
+  if printf '%s\n' "$apks" | grep -iE '\.apk$' | grep -viE 'overlay|FrameworkResOverlay' | grep -q .; then
     bad "APK tracked in git"
   else
-    ok "no tracked APKs"
+    ok "no tracked app APKs"
   fi
   if git ls-files | grep -qE 'debug\.keystore|\.idsig$|\.tar\.gz$'; then
     bad "keystore / idsig / tarball tracked"

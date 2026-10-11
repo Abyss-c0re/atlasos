@@ -1,9 +1,9 @@
-# AtlasOS algocubes (salvage from heretic session 019ff9d1)
+# AtlasOS IMS salvage (session 019ff9d1)
 
 Cube law: energy must flow. These units are ROM-worthy. The rest is heresy.
 HOLD FLASH. Next GSI pin only. Never resume 019ff9d1 to fix live.
 
-## Keep (algocubes)
+## Keep
 
 | Cube | SoT | Landed |
 |------|-----|--------|
