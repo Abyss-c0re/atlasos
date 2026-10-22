@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- sw600dp aliases the IME nav height to this, and the taskbar reports
+         it as the navigation inset. 56dp is 88px at 252dpi: the empty strip
+         left after the buttons are hidden. 0dp removes the strip while this
+         overlay is enabled. Disabling the overlay restores the framework 56dp. -->
+    <dimen name="taskbar_frame_height">0dp</dimen>
+</resources>

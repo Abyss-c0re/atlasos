@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# ATLAS_OVERLAY_STAMP=2
+# ATLAS_OVERLAY_STAMP=3
 trap '' HUP
 # Hide IME toggle → the nav-bar overlay.
 # Controls writes titan2_tweaks/ime_switcher_hidden (and, on newer builds,
@@ -7,11 +7,16 @@ trap '' HUP
 # Does not remove keyboards. A trimmed enabled_input_methods list is restored
 # from the legacy switcher backup while the bar stays hidden.
 #
-# config_imeDrawsImeNavBar true makes InputMethodService draw an 89px bar.
-# The gestural navbar overlay forces that bool true. The product package
-# com.titanus2.overlay.imenavbar is the cooked override. A live image that
-# does not have the package yet gets the same bool from a fabricated overlay.
-VER=1.1-fab-bool
+# config_imeDrawsImeNavBar true makes InputMethodService draw the buttons.
+# Turning that bool off leaves the 88px taskbar inset (taskbar_frame_height
+# 56dp at 252dpi) and an empty strip. The product package
+# com.titanus2.overlay.imenavbar sets the draw bool false, hides the nav bar
+# while the keyboard is up, and sets taskbar_frame_height to 0dp.
+# A live image without that package gets the bools from fabricated overlays.
+# The 0dp inset is a dimension; cmd overlay fabricate cannot write one, so
+# TitanImeNavInset.jar commits it. Shell fabricate stays the bool path.
+# com.android.launcher3 caches the height until its process starts again.
+VER=1.2-no-empty
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 ST=/data/local/tmp
 APP=/data/user/0/com.titanus2.controls
@@ -21,6 +26,10 @@ LOCK=$ST/titan2_ime_bar.lock.d
 STATIC=com.titanus2.overlay.imenavbar
 FAB_NAME=TitanNoImeNavBar
 FAB="com.android.shell:$FAB_NAME"
+FAB_NAV_NAME=TitanHideNavForIme
+FAB_NAV="com.android.shell:$FAB_NAV_NAME"
+FAB_INSET_NAME=TitanImeNavInset
+FAB_INSET="com.android.shell:$FAB_INSET_NAME"
 
 log() {
   echo "ime-bar $VER $*" >>"$ST/titan2-ime-bar.log" 2>/dev/null || true
@@ -64,6 +73,33 @@ lookup_hidden() {
   return 1
 }
 
+# 1 when the keyboard-up nav policy is the hide value.
+lookup_nav_hidden() {
+  _v=`cmd overlay lookup android android:bool/config_hideNavBarForKeyboard 2>/dev/null | tr -d '\r\n '`
+  case "$_v" in true|1) return 0 ;; esac
+  return 1
+}
+
+# 1 when the taskbar inset dimen is zero. "56.0dip" is the empty strip.
+lookup_inset_gone() {
+  _v=`cmd overlay lookup android android:dimen/taskbar_frame_height 2>/dev/null | tr -d '\r\n '`
+  _n=`printf '%s' "$_v" | sed 's/[^0-9.]//g'`
+  case "$_n" in
+    ''|*[1-9]*) return 1 ;;
+  esac
+  return 0
+}
+
+enable_id() {
+  cmd overlay enable --user 0 "$1" >/dev/null 2>&1 \
+    || cmd overlay enable --user current "$1" >/dev/null 2>&1 || true
+}
+
+disable_id() {
+  cmd overlay disable --user 0 "$1" >/dev/null 2>&1 \
+    || cmd overlay disable --user current "$1" >/dev/null 2>&1 || true
+}
+
 # 0x12 = TYPE_INT_BOOLEAN. false=0x0 (hide the bar), true=0xffffffff (draw it).
 fab_draw() {
   if [ "$1" = 1 ]; then
@@ -73,24 +109,71 @@ fab_draw() {
   fi
   cmd overlay fabricate --target android --name "$FAB_NAME" \
     android:bool/config_imeDrawsImeNavBar 0x12 "$_enc" >/dev/null 2>&1 || true
-  cmd overlay enable --user 0 "$FAB" >/dev/null 2>&1 \
-    || cmd overlay enable --user current "$FAB" >/dev/null 2>&1 || true
-  cmd overlay set-priority --user 0 "$FAB" highest >/dev/null 2>&1 \
-    || cmd overlay set-priority --user current "$FAB" highest >/dev/null 2>&1 || true
+  enable_id "$FAB"
+}
+
+# 1 = do not force the nav strip on while the keyboard is up.
+fab_nav() {
+  if [ "$1" = 1 ]; then
+    _enc=0xffffffff
+  else
+    _enc=0x0
+  fi
+  cmd overlay fabricate --target android --name "$FAB_NAV_NAME" \
+    android:bool/config_hideNavBarForKeyboard 0x12 "$_enc" >/dev/null 2>&1 || true
+  enable_id "$FAB_NAV"
+}
+
+inset_jar() {
+  for _d in /data/local/tmp/titan2-ime-nav-inset.jar /data/adb/titan2/titan2-ime-nav-inset.jar; do
+    if [ -f "$_d" ]; then
+      printf '%s\n' "$_d"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Enable the 0dp inset. Create it once per boot when the jar is present.
+ensure_inset() {
+  enable_id "$FAB_INSET"
+  lookup_inset_gone && return 0
+  _jar=`inset_jar` || _jar=
+  [ -n "$_jar" ] || return 1
+  _b=`boot_id`
+  _tried=`cat "$ST/titan2_ime_bar.inset_try" 2>/dev/null | tr -d '\r\n'`
+  if [ "$_tried" = "$_b" ]; then
+    return 1
+  fi
+  printf '%s\n' "$_b" >"$ST/titan2_ime_bar.inset_try" 2>/dev/null || true
+  CLASSPATH="$_jar" app_process /system/bin TitanImeNavInset \
+    "$FAB_INSET_NAME" android:dimen/taskbar_frame_height 0 1 \
+    >>"$ST/titan2-ime-bar.log" 2>&1 || true
+  enable_id "$FAB_INSET"
+  lookup_inset_gone
+}
+
+# The running taskbar keeps the old pixel height until launcher3 starts again.
+reload_taskbar() {
+  [ "$1" = "$2" ] && return 0
+  am force-stop com.android.launcher3 >/dev/null 2>&1 || true
+  log "taskbar reload inset=$2"
 }
 
 set_overlays() {
   if [ "$1" = 1 ]; then
-    cmd overlay enable --user 0 "$STATIC" >/dev/null 2>&1 \
-      || cmd overlay enable --user current "$STATIC" >/dev/null 2>&1 || true
+    enable_id "$STATIC"
     lookup_hidden || fab_draw 0
+    lookup_nav_hidden || fab_nav 1
+    lookup_inset_gone || ensure_inset || true
   else
-    cmd overlay disable --user 0 "$STATIC" >/dev/null 2>&1 \
-      || cmd overlay disable --user current "$STATIC" >/dev/null 2>&1 || true
-    cmd overlay disable --user 0 "$FAB" >/dev/null 2>&1 \
-      || cmd overlay disable --user current "$FAB" >/dev/null 2>&1 || true
-    # A static product overlay can stay forced off. Fabricate true so Show works.
+    disable_id "$STATIC"
+    disable_id "$FAB"
+    disable_id "$FAB_NAV"
+    disable_id "$FAB_INSET"
+    # A static product overlay can stay forced off. Fabricate the show values.
     lookup_hidden && fab_draw 1
+    lookup_nav_hidden && fab_nav 0
   fi
 }
 
@@ -154,33 +237,39 @@ EOF
 apply() {
   _w=`want_hide`
   _b=`boot_id`
-  if lookup_hidden; then _now=1; else _now=0; fi
+  if lookup_hidden; then _draw=1; else _draw=0; fi
+  if lookup_inset_gone; then _inset=1; else _inset=0; fi
   _prev=`cat "$WANT" 2>/dev/null | tr -d '\r\n'`
-  # Re-apply when the bool drifts. A matching want file is not proof the bar moved.
-  if [ "$_prev" = "$_b $_w" ] && [ "$_now" = "$_w" ]; then
+  # A hidden draw bool is not enough. The empty strip is the inset.
+  if [ "$_prev" = "$_b $_w" ] && [ "$_draw" = "$_w" ] && [ "$_inset" = "$_w" ]; then
     return 0
   fi
-  if [ "$_now" != "$_w" ]; then
-    set_overlays "$_w"
-    if lookup_hidden; then _ok=1; else _ok=0; fi
-    if [ "$_ok" != "$_w" ]; then
-      _fail="$ST/titan2_ime_bar.fail"
-      _ft=`cat "$_fail" 2>/dev/null | tr -d '\r\n'`
-      if [ "$_ft" != "$_b $_w" ]; then
-        log "overlay unchanged hide=$_w"
-        printf '%s %s\n' "$_b" "$_w" >"$_fail" 2>/dev/null || true
-      fi
-      return 0
-    fi
-    rm -f "$ST/titan2_ime_bar.fail" 2>/dev/null || true
-    if [ "$_w" = 1 ]; then
-      restore_trimmed_imes
-    fi
-    restart_ime
-    log "applied hide=$_w"
-  else
+  if [ "$_draw" = "$_w" ] && [ "$_inset" = "$_w" ]; then
     log "already hide=$_w"
+    printf '%s %s\n' "$_b" "$_w" >"$WANT" 2>/dev/null || true
+    chmod 666 "$WANT" 2>/dev/null || true
+    return 0
   fi
+  _inset_before=$_inset
+  set_overlays "$_w"
+  if lookup_hidden; then _draw=1; else _draw=0; fi
+  if lookup_inset_gone; then _inset=1; else _inset=0; fi
+  if [ "$_draw" != "$_w" ] || [ "$_inset" != "$_w" ]; then
+    _fail="$ST/titan2_ime_bar.fail"
+    _ft=`cat "$_fail" 2>/dev/null | tr -d '\r\n'`
+    if [ "$_ft" != "$_b $_w" ]; then
+      log "overlay unchanged hide=$_w draw=$_draw inset=$_inset"
+      printf '%s %s\n' "$_b" "$_w" >"$_fail" 2>/dev/null || true
+    fi
+    return 0
+  fi
+  rm -f "$ST/titan2_ime_bar.fail" 2>/dev/null || true
+  reload_taskbar "$_inset_before" "$_inset"
+  if [ "$_w" = 1 ]; then
+    restore_trimmed_imes
+  fi
+  restart_ime
+  log "applied hide=$_w"
   printf '%s %s\n' "$_b" "$_w" >"$WANT" 2>/dev/null || true
   chmod 666 "$WANT" 2>/dev/null || true
 }

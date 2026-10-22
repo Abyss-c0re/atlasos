@@ -1,17 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.titanus2.overlay.imenavbar"
-    android:versionCode="1"
-    android:versionName="1.0-no-ime-navbar">
+    android:versionCode="2"
+    android:versionName="1.1-no-empty-inset">
     <uses-sdk android:minSdkVersion="34" android:targetSdkVersion="36"/>
     <!--
-      This panel is sw914dp, so the gestural overlay turns on
-      config_imeDrawsImeNavBar. InputMethodService then draws an 89px
-      bar with a zero navigation inset and apps lay out under it.
-      On the running GSI that overlay is already priority 2147483647.
-      Match it. com.titanus2 sorts after com.android.internal, so a tie
-      applies this bool last. Mutable so Hide IME can disable it and
-      the bar can come back. Hardware Back is key 158.
+      This panel is sw914dp. The gestural overlay turns
+      config_imeDrawsImeNavBar on, and the taskbar reports
+      taskbar_frame_height (56dp, 88px at 252dpi) as the nav inset.
+      Hiding the buttons leaves that empty strip. This overlay turns
+      the draw bool off, hides the nav bar while the keyboard is up,
+      and sets the taskbar frame height to 0dp so the strip is gone.
+      com.titanus2 sorts after com.android.internal, so a tie applies
+      last. Mutable so Hide IME can disable it and Show brings the
+      inset back. Hardware Back is key 158.
     -->
     <overlay
         android:targetPackage="android"

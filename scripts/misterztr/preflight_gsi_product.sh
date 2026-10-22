@@ -121,7 +121,10 @@ if grep -q 'Hide IME' "${ROOT}/apps/titan_controls/src/com/titanus2/controls/Mai
     && grep -q 'titan2-ime-bar.sh' "${ROOT}/patches/bin/titan2-pad-agent.sh" \
     && grep -q 'titan2-ime-bar.sh' "${ROOT}/packages/gsi_product/titanus2.mk" \
     && grep -q 'want_hide' "${ROOT}/patches/bin/titan2-ime-bar.sh" \
-    && grep -q 'config_imeDrawsImeNavBar">false' "${ROOT}/packages/gsi_product/overlays/TitanImeNavBarOverlay/res/values/config.xml"; then
+    && grep -q 'config_imeDrawsImeNavBar">false' "${ROOT}/packages/gsi_product/overlays/TitanImeNavBarOverlay/res/values/config.xml" \
+    && grep -q 'config_hideNavBarForKeyboard">true' "${ROOT}/packages/gsi_product/overlays/TitanImeNavBarOverlay/res/values/config.xml" \
+    && grep -q 'taskbar_frame_height">0dp' "${ROOT}/packages/gsi_product/overlays/TitanImeNavBarOverlay/res/values/dimens.xml" \
+    && grep -q 'TitanImeNavInset' "${ROOT}/patches/bin/titan2-ime-bar.sh"; then
   ok "Hide IME toggle drives the nav-bar overlay"
 else
   bad "Hide IME toggle is not wired to the overlay"

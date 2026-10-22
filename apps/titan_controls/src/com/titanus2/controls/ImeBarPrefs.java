@@ -24,7 +24,12 @@ public final class ImeBarPrefs {
     public static final String GLOBAL = "titan2_hide_ime_bar";
 
     private static final String STATIC_OVERLAY = "com.titanus2.overlay.imenavbar";
-    private static final String LIVE_OVERLAY = "com.android.shell:TitanNoImeNavBar";
+    /** Draw bool, keyboard-up nav policy, and the 0dp taskbar inset. */
+    private static final String[] LIVE_OVERLAYS = {
+            "com.android.shell:TitanNoImeNavBar",
+            "com.android.shell:TitanHideNavForIme",
+            "com.android.shell:TitanImeNavInset",
+    };
 
     private ImeBarPrefs() {}
 
@@ -66,15 +71,15 @@ public final class ImeBarPrefs {
             if (om == null) return;
             UserHandle user = UserHandle.getUserHandleForUid(Process.myUid());
             setEnabled(om, STATIC_OVERLAY, hide, user);
-            int colon = LIVE_OVERLAY.indexOf(':');
-            if (colon > 0) {
-                Class<?> idClass = Class.forName("android.content.om.OverlayIdentifier");
+            Class<?> idClass = Class.forName("android.content.om.OverlayIdentifier");
+            java.lang.reflect.Method setLive = om.getClass()
+                    .getMethod("setEnabled", idClass, boolean.class, UserHandle.class);
+            for (String live : LIVE_OVERLAYS) {
+                int colon = live.indexOf(':');
+                if (colon <= 0) continue;
                 Object id = idClass.getConstructor(String.class, String.class).newInstance(
-                        LIVE_OVERLAY.substring(0, colon),
-                        LIVE_OVERLAY.substring(colon + 1));
-                om.getClass()
-                        .getMethod("setEnabled", idClass, boolean.class, UserHandle.class)
-                        .invoke(om, id, hide, user);
+                        live.substring(0, colon), live.substring(colon + 1));
+                setLive.invoke(om, id, hide, user);
             }
         } catch (Throwable ignored) {}
     }

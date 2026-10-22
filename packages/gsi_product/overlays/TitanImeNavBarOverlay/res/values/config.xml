@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <bool name="config_imeDrawsImeNavBar">false</bool>
+    <!-- Read when system_server starts. While the keyboard is up, do not
+         force the system nav strip back on. Hardware Back is key 158. -->
+    <bool name="config_hideNavBarForKeyboard">true</bool>
 </resources>
