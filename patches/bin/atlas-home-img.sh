@@ -1,4 +1,5 @@
 #!/bin/sh
+# ATLAS_OVERLAY_STAMP=1
 # Debian home is an ext4 image in the Atlas app's files directory.
 # The system LP stays the OS. This image is the home partition:
 # create, grow, recreate, export, and load.

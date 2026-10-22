@@ -1,4 +1,5 @@
 #!/system/bin/sh
+# ATLAS_OVERLAY_STAMP=1
 # atlas-hybrid — combined OS: Debian userspace + Android kernel + Android apps
 #
 # Product SoT: docs/project/ATLAS_ROM_SHIP.md · docs/project/ATLAS_HYBRID_STORAGE.md

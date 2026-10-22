@@ -1,11 +1,17 @@
 #!/system/bin/sh
+# ATLAS_OVERLAY_STAMP=2
 trap '' HUP
 # Hide IME toggle → the nav-bar overlay.
 # Controls writes titan2_tweaks/ime_switcher_hidden (and, on newer builds,
 # settings global titan2_hide_ime_bar). Default is hide.
 # Does not remove keyboards. A trimmed enabled_input_methods list is restored
 # from the legacy switcher backup while the bar stays hidden.
-VER=1.0-hide-ime
+#
+# config_imeDrawsImeNavBar true makes InputMethodService draw an 89px bar.
+# The gestural navbar overlay forces that bool true. The product package
+# com.titanus2.overlay.imenavbar is the cooked override. A live image that
+# does not have the package yet gets the same bool from a fabricated overlay.
+VER=1.1-fab-bool
 export PATH=/system/bin:/system/xbin:/vendor/bin:$PATH
 ST=/data/local/tmp
 APP=/data/user/0/com.titanus2.controls
@@ -13,7 +19,8 @@ PREF=$APP/shared_prefs/titan2_tweaks.xml
 WANT=$ST/titan2_ime_bar.want
 LOCK=$ST/titan2_ime_bar.lock.d
 STATIC=com.titanus2.overlay.imenavbar
-FAB='com.android.shell:TitanNoImeNavBar'
+FAB_NAME=TitanNoImeNavBar
+FAB="com.android.shell:$FAB_NAME"
 
 log() {
   echo "ime-bar $VER $*" >>"$ST/titan2-ime-bar.log" 2>/dev/null || true
@@ -57,13 +64,33 @@ lookup_hidden() {
   return 1
 }
 
+# 0x12 = TYPE_INT_BOOLEAN. false=0x0 (hide the bar), true=0xffffffff (draw it).
+fab_draw() {
+  if [ "$1" = 1 ]; then
+    _enc=0xffffffff
+  else
+    _enc=0x0
+  fi
+  cmd overlay fabricate --target android --name "$FAB_NAME" \
+    android:bool/config_imeDrawsImeNavBar 0x12 "$_enc" >/dev/null 2>&1 || true
+  cmd overlay enable --user 0 "$FAB" >/dev/null 2>&1 \
+    || cmd overlay enable --user current "$FAB" >/dev/null 2>&1 || true
+  cmd overlay set-priority --user 0 "$FAB" highest >/dev/null 2>&1 \
+    || cmd overlay set-priority --user current "$FAB" highest >/dev/null 2>&1 || true
+}
+
 set_overlays() {
   if [ "$1" = 1 ]; then
-    cmd overlay enable --user 0 "$STATIC" >/dev/null 2>&1 || true
-    cmd overlay enable --user 0 "$FAB" >/dev/null 2>&1 || true
+    cmd overlay enable --user 0 "$STATIC" >/dev/null 2>&1 \
+      || cmd overlay enable --user current "$STATIC" >/dev/null 2>&1 || true
+    lookup_hidden || fab_draw 0
   else
-    cmd overlay disable --user 0 "$STATIC" >/dev/null 2>&1 || true
-    cmd overlay disable --user 0 "$FAB" >/dev/null 2>&1 || true
+    cmd overlay disable --user 0 "$STATIC" >/dev/null 2>&1 \
+      || cmd overlay disable --user current "$STATIC" >/dev/null 2>&1 || true
+    cmd overlay disable --user 0 "$FAB" >/dev/null 2>&1 \
+      || cmd overlay disable --user current "$FAB" >/dev/null 2>&1 || true
+    # A static product overlay can stay forced off. Fabricate true so Show works.
+    lookup_hidden && fab_draw 1
   fi
 }
 
@@ -127,16 +154,25 @@ EOF
 apply() {
   _w=`want_hide`
   _b=`boot_id`
-  _prev=`cat "$WANT" 2>/dev/null | tr -d '\r\n'`
-  [ "$_prev" = "$_b $_w" ] && return 0
   if lookup_hidden; then _now=1; else _now=0; fi
+  _prev=`cat "$WANT" 2>/dev/null | tr -d '\r\n'`
+  # Re-apply when the bool drifts. A matching want file is not proof the bar moved.
+  if [ "$_prev" = "$_b $_w" ] && [ "$_now" = "$_w" ]; then
+    return 0
+  fi
   if [ "$_now" != "$_w" ]; then
     set_overlays "$_w"
     if lookup_hidden; then _ok=1; else _ok=0; fi
     if [ "$_ok" != "$_w" ]; then
-      log "overlay unchanged hide=$_w"
+      _fail="$ST/titan2_ime_bar.fail"
+      _ft=`cat "$_fail" 2>/dev/null | tr -d '\r\n'`
+      if [ "$_ft" != "$_b $_w" ]; then
+        log "overlay unchanged hide=$_w"
+        printf '%s %s\n' "$_b" "$_w" >"$_fail" 2>/dev/null || true
+      fi
       return 0
     fi
+    rm -f "$ST/titan2_ime_bar.fail" 2>/dev/null || true
     if [ "$_w" = 1 ]; then
       restore_trimmed_imes
     fi

@@ -1,0 +1,11 @@
+# Drop userdata script copies once /system has that overlay generation.
+# KernelSU 84 calls the same script earlier. A second pass is idempotent
+# and still runs when service.d is an older bridge that only republishes.
+service titan2-overlay-retire /system/bin/titan2-overlay-retire.sh
+    user root
+    group root shell
+    oneshot
+    disabled
+
+on property:sys.boot_completed=1
+    start titan2-overlay-retire

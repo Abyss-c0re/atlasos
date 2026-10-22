@@ -50,12 +50,13 @@ if [ -s /data/local/tmp/titan2_ims_simswitch_hold.pid ]; then
   [ -n "$hp" ] && [ -d "/proc/$hp" ] && hold=1
 fi
 if [ "$hold" != "1" ]; then
-  for d in /proc/[0-9]*; do
-    [ -r "$d/cmdline" ] || continue
-    c=$(tr '\0' ' ' <"$d/cmdline" 2>/dev/null)
-    case "$c" in
-      *titan2-ims-simswitch-hold*) hold=1; break ;;
-    esac
+  # pgrep + grep -a -F. A /proc walk with toybox tr '\0' spins one core.
+  for hp in `pgrep -f titan2-ims-simswitch-hold 2>/dev/null`; do
+    case "$hp" in ''|*[!0-9]*) continue ;; esac
+    [ "$(cat /proc/$hp/comm 2>/dev/null)" = "sh" ] || continue
+    grep -a -F -q titan2-ims-simswitch-hold "/proc/$hp/cmdline" 2>/dev/null || continue
+    hold=1
+    break
   done
 fi
 if [ "$hold" = "1" ]; then

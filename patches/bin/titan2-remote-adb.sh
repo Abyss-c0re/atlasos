@@ -1,4 +1,5 @@
 #!/system/bin/sh
+# ATLAS_OVERLAY_STAMP=1
 # titan2-remote-adb — single state machine for Remote TCP ADB
 #
 # DESIRE (SoT for what human wants):
@@ -46,12 +47,40 @@ DENY_FILE=$T2/remote_adb.deny
 WATCH_PID=$ST/titan2_remote_adb_clients.pid
 WATCH_SH=$ST/titan2_remote_adb_clients.sh
 AUTH_DIR=/data/local/atlas-linux/var/lib/atlas-auth
-VER=3.6-wlan-first
+VER=3.7-no-tr-cmdline
+# NO_TR_CMDLINE=1
 # REMOTE_ADB_ADDR=lan — never publish 127.0.0.1 as the connect address.
 
 log() {
   mkdir -p "$ST" 2>/dev/null || true
   { echo "remote-adb: $*" >>"$ST/titan2_pad_agent.log"; } 2>/dev/null || true
+}
+
+# NEVER tr '\0' on /proc/pid/cmdline. Toybox tr spins in-kernel at one full
+# core (2026-10-22 apply: ~20h CPU, screen-off drain, Grok's 5s auth refresh
+# then failed and the pager quit). Match with grep -a -F, candidates from pgrep.
+_cmdline_has() {
+  _ch_pid=$1
+  _ch_pat=$2
+  [ -n "$_ch_pid" ] && [ -n "$_ch_pat" ] || return 1
+  case "$_ch_pid" in *[!0-9]*) return 1 ;; esac
+  [ -r "/proc/$_ch_pid/cmdline" ] || return 1
+  grep -a -F -q "$_ch_pat" "/proc/$_ch_pid/cmdline" 2>/dev/null
+}
+
+_kill_cmdline() {
+  _kc_pat=$1
+  [ -n "$_kc_pat" ] || return 0
+  command -v pgrep >/dev/null 2>&1 || return 0
+  for _kc_pid in `pgrep -f "$_kc_pat" 2>/dev/null`; do
+    case "$_kc_pid" in ''|*[!0-9]*) continue ;; esac
+    [ "$_kc_pid" = "$$" ] && continue
+    [ "$_kc_pid" = "$PPID" ] && continue
+    _kc_comm=`cat "/proc/$_kc_pid/comm" 2>/dev/null` || continue
+    [ "$_kc_comm" = "sh" ] || continue
+    _cmdline_has "$_kc_pid" "$_kc_pat" || continue
+    kill "$_kc_pid" 2>/dev/null || true
+  done
 }
 
 _lock() {
@@ -396,10 +425,7 @@ stop_clients_watch() {
     kill `tr -d ' \r\n' <"$WATCH_PID"` 2>/dev/null || true
     rm -f "$WATCH_PID" 2>/dev/null || true
   fi
-  for d in /proc/[0-9]*; do
-    c=$(tr '\0' ' ' <"$d/cmdline" 2>/dev/null) || continue
-    case "$c" in *titan2_remote_adb_clients*) kill "${d#/proc/}" 2>/dev/null ;; esac
-  done
+  _kill_cmdline titan2_remote_adb_clients
 }
 
 start_clients_watch() {
@@ -872,10 +898,7 @@ exit 1
 WAITEOF
   chmod 755 "$PAIR_WAIT_SH" 2>/dev/null || true
   # Kill prior waiter
-  for d in /proc/[0-9]*; do
-    c=$(tr '\0' ' ' <"$d/cmdline" 2>/dev/null) || continue
-    case "$c" in *titan2_remote_adb_pair_wait*) kill "${d#/proc/}" 2>/dev/null ;; esac
-  done
+  _kill_cmdline titan2_remote_adb_pair_wait
   nohup /system/bin/sh "$PAIR_WAIT_SH" "$p" >>"$ST/titan2_pad_agent.log" 2>&1 &
   echo $! >"$ST/titan2_remote_adb_pair_wait.pid" 2>/dev/null || true
   log "pair waiter pid=$(cat $ST/titan2_remote_adb_pair_wait.pid 2>/dev/null)"
@@ -902,10 +925,7 @@ cmd_pair_cancel() {
     kill `tr -d ' \r\n' <"$ST/titan2_remote_adb_pair_wait.pid"` 2>/dev/null || true
     rm -f "$ST/titan2_remote_adb_pair_wait.pid" 2>/dev/null || true
   fi
-  for d in /proc/[0-9]*; do
-    c=$(tr '\0' ' ' <"$d/cmdline" 2>/dev/null) || continue
-    case "$c" in *titan2_remote_adb_pair_wait*) kill "${d#/proc/}" 2>/dev/null ;; esac
-  done
+  _kill_cmdline titan2_remote_adb_pair_wait
   rm -f "$PAIR_FILE" "$PAIR_PIN" "$PAIR_HOST" "$PAIR_CMD" 2>/dev/null || true
   # Serialize any late pair() still holding the lock
   _lock

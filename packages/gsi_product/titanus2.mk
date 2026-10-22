@@ -111,6 +111,8 @@ PRODUCT_PACKAGES += \
     titan2-tether.sh \
     titan2-fw-observe \
     titan2-remote-adb.sh \
+    titan2-overlay-retire.sh \
+    titan2-overlay-retire.rc \
     titan2-vpn-hotspot.sh \
     titan2-netfw.rc \
     TitanNetFw \

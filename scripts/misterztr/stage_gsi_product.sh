@@ -233,6 +233,7 @@ titan2-fw
 titan2-fw.sh
 titan2-fw-observe
 titan2-remote-adb.sh
+titan2-overlay-retire.sh
 titan2-vpn-hotspot.sh
 titan2-tether.sh
 "
@@ -257,6 +258,7 @@ done
 
 refresh_sot "$ROOT/packages/titan_ims/bin/titan2-ims-setup.sh" "$SRC_SYS/titan2-ims-setup.sh"
 refresh_sot "$ROOT/patches/init/titan2-pad-agent.rc" "$SRC_SYS/titan2-pad-agent.rc"
+refresh_sot "$ROOT/patches/init/titan2-overlay-retire.rc" "$SRC_SYS/titan2-overlay-retire.rc"
 refresh_sot "$ROOT/patches/init/titan2-kernel-cube.rc" "$SRC_SYS/titan2-kernel-cube.rc"
 refresh_sot "$ROOT/packages/titan_ims/init/titan2-ims.rc" "$SRC_SYS/titan2-ims.rc"
 refresh_sot "$ROOT/patches/init/titan2-sensor-privacy.rc" "$SRC_SYS/titan2-sensor-privacy.rc"

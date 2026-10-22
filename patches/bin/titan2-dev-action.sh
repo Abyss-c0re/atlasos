@@ -1,4 +1,5 @@
 #!/system/bin/sh
+# ATLAS_OVERLAY_STAMP=1
 # titan2-dev-action — OPTIMIZE Phase 3 peel from pad-agent tower
 # SoT: docs/project/OPTIMIZE_SOURCE_PRODUCT.md
 # Invoked by pad-agent: <action> [args]
@@ -731,16 +732,35 @@ act0="${1-}"
 # Allow "action" or "action <nonce>"
 
 # Dispatch Remote ADB to dedicated state-machine script (3.0 redesign).
+# A tmp tip wins only while the image has no overlay stamp, or the tip
+# stamp is strictly newer. An installed update with the same stamp is
+# the only copy.
+_ov_stamp() {
+  _ov=$(grep -m1 '^# ATLAS_OVERLAY_STAMP=' "$1" 2>/dev/null) || true
+  _ov=${_ov##*ATLAS_OVERLAY_STAMP=}
+  _ov=$(printf '%s' "$_ov" | tr -cd '0-9')
+  [ -n "$_ov" ] || _ov=0
+  printf '%s\n' "$_ov"
+}
+
 _remote_adb_dispatch() {
+  _ra_tip=/data/local/tmp/titan2-remote-adb.sh
+  _ra_img=/system/bin/titan2-remote-adb.sh
+  if [ -f "$_ra_tip" ] && [ -f "$_ra_img" ]; then
+    _ra_is=$(_ov_stamp "$_ra_img")
+    _ra_ts=$(_ov_stamp "$_ra_tip")
+    if [ "$_ra_is" -gt 0 ] && [ "$_ra_ts" -le "$_ra_is" ]; then
+      _ra_tip=""
+    fi
+  fi
   for _ra in \
-    /data/local/tmp/titan2-remote-adb.sh \
+    $_ra_tip \
     /system/bin/titan2-remote-adb.sh \
     /product/bin/titan2-remote-adb.sh
   do
-    if [ -f "$_ra" ]; then
-      /system/bin/sh "$_ra" "$@"
-      return $?
-    fi
+    [ -n "$_ra" ] && [ -f "$_ra" ] || continue
+    /system/bin/sh "$_ra" "$@"
+    return $?
   done
   log "remote-adb script missing — cannot $*"
   return 1

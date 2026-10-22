@@ -27,7 +27,9 @@ if [ -f "$PIDF" ]; then
     *)
       if [ -d "/proc/$old" ] && [ "$old" != "$$" ]; then
         # another live power-wake — exit
-        if tr '\0' ' ' <"/proc/$old/cmdline" 2>/dev/null | grep -q titan2-power-wake; then
+        # grep -a -F only. toybox tr '\0' on cmdline spins one core.
+        if [ -r "/proc/$old/cmdline" ] \
+            && grep -a -F -q titan2-power-wake "/proc/$old/cmdline" 2>/dev/null; then
           exit 0
         fi
       fi

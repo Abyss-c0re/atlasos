@@ -10,12 +10,12 @@
       bar with a zero navigation inset and apps lay out under it.
       On the running GSI that overlay is already priority 2147483647.
       Match it. com.titanus2 sorts after com.android.internal, so a tie
-      applies this bool last. Hardware Back is key 158.
+      applies this bool last. Mutable so Hide IME can disable it and
+      the bar can come back. Hardware Back is key 158.
     -->
     <overlay
         android:targetPackage="android"
-        android:priority="2147483647"
-        android:isStatic="true"/>
+        android:priority="2147483647"/>
     <application
         android:hasCode="false"
         android:label="Titan IME nav bar"/>

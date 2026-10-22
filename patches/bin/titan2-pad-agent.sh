@@ -1,4 +1,5 @@
 #!/system/bin/sh
+# ATLAS_OVERLAY_STAMP=1
 # 2.212-dead-plane (drop dead residual helpers; densify plane readers / typing-watch live)
 # Titan 2 control agent — pad/LED/specials supervisor (OPTIMIZE Phase 3 residual).
 # Plane SoT: /data/misc/titan2 + /data/local/tmp. Peels: packages/gsi_product/prebuilt_sysbin.
@@ -458,6 +459,16 @@ _still_lock_owner() {
 }
 
 # --- Main-loop densify (2.201): shared reexec / lock / keys_pause / drain ---
+# Tmp pad-agent is a live tip. Once the image stamp is set and the tip is
+# not newer, reexec stays on this copy so an update does not fork a second agent.
+_ov_stamp() {
+  _ov=$(grep -m1 '^# ATLAS_OVERLAY_STAMP=' "$1" 2>/dev/null) || true
+  _ov=${_ov##*ATLAS_OVERLAY_STAMP=}
+  _ov=$(printf '%s' "$_ov" | tr -cd '0-9')
+  [ -n "$_ov" ] || _ov=0
+  printf '%s\n' "$_ov"
+}
+
 _pure_reexec_self() {
   _why="${1:-reexec}"
   [ -n "$_why" ] && log "$_why" 2>/dev/null || true
@@ -465,8 +476,14 @@ _pure_reexec_self() {
   unset AGENT_VER 2>/dev/null || true
   trap - EXIT INT TERM HUP 2>/dev/null || true
   export TITAN2_PURE_RELOAD=1 TITAN2_FAST_BOOT=1
-  if [ -x /data/local/tmp/titan2-pad-agent.sh ]; then
-    exec /system/bin/sh /data/local/tmp/titan2-pad-agent.sh
+  _pa_tip=/data/local/tmp/titan2-pad-agent.sh
+  _pa_img=/system/bin/titan2-pad-agent.sh
+  if [ -x "$_pa_tip" ]; then
+    _pa_is=$(_ov_stamp "$_pa_img")
+    _pa_ts=$(_ov_stamp "$_pa_tip")
+    if [ "$_pa_is" -eq 0 ] || [ "$_pa_ts" -gt "$_pa_is" ]; then
+      exec /system/bin/sh "$_pa_tip"
+    fi
   fi
   exec /system/bin/sh "$0"
 }

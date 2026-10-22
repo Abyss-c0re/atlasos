@@ -345,6 +345,48 @@ if grep -q 'BEST_IP=wlan-first' "$_radb" 2>/dev/null; then
 else
   bad "titan2-remote-adb.sh lost wlan-first address"
 fi
+if grep -q 'NO_TR_CMDLINE=1' "$_radb" && grep -q '_kill_cmdline' "$_radb"; then
+  ok "remote adb cmdline scan cannot spin toybox tr"
+else
+  bad "titan2-remote-adb.sh missing NO_TR_CMDLINE guard"
+fi
+if grep -q '^# ATLAS_OVERLAY_STAMP=' "$_radb"; then
+  ok "remote adb carries an overlay stamp"
+else
+  bad "titan2-remote-adb.sh has no overlay stamp"
+fi
+_ret="$ROOT/patches/bin/titan2-overlay-retire.sh"
+if grep -q 'ATLAS_OVERLAY_STAMP' "$_ret" && grep -q 'image_wins' "$_ret" \
+    && grep -q 'titan2-overlay-retire.sh' "$ROOT/packages/gsi_product/titanus2.mk" \
+    && grep -q 'titan2-overlay-retire.sh' "$ROOT/patches/bin/84-atlas-home-adb.sh" \
+    && ! grep -q 'cp -f "$MARK/titan2-remote-adb.sh"' "$ROOT/patches/bin/84-atlas-home-adb.sh"; then
+  ok "overlay retire keeps one copy when the image has the stamp"
+else
+  bad "overlay retire is missing or 84 still republishes a second remote-adb"
+fi
+# 2026-10-22: toybox tr '\0' on /proc/pid/cmdline pegs one core until reboot.
+# Full-line comments may name that bug. A code line fails the image.
+_tr_hit=0
+while IFS= read -r _tf; do
+  [ -n "$_tf" ] || continue
+  _bad=$(awk '
+    /^[[:space:]]*#/ { next }
+    /tr[[:space:]]+[\047"]\\0[\047"]/ { print FILENAME ":" FNR ":" $0 }
+  ' "$_tf") || true
+  if [ -n "$_bad" ]; then
+    bad "toybox tr cmdline read would ship: $_bad"
+    _tr_hit=1
+  fi
+done < <(find \
+  "$ROOT/packages/gsi_product/prebuilt_sysbin" \
+  "$ROOT/packages/gsi_product/prebuilt_usb_hid" \
+  "$ROOT/packages/titan_openwrt" \
+  "$ROOT/packages/titan_ims/bin" \
+  "$ROOT/patches/bin" \
+  -type f \( -name '*.sh' -o -name 'titan2-fw' -o -name 'openwrt-lpctl' \) 2>/dev/null)
+if [ "$_tr_hit" -eq 0 ]; then
+  ok "packaged shells do not read cmdline with toybox tr"
+fi
 if cmp -s "$_desk" "$ROOT/apps/titan_atlas/assets/bin/atlas-desk-session" 2>/dev/null; then
   ok "assets desk session matches native source"
 else

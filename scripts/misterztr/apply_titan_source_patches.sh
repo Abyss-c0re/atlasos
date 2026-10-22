@@ -29,7 +29,7 @@ if [ -f "$MARKER" ] && [ "${FORCE_TITAN_REPATCH:-0}" != "1" ] && [ "$DRY" != "1"
   # Always re-stage product prebuilts (binary can move without SERIES change).
   if [ -x "$ROOT/scripts/misterztr/stage_gsi_product.sh" ]; then
     info "re-stage GSI product prebuilts (patches already applied)"
-    "$ROOT/scripts/misterztr/stage_gsi_product.sh" || warn "stage_gsi_product failed"
+    "$ROOT/scripts/misterztr/stage_gsi_product.sh" || die "stage_gsi_product failed"
   fi
   exit 0
 fi

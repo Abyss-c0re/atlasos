@@ -624,12 +624,10 @@ seed_qs_tiles() {
 _self=$$
 _ppid=$PPID
 _live=""
+# grep -a -F only. toybox tr '\0' on cmdline spins one core.
 _is_privacy_belt() {
-  _c=$(tr '\0' ' ' <"/proc/$1/cmdline" 2>/dev/null)
-  case "$_c" in
-    *titan2-sensor-privacy*) return 0 ;;
-  esac
-  return 1
+  [ -r "/proc/$1/cmdline" ] || return 1
+  grep -a -F -q titan2-sensor-privacy "/proc/$1/cmdline" 2>/dev/null
 }
 if [ -f "$PIDF" ]; then
   _old=$(cat "$PIDF" 2>/dev/null | tr -d '\r\n ')

@@ -177,6 +177,18 @@ sh_binary {
 }
 
 sh_binary {
+    name: "titan2-overlay-retire.sh",
+    src: "titan2-overlay-retire.sh",
+}
+
+prebuilt_etc {
+    name: "titan2-overlay-retire.rc",
+    src: "titan2-overlay-retire.rc",
+    sub_dir: "init",
+    filename_from_src: true,
+}
+
+sh_binary {
     name: "titan2-vpn-hotspot.sh",
     src: "titan2-vpn-hotspot.sh",
 }
