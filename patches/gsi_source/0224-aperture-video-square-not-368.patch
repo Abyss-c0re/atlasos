@@ -1,0 +1,1265 @@
+# project:packages/apps/Aperture
+# 1:1 video encodes one OEM 16:9 HAL size, then center-crops.
+# A square PreviewView plus sensor rotation 90/270 cropped the real
+# 1920×1080 stream to 368×1080 (not a HAL size). Video 1:1 uses a clipped
+# 9:16 finder so CameraX keeps the full frame. Photo 1:1 stays square.
+# FPS stays at most 30. Do not force UHD for every 1:1 bind.
+--- a/app/Android.bp
++++ b/app/Android.bp
+@@ -17,6 +17,13 @@
+     sdk_version: "36",
+     product_specific: true,
+     privileged: true,
++    // gradle is host-only; Soong aapt owns the ROM versionCode.
++    aaptflags: [
++        "--version-code",
++        "48",
++        "--version-name",
++        "19.1to1-oem",
++    ],
+ 
+     overrides: ["Camera2"],
+ 
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -21,8 +21,8 @@
+         applicationId = "org.lineageos.aperture"
+         minSdk = 26
+         targetSdk = 36
+-        versionCode = 45
+-        versionName = "16.oem-2160sq"
++        versionCode = 48
++        versionName = "19.1to1-oem"
+     }
+ 
+     buildTypes {
+--- a/app/src/main/java/org/lineageos/aperture/CameraActivity.kt
++++ b/app/src/main/java/org/lineageos/aperture/CameraActivity.kt
+@@ -250,6 +250,13 @@
+     }
+     private var zoomGestureDetectorIsInProgress = false
+ 
++    /** Last video configuration, so a layout pass can rebind without a StateFlow. */
++    private var titanVideoConfig: CameraConfiguration.Video? = null
++
++    /** Finder size already bound. Stops the tall-view layout pass from rebinding forever. */
++    private var titanFinderBoundFor: String? = null
++    private var titanFinderListenerAdded = false
++
+     private val handler = object : Handler(Looper.getMainLooper()) {
+         override fun handleMessage(msg: Message) {
+             super.handleMessage(msg)
+@@ -1464,16 +1471,143 @@
+         }
+     }
+ 
+-    /** Titan 2 is 1440². 1:1 and video fill the panel; 4:3/16:9 stay letterboxed. */
++    /**
++     * Titan 2 is 1440². 4:3 and 16:9 stay letterboxed in the square view.
++     * Photo 1:1 keeps a square finder: the HAL JPEG is already square.
++     *
++     * Video 1:1 must not. Back/front sensors are mounted at 90°/270°, so a
++     * square [PreviewView] viewport crops the 1920×1080 stream to 368×1080.
++     * The video finder is 9:16 and taller than the panel, clipped to the
++     * center square. That viewport is 16:9 in the buffer, so CameraX keeps
++     * the full frame and the saved file is center-cropped to 1:1.
++     */
+     private fun applyTitanViewFinderScale() {
+         val square = org.lineageos.aperture.utils.TitanAspect.isSquare(
+             viewModel.photoAspectRatio.value
+         )
++        val tallFinder = square && viewModel.cameraMode.value == CameraMode.VIDEO
++        if (mainLayout.width == 0 || mainLayout.height == 0) {
++            mainLayout.post { applyTitanViewFinderScale() }
++            return
++        }
++        ensureTitanFinderLayoutListener()
++        val side = minOf(mainLayout.width, mainLayout.height)
++        val tall = side * 16 / 9
++        mainLayout.clipChildren = true
++        mainLayout.clipToPadding = true
+         viewFinder.scaleType = if (square) {
+             PreviewView.ScaleType.FILL_CENTER
+         } else {
+             PreviewView.ScaleType.FIT_CENTER
+         }
++        viewFinder.updateLayoutParams<ConstraintLayout.LayoutParams> {
++            if (tallFinder) {
++                width = side
++                height = tall
++                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
++                endToEnd = ConstraintLayout.LayoutParams.UNSET
++                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
++                bottomToBottom = ConstraintLayout.LayoutParams.UNSET
++                marginStart = (mainLayout.width - side) / 2
++                marginEnd = 0
++                topMargin = (mainLayout.height - tall) / 2
++                bottomMargin = 0
++            } else {
++                width = 0
++                height = 0
++                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
++                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
++                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
++                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
++                marginStart = 0
++                marginEnd = 0
++                topMargin = 0
++                bottomMargin = 0
++            }
++            horizontalBias = 0.5f
++            verticalBias = 0.5f
++        }
++        val overlayEdge = if (tallFinder) {
++            ConstraintLayout.LayoutParams.PARENT_ID
++        } else {
++            R.id.viewFinder
++        }
++        for (overlay in listOf(gridView, levelerView, countDownView)) {
++            overlay.updateLayoutParams<ConstraintLayout.LayoutParams> {
++                width = 0
++                height = 0
++                startToStart = overlayEdge
++                endToEnd = overlayEdge
++                topToTop = overlayEdge
++                bottomToBottom = overlayEdge
++            }
++        }
++        islandView.updateLayoutParams<ConstraintLayout.LayoutParams> {
++            startToStart = overlayEdge
++            topToTop = overlayEdge
++        }
++        zoomLevel.updateLayoutParams<ConstraintLayout.LayoutParams> {
++            bottomToBottom = overlayEdge
++        }
++        exposureLevel.updateLayoutParams<ConstraintLayout.LayoutParams> {
++            topToTop = overlayEdge
++            bottomToBottom = overlayEdge
++        }
++        if (!tallFinder) {
++            titanFinderBoundFor = null
++        }
++        // The 9:16 finder extends over the shutter. Keep the bars above it
++        // so a tap still stops the recording.
++        val barZ = if (tallFinder) 64f else 0f
++        viewFinder.translationZ = 0f
++        (shutterButton.parent as android.view.View).apply {
++            translationZ = barZ
++            bringToFront()
++        }
++        secondaryBottomBarLayout.translationZ = barZ
++        cameraModeSelectorLayout.translationZ = barZ
++        viewFinder.post { rebindSquareVideoIfFinderReady() }
++    }
++
++    private fun ensureTitanFinderLayoutListener() {
++        if (titanFinderListenerAdded) {
++            return
++        }
++        titanFinderListenerAdded = true
++        viewFinder.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
++            viewFinder.post { rebindSquareVideoIfFinderReady() }
++        }
++    }
++
++    /**
++     * CameraController will not rebuild a bound session when the viewport
++     * aspect changes. Rebind once the 9:16 finder has actually been measured.
++     */
++    private fun rebindSquareVideoIfFinderReady() {
++        val square = org.lineageos.aperture.utils.TitanAspect.isSquare(
++            viewModel.photoAspectRatio.value
++        )
++        val video = viewModel.cameraMode.value == CameraMode.VIDEO
++        val width = viewFinder.width
++        val height = viewFinder.height
++        Log.i("TitanAspect", "finder square=$square video=$video measured=${width}x${height}")
++        if (!square || !video || height <= width) {
++            return
++        }
++        val key = "${width}x${height}"
++        if (titanFinderBoundFor == key) {
++            return
++        }
++        val config = titanVideoConfig ?: return
++        if (viewModel.cameraState.value != CameraState.IDLE) {
++            return
++        }
++        titanFinderBoundFor = key
++        runCatching { bindCameraUseCases(config) }
++            .onFailure {
++                titanFinderBoundFor = null
++                Log.w("TitanAspect", "rebind after finder layout", it)
++            }
+     }
+ 
+     /**
+@@ -1483,6 +1617,7 @@
+         require(viewModel.cameraState.value == CameraState.IDLE) {
+             "Trying to rebind camera while camera is not in IDLE state"
+         }
++        titanVideoConfig = cameraConfiguration as? CameraConfiguration.Video
+ 
+         // Show blurred preview
+         previewBlurView.freeze()
+@@ -1582,12 +1717,17 @@
+                     "Video dynamic range not supported with the requested video quality"
+                 }
+ 
+-                // 1:1 finder is FILL_CENTER. Encode is OEM 16:9 HAL only.
+-                // Leftover 1:1 ImageCapture filter + FHD Quality → 368×1080.
+-                val videoSel = org.lineageos.aperture.utils.TitanAspect.videoHalSelector(
++                // Encode is one OEM 16:9 HAL size. The 1:1 finder is a clipped
++                // 9:16 view so this stream is not viewport-cropped to 368×1080.
++                // Both preview and the leftover image capture selector stay
++                // on that same 16:9 size.
++                val encodeQuality = org.lineageos.aperture.utils.TitanVideo.encodeQuality(
+                     square1to1,
+                     bindQuality,
+                 )
++                val videoSel = org.lineageos.aperture.utils.TitanAspect.videoHalSelector(
++                    encodeQuality,
++                )
+                 viewModel.cameraController.previewResolutionSelector = videoSel
+                 viewModel.cameraController.imageCaptureResolutionSelector = videoSel
+                 org.lineageos.aperture.utils.TitanVideo.applyToController(
+--- a/app/src/main/java/org/lineageos/aperture/ui/views/GridView.kt
++++ b/app/src/main/java/org/lineageos/aperture/ui/views/GridView.kt
+@@ -59,11 +59,25 @@
+             it is TextureView || it is SurfaceView
+         } ?: throw Exception("Unable to get preview image surface!")
+ 
+-        val width = (surface.scaleX * surface.width).roundToInt().coerceIn(0, previewView.width)
+-        val height = (surface.scaleY * surface.height).roundToInt().coerceIn(0, previewView.height)
+-
+-        val wOffset = (this.width - width) / 2F
+-        val hOffset = (this.height - height) / 2F
++        val surfaceW = (surface.scaleX * surface.width).roundToInt()
++        val surfaceH = (surface.scaleY * surface.height).roundToInt()
++        // 1:1 video finder is taller than this overlay and clipped to the
++        // square. Thirds follow the visible square, which is what is saved.
++        val width: Int
++        val height: Int
++        val wOffset: Float
++        val hOffset: Float
++        if (surfaceW > this.width || surfaceH > this.height) {
++            width = this.width
++            height = this.height
++            wOffset = 0f
++            hOffset = 0f
++        } else {
++            width = surfaceW.coerceAtLeast(0)
++            height = surfaceH.coerceAtLeast(0)
++            wOffset = (this.width - width) / 2f
++            hOffset = (this.height - height) / 2f
++        }
+ 
+         val unitDiv = if (mode == GridMode.ON_GOLDEN_RATIO) GOLDEN_RATIO_UNIT else size.toFloat()
+ 
+--- a/app/src/main/java/org/lineageos/aperture/utils/TitanAspect.kt
++++ b/app/src/main/java/org/lineageos/aperture/utils/TitanAspect.kt
+@@ -9,9 +9,12 @@
+ import android.graphics.Bitmap
+ import android.graphics.BitmapFactory
+ import android.net.Uri
++import android.util.Log
+ import androidx.camera.core.AspectRatio
+ import androidx.camera.core.resolutionselector.AspectRatioStrategy
+ import androidx.camera.core.resolutionselector.ResolutionSelector
++import androidx.camera.core.resolutionselector.ResolutionStrategy
++import androidx.camera.video.Quality
+ import kotlin.math.min
+ 
+ /**
+@@ -60,59 +63,61 @@
+     }
+ 
+     /**
+-     * Bind the size the user picked. Do not collapse 1080 and 2160 onto one stream.
+-     * 16:9: 3840×2160 / 1920×1080 / 1280×720 / 640×480.
+-     * 1:1: 2160×2160 for 2160p, 1440/1080² for 1080p, 720² for HD/SD.
++     * Video session size. Always one OEM 16:9 HAL size for [quality].
++     *
++     * 1:1 must not put a square resolution filter on this session. The
++     * saved file is a center crop of this 16:9 frame. The video finder is
++     * a clipped 9:16 view so the CameraX viewport does not turn the frame
++     * into 368×1080.
+      */
+-    fun videoHalSelector(square: Boolean, quality: androidx.camera.video.Quality): ResolutionSelector {
++    fun videoHalSelector(quality: Quality): ResolutionSelector {
++        val want = TitanVideo.oemSize(quality)
+         return ResolutionSelector.Builder()
+             .setAllowedResolutionMode(
+                 ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE
+             )
+             .setAspectRatioStrategy(
+                 AspectRatioStrategy(
+-                    if (square) AspectRatio.RATIO_4_3 else AspectRatio.RATIO_16_9,
++                    AspectRatio.RATIO_16_9,
+                     AspectRatioStrategy.FALLBACK_RULE_AUTO,
+                 )
+             )
++            .setResolutionStrategy(
++                ResolutionStrategy(
++                    want,
++                    ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
++                )
++            )
+             .setResolutionFilter { supportedSizes, _ ->
+-                val want = targetSizes(square, quality)
+-                val pick = supportedSizes.filter { s ->
+-                    want.any { it.width == s.width && it.height == s.height }
++                val exact = supportedSizes.filter {
++                    it.width == want.width && it.height == want.height
+                 }
+-                if (pick.isNotEmpty()) {
+-                    return@setResolutionFilter pick.toMutableList()
++                val picked = if (exact.isNotEmpty()) {
++                    exact
++                } else {
++                    supportedSizes.filter { s ->
++                        s.width >= 640 && s.height >= 480 &&
++                            s.width != 368 && s.height != 368 &&
++                            kotlin.math.abs(s.width.toFloat() / s.height - 16f / 9f) < 0.02f
++                    }.sortedBy {
++                        kotlin.math.abs(it.width - want.width) +
++                            kotlin.math.abs(it.height - want.height)
++                    }
+                 }
+-                supportedSizes.filter { s ->
+-                    want.any { kotlin.math.abs(s.width - it.width) < 16 &&
+-                        kotlin.math.abs(s.height - it.height) < 16 }
+-                }.ifEmpty { supportedSizes }.toMutableList()
+-            }
+-            .build()
+-    }
+-
+-    fun targetSizes(square: Boolean, quality: androidx.camera.video.Quality): List<android.util.Size> {
+-        if (square) {
+-            return when (quality) {
+-                androidx.camera.video.Quality.UHD -> listOf(
+-                    android.util.Size(2160, 2160),
+-                    android.util.Size(3840, 2160),
+-                )
+-                androidx.camera.video.Quality.HD,
+-                androidx.camera.video.Quality.SD -> listOf(android.util.Size(720, 720))
+-                else -> listOf(
+-                    android.util.Size(1440, 1440),
+-                    android.util.Size(1080, 1080),
+-                    android.util.Size(1920, 1080),
++                val safe = picked.ifEmpty {
++                    supportedSizes.filter { s ->
++                        s.width != 368 && s.height != 368 &&
++                            s.width >= 640 && s.height >= 480
++                    }.sortedByDescending { it.width.toLong() * it.height }
++                }.ifEmpty { supportedSizes }
++                Log.i(
++                    "TitanAspect",
++                    "video hal ${want.width}x${want.height} -> " +
++                        safe.joinToString { "${it.width}x${it.height}" },
+                 )
++                safe.toMutableList()
+             }
+-        }
+-        return when (quality) {
+-            androidx.camera.video.Quality.UHD -> listOf(android.util.Size(3840, 2160))
+-            androidx.camera.video.Quality.HD -> listOf(android.util.Size(1280, 720))
+-            androidx.camera.video.Quality.SD -> listOf(android.util.Size(640, 480))
+-            else -> listOf(android.util.Size(1920, 1080))
+-        }
++            .build()
+     }
+ 
+     fun photoResolutionSelector(ratio: Int, highResolution: Boolean): ResolutionSelector {
+--- a/app/src/main/java/org/lineageos/aperture/utils/TitanVideo.kt
++++ b/app/src/main/java/org/lineageos/aperture/utils/TitanVideo.kt
+@@ -24,20 +24,26 @@
+ import org.lineageos.aperture.models.FrameRate
+ import java.io.File
+ import java.nio.ByteBuffer
++import kotlin.math.max
+ import kotlin.math.min
+ 
+ /**
+  * OEM ACamera2 + vendor media_profiles_V1_0.xml (back IMX766):
+- *   3840×2160 @ 30, 1920×1080 @ 30/60, 1280×720 @ 30/60, 640×480 @ 30.
++ *   3840×2160 @ 30, 1920×1080 @ 30, 1280×720 @ 30, 640×480 @ 30.
++ *   Camera2 AE has no 60. Do not send CameraX a 60 fps range.
+  * Square 720² / 1080² / 1440² are Agui CamcorderProfile 5000–5002 — not
+  * in GSI media_profiles, so CameraX Quality cannot encode them. 1:1 files
+- * are a center-crop of the matching 16:9 HAL encode (FHD→1080²).
++ * are a center-crop of the matching 16:9 HAL encode
++ * (UHD→2160², FHD→1080², HD→720²).
+  *
+- * 368×1080 is not a HAL size. Square preview filter + FHD QualitySelector
+- * produced it. Video preview stays 16:9; finder is FILL_CENTER.
++ * 368×1080 is not a HAL size. A square PreviewView viewport crops the
++ * 1920×1080 stream down to that slit. Video 1:1 uses a clipped 9:16
++ * finder so CameraX keeps the full 16:9 frame, then this file is
++ * center-cropped.
+  */
+ object TitanVideo {
+     private const val TAG = "TitanVideo"
++    private var loggedPlaneLayout = false
+     private const val TIMEOUT_US = 10_000L
+ 
+     fun oemSize(quality: Quality): Size = when (quality) {
+@@ -49,14 +55,58 @@
+     }
+ 
+     fun oemFrameRate(quality: Quality, requested: FrameRate?): FrameRate {
+-        val want = requested ?: if (quality == Quality.UHD) FrameRate.FPS_30 else FrameRate.FPS_60
+-        return if (quality == Quality.UHD && want.value > 30) FrameRate.FPS_30 else want
++        // AE ranges on this HAL are 10/15/20/24/30. OEM 60 is a vendor
++        // key_fps60 tag, not CameraX targetFrameRate. Range(60, 60) makes
++        // CameraX drop 1920×1080 and encode 368×1080.
++        val want = requested ?: FrameRate.FPS_30
++        if (want.value <= 30) {
++            return want
++        }
++        Log.i(TAG, "cap $quality fps ${want.value} -> 30")
++        return FrameRate.FPS_30
++    }
++
++    /**
++     * Quality actually encoded. 1:1 uses the same OEM 16:9 ladder as 16:9
++     * (SD rides HD so the square file is 720²). Do not force UHD for every
++     * 1:1 bind, and do not ask CameraX for a square size.
++     */
++    fun encodeQuality(square: Boolean, quality: Quality): Quality {
++        if (!square) return quality
++        return when (quality) {
++            Quality.UHD -> Quality.UHD
++            Quality.HD, Quality.SD -> Quality.HD
++            else -> Quality.FHD
++        }
++    }
++
++    /**
++     * Side of the 1:1 file, or 0 when the encode should be kept.
++     * Already-square frames stay. 368×1080 is not a frame we can upscale.
++     */
++    fun squareCropSide(width: Int, height: Int): Int {
++        if (width <= 0 || height <= 0) return 0
++        if (width == 368 || height == 368) return 0
++        if (width == height) return 0
++        val shortSide = min(width, height)
++        val longSide = max(width, height)
++        if (shortSide < 480) return 0
++        val raw = when {
++            longSide >= 3840 || shortSide >= 2160 -> 2160
++            longSide >= 1920 || shortSide >= 1080 -> 1080
++            longSide >= 1280 || shortSide >= 720 -> 720
++            else -> shortSide
++        }
++        // c2.mtk.avc.encoder alignment is 2×2, so 1080² stays 1080².
++        val side = raw and 1.inv()
++        return if (side >= 480 && side <= shortSide) side else 0
+     }
+ 
+     /**
+      * Bind the quality the user picked. 1:1 must not force UHD (that made
+-     * 1080 and 2160 both record 2160×2160). FPS follows the control;
+-     * UHD is 30 max (HAL AE).
++     * 1080 and 2160 both record 2160×2160). FPS is at most 30: this HAL's
++     * AE list has no 60, and requesting 60 encodes 368×1080. The stream is
++     * OEM 16:9, never a square filter.
+      */
+     fun applyToController(
+         controller: CameraController,
+@@ -64,64 +114,44 @@
+         frameRate: FrameRate?,
+         square: Boolean,
+     ) {
+-        // 1:1 follows the quality button: 2160p → 2160², 1080p → 1440/1080², HD → 720².
+-        val q = if (square) {
+-            when (quality) {
+-                Quality.UHD -> Quality.UHD
+-                Quality.HD, Quality.SD -> Quality.HD
+-                else -> Quality.FHD
+-            }
+-        } else {
+-            quality
+-        }
+-        val fps = oemFrameRate(quality, frameRate)
++        val q = encodeQuality(square, quality)
++        val fps = oemFrameRate(q, frameRate)
++        val size = oemSize(q)
+         controller.videoCaptureQualitySelector = QualitySelector.from(q)
+         controller.videoCaptureTargetFrameRate = Range(fps.value, fps.value)
+-        Log.i(TAG, "video bind square=$square ui=$quality encode=$q fps=${fps.value}")
++        Log.i(
++            TAG,
++            "video bind square=$square ui=$quality encode=$q " +
++                "hal=${size.width}x${size.height} fps=${fps.value}",
++        )
+     }
+ 
+     fun cropSavedVideoToSquare(resolver: ContentResolver, uri: Uri) {
+-        val retriever = MediaMetadataRetriever()
+-        val width: Int
+-        val height: Int
+-        try {
+-            retriever.setDataSource(resolver.openFileDescriptor(uri, "r")?.fileDescriptor)
+-            width = retriever.extractMetadata(
+-                MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+-            )?.toIntOrNull() ?: 0
+-            height = retriever.extractMetadata(
+-                MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+-            )?.toIntOrNull() ?: 0
+-        } catch (t: Throwable) {
+-            Log.w(TAG, "retriever open failed", t)
+-            return
+-        } finally {
+-            retriever.release()
+-        }
++        val coded = resolver.openFileDescriptor(uri, "r")?.use { pfd ->
++            codedVideo(pfd.fileDescriptor)
++        } ?: return
++        val rotation = resolver.openFileDescriptor(uri, "r")?.use { pfd ->
++            videoRotation(pfd.fileDescriptor)
++        } ?: coded.rotation
++        val width = coded.width
++        val height = coded.height
+         if (width <= 0 || height <= 0) {
+             return
+         }
+-        // 2160p 1:1 = 2160². 1080p 1:1 = 1080². HD 1:1 = 720².
+-        if (width == height && (width == 2160 || width == 1440 || width == 1080 || width == 720)) {
+-            Log.i(TAG, "keep square ${width}x${height}")
+-            return
+-        }
+-        val side = when {
+-            width >= 3840 || height >= 2160 -> 2160
+-            width >= 1920 || height >= 1080 -> 1080
+-            width >= 1280 || height >= 720 -> 720
+-            else -> {
+-                Log.w(TAG, "skip square crop of junk ${width}x${height}")
+-                return
++        val side = squareCropSide(width, height)
++        if (side == 0) {
++            if (width == height) {
++                Log.i(TAG, "keep square ${width}x${height}")
++            } else {
++                Log.w(TAG, "skip square crop of ${width}x${height}")
+             }
+-        }
+-        if (width == side && height == side) {
+             return
+         }
+         val cache = File.createTempFile("titan-sq-", ".mp4")
++        val startedMs = android.os.SystemClock.elapsedRealtime()
+         try {
+             resolver.openFileDescriptor(uri, "r")?.use { pfd ->
+-                transcodeSquare(pfd.fileDescriptor, cache, width, height, side)
++                transcodeSquare(pfd.fileDescriptor, cache, side, rotation)
+             } ?: return
+             resolver.openOutputStream(uri, "wt")?.use { out ->
+                 cache.inputStream().use { it.copyTo(out) }
+@@ -133,7 +163,8 @@
+                 put(MediaStore.MediaColumns.HEIGHT, side)
+             }
+             runCatching { resolver.update(uri, values, null, null) }
+-            Log.i(TAG, "cropped $width x $height -> ${side}x$side")
++            val tookMs = android.os.SystemClock.elapsedRealtime() - startedMs
++            Log.i(TAG, "cropped $width x $height rot=$rotation -> ${side}x$side in ${tookMs}ms")
+         } catch (t: Throwable) {
+             Log.w(TAG, "square crop failed, keeping ${width}x$height", t)
+         } finally {
+@@ -141,12 +172,56 @@
+         }
+     }
+ 
++    private data class CodedVideo(val width: Int, val height: Int, val rotation: Int)
++
++    /** Track header size. Retriever width is sometimes the rotated display size. */
++    private fun codedVideo(fd: java.io.FileDescriptor): CodedVideo? {
++        val extractor = MediaExtractor()
++        try {
++            extractor.setDataSource(fd)
++            for (i in 0 until extractor.trackCount) {
++                val format = extractor.getTrackFormat(i)
++                val mime = format.getString(MediaFormat.KEY_MIME).orEmpty()
++                if (!mime.startsWith("video/")) {
++                    continue
++                }
++                val width = format.integerOrZero(MediaFormat.KEY_WIDTH)
++                val height = format.integerOrZero(MediaFormat.KEY_HEIGHT)
++                val rotation = format.integerOrZero(MediaFormat.KEY_ROTATION)
++                return CodedVideo(width, height, rotation)
++            }
++        } catch (t: Throwable) {
++            Log.w(TAG, "extractor open failed", t)
++        } finally {
++            extractor.release()
++        }
++        return null
++    }
++
++    private fun videoRotation(fd: java.io.FileDescriptor): Int {
++        val retriever = MediaMetadataRetriever()
++        return try {
++            retriever.setDataSource(fd)
++            val degrees = retriever.extractMetadata(
++                MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
++            )?.toIntOrNull() ?: 0
++            ((degrees % 360) + 360) % 360
++        } catch (t: Throwable) {
++            Log.w(TAG, "rotation lookup failed", t)
++            0
++        } finally {
++            retriever.release()
++        }
++    }
++
++    private fun MediaFormat.integerOrZero(key: String): Int =
++        if (containsKey(key)) getInteger(key) else 0
++
+     private fun transcodeSquare(
+         fd: java.io.FileDescriptor,
+         outFile: File,
+-        width: Int,
+-        height: Int,
+         side: Int,
++        rotation: Int,
+     ) {
+         val extractor = MediaExtractor()
+         extractor.setDataSource(fd)
+@@ -171,48 +246,31 @@
+         val inFmt = videoFormat ?: error("no video track")
+         val mime = inFmt.getString(MediaFormat.KEY_MIME) ?: MediaFormat.MIMETYPE_VIDEO_AVC
+         val fps = if (inFmt.containsKey(MediaFormat.KEY_FRAME_RATE)) {
+-            inFmt.getInteger(MediaFormat.KEY_FRAME_RATE).coerceAtLeast(30)
++            inFmt.getInteger(MediaFormat.KEY_FRAME_RATE).coerceAtLeast(1)
+         } else {
+-            60
+-        }
+-        val rotation = if (inFmt.containsKey(MediaFormat.KEY_ROTATION)) {
+-            inFmt.getInteger(MediaFormat.KEY_ROTATION)
+-        } else {
+-            0
++            30
+         }
+ 
+         val decoder = MediaCodec.createDecoderByType(mime)
+         decoder.configure(inFmt, null, null, 0)
+         decoder.start()
+ 
+-        val encFmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, side, side)
+-        encFmt.setInteger(
+-            MediaFormat.KEY_COLOR_FORMAT,
+-            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible,
+-        )
+-        encFmt.setInteger(MediaFormat.KEY_BIT_RATE, (side * side * 6).coerceAtLeast(4_000_000))
+-        encFmt.setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+-        encFmt.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+-        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+-        encoder.configure(encFmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+-        encoder.start()
+-
++        val encoder = startSquareEncoder(side, fps)
+         val muxer = MediaMuxer(outFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+         muxer.setOrientationHint(rotation)
+         var muxerStarted = false
+         var encVideoTrack = -1
+         var encAudioTrack = -1
+-        val xOff = (width - side) / 2
+-        val yOff = (height - side) / 2
+ 
+         extractor.selectTrack(videoTrack)
++        try {
+         val info = MediaCodec.BufferInfo()
+         val encInfo = MediaCodec.BufferInfo()
+         var inEos = false
+         var decEos = false
+         var encEos = false
++        var encoderEosQueued = false
+         var spins = 0
+-        val yuv = ByteArray(side * side * 3 / 2)
+         while (!encEos && spins++ < 30_000) {
+             if (!inEos) {
+                 val inIx = decoder.dequeueInputBuffer(TIMEOUT_US)
+@@ -233,60 +291,73 @@
+             if (!decEos) {
+                 val outIx = decoder.dequeueOutputBuffer(info, TIMEOUT_US)
+                 if (outIx >= 0) {
++                    val frameEos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                     val image = decoder.getOutputImage(outIx)
+                     if (image != null && info.size > 0) {
+-                        cropYuv420(image, xOff, yOff, side, yuv)
+-                        image.close()
+-                        var queued = false
+-                        while (!queued && !encEos) {
+-                            drainEncoder(encoder, muxer, encInfo, { track ->
+-                                encVideoTrack = track
+-                                if (!muxerStarted) {
+-                                    if (audioFormat != null) {
+-                                        encAudioTrack = muxer.addTrack(audioFormat)
+-                                    }
+-                                    muxer.start()
+-                                    muxerStarted = true
+-                                }
+-                            }, { encEos = true }, { encVideoTrack })
+-                            val eIx = encoder.dequeueInputBuffer(TIMEOUT_US)
+-                            if (eIx >= 0) {
+-                                val eBuf = encoder.getInputBuffer(eIx)!!
+-                                eBuf.clear()
+-                                eBuf.put(yuv)
+-                                val flags = if (info.flags and
+-                                    MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+-                                ) {
+-                                    MediaCodec.BUFFER_FLAG_END_OF_STREAM
+-                                } else {
+-                                    0
++                        queueSquareFrame(
++                            encoder, image, side, info.presentationTimeUs, frameEos,
++                        ) { drainEncoder(encoder, muxer, encInfo, { track ->
++                            encVideoTrack = track
++                            if (!muxerStarted) {
++                                if (audioFormat != null) {
++                                    encAudioTrack = muxer.addTrack(audioFormat)
+                                 }
+-                                encoder.queueInputBuffer(
+-                                    eIx, 0, yuv.size, info.presentationTimeUs, flags
+-                                )
+-                                queued = true
++                                muxer.start()
++                                muxerStarted = true
+                             }
++                        }, { encEos = true }, { encVideoTrack }) }
++                        if (frameEos) {
++                            encoderEosQueued = true
+                         }
++                        image.close()
+                     } else {
+                         image?.close()
++                        if (frameEos && !encoderEosQueued) {
++                            queueEncoderEos(encoder, info.presentationTimeUs) {
++                                drainEncoder(encoder, muxer, encInfo, { track ->
++                                    encVideoTrack = track
++                                    if (!muxerStarted) {
++                                        if (audioFormat != null) {
++                                            encAudioTrack = muxer.addTrack(audioFormat)
++                                        }
++                                        muxer.start()
++                                        muxerStarted = true
++                                    }
++                                }, { encEos = true }, { encVideoTrack })
++                            }
++                            encoderEosQueued = true
++                        }
+                     }
+-                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
++                    decoder.releaseOutputBuffer(outIx, false)
++                    if (frameEos) {
+                         decEos = true
+                     }
+-                    decoder.releaseOutputBuffer(outIx, false)
+                 }
+-            } else {
+-                drainEncoder(encoder, muxer, encInfo, { track ->
+-                    encVideoTrack = track
+-                    if (!muxerStarted) {
+-                        if (audioFormat != null) {
+-                            encAudioTrack = muxer.addTrack(audioFormat)
++            } else if (!encoderEosQueued) {
++                queueEncoderEos(encoder, 0) {
++                    drainEncoder(encoder, muxer, encInfo, { track ->
++                        encVideoTrack = track
++                        if (!muxerStarted) {
++                            if (audioFormat != null) {
++                                encAudioTrack = muxer.addTrack(audioFormat)
++                            }
++                            muxer.start()
++                            muxerStarted = true
+                         }
+-                        muxer.start()
+-                        muxerStarted = true
+-                    }
+-                }, { encEos = true }, { encVideoTrack })
++                    }, { encEos = true }, { encVideoTrack })
++                }
++                encoderEosQueued = true
+             }
++            drainEncoder(encoder, muxer, encInfo, { track ->
++                encVideoTrack = track
++                if (!muxerStarted) {
++                    if (audioFormat != null) {
++                        encAudioTrack = muxer.addTrack(audioFormat)
++                    }
++                    muxer.start()
++                    muxerStarted = true
++                }
++            }, { encEos = true }, { encVideoTrack })
+         }
+ 
+         if (audioTrack >= 0 && muxerStarted && encAudioTrack >= 0) {
+@@ -308,13 +379,330 @@
+             }
+         }
+ 
+-        encoder.stop()
++        } finally {
++            runCatching { encoder.stop() }
++            encoder.release()
++            runCatching { decoder.stop() }
++            decoder.release()
++            runCatching { muxer.stop() }
++            muxer.release()
++            extractor.release()
++        }
++    }
++
++    private fun startSquareEncoder(side: Int, fps: Int): MediaCodec {
++        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
++        val colors = intArrayOf(
++            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible,
++            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar,
++        )
++        var last: Throwable? = null
++        for (color in colors) {
++            try {
++                val encFmt = MediaFormat.createVideoFormat(
++                    MediaFormat.MIMETYPE_VIDEO_AVC, side, side,
++                )
++                encFmt.setInteger(MediaFormat.KEY_COLOR_FORMAT, color)
++                encFmt.setInteger(
++                    MediaFormat.KEY_BIT_RATE,
++                    (side * side * 6).coerceAtLeast(4_000_000),
++                )
++                encFmt.setInteger(MediaFormat.KEY_FRAME_RATE, fps)
++                encFmt.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
++                encoder.configure(encFmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
++                encoder.start()
++                Log.i(TAG, "square encoder ${side}x$side color=$color")
++                return encoder
++            } catch (t: Throwable) {
++                last = t
++                Log.w(TAG, "square encoder color $color failed", t)
++            }
++        }
+         encoder.release()
+-        decoder.stop()
+-        decoder.release()
+-        muxer.stop()
+-        muxer.release()
+-        extractor.release()
++        throw last ?: IllegalStateException("no square encoder")
++    }
++
++    /**
++     * A fast copy fills the encoder before its output is drained, and then
++     * dequeueInputBuffer never returns. Drain while waiting.
++     */
++    private fun withEncoderInput(
++        encoder: MediaCodec,
++        drain: () -> Unit,
++        body: (Int) -> Unit,
++    ) {
++        var waits = 0
++        while (waits++ < 400) {
++            val index = encoder.dequeueInputBuffer(2_000)
++            if (index >= 0) {
++                body(index)
++                return
++            }
++            drain()
++        }
++        error("encoder input stalled")
++    }
++
++    private fun queueSquareFrame(
++        encoder: MediaCodec,
++        src: android.media.Image,
++        side: Int,
++        timeUs: Long,
++        eos: Boolean,
++        drain: () -> Unit,
++    ) {
++        val flags = if (eos) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0
++        withEncoderInput(encoder, drain) { index ->
++            val dst = encoder.getInputImage(index)
++            if (dst != null) {
++                copyCenterSquare(src, dst, side)
++                encoder.queueInputBuffer(index, 0, side * side * 3 / 2, timeUs, flags)
++            } else {
++                val packed = ByteArray(side * side * 3 / 2)
++                packCenterSquareNv12(src, side, packed)
++                val buf = encoder.getInputBuffer(index)!!
++                buf.clear()
++                buf.put(packed)
++                encoder.queueInputBuffer(index, 0, packed.size, timeUs, flags)
++            }
++        }
++    }
++
++    private fun queueEncoderEos(
++        encoder: MediaCodec,
++        timeUs: Long,
++        drain: () -> Unit,
++    ) {
++        withEncoderInput(encoder, drain) { index ->
++            encoder.queueInputBuffer(
++                index, 0, 0, timeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM,
++            )
++        }
++    }
++
++    private fun copyCenterSquare(
++        src: android.media.Image,
++        dst: android.media.Image,
++        side: Int,
++    ) {
++        val crop = src.cropRect
++        val xOff = (crop.left + (crop.width() - side) / 2) and 1.inv()
++        val yOff = (crop.top + (crop.height() - side) / 2) and 1.inv()
++        if (xOff < 0 || yOff < 0 || xOff + side > src.width || yOff + side > src.height) {
++            error("square $side does not fit ${src.width}x${src.height} crop=$crop")
++        }
++        if (!loggedPlaneLayout) {
++            loggedPlaneLayout = true
++            val sy = src.planes[0]
++            val su = src.planes[1]
++            val dy = dst.planes[0]
++            val du = dst.planes[1]
++            Log.i(
++                TAG,
++                "square planes src=${src.width}x${src.height} crop=$crop " +
++                    "Ys=${sy.pixelStride}/${sy.rowStride}/${sy.buffer.limit()} " +
++                    "Us=${su.pixelStride}/${su.rowStride}/${su.buffer.limit()} " +
++                    "Vs=${src.planes[2].pixelStride}/${src.planes[2].rowStride} " +
++                    "Yd=${dy.pixelStride}/${dy.rowStride}/${dy.buffer.limit()} " +
++                    "Ud=${du.pixelStride}/${du.rowStride}/${du.buffer.limit()} " +
++                    "Vd=${dst.planes[2].pixelStride}/${dst.planes[2].rowStride}",
++            )
++        }
++        copyPlane(src.planes[0], dst.planes[0], xOff, yOff, side, side)
++        val uvSide = side / 2
++        val srcU = src.planes[1]
++        val srcV = src.planes[2]
++        val dstU = dst.planes[1]
++        val dstV = dst.planes[2]
++        // NV12/NV21 keeps both chroma samples in plane 1. Copy that span
++        // only when it sits inside the buffer limit. Codec plane buffers
++        // reject a limit() past the window the slow per-sample path used.
++        val interleaved = srcU.pixelStride == 2 && srcV.pixelStride == 2 &&
++            dstU.pixelStride == 2 && dstV.pixelStride == 2 &&
++            srcU.rowStride == srcV.rowStride && dstU.rowStride == dstV.rowStride &&
++            rowFits(srcU, xOff / 2, yOff / 2, uvSide * 2, uvSide) &&
++            rowFits(dstU, 0, 0, uvSide * 2, uvSide)
++        if (interleaved) {
++            copyPackedRows(srcU, dstU, xOff / 2, yOff / 2, uvSide * 2, uvSide)
++        } else {
++            copyPlane(srcU, dstU, xOff / 2, yOff / 2, uvSide, uvSide)
++            copyPlane(srcV, dstV, xOff / 2, yOff / 2, uvSide, uvSide)
++        }
++    }
++
++    /**
++     * Copy width×height samples. Contiguous rows are one read and one write.
++     * A stride that does not fit in the plane limit falls back to per-sample
++     * absolute access, which is what the encoder buffer accepts.
++     */
++    private fun copyPlane(
++        src: android.media.Image.Plane,
++        dst: android.media.Image.Plane,
++        x: Int,
++        y: Int,
++        width: Int,
++        height: Int,
++    ) {
++        if (src.pixelStride == 1 && dst.pixelStride == 1 &&
++            rowFits(src, x, y, width, height) && rowFits(dst, 0, 0, width, height)
++        ) {
++            copyPackedRows(src, dst, x, y, width, height)
++            return
++        }
++        // Decoder chroma is planar. The encoder's is NV12, and its last row
++        // has no spare byte after the final sample, so a packed pair write
++        // does not fit. Scatter one source row into the stride instead.
++        val dstSpan = (width - 1) * dst.pixelStride + 1
++        if (src.pixelStride == 1 && dst.pixelStride != 1 &&
++            rowFits(src, x, y, width, height) &&
++            rowFits(dst, 0, 0, dstSpan, height)
++        ) {
++            copyPackedSourceToStridedDest(src, dst, x, y, width, height, dstSpan)
++            return
++        }
++        val srcBuf = src.buffer
++        val dstBuf = dst.buffer
++        val srcBase = srcBuf.position()
++        val dstBase = dstBuf.position()
++        for (rowIndex in 0 until height) {
++            val srcRow = srcBase + (y + rowIndex) * src.rowStride + x * src.pixelStride
++            val dstRow = dstBase + rowIndex * dst.rowStride
++            for (col in 0 until width) {
++                dstBuf.put(
++                    dstRow + col * dst.pixelStride,
++                    srcBuf.get(srcRow + col * src.pixelStride),
++                )
++            }
++        }
++    }
++
++    private fun rowFits(
++        plane: android.media.Image.Plane,
++        x: Int,
++        y: Int,
++        rowBytes: Int,
++        rows: Int,
++    ): Boolean {
++        if (x < 0 || y < 0 || rowBytes <= 0 || rows <= 0) {
++            return false
++        }
++        val buf = plane.buffer
++        val base = buf.position()
++        val limit = buf.limit()
++        val rowEnd = x * plane.pixelStride + rowBytes
++        if (plane.rowStride < rowEnd) {
++            return false
++        }
++        val last = base + (y + rows - 1) * plane.rowStride + rowEnd
++        return last <= limit
++    }
++
++    /** [rowBytes] are contiguous. [x] is in pixels of [src]. Dest starts at column 0. */
++    private fun copyPackedRows(
++        src: android.media.Image.Plane,
++        dst: android.media.Image.Plane,
++        x: Int,
++        y: Int,
++        rowBytes: Int,
++        rows: Int,
++    ) {
++        val srcBuf = src.buffer.duplicate()
++        val dstBuf = dst.buffer.duplicate()
++        val srcBase = src.buffer.position()
++        val dstBase = dst.buffer.position()
++        val row = ByteArray(rowBytes)
++        for (rowIndex in 0 until rows) {
++            val srcAt = srcBase + (y + rowIndex) * src.rowStride + x * src.pixelStride
++            val dstAt = dstBase + rowIndex * dst.rowStride
++            srcBuf.position(srcAt)
++            srcBuf.get(row)
++            dstBuf.position(dstAt)
++            dstBuf.put(row)
++        }
++    }
++
++    /** Planar source row scattered into a strided destination plane. */
++    private fun copyPackedSourceToStridedDest(
++        src: android.media.Image.Plane,
++        dst: android.media.Image.Plane,
++        x: Int,
++        y: Int,
++        width: Int,
++        height: Int,
++        dstSpan: Int,
++    ) {
++        val srcBuf = src.buffer.duplicate()
++        val dstBuf = dst.buffer.duplicate()
++        val srcBase = src.buffer.position()
++        val dstBase = dst.buffer.position()
++        val srcRow = ByteArray(width)
++        val dstRow = ByteArray(dstSpan)
++        val dstPix = dst.pixelStride
++        for (rowIndex in 0 until height) {
++            val srcAt = srcBase + (y + rowIndex) * src.rowStride + x
++            val dstAt = dstBase + rowIndex * dst.rowStride
++            srcBuf.position(srcAt)
++            srcBuf.get(srcRow)
++            dstBuf.position(dstAt)
++            dstBuf.get(dstRow)
++            for (col in 0 until width) {
++                dstRow[col * dstPix] = srcRow[col]
++            }
++            dstBuf.position(dstAt)
++            dstBuf.put(dstRow)
++        }
++    }
++
++    private fun packCenterSquareNv12(
++        src: android.media.Image,
++        side: Int,
++        out: ByteArray,
++    ) {
++        val crop = src.cropRect
++        val xOff = (crop.left + (crop.width() - side) / 2) and 1.inv()
++        val yOff = (crop.top + (crop.height() - side) / 2) and 1.inv()
++        var o = 0
++        val yPlane = src.planes[0]
++        val yBuf = yPlane.buffer.duplicate()
++        val yBase = yPlane.buffer.position()
++        if (yPlane.pixelStride == 1) {
++            val row = ByteArray(side)
++            for (r in 0 until side) {
++                readRow(yBuf, yBase + (yOff + r) * yPlane.rowStride + xOff, row)
++                row.copyInto(out, o)
++                o += side
++            }
++        } else {
++            for (row in 0 until side) {
++                for (col in 0 until side) {
++                    out[o++] = planeByte(yPlane, xOff + col, yOff + row)
++                }
++            }
++        }
++        val uvSide = side / 2
++        val uPlane = src.planes[1]
++        val vPlane = src.planes[2]
++        if (uPlane.pixelStride == 2 && vPlane.pixelStride == 2 &&
++            uPlane.rowStride == vPlane.rowStride
++        ) {
++            val row = ByteArray(uvSide * 2)
++            val uBuf = uPlane.buffer.duplicate()
++            val uBase = uPlane.buffer.position()
++            val uvX = xOff / 2
++            val uvY = yOff / 2
++            for (r in 0 until uvSide) {
++                readRow(uBuf, uBase + (uvY + r) * uPlane.rowStride + uvX * 2, row)
++                row.copyInto(out, o)
++                o += row.size
++            }
++        } else {
++            for (row in 0 until uvSide) {
++                for (col in 0 until uvSide) {
++                    out[o++] = planeByte(uPlane, xOff / 2 + col, yOff / 2 + row)
++                    out[o++] = planeByte(vPlane, xOff / 2 + col, yOff / 2 + row)
++                }
++            }
++        }
+     }
+ 
+     private fun drainEncoder(
+@@ -353,42 +741,14 @@
+         }
+     }
+ 
+-    private fun cropYuv420(
+-        image: android.media.Image,
+-        xOff: Int,
+-        yOff: Int,
+-        side: Int,
+-        out: ByteArray,
+-    ) {
+-        val yPlane = image.planes[0]
+-        val uPlane = image.planes[1]
+-        val vPlane = image.planes[2]
+-        val yRow = yPlane.rowStride
+-        val yPix = yPlane.pixelStride
+-        val yBuf = yPlane.buffer
+-        var o = 0
+-        for (row in 0 until side) {
+-            val y = yOff + row
+-            for (col in 0 until side) {
+-                val x = xOff + col
+-                out[o++] = yBuf.get(y * yRow + x * yPix)
+-            }
+-        }
+-        val uvSide = side / 2
+-        val uRow = uPlane.rowStride
+-        val uPix = uPlane.pixelStride
+-        val vRow = vPlane.rowStride
+-        val vPix = vPlane.pixelStride
+-        val uBuf = uPlane.buffer
+-        val vBuf = vPlane.buffer
+-        // NV12: UV interleaved
+-        for (row in 0 until uvSide) {
+-            val y = yOff / 2 + row
+-            for (col in 0 until uvSide) {
+-                val x = xOff / 2 + col
+-                out[o++] = uBuf.get(y * uRow + x * uPix)
+-                out[o++] = vBuf.get(y * vRow + x * vPix)
+-            }
+-        }
++    private fun readRow(buf: ByteBuffer, at: Int, out: ByteArray) {
++        buf.position(at)
++        buf.get(out)
++    }
++
++    private fun planeByte(plane: android.media.Image.Plane, x: Int, y: Int): Byte {
++        val buf = plane.buffer
++        val index = buf.position() + y * plane.rowStride + x * plane.pixelStride
++        return buf.get(index)
+     }
+ }
+--- a/app/src/main/java/org/lineageos/aperture/viewmodels/CameraViewModel.kt
++++ b/app/src/main/java/org/lineageos/aperture/viewmodels/CameraViewModel.kt
+@@ -1221,19 +1221,27 @@
+                             val square = org.lineageos.aperture.utils.TitanAspect.isSquare(
+                                 preferencesRepository.photoAspectRatio.value
+                             )
++                            val uri = it.outputResults.outputUri
++                            val broadcast = !inSingleCaptureMode.value
+                             if (square) {
+-                                runCatching {
+-                                    org.lineageos.aperture.utils.TitanVideo.cropSavedVideoToSquare(
+-                                        getApplication<Application>().contentResolver,
+-                                        it.outputResults.outputUri,
+-                                    )
+-                                }.onFailure { err ->
+-                                    Log.w(LOG_TAG, "1:1 video crop failed", err)
++                                // The center-crop is a full decode. Doing it before
++                                // IDLE kept the shutter in the recording state.
++                                val resolver = getApplication<Application>().contentResolver
++                                kotlin.concurrent.thread(name = "titan-square", isDaemon = true) {
++                                    runCatching {
++                                        org.lineageos.aperture.utils.TitanVideo.cropSavedVideoToSquare(
++                                            resolver,
++                                            uri,
++                                        )
++                                    }.onFailure { err ->
++                                        Log.w(LOG_TAG, "1:1 video crop failed", err)
++                                    }
++                                    if (broadcast) {
++                                        mediaRepository.broadcastNewVideo(uri)
++                                    }
+                                 }
+-                            }
+-
+-                            if (!inSingleCaptureMode.value) {
+-                                mediaRepository.broadcastNewVideo(it.outputResults.outputUri)
++                            } else if (broadcast) {
++                                mediaRepository.broadcastNewVideo(uri)
+                             }
+                         }
+                         cameraState.value = CameraState.IDLE
+@@ -1730,11 +1738,13 @@
+                 "Camera ${camera.cameraId} does not support video quality $videoQuality"
+             )
+ 
++            val savedFrameRate = preferencesRepository.videoFrameRate.value
++            val ratesAtMost30 = videoQualityInfo.supportedFrameRates.filter { it.value <= 30 }
+             val videoFrameRate = org.lineageos.aperture.utils.TitanVideo.oemFrameRate(
+                 videoQuality,
+-                preferencesRepository.videoFrameRate.value.takeIf {
+-                    videoQualityInfo.supportedFrameRates.contains(it)
+-                } ?: videoQualityInfo.supportedFrameRates.firstOrNull { it.value >= 60 }
++                savedFrameRate?.takeIf {
++                    videoQualityInfo.supportedFrameRates.contains(it) && it.value <= 30
++                } ?: ratesAtMost30.maxByOrNull { it.value }
+                     ?: videoQualityInfo.supportedFrameRates.maxByOrNull { it.value },
+             )
+ 
+--- a/app/src/main/res/values/config.xml
++++ b/app/src/main/res/values/config.xml
+@@ -56,13 +56,14 @@
+              </string-array>
+     -->
+     <string-array name="config_additionalVideoConfigurations">
+-        <!-- OEM ACamera2: FHD/HD 30+60, 4K 30 only, square 720/1080/1440
+-             are HAL PRIVATE sizes. CameraX Quality has no square bucket. -->
+-        <item>0</item> <item>sd|hd|fhd</item> <item>60</item>
++        <!-- Do not advertise 60. CameraX targetFrameRate 60 is not OEM
++             key_fps60. It drops 1920×1080 and encodes 368×1080. AE max is 30.
++             Square 720/1080/1440 are HAL PRIVATE. CameraX Quality has no
++             square bucket. -->
+         <item>0</item> <item>uhd</item> <item>30</item>
+         <item>0</item> <item>uhd</item> <item>-60</item>
+-        <item>1</item> <item>sd|hd|fhd</item> <item>60</item>
+-        <item>2</item> <item>sd|hd|fhd</item> <item>60</item>
++        <item>1</item> <item>sd|hd|fhd</item> <item>-60</item>
++        <item>2</item> <item>sd|hd|fhd</item> <item>-60</item>
+     </string-array>
+ 
+     <!-- An array of triplets made of (camera ID, approximate zoom ratio, exact zoom ratio).

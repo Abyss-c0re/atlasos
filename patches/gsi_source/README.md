@@ -38,6 +38,8 @@ FORCE_REPATCH=1 ./scripts/misterztr/apply_patches.sh
 | `packages/gsi_product` belt `titan2-sensor-privacy` | Node fail-closed companion (PRODUCT_PACKAGES) |
 | `0095-aperture-titan-square-and-no-sat` | Aperture 1:1 + ignore SAT cam 3 + HI847S as own lens |
 | `0108-aperture-video-uhd-crop-1080` | 1:1 = OEM UHD 3840×2160 @ 30, crop file to 1080×1080 |
+| `0109-aperture-oem-2160sq` | Honor the quality button. Do not force UHD on every 1:1 bind |
+| `0224-aperture-video-square-not-368` | Video 1:1: clipped 9:16 finder, OEM 16:9 encode, center-crop. No 368×1080 |
 
 **Banned:** MTK FrameworkResOverlay bind, Magisk privacy modules as product.
 

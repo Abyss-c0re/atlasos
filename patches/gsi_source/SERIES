@@ -121,6 +121,11 @@
 # every 1:1 bind). CameraX UHD injected when HAL lists 3840×2160.
 0109-aperture-oem-2160sq.patch
 
+# Square PreviewView + sensor rotation 90/270 cropped the 1920×1080 stream
+# to 368×1080. Video 1:1 uses a clipped 9:16 finder, then center-crops.
+# Photo 1:1 stays a square finder. FPS max 30.
+0224-aperture-video-square-not-368.patch
+
 # project:frameworks/base
 # Lockscreen Restart/Power: init may reject sys.shutdown.requested.
 # AOSP throw killed system_server → black screen. Persist is a hint;
