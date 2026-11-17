@@ -14,6 +14,15 @@ LineageOS GSI (MisterZtr + our patches)
 
 Flavors: **vanilla** / **microg** / **gapps**.
 
+## Install
+
+Flash the current image: [INSTALL.md](INSTALL.md). That page has the steps
+and the download link. The bootloader must already be unlocked.
+
+What that image contains: [releases/2026-10-07-eea.md](releases/2026-10-07-eea.md).
+
+Every published download link stays in [releases.md](releases.md).
+
 ## What it is
 
 ### Titan Controls
@@ -143,6 +152,9 @@ USB-C analog is the FM antenna, not a PCM sink.
 
 | Path | Role |
 |------|------|
+| [INSTALL.md](INSTALL.md) | Install the current version (steps + download link) |
+| [releases/2026-10-07-eea.md](releases/2026-10-07-eea.md) | Release notes for the current image |
+| [releases.md](releases.md) | Download link for each published version |
 | `apps/` | Controls, HID, Atlas, Nanobot, CubeContact, OSS FM |
 | `scripts/build_owned_apps.sh` | Compile owned apps from source on a clone |
 | `patches/gsi_source/` | Lineage SERIES |
